@@ -1,0 +1,14 @@
+opencv-python
+imageio
+more_itertools
+numba
+numpy
+torch
+torchgeometry
+ipywidgets
+matplotlib
+networkx
+scipy
+invoke
+tqdm
+natsort
