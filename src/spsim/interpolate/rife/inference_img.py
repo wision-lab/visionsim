@@ -23,7 +23,18 @@ def interpolate_img(img_paths, output_dir, model_dir=None, exp=4, ratio=0, rthre
     Path(output_dir).mkdir(exist_ok=True, parents=True)
 
     if model_dir is None:
-        model_dir = str(Path(__file__).parent)
+        # First check if it's in cwd or torch hub cache, else download
+        if (Path(__file__).parent / "flownet.pkl").exists():
+            model_dir = str(Path(__file__).parent)
+        elif (Path(torch.hub.get_dir()) / "flownet.pkl").exists():
+            model_dir = torch.hub.get_dir()
+        else:
+            # TODO: This currently does not work as the repo is private...
+            torch.hub.download_url_to_file(
+                "https://github.com/WISION-Lab/spsim/releases/download/v0.1/flownet.pkl",
+                str(Path(torch.hub.get_dir()) / "flownet.pkl"),
+            )
+            model_dir = torch.hub.get_dir()
 
     if len(img_paths) < 2:
         raise RuntimeError("At least two images required!")
