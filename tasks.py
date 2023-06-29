@@ -913,13 +913,16 @@ def blender_to_nerf_format(
         "file_name": "name of file containing transforms, default: 'transforms.json'",
     }
 )
-def frames_to_npy(_, input_dir, output_dir, file_name="transforms.json"):
+def frames_to_npy(_, input_dir, output_dir, file_name="transforms.json", bitpack=False, bitpack_dim=None):
     """Convert an image folder based dataset to a NPY dataset (experimental)"""
     # TODO: Deal with alpha channel, bitpack if binary data.
     import imageio.v3 as iio
     from natsort import natsorted
     from numpy.lib.format import open_memmap
     from tqdm.auto import tqdm
+
+    from spsim.io import read_img
+
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
 
@@ -931,15 +934,40 @@ def frames_to_npy(_, input_dir, output_dir, file_name="transforms.json"):
     frames = natsorted(transforms["frames"], key=lambda f: f["file_paths"][0] if "file_paths" in f else f["file_path"])
     img_paths = natsorted(str(input_dir / p) for p in img_paths)
 
+    # Ensure w/h are set in transforms.json
     w = transforms["w"] if "w" in transforms else 2 * (transforms["camera"]["cx"] - transforms["camera"]["shift_x"])
     h = transforms["h"] if "h" in transforms else 2 * (transforms["camera"]["cy"] - transforms["camera"]["shift_y"])
+    transforms["w"] = w
+    transforms["h"] = h
+
+    # Bitpack if either is set, defaults to bitpacking width dimension
+    if bitpack or bitpack_dim is not None:
+        bitpack = True
+        bitpack_dim = bitpack_dim if bitpack_dim is not None else 2
+
+        if bitpack_dim == 0 or bitpack_dim >= 3:
+            raise NotImplementedError("Can only bitpack along H or W.")
+
+        transforms["bitpack"] = bitpack
+        transforms["bitpack_dim"] = bitpack_dim
+        shape = np.array([len(img_paths), int(h), int(w), 3])
+        shape[bitpack_dim] /= 8
+    else:
+        shape = np.array([len(img_paths), int(h), int(w), 3])
 
     frames_array = open_memmap(
-        output_dir / "frames.npy", mode="w+", dtype=np.uint8, shape=(len(img_paths), int(h), int(w), 3)
+        output_dir / "frames.npy", mode="w+", dtype=np.uint8, shape=tuple(np.ceil(shape).astype(int))
     )
 
     for i, path in enumerate(tqdm(img_paths)):
-        frames_array[i] = iio.imread(path)[:, :, :3]
+        im, _ = read_img(path, apply_alpha=True)
+
+        if bitpack:
+            im = im >= 0.5
+            im = np.packbits(im, axis=bitpack_dim-1)
+        else:
+            im = (im*255).astype(np.uint8)
+        frames_array[i] = im
 
     transforms["file_path"] = "frames.npy"
     new_frames = [{k: v for k, v in f.items() if k not in ("file_path", "file_paths")} for f in frames]
