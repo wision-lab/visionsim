@@ -17,50 +17,50 @@ The first time you use the renderer, it may ask you to install additional packag
 
 ## CLI Tools - Overview
 
-While many tools are available, the main one is `render-views`.
+While many tools are available, the main one is `blender.render`.
 All tools used in this repository can be accessed like so:
 
 ```
 $ invoke --list
 Available tasks:
 
-  blender-to-nerf-format   Convert transform.json from blender format to nerf-style format
-  colmap-to-nerf-format    Convert transform.json from colmap format to nerf-style format
-  colorize-depth           Convert .exr depth maps into color-coded images for visualization
-  count-frames             Count the number of frames a video file contains using ffprobe
-  emulate-blur             Average together frames to create motion blur, similar to `emulate_rgb` but with no camera modeling
-  emulate-rgb              Simulate real camera, adding read/poisson noise and tonemapping.
-  emulate-spad             Perform bernoulli sampling on linearized RGB frames to yield binary frames
-  ffmpeg-animate           Combine generated frames into an MP4 using ffmpeg wizardry
-  frames-to-npy            Convert an image folder based dataset to a NPY dataset (experimental)
-  generate-masks           Extract alpha channel from frames and create PNG masks that COLMAP understands
-  interpolate-ds           Interpolate between frames and poses (up to 16x) using RIFE (ECCV22)
-  render-views             Render views of a .blend file while moving camera along a spline or animated trajectory
-  run-colmap               Run colmap on the provided images to get a rough pose/scene estimate
-  tonemap-exrs             Convert .exr linear intensity frames into tone-mapped sRGB images
-
+  blender.render              Render views of a .blend file while moving camera along a spline or animated trajectory
+  blender.to-nerf-format      Convert transform.json from blender format to nerf-style format
+  colmap.generate-masks       Extract alpha channel from frames and create PNG masks that COLMAP understands
+  colmap.run                  Run colmap on the provided images to get a rough pose/scene estimate
+  colmap.to-nerf-format       Convert transform.json from colmap format to nerf-style format
+  dataset.frames-to-npy       Convert an image folder based dataset to a NPY dataset (experimental)
+  emulate.blur                Average together frames to create motion blur, similar to `emulate_rgb` but with no camera modeling
+  emulate.rgb                 Simulate real camera, adding read/poisson noise and tonemapping.
+  emulate.spad                Perform bernoulli sampling on linearized RGB frames to yield binary frames
+  ffmpeg.animate              Combine generated frames into an MP4 using ffmpeg wizardry
+  ffmpeg.count-frames         Count the number of frames a video file contains using ffprobe
+  interpolate.frames          Interpolate between frames and poses (up to 16x) using RIFE (ECCV22)
+  transforms.colorize-depth   Convert .exr depth maps into color-coded images for visualization
+  transforms.tonemap-exrs     Convert .exr linear intensity frames into tone-mapped sRGB images
 ```
 
 To enable auto-complete functionality [see here](https://docs.pyinvoke.org/en/stable/invoke.html#shell-tab-completion).
 
 ## Generating the Lego10K dataset
 
-To create a new dataset we'll use `render-views`, followed by `emulate-spad/rgb`. Let's look at its options:
+To create a new dataset we'll use `blender.render`, followed by `emulate.spad/rgb`. Let's look at its options:
 
 ```
-$ inv --help render-views
-Usage: inv[oke] [--core-opts] render-views [--options] [other tasks here ...]
+$ inv -h blender.render
+Usage: inv[oke] [--core-opts] blender.render [--options] [other tasks here ...]
 
 Docstring:
   Render views of a .blend file while moving camera along a spline or animated trajectory
 
   Example if using invoke cli:
-          inv render-views <file.blend> <output-path> --num-frames=10000 --width=800 --height=800
+          inv blender.render <file.blend> <output-path> --num-frames=10000 --width=800 --height=800
 
 Options:
   --addons=STRING            list of extra addons to enable, default: None
   --[no-]allow-skips         whether or not to skip rendering a frame if it already exists, default: True
   --autoexec                 if true, enable the execution of bundled code. default: False
+  --bgcolor=STRING           background color as specified by a RGB list in [0-1] range, default: None (no override)
   --bit-depth=INT            bit depth for frames, usually 8 for pngs, default: 8
   --blend-file=STRING        path to blender file to use
   --depth                    whether or not to capture depth images, default: False
@@ -80,8 +80,7 @@ Options:
   --[no-]render              whether or not render frames, default: True
   --root-path=STRING         location at which to save dataset
   --tnb                      if true, ignore viewing points and use trajectory's TNB frame, default: False
-  --[no-]unbind-camera       free the camera from it's parents, any constraints and animations it may have. Ensures it uses the world's coordinate frame and the provided camera trajectory.
-                             default: True
+  --[no-]unbind-camera       free the camera from it's parents, any constraints and animations it may have. Ensures it uses the world's coordinate frame and the provided camera trajectory. default: True
   --unit-speed               whether or not to reparametrize splines so that movement is of constant speed, default: False
   --[no-]use-animation       allow any animations to play out, if false, scene will be static. default: True
   --[no-]use-motion-blur     enable realistic motion blur, default: True
@@ -94,42 +93,42 @@ First, download the lego truck ([original](https://www.blendswap.com/blend/11490
 To create the lego10k dataset, we first need to create all the RGB frames it contains. By default, `render-views` will move the camera on a circular obit at Z=1 with radius=5 and point it towards the origin. The following will capture 10k frames on this orbit at a resolution of 800x800 and save them in `lego10k/frames`:
 
 ```
-$ inv render-views blend_files/nerf/lego.blend lego10k --num-frames=10000 --width=800 --height=800
+$ inv blender.render blend_files/nerf/lego.blend lego10k --num-frames=10000 --width=800 --height=800
 ```
 _Warning: This takes ~7h using a single RTX3090._
 
 All the rendered frames will be in `lego10k/frames`. Let's create a quick preview of this dataset by animating every 100th frame:
 ```
-$ inv ffmpeg-animate lego10k/frames --step=100 -o=preview.mp4
+$ inv ffmpeg.animate lego10k/frames --step=100 -o=preview.mp4
 ```
 
 The file `preview.mp4` should show a nice turntable-style animation of a lego truck.
 
 Now we must convert these "perfect" RGB frames into motion blurred frames, to simulate a real camera, and binary frames, to simulate a single-photon camera. 
 
-To create the RGB data with motion blur, we use `emulate-rgb`. The `chunk-size` argument determines how many frames to average together. Below we are averaging 200 frames, so if we say the 10k frames correspond to a one-second capture, this means these frames will simulate a 50fps RGB camera. The `fwc` or full-well-capacity argument is not in units of electrons, since we have no physical camera model which matches an rgb linear intensity to a number of electrons, but rather is relative to the `chunk-size`. A FWC equal to the chunck size means that, if each image has an intensity of 1.0, the well will fill up.
+To create the RGB data with motion blur, we use `emulate.rgb`. The `chunk-size` argument determines how many frames to average together. Below we are averaging 200 frames, so if we say the 10k frames correspond to a one-second capture, this means these frames will simulate a 50fps RGB camera. The `fwc` or full-well-capacity argument is not in units of electrons, since we have no physical camera model which matches an rgb linear intensity to a number of electrons, but rather is relative to the `chunk-size`. A FWC equal to the chunck size means that, if each image has an intensity of 1.0, the well will fill up.
 
 ```
-$ inv emulate-rgb lego10k/frames -o lego10k/rgb-n200 --chunk-size=200 --fwc=200
+$ inv emulate.rgb lego10k/frames -o lego10k/rgb-n200 --chunk-size=200 --fwc=200
 
 # Preview RGB frames
-# inv ffmpeg-animate lego10k/rgb-n200 -o=preview-rgb.mp4
+# inv ffmpeg.animate lego10k/rgb-n200 -o=preview-rgb.mp4
 ```
 
 Finally, we can emulate binary frames like so:
 
 ```
-$ inv emulate-spad lego10k/frames/ -o lego10k/binary
+$ inv emulate.spad lego10k/frames/ -o lego10k/binary
 
 # Preview RGB frames
-# inv ffmpeg-animate lego10k/binary -o=preview-binary.mp4
+# inv ffmpeg.animate lego10k/binary -o=preview-binary.mp4
 ```
 
 ## Interpolating a dataset
 You can also interpolate an existing dataset using [RIFE](https://github.com/megvii-research/ECCV2022-RIFE) like so:
 
 ```
-$ inv interpolate-ds lego10k/ -o lego80k/ -n=8
+$ inv interpolate.frames lego10k/ -o lego80k/ -n=8
 ```
 
 ## Cookbook 
