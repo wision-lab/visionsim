@@ -260,6 +260,7 @@ class BlenderDatasetGenerator:
         use_animation=True,
         keyframe_multiplier=1.0,
         use_motion_blur=True,
+        bgcolor=None,
         **kwargs,
     ):
         # Load blender file
@@ -283,11 +284,17 @@ class BlenderDatasetGenerator:
 
         # Set frame resolution
         self.scene = bpy.context.scene
-        self.scene.use_nodes = True
         self.tree = self.scene.node_tree
         self.scene.render.resolution_y = self.height
         self.scene.render.resolution_x = self.width
         self.scene.render.resolution_percentage = 100
+
+        # Set bg color if provided, disables any environment maps
+        if bgcolor:
+            self.scene.use_nodes = False
+            self.scene.world.color = bgcolor
+        else:
+            self.scene.use_nodes = True
 
         # Set clear background
         self.scene.render.dither_intensity = 0.0
@@ -649,7 +656,7 @@ def parser_config():
             prog=(
                 "Render views of a .blend file while moving camera along a spline or animated trajectory\n\n"
                 "Example if using invoke cli: \n\t"
-                "inv render-views <file.blend> <output-path> --num-frames=10000 --width=800 --height=800"
+                "inv blender.render <file.blend> <output-path> --num-frames=10000 --width=800 --height=800"
             ),
             description=usage,
         ),
@@ -794,6 +801,12 @@ def parser_config():
                 name="--log-file", type=str, default=None, help="where to save log to, default: None (no log is saved)"
             ),
             dict(name="--addons", type=str, default=None, help="list of extra addons to enable, default: None"),
+            dict(
+                name="--bgcolor",
+                type=str,
+                default=None,
+                help="background color as specified by a RGB list in [0-1] range, default: None (no override)",
+            ),
         ],
     }
     return parser_conf
@@ -832,6 +845,15 @@ def _render_views(args):
             raise ValueError(
                 f"Failed to parse `device-idxs` value {args.device_idxs}. Please "
                 f"ensure this is a list of integers (i.e: [0, 1]) or 'all'/''."
+            )
+
+    if args.bgcolor:
+        try:
+            args.bgcolor = tuple(ast.literal_eval(args.bgcolor))
+        except SyntaxError:
+            raise ValueError(
+                f"Failed to parse `bgcolor` value {args.bgcolor}. Please "
+                f"ensure this is a list of floats (i.e: [1.0,0.0,0.0] for red)"
             )
 
     if args.addons:
