@@ -9,11 +9,11 @@ You'll need:
 - [Blender](https://www.blender.org/download/) >= 3.3.1, to render new views. 
 - [ffmpeg](https://ffmpeg.org/download.html), for visualizations. 
 - python dependencies listed in `requirements.txt`. 
-- install `spsim` locally using `pip install -e .`.
+- install `spsim` locally using `pip install .` or using `pip install -e .[dev]` if developing.
 
 Make sure Blender and ffmpeg are on your PATH.
 
-The first time you use the renderer, it may ask you to install additional packages. 
+The first time you use the renderer, it may ask you to install additional packages into blender's runtime. 
 
 ## CLI Tools - Overview
 
@@ -21,7 +21,7 @@ While many tools are available, the main one is `blender.render`.
 All tools used in this repository can be accessed like so:
 
 ```
-$ invoke --list
+$ spsim --list
 Available tasks:
 
   blender.render              Render views of a .blend file while moving camera along a spline or animated trajectory
@@ -47,14 +47,14 @@ To enable auto-complete functionality [see here](https://docs.pyinvoke.org/en/st
 To create a new dataset we'll use `blender.render`, followed by `emulate.spad/rgb`. Let's look at its options:
 
 ```
-$ inv -h blender.render
-Usage: inv[oke] [--core-opts] blender.render [--options] [other tasks here ...]
+$ spsim -h blender.render
+Usage: spsim [--core-opts] blender.render [--options] [other tasks here ...]
 
 Docstring:
   Render views of a .blend file while moving camera along a spline or animated trajectory
 
-  Example if using invoke cli:
-          inv blender.render <file.blend> <output-path> --num-frames=10000 --width=800 --height=800
+  Example:
+    spsim blender.render <file.blend> <output-path> --num-frames=100 --width=800 --height=800
 
 Options:
   --addons=STRING            list of extra addons to enable, default: None
@@ -93,13 +93,13 @@ First, download the lego truck ([original](https://www.blendswap.com/blend/11490
 To create the lego10k dataset, we first need to create all the RGB frames it contains. By default, `render-views` will move the camera on a circular obit at Z=1 with radius=5 and point it towards the origin. The following will capture 10k frames on this orbit at a resolution of 800x800 and save them in `lego10k/frames`:
 
 ```
-$ inv blender.render blend_files/nerf/lego.blend lego10k --num-frames=10000 --width=800 --height=800
+$ spsim blender.render blend_files/nerf/lego.blend lego10k --num-frames=10000 --width=800 --height=800
 ```
 _Warning: This takes ~7h using a single RTX3090._
 
 All the rendered frames will be in `lego10k/frames`. Let's create a quick preview of this dataset by animating every 100th frame:
 ```
-$ inv ffmpeg.animate lego10k/frames --step=100 -o=preview.mp4
+$ spsim ffmpeg.animate lego10k/frames --step=100 -o=preview.mp4
 ```
 
 The file `preview.mp4` should show a nice turntable-style animation of a lego truck.
@@ -109,26 +109,26 @@ Now we must convert these "perfect" RGB frames into motion blurred frames, to si
 To create the RGB data with motion blur, we use `emulate.rgb`. The `chunk-size` argument determines how many frames to average together. Below we are averaging 200 frames, so if we say the 10k frames correspond to a one-second capture, this means these frames will simulate a 50fps RGB camera. The `fwc` or full-well-capacity argument is not in units of electrons, since we have no physical camera model which matches an rgb linear intensity to a number of electrons, but rather is relative to the `chunk-size`. A FWC equal to the chunck size means that, if each image has an intensity of 1.0, the well will fill up.
 
 ```
-$ inv emulate.rgb lego10k/frames -o lego10k/rgb-n200 --chunk-size=200 --fwc=200
+$ spsim emulate.rgb lego10k/frames -o lego10k/rgb-n200 --chunk-size=200 --fwc=200
 
 # Preview RGB frames
-# inv ffmpeg.animate lego10k/rgb-n200 -o=preview-rgb.mp4
+# spsim ffmpeg.animate lego10k/rgb-n200 -o=preview-rgb.mp4
 ```
 
 Finally, we can emulate binary frames like so:
 
 ```
-$ inv emulate.spad lego10k/frames/ -o lego10k/binary
+$ spsim emulate.spad lego10k/frames/ -o lego10k/binary
 
 # Preview RGB frames
-# inv ffmpeg.animate lego10k/binary -o=preview-binary.mp4
+# spsim ffmpeg.animate lego10k/binary -o=preview-binary.mp4
 ```
 
 ## Interpolating a dataset
 You can also interpolate an existing dataset using [RIFE](https://github.com/megvii-research/ECCV2022-RIFE) like so:
 
 ```
-$ inv interpolate.frames lego10k/ -o lego80k/ -n=8
+$ spsim interpolate.frames lego10k/ -o lego80k/ -n=8
 ```
 
 ## Cookbook 

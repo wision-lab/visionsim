@@ -1,0 +1,19 @@
+[project]
+name = "spsim"
+description = "Single Photon Simulator and Tools"
+version = "0.1.1"
+dynamic = ["readme", "dependencies", "optional-dependencies"]
+requires-python = ">=3.8"
+
+[project.scripts]
+spsim = "tasks.__init__:program.run"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.dynamic]
+readme = {file = ["README.md"], content-type = "text/markdown"}
+dependencies = {file = "requirements.txt"}
+
+[tool.setuptools.dynamic.optional-dependencies]
+dev = {file = "requirements-dev.txt"}

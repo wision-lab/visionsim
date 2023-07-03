@@ -655,8 +655,8 @@ def parser_config():
         "parser": dict(
             prog=(
                 "Render views of a .blend file while moving camera along a spline or animated trajectory\n\n"
-                "Example if using invoke cli: \n\t"
-                "inv blender.render <file.blend> <output-path> --num-frames=10000 --width=800 --height=800"
+                "Example: \n"
+                "  spsim blender.render <file.blend> <output-path> --num-frames=100 --width=800 --height=800"
             ),
             description=usage,
         ),
