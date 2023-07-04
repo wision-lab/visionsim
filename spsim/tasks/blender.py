@@ -5,7 +5,7 @@ from invoke import task
 
 from spsim.cli import modify_signature
 from spsim.render import parser_config
-from tasks.common import _run
+from spsim.tasks.common import _run
 
 # Dynamically populate arguments of the `render` task
 conf = parser_config()
@@ -30,10 +30,10 @@ def render(c, blend_file, *args, autoexec=False, **kwargs):
     if not (blend_file := Path(blend_file).resolve()).exists():
         raise FileNotFoundError(f"Blender file {blend_file} not found.")
     if "blender.render" not in sys.argv[1]:
-        raise RuntimeError(f"Task `render-views` must run first if running multiple tasks simultaneously.")
+        raise RuntimeError(f"Task `blender.render` must run first if running multiple tasks simultaneously.")
 
     # Call `blender.py` script through blender's python interpreter
-    path = Path(__file__).parent.parent / "src" / "spsim" / "render.py"
+    path = Path(__file__).parent / "render.py"
     autoexec = "--enable-autoexec" if autoexec else "--disable-autoexec"
     cmd = f"blender --background {autoexec} --python {path} -- {' '.join(sys.argv[3:])} --blend-file={blend_file}"
     _run(c, cmd)

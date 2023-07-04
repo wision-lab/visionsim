@@ -22,7 +22,7 @@ All tools used in this repository can be accessed like so:
 
 ```
 $ spsim --list
-Available tasks:
+Subcommands:
 
   blender.render              Render views of a .blend file while moving camera along a spline or animated trajectory
   blender.to-nerf-format      Convert transform.json from blender format to nerf-style format
@@ -31,13 +31,17 @@ Available tasks:
   colmap.to-nerf-format       Convert transform.json from colmap format to nerf-style format
   dataset.frames-to-npy       Convert an image folder based dataset to a NPY dataset (experimental)
   emulate.blur                Average together frames to create motion blur, similar to `emulate_rgb` but with no camera modeling
-  emulate.rgb                 Simulate real camera, adding read/poisson noise and tonemapping.
+  emulate.rgb                 Simulate real camera, adding read/poisson noise and tonemapping
   emulate.spad                Perform bernoulli sampling on linearized RGB frames to yield binary frames
   ffmpeg.animate              Combine generated frames into an MP4 using ffmpeg wizardry
   ffmpeg.count-frames         Count the number of frames a video file contains using ffprobe
+  ffmpeg.duration             Return duration (in seconds) of first video stream in file using ffprobe
+  ffmpeg.extract              Extract frames from video file
   interpolate.frames          Interpolate between frames and poses (up to 16x) using RIFE (ECCV22)
+  interpolate.video           Interpolate video by extracting all frames, performing frame-wise interpolation and re-assembling video
   transforms.colorize-depth   Convert .exr depth maps into color-coded images for visualization
   transforms.tonemap-exrs     Convert .exr linear intensity frames into tone-mapped sRGB images
+
 ```
 
 ## Autocompletion

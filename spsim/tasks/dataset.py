@@ -3,7 +3,7 @@ import json
 import numpy as np
 from invoke import task
 
-from tasks.common import _validate_directories
+from spsim.tasks.common import _validate_directories
 
 
 @task(

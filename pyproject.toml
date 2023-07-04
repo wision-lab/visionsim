@@ -6,10 +6,10 @@ dynamic = ["readme", "dependencies", "optional-dependencies"]
 requires-python = ">=3.8"
 
 [project.scripts]
-spsim = "tasks.__init__:program.run"
+spsim = "spsim.tasks:program.run"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
+[tool.setuptools.packages.find]
+include = ["spsim*"]
 
 [tool.setuptools.dynamic]
 readme = {file = ["README.md"], content-type = "text/markdown"}

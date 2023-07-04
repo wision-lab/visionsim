@@ -2,7 +2,7 @@ from pathlib import Path
 
 from invoke import task
 
-from tasks.common import _run, _validate_directories
+from spsim.tasks.common import _run, _validate_directories
 
 
 @task(
@@ -42,7 +42,7 @@ def animate(
 
     from natsort import natsorted
 
-    from tasks.transforms import tonemap_exrs
+    from spsim.tasks.transforms import tonemap_exrs
 
     if _run(c, "ffmpeg -version", hide=True).failed:
         raise RuntimeError(f"No ffmpeg installation found on path!")

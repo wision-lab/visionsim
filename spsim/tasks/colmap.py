@@ -2,7 +2,7 @@ from pathlib import Path
 
 from invoke import task
 
-from tasks.common import _log_run, _raise_callback, _run, _validate_directories
+from spsim.tasks.common import _log_run, _raise_callback, _run, _validate_directories
 
 
 def _generate_mask_single(in_file, output_dir=None):

@@ -5,7 +5,7 @@ import numpy as np
 from invoke import task
 from tqdm.auto import tqdm
 
-from tasks.common import _validate_directories
+from spsim.tasks.common import _validate_directories
 
 
 def _tonemap_single(in_file, output_dir=None, ext=None):

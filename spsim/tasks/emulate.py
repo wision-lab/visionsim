@@ -5,7 +5,7 @@ import numpy as np
 from invoke import task
 from tqdm.auto import tqdm
 
-from tasks.common import _validate_directories
+from spsim.tasks.common import _validate_directories
 
 
 def _emulate_blur_single(item, grayscale=False, chunk_size=10, output_dir=None, ext=None):
