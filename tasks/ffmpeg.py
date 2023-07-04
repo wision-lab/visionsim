@@ -8,7 +8,7 @@ from tasks.common import _run, _validate_directories
 @task(
     help={
         "input_dir": "directory in which to look for frames",
-        "pattern": "filenames of frames should match this, default: 'frame_%06d.png'",
+        "pattern": "filenames of frames should match this, default: 'frame_*.png'",
         "outfile": "where to save generated mp4, default: 'out.mp4'",
         "fps": "frames per second in video, default: 25",
         "crf": "constant rate factor for video encoding (0-51), lower is better quality but more memory, default: 22",
@@ -90,7 +90,7 @@ def animate(
         _run(c, cmd, hide=hide)
 
 
-@task(help={"input_file": "video file input"}, positional=["input_file"])
+@task(help={"input_file": "video file input"})
 def count_frames(c, input_file):
     """Count the number of frames a video file contains using ffprobe"""
     # See: https://stackoverflow.com/questions/2017843
@@ -102,4 +102,39 @@ def count_frames(c, input_file):
         f"stream=nb_read_packets -of csv=p=0 {input_file}"
     )
     result = _run(c, cmd, hide=True)
-    print(f"Video contains {result.stdout.strip()} frames.")
+    print(f"Video contains {int(result.stdout.strip())} frames.")
+    return int(result.stdout.strip())
+
+
+@task(help={"input_file": "video file input"})
+def duration(c, input_file):
+    """Return duration (in seconds) of first video stream in file using ffprobe"""
+    # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
+    if _run(c, "ffprobe -version", hide=True).failed:
+        raise RuntimeError(f"No ffprobe installation found on path!")
+
+    cmd = (
+        f"ffprobe -v error -select_streams v:0 -show_entries stream=duration "
+        f"-of default=noprint_wrappers=1:nokey=1 {input_file}"
+    )
+    result = _run(c, cmd, hide=True)
+    print(f"Video lasts {float(result.stdout.strip())} seconds.")
+    return float(result.stdout.strip())
+
+
+@task(
+    help={
+        "input_file": "path to video file from which to extract frames",
+        "output_dir": "directory in which to save extracted frames",
+        "pattern": "filenames of frames will match this pattern, default: 'frame_%06d.png'",
+    }
+)
+def extract(c, input_file, output_dir, pattern="frames_%06d.png"):
+    """Extract frames from video file"""
+    if _run(c, "ffmpeg -version", hide=True).failed:
+        raise RuntimeError(f"No ffmpeg installation found on path!")
+    if not Path(input_file).is_file():
+        raise FileNotFoundError(f"File {input_file} not found.")
+
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    _run(c, f"ffmpeg -i {input_file} {Path(output_dir) / pattern}")

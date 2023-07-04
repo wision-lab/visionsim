@@ -15,7 +15,6 @@ from tasks.common import _validate_directories
 )
 def frames_to_npy(_, input_dir, output_dir, file_name="transforms.json", bitpack=False, bitpack_dim=None):
     """Convert an image folder based dataset to a NPY dataset (experimental)"""
-    # TODO: Deal with alpha channel, bitpack if binary data.
     from natsort import natsorted
     from numpy.lib.format import open_memmap
     from tqdm.auto import tqdm

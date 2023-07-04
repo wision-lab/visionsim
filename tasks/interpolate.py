@@ -9,6 +9,44 @@ from tasks.common import _validate_directories
 
 @task(
     help={
+        "input_file": "path to video file from which to extract frames",
+        "output_file": "path in which to save interpolated video",
+        "method": "interpolation method to use, only RIFE (ECCV22) is supported for now",
+        "n": "interpolation factor, must be a multiple of 2, default: 2",
+    }
+)
+def video(c, input_file, output_file, method="rife", n=2):
+    """Interpolate video by extracting all frames, performing frame-wise interpolation and re-assembling video"""
+    import tempfile
+
+    from natsort import natsorted
+
+    from spsim.interpolate import rife
+
+    from .ffmpeg import animate, count_frames, duration, extract
+
+    if method.lower() not in ("rife",):
+        raise NotImplementedError(f"Only rife is currently supported as an interpolation method.")
+    if n < 2 or not n & (n - 1) == 0:
+        raise ValueError(f"Can only interpolate by a power of 2, greater or equal to 2, not {n}.")
+
+    avg_fps = count_frames(c, input_file) / duration(c, input_file)
+    print(f"Video has average frame rate of {avg_fps}")
+
+    with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as dst_dir:
+        # Extract all frames
+        extract(c, input_file, src_dir, pattern="frames_%06d.png")
+
+        # Interpolate them
+        img_paths = [str(p) for p in natsorted(Path(src_dir).glob("frames_*.png"))]
+        rife(img_paths, dst_dir, exp=np.log2(n).astype(int))
+
+        # Assemble final video at correct frame-rate
+        animate(c, dst_dir, pattern="frames_*.png", outfile=output_file, fps=avg_fps)
+
+
+@task(
+    help={
         "input_dir": "directory in which to look for frames",
         "output_dir": "directory in which to save interpolated frames",
         "method": "interpolation method to use, only RIFE (ECCV22) is supported for now",
