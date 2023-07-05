@@ -32,8 +32,8 @@ def render(c, blend_file, *args, autoexec=False, **kwargs):
     if "blender.render" not in sys.argv[1]:
         raise RuntimeError(f"Task `blender.render` must run first if running multiple tasks simultaneously.")
 
-    # Call `blender.py` script through blender's python interpreter
-    path = Path(__file__).parent / "render.py"
+    # Call `render.py` script through blender's python interpreter
+    path = Path(__file__).parent.parent / "render.py"
     autoexec = "--enable-autoexec" if autoexec else "--disable-autoexec"
     cmd = f"blender --background {autoexec} --python {path} -- {' '.join(sys.argv[3:])} --blend-file={blend_file}"
     _run(c, cmd)
