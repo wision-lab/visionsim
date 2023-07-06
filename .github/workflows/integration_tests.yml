@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install .
-          snap install blender --classic --channel=3.3lts/stable
+          sudo snap install blender --classic --channel=3.3lts/stable
           export BLENDER_PY=$(blender --background --python-expr "import sys; print(sys.executable, file=sys.stderr)" 2>&1)
           $BLENDER_PY -m ensurepip
           $BLENDER_PY -m pip install scipy rich
