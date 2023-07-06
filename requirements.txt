@@ -12,3 +12,4 @@ scipy
 invoke
 tqdm
 natsort
+rich
