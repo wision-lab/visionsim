@@ -57,6 +57,11 @@ def _emulate_rgb_single(
     from spsim.utils import img_to_tensor, tensor_to_img  # Lazy Load
 
     i, chunk_files = item
+    path = output_dir / f"frame_{i:06}{ext}"
+
+    if path.is_file():
+        return
+
     stream = (read_img(p, apply_alpha=True, grayscale=grayscale) for p in chunk_files)
     avg_img, avg_alpha = None, None
 
@@ -79,7 +84,6 @@ def _emulate_rgb_single(
         img_to_tensor(avg_img / chunk_size), burst_size=chunk_size, readout_std=readout_std, fwc=fwc, factor=factor
     )
 
-    path = output_dir / f"frame_{i:06}{ext}"
     return write_img(str(path), np.concatenate([tensor_to_img(rgb_img * 255), avg_alpha], axis=-1).astype(np.uint8))
 
 
@@ -95,7 +99,7 @@ def _emulate_rgb_single(
     }
 )
 def spad(
-    _,
+    c,
     input_dir,
     output_dir,
     grayscale=False,
@@ -116,7 +120,7 @@ def spad(
         _emulate_spad_single, grayscale=grayscale, factor=factor, output_dir=output_dir, ext=ext
     )
 
-    with multiprocessing.Pool() as p:
+    with multiprocessing.Pool(processes=c.get("max_threads")) as p:
         tasks = p.imap(emulate_single, zip(in_files, seeds))
         list(tqdm(tasks, total=len(in_files)))
 
@@ -131,7 +135,7 @@ def spad(
         "ext": "which format to save colorized frames as, default: '.png'",
     }
 )
-def blur(_, input_dir, output_dir, chunk_size=10, grayscale=False, pattern="frame_*.png", ext=".png"):
+def blur(c, input_dir, output_dir, chunk_size=10, grayscale=False, pattern="frame_*.png", ext=".png"):
     """Average together frames to create motion blur, similar to `emulate_rgb` but with no camera modeling"""
     import multiprocessing
 
@@ -143,7 +147,7 @@ def blur(_, input_dir, output_dir, chunk_size=10, grayscale=False, pattern="fram
     )
 
     # TODO: This would probably be faster if we used a DataLoader to load and average image batches...
-    with multiprocessing.Pool() as p:
+    with multiprocessing.Pool(processes=c.get("max_threads")) as p:
         tasks = p.imap(emulate_single, enumerate(mitertools.chunked(in_files, chunk_size)))
         list(tqdm(tasks, total=len(in_files) // chunk_size))
 
@@ -162,7 +166,7 @@ def blur(_, input_dir, output_dir, chunk_size=10, grayscale=False, pattern="fram
     }
 )
 def rgb(
-    _,
+    c,
     input_dir,
     output_dir,
     chunk_size=10,
@@ -193,6 +197,6 @@ def rgb(
     # TODO: This would probably be faster if we used a DataLoader to load and average image batches...
     #   It would at least appear faster to the user as each image will be created with
     #   multiple threads (making pbar advance bit by bit) instead of having one thread per image.
-    with multiprocessing.Pool() as p:
+    with multiprocessing.Pool(processes=c.get("max_threads")) as p:
         tasks = p.imap(emulate_single, enumerate(mitertools.chunked(in_files, chunk_size)))
         list(tqdm(tasks, total=len(in_files) // chunk_size))

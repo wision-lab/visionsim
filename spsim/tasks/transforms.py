@@ -92,7 +92,7 @@ def colorize_depth(
         "step": "drop some frames when tone mapping, use frames 0+step*n, default: 1",
     }
 )
-def tonemap_exrs(_, input_dir, output_dir, pattern="frame_*.exr", ext=".png", step=1):
+def tonemap_exrs(c, input_dir, output_dir, pattern="frame_*.exr", ext=".png", step=1):
     """Convert .exr linear intensity frames into tone-mapped sRGB images"""
     import multiprocessing
 
@@ -100,6 +100,6 @@ def tonemap_exrs(_, input_dir, output_dir, pattern="frame_*.exr", ext=".png", st
 
     tonemap_single = functools.partial(_tonemap_single, output_dir=output_dir, ext=ext)
 
-    with multiprocessing.Pool() as p:
+    with multiprocessing.Pool(processes=c.get("max_threads")) as p:
         tasks = p.imap(tonemap_single, in_files[::step])
         list(tqdm(tasks, total=len(in_files) // step))
