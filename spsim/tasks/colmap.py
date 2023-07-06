@@ -114,7 +114,7 @@ def run(
         print(f"No masks were found. Generating them...")
         generate_masks(c, input_dir, mask_dir, pattern="*")
 
-    # If camera params is the path to a valid json transforms file (as generated via render-views)
+    # If camera params is the path to a valid json transforms file (as generated via blender.render)
     # then load it up and extract ground truth camera parameters from it.
     if camera_params and camera_params.endswith(".json"):
         if Path(camera_params).exists():

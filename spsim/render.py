@@ -41,7 +41,7 @@ except ImportError:
 usage = (
     "This script needs to be called via blender like so: \n"
     "$ blender scene.blend --background --python render.py -- <script arguments>\n\n"
-    "Or by using the invoke cli: `inv -h render-views`"
+    "Or by using the spsim cli: `spsim -h blender.render`"
 )
 
 
