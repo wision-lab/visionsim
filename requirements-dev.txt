@@ -1,8 +1,7 @@
-flake8
 isort
-pylint
 black
 pytest
 pre-commit
 coverage
 hypothesis
+ruff

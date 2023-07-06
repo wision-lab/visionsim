@@ -26,11 +26,11 @@ def render(c, blend_file, *args, autoexec=False, **kwargs):
 
     # Runtime checks and gard rails
     if _run(c, "blender --version", hide=True).failed:
-        raise RuntimeError(f"No blender installation found on path!")
+        raise RuntimeError("No blender installation found on path!")
     if not (blend_file := Path(blend_file).resolve()).exists():
         raise FileNotFoundError(f"Blender file {blend_file} not found.")
     if "blender.render" not in sys.argv[1]:
-        raise RuntimeError(f"Task `blender.render` must run first if running multiple tasks simultaneously.")
+        raise RuntimeError("Task `blender.render` must run first if running multiple tasks simultaneously.")
 
     # Call `render.py` script through blender's python interpreter
     path = Path(__file__).parent.parent / "render.py"

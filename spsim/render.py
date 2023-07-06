@@ -266,7 +266,7 @@ class BlenderDatasetGenerator:
         # Load blender file
         if not bpy.data.filepath:
             if not blend_file:
-                raise ValueError(f"No blender file was specified!")
+                raise ValueError("No blender file was specified!")
             bpy.ops.wm.open_mainfile(filepath=blend_file)
             print(f"INFO: Successfully loaded {blend_file}")
         elif blend_file:
@@ -348,12 +348,12 @@ class BlenderDatasetGenerator:
         else:
             # Use existing blender animation for movements
             if not use_animation:
-                raise ValueError(f"Both `unbind_camera` and `use_animation` are false, scene will be entirely static!")
+                raise ValueError("Both `unbind_camera` and `use_animation` are false, scene will be entirely static!")
             elif (
                 all(p.animation_data is None for p in self.get_parents(self.camera))
                 and self.camera.animation_data is None
             ):
-                print(f"WARNING: Active camera nor it's parents are animated, camera will be static.")
+                print("WARNING: Active camera nor it's parents are animated, camera will be static.")
 
         # Setup for getting normals and depth
         self.depth, self.normals = depth, normals
@@ -795,7 +795,10 @@ def parser_config():
                 name="--file-format",
                 type=str,
                 default="PNG",
-                help="frame file format to use. Depth is always 'OPEN_EXR' thus is unaffected by this setting, default: PNG",
+                help=(
+                    "frame file format to use. Depth is always 'OPEN_EXR' thus is "
+                    "unaffected by this setting, default: PNG"
+                ),
             ),
             dict(
                 name="--log-file", type=str, default=None, help="where to save log to, default: None (no log is saved)"
@@ -823,9 +826,9 @@ def get_parser():
 def _render_views(args):
     if not args.unbind_camera and (args.location_points or args.viewing_points):
         raise ValueError(
-            f"Camera cannot be bound to parents and follow provided path. Either remove "
-            f"'location_points'/'viewing_points' arguments to enable camera to follow its "
-            f"animation (if any) or remove unbind camera."
+            "Camera cannot be bound to parents and follow provided path. Either remove "
+            "'location_points'/'viewing_points' arguments to enable camera to follow its "
+            "animation (if any) or remove unbind camera."
         )
 
     if not args.location_points:

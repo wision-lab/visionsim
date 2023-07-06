@@ -17,3 +17,8 @@ dependencies = {file = "requirements.txt"}
 
 [tool.setuptools.dynamic.optional-dependencies]
 dev = {file = "requirements-dev.txt"}
+
+
+[tool.ruff]
+line-length = 121
+exclude = ["spsim/interpolate/rife/*"]

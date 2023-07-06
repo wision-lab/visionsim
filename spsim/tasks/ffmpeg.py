@@ -45,7 +45,7 @@ def animate(
     from spsim.tasks.transforms import tonemap_exrs
 
     if _run(c, "ffmpeg -version", hide=True).failed:
-        raise RuntimeError(f"No ffmpeg installation found on path!")
+        raise RuntimeError("No ffmpeg installation found on path!")
 
     input_dir, output_dir, in_files = _validate_directories(input_dir, Path(outfile).parent, pattern=pattern)
 
@@ -95,7 +95,7 @@ def count_frames(c, input_file):
     """Count the number of frames a video file contains using ffprobe"""
     # See: https://stackoverflow.com/questions/2017843
     if _run(c, "ffprobe -version", hide=True).failed:
-        raise RuntimeError(f"No ffprobe installation found on path!")
+        raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = (
         f"ffprobe -v error -select_streams v:0 -count_packets -show_entries "
@@ -111,7 +111,7 @@ def duration(c, input_file):
     """Return duration (in seconds) of first video stream in file using ffprobe"""
     # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
     if _run(c, "ffprobe -version", hide=True).failed:
-        raise RuntimeError(f"No ffprobe installation found on path!")
+        raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = (
         f"ffprobe -v error -select_streams v:0 -show_entries stream=duration "
@@ -132,7 +132,7 @@ def duration(c, input_file):
 def extract(c, input_file, output_dir, pattern="frames_%06d.png"):
     """Extract frames from video file"""
     if _run(c, "ffmpeg -version", hide=True).failed:
-        raise RuntimeError(f"No ffmpeg installation found on path!")
+        raise RuntimeError("No ffmpeg installation found on path!")
     if not Path(input_file).is_file():
         raise FileNotFoundError(f"File {input_file} not found.")
 

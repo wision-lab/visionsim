@@ -92,12 +92,12 @@ def get_camera_model(text):
 
 def get_image_data(text, indices=slice(None)):
     with open(str(Path(text) / "images.txt"), "r") as f:
-        lines = filter(lambda l: not l.strip().startswith("#"), f.readlines())
-        data = np.loadtxt((l for i, l in enumerate(lines) if i % 2 == 0), dtype=object)
+        lines = filter(lambda line: not line.strip().startswith("#"), f.readlines())
+        data = np.loadtxt((line for i, line in enumerate(lines) if i % 2 == 0), dtype=object)
 
     with open(str(Path(text) / "images.txt"), "r") as f:
-        lines = filter(lambda l: not l.strip().startswith("#"), f.readlines())
-        points2d = (mitertools.chunked(l.split(" "), 3) for i, l in enumerate(lines) if i % 2 == 1)
+        lines = filter(lambda line: not line.strip().startswith("#"), f.readlines())
+        points2d = (mitertools.chunked(line.split(" "), 3) for i, line in enumerate(lines) if i % 2 == 1)
         points2d = [[(float(x), float(y), int(p_id)) for x, y, p_id in line] for line in points2d]
         points2d = np.array(points2d, dtype=object)
 

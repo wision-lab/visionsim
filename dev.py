@@ -72,20 +72,9 @@ def format(c, check=False):
 
 
 @task
-def lint_flake8(c):
-    """Lint code with flake8"""
-    _run(c, f"flake8 {' '.join(PYTHON_DIRS)} --max-line-length={MAX_LINE_LENGTH}")
-
-
-@task
-def lint_pylint(c):
-    """Lint code with pylint"""
-    _run(c, f"pylint --max-line-length={MAX_LINE_LENGTH} {' '.join(PYTHON_DIRS)}")
-
-
-@task(lint_flake8, lint_pylint)
 def lint(c):
-    """Run all linting"""
+    """Lint code with ruff"""
+    _run(c, f"ruff --line-length={MAX_LINE_LENGTH} {' '.join(PYTHON_DIRS)}")
 
 
 @task
@@ -141,3 +130,4 @@ def clean_tests(c):
 @task(pre=[clean_build, clean_python, clean_tests])
 def clean(c):
     """Runs all clean sub-tasks"""
+    _run(c, "ruff clean")

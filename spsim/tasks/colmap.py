@@ -93,7 +93,7 @@ def run(
     mask_dir = Path(mask_dir) if mask_dir else None
 
     if _run(c, "colmap help", hide=True).failed:
-        raise RuntimeError(f"No COLMAP installation found on path!")
+        raise RuntimeError("No COLMAP installation found on path!")
     if not force and (db.exists() or text.exists() or sparse.exists() or dense.exists()):
         raise RuntimeError(
             f"COLMAP databases {db}, {text}, {sparse} or {dense} already exist. To overwrite rerun with '--force'"
@@ -111,14 +111,14 @@ def run(
 
     # Generate masks if not present at mask_dir
     if mask_dir and not mask_dir.exists():
-        print(f"No masks were found. Generating them...")
+        print("No masks were found. Generating them...")
         generate_masks(c, input_dir, mask_dir, pattern="*")
 
     # If camera params is the path to a valid json transforms file (as generated via blender.render)
     # then load it up and extract ground truth camera parameters from it.
     if camera_params and camera_params.endswith(".json"):
         if Path(camera_params).exists():
-            print(f"\nArgument `camera_params` points to a json file, extracting camera model...")
+            print("\nArgument `camera_params` points to a json file, extracting camera model...")
 
             with open(camera_params, "r") as f:
                 camera_params_data = json.load(f).get("camera")
@@ -154,9 +154,9 @@ def run(
     mapper_cmd = f"colmap {mapper + '_' if mapper else ''}mapper "
     mapper_cmd += f"--database_path {db} --image_path {input_dir} --output_path {sparse} "
     mapper_cmd += (
-        f"--Mapper.ba_refine_focal_length=0 --Mapper.ba_refine_principal_point=0 "
-        f"--Mapper.ba_refine_extra_params=0 "
-        f"--Mapper.min_num_matches=5 --Mapper.init_min_num_inliers=15 "
+        "--Mapper.ba_refine_focal_length=0 --Mapper.ba_refine_principal_point=0 "
+        "--Mapper.ba_refine_extra_params=0 "
+        "--Mapper.min_num_matches=5 --Mapper.init_min_num_inliers=15 "
         # if camera_params
         # else ""
     )

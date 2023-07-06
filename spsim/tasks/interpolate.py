@@ -26,7 +26,7 @@ def video(c, input_file, output_file, method="rife", n=2):
     from .ffmpeg import animate, count_frames, duration, extract
 
     if method.lower() not in ("rife",):
-        raise NotImplementedError(f"Only rife is currently supported as an interpolation method.")
+        raise NotImplementedError("Only rife is currently supported as an interpolation method.")
     if n < 2 or not n & (n - 1) == 0:
         raise ValueError(f"Can only interpolate by a power of 2, greater or equal to 2, not {n}.")
 
@@ -62,7 +62,7 @@ def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json",
     from spsim.interpolate import pose_interp, rife
 
     if method.lower() not in ("rife",):
-        raise NotImplementedError(f"Only rife is currently supported as an interpolation method.")
+        raise NotImplementedError("Only rife is currently supported as an interpolation method.")
     if n < 2 or not n & (n - 1) == 0:
         raise ValueError(f"Can only interpolate by a power of 2, greater or equal to 2, not {n}.")
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
@@ -82,7 +82,7 @@ def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json",
         raise RuntimeError(f"All images must have same extension but found {exts}.")
 
     if not is_blender and not is_nerf:
-        raise ValueError(f"Format not understood.")
+        raise ValueError("Format not understood.")
 
     # Perform pose interpolation
     #   Ex for 4 frames, and n=4:
