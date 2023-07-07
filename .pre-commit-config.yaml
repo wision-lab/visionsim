@@ -1,0 +1,21 @@
+fail_fast: true
+repos:
+- repo: local
+  hooks:
+  - id: inv-lint
+    name: Lint (with Ruff)
+    entry: invoke lint
+    pass_filenames: False
+    language: system
+
+  - id: inv-tests
+    name: Run Tests
+    entry: invoke test
+    pass_filenames: False
+    language: system
+
+  - id: inv-clean
+    name: Clean Caches
+    entry: invoke clean
+    pass_filenames: False
+    language: system
