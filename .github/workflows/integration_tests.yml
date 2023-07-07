@@ -27,6 +27,7 @@ jobs:
           pip install .
           sudo snap install blender --classic --channel=3.3lts/stable
           echo "BLENDER_PY=$(blender --background --python-expr "import sys; print(sys.executable, file=sys.stderr)" 2>&1 >/dev/null)" >> $GITHUB_ENV
+          echo $BLENDER_PY
           $BLENDER_PY -m ensurepip
           $BLENDER_PY -m pip install scipy rich
       - name: Test cli
