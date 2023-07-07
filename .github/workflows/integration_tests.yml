@@ -22,7 +22,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install ruff
           ruff .
-      - name: Install python dependencies
+      - name: Install Spsim and dependencies
         run: |
           pip install .
       - name: Install FFmpeg
@@ -35,7 +35,7 @@ jobs:
           echo -n "BLENDER_PY=$(blender --background --python-expr 'import sys; print(sys.executable, file=sys.stderr)' 2>&1 >/dev/null)" >> $GITHUB_ENV
       - name: Install Blender dependencies
         run: |
-          echo $BLENDER_PY
+          echo "Found blender python interpreter at $BLENDER_PY"
           $BLENDER_PY -m ensurepip
           $BLENDER_PY -m pip install scipy rich
       - name: Test cli
