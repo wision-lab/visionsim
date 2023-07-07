@@ -58,6 +58,7 @@ def generate_masks(
         "vocab_path": "vocabulary tree path, default: None",
         "mapper": "which mapper to use, either '' or 'hierarchical'. default: ''.",
         "dense_reconstruction": "if true, perform dense reconstruction after sparse one. default: False",
+        "skip_ba": "if true, skip bundle adjustment step, default: False",
         "cuda": "use cuda acceleration where possible, default: True",
         "force": "if true, overwrite output file if present, default: False",
     }
@@ -255,7 +256,16 @@ def run(
         _log_run(c, delaunay_mesher_cmd, log / "delaunay_mesher", watchers=pbar_watcher)
 
 
-@task
+@task(help={
+    "input_dir": "directory containing transform file",
+    "text_dir": "directory containing results in text format",
+    "keep_colmap_coords": "if true, use coordinate frame colmap found, otherwise center "
+                          "it on the origin, default: False",
+    "aabb_scale": "scale of axis aligned bounding box, default: 16",
+    "indices": "slice of transforms to use (i.e: 'slice(10,100,2)'), default: None (use all data)",
+    "file_name": "name of input transform file, default: transforms_blender.json",
+    "sharpness": "if supplied, compute per-image sharpness value, default: False",
+})
 def to_nerf_format(
     _,
     input_dir,

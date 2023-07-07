@@ -9,7 +9,7 @@ from spsim.tasks.common import _run
 
 # Dynamically populate arguments of the `render` task
 conf = parser_config()
-render_help = {arg["name"].lstrip("-"): arg["help"] for arg in conf["arguments"]}
+render_help = {arg["name"].lstrip("-").replace("-", "_"): arg["help"] for arg in conf["arguments"]}
 render_help["autoexec"] = "if true, enable the execution of bundled code. default: False"
 render_args = [arg["name"].lstrip("-").replace("-", "_") for arg in conf["arguments"] if "default" not in arg]
 render_kwargs = {
@@ -51,7 +51,14 @@ render_full = modify_signature(
 render = task(help=render_help, auto_shortflags=False)(render_full)
 
 
-@task
+@task(help={
+    "input_dir": "directory containing transform file or path of file",
+    "infile": "name of input transform file, default: transforms_blender.json",
+    "outfile": "name of output transform file, default: transforms.json",
+    "aabb_scale": "scale of axis aligned bounding box, default: 16",
+    "sharpness": "if supplied, compute per-image sharpness value, default: False",
+    "force": "override existing transform file if in/outfile are equal, default: False"
+})
 def to_nerf_format(
     _,
     input_dir,

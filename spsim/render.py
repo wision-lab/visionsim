@@ -661,7 +661,7 @@ def parser_config():
             description=usage,
         ),
         "arguments": [
-            dict(name="root_path", type=str, help="location at which to save dataset"),
+            dict(name="root-path", type=str, help="location at which to save dataset"),
             dict(name="--blend-file", type=str, default="", help="path to blender file to use"),
             # Defaults are set below in `_render_views` to allow for some validation checks
             dict(name="--num-frames", type=int, default=None, help="number of frame to capture, default: 100"),

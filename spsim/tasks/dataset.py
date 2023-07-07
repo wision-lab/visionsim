@@ -11,6 +11,9 @@ from spsim.tasks.common import _validate_directories
         "input_dir": "directory in which to look for frames",
         "output_dir": "directory in which to save npy file",
         "file_name": "name of file containing transforms, default: 'transforms.json'",
+        "bitpack": "if true, each chunk of 8 binary pixels will by packed into a single byte. "
+                   "Only enable if data is binary valued. Default: False",
+        "bitpack_dim": "Axis along which to pack bits (H=1, W=2), default: 2"
     }
 )
 def frames_to_npy(_, input_dir, output_dir, file_name="transforms.json", bitpack=False, bitpack_dim=None):
