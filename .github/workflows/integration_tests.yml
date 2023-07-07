@@ -8,8 +8,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # python-version: ["3.8", "3.9", "3.10", "3.11"]
-        python-version: ["3.10"]
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
+        # python-version: ["3.10"]
 
     steps:
       - uses: actions/checkout@v3
@@ -33,6 +33,7 @@ jobs:
         run: |
           sudo snap install blender --classic --channel=3.3lts/stable
           echo -n "BLENDER_PY=$(blender --background --python-expr 'import sys; print(sys.executable, file=sys.stderr)' 2>&1 >/dev/null)" >> $GITHUB_ENV
+          blender --version
       - name: Install Blender dependencies
         run: |
           echo "Found blender python interpreter at $BLENDER_PY"
