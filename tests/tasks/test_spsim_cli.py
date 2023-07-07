@@ -1,5 +1,4 @@
 import pytest
-
 from invoke.context import Context
 
 from spsim.tasks import ns

@@ -51,14 +51,16 @@ render_full = modify_signature(
 render = task(help=render_help, auto_shortflags=False)(render_full)
 
 
-@task(help={
-    "input_dir": "directory containing transform file or path of file",
-    "infile": "name of input transform file, default: transforms_blender.json",
-    "outfile": "name of output transform file, default: transforms.json",
-    "aabb_scale": "scale of axis aligned bounding box, default: 16",
-    "sharpness": "if supplied, compute per-image sharpness value, default: False",
-    "force": "override existing transform file if in/outfile are equal, default: False"
-})
+@task(
+    help={
+        "input_dir": "directory containing transform file or path of file",
+        "infile": "name of input transform file, default: transforms_blender.json",
+        "outfile": "name of output transform file, default: transforms.json",
+        "aabb_scale": "scale of axis aligned bounding box, default: 16",
+        "sharpness": "if supplied, compute per-image sharpness value, default: False",
+        "force": "override existing transform file if in/outfile are equal, default: False",
+    }
+)
 def to_nerf_format(
     _,
     input_dir,

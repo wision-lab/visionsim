@@ -1,7 +1,7 @@
 """
 Tasks for maintaining the project.
 
-Execute 'invoke --collection=dev --list' for guidance on using Invoke
+Execute 'inv[oke] --list' for a list of dev tasks.
 """
 import fnmatch
 import glob
@@ -16,7 +16,6 @@ from invoke import task
 MAX_LINE_LENGTH = 121
 
 ROOT_DIR = Path(__file__).parent
-SETUP_FILE = ROOT_DIR.joinpath("setup.py")
 TEST_DIR = ROOT_DIR.joinpath("tests")
 SOURCE_DIR = ROOT_DIR.joinpath("spsim")
 COVERAGE_FILE = ROOT_DIR.joinpath(".coverage")
