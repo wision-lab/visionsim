@@ -22,11 +22,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install ruff
           ruff .
-      - name: Install dependencies
+      - name: Install python dependencies
         run: |
           pip install .
+      - name: Install Blender
+        run: |
           sudo snap install blender --classic --channel=3.3lts/stable
           echo "BLENDER_PY=$(blender --background --python-expr "import sys; print(sys.executable, file=sys.stderr)" 2>&1 >/dev/null)" >> $GITHUB_ENV
+      - name: Install Blender dependencies
+        run: |
           echo $BLENDER_PY
           $BLENDER_PY -m ensurepip
           $BLENDER_PY -m pip install scipy rich
