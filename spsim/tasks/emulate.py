@@ -149,7 +149,7 @@ def blur(c, input_dir, output_dir, chunk_size=10, grayscale=False, pattern="fram
     # TODO: This would probably be faster if we used a DataLoader to load and average image batches...
     with multiprocessing.Pool(processes=c.get("max_threads")) as p:
         tasks = p.imap(emulate_single, enumerate(mitertools.chunked(in_files, chunk_size)))
-        list(tqdm(tasks, total=len(in_files) // chunk_size))
+        list(tqdm(tasks, total=np.ceil(len(in_files) / chunk_size).astype(int)))
 
 
 @task(
@@ -199,4 +199,4 @@ def rgb(
     #   multiple threads (making pbar advance bit by bit) instead of having one thread per image.
     with multiprocessing.Pool(processes=c.get("max_threads")) as p:
         tasks = p.imap(emulate_single, enumerate(mitertools.chunked(in_files, chunk_size)))
-        list(tqdm(tasks, total=len(in_files) // chunk_size))
+        list(tqdm(tasks, total=np.ceil(len(in_files) / chunk_size).astype(int)))

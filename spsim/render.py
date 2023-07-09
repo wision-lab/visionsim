@@ -506,15 +506,15 @@ class BlenderDatasetGenerator:
     def generate_single(self, index):
         # Assumes the camera position, frame number and all other params have been set
         # Set paths to save images
-        paths = [Path(f"frames/frame_{index:06}").with_suffix(self.scene.render.file_extension)]
+        paths = {"file_path": Path(f"frames/frame_{index:06}").with_suffix(self.scene.render.file_extension)}
         self.scene.render.filepath = str(self.root_path / "frames" / f"frame_{index:06}")
         if self.depth:
-            paths.append(Path(f"depths/depth_{index:06}.exr"))
+            paths["depth_file_path"] = Path(f"depths/depth_{index:06}.exr")
             self.depth_path.file_slots[0].path = str(self.root_path / "depths" / f"depth_{'#'*6}")
         if self.normals:
-            paths.append(Path(f"normals/normal_{index:06}").with_suffix(self.scene.render.file_extension))
+            paths["normals_file_path"] = Path(f"normals/normal_{index:06}").with_suffix(self.scene.render.file_extension)
             self.normals_path.file_slots[0].path = str(self.root_path / "normals" / f"normal_{'#'*6}")
-        exists_all = all(Path(self.root_path / p).exists() for p in paths)
+        exists_all = all(Path(self.root_path / p).exists() for p in paths.values())
 
         # Render frame(s), skip the render iff all files exist and `allow_skips`
         if self.render:
@@ -575,33 +575,34 @@ class BlenderDatasetGenerator:
 
         # Store transforms as we go
         transforms = {
-            "camera": {
-                k: getattr(self.camera.data, k)
-                for k in [
-                    "angle",
-                    "angle_x",
-                    "angle_y",
-                    "clip_start",
-                    "clip_end",
-                    "lens",
-                    "lens_unit",
-                    "sensor_height",
-                    "sensor_width",
-                    "sensor_fit",
-                    "shift_x",
-                    "shift_y",
-                    "type",
-                ]
-            },
-            "frames": [],
+            k: getattr(self.camera.data, k)
+            for k in [
+                "angle",
+                "angle_x",
+                "angle_y",
+                "clip_start",
+                "clip_end",
+                "lens",
+                "lens_unit",
+                "sensor_height",
+                "sensor_width",
+                "sensor_fit",
+                "shift_x",
+                "shift_y",
+                "type",
+            ]
         }
+        transforms["frames"] = []
+
         # Note: This might be a blender bug, but when height==width,
         #   angle_x != angle_y, so here we just use angle.
-        transforms["camera"]["fx"] = 1 / 2 * self.width / np.tan(1 / 2 * self.camera.data.angle)
-        transforms["camera"]["fy"] = 1 / 2 * self.height / np.tan(1 / 2 * self.camera.data.angle)
-        transforms["camera"]["cx"] = 1 / 2 * self.width + transforms["camera"]["shift_x"]
-        transforms["camera"]["cy"] = 1 / 2 * self.height + transforms["camera"]["shift_y"]
-        transforms["camera"]["intrinsics"] = self.get_camera_intrinsics().tolist()
+        transforms["w"] = self.width
+        transforms["h"] = self.height
+        transforms["fl_x"] = 1 / 2 * self.width / np.tan(1 / 2 * self.camera.data.angle)
+        transforms["fl_y"] = 1 / 2 * self.height / np.tan(1 / 2 * self.camera.data.angle)
+        transforms["cx"] = 1 / 2 * self.width + transforms["shift_x"]
+        transforms["cy"] = 1 / 2 * self.height + transforms["shift_y"]
+        transforms["intrinsics"] = self.get_camera_intrinsics().tolist()
 
         # Sanitize arguments if they come from CLI
         location_points = np.array(self.parse_json_str(location_points))
@@ -630,7 +631,7 @@ class BlenderDatasetGenerator:
             paths = self.generate_single(frame_number + shift if self.use_animation else i)
 
             frame_data = {
-                "file_paths": [str(p) for p in paths],
+                **{k: str(p) for k, p in paths.items()},
                 "transform_matrix": np.array(self.camera.matrix_world).tolist(),
             }
             transforms["frames"].append(frame_data)
@@ -661,7 +662,7 @@ def parser_config():
             description=usage,
         ),
         "arguments": [
-            dict(name="root-path", type=str, help="location at which to save dataset"),
+            dict(name="root_path", type=str, help="location at which to save dataset"),
             dict(name="--blend-file", type=str, default="", help="path to blender file to use"),
             # Defaults are set below in `_render_views` to allow for some validation checks
             dict(name="--num-frames", type=int, default=None, help="number of frame to capture, default: 100"),

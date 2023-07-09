@@ -55,34 +55,31 @@ def video(c, input_file, output_file, method="rife", n=2):
     }
 )
 def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json", n=2):
-    """Interpolate between frames and poses (up to 16x) using RIFE (ECCV22)"""
+    """Interpolate between frames and poses (up to 16x) using RIFE (ECCV22)
+
+    Note: Any keys other than 'file_path' and 'transform_matrix' (per frame) will not be interpolated.
+    """
     # TODO: Enable interpolation of only transforms or only frames
     from natsort import natsorted
 
     from spsim.interpolate import pose_interp, rife
+    from spsim.schema import NS_SCHEMA, _read_and_validate
 
     if method.lower() not in ("rife",):
         raise NotImplementedError("Only rife is currently supported as an interpolation method.")
     if n < 2 or not n & (n - 1) == 0:
         raise ValueError(f"Can only interpolate by a power of 2, greater or equal to 2, not {n}.")
+
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
+    transforms = _read_and_validate(path=input_dir / file_name, schema=NS_SCHEMA)
 
-    with (input_dir / file_name).open("r") as f:
-        transforms = json.load(f)
-
-    # Expect either blender or nerf style transforms, giving priority to blender-style.
-    img_paths = [f["file_paths"][0] if "file_paths" in f else f["file_path"] for f in transforms["frames"]]
-    frames = natsorted(transforms["frames"], key=lambda f: f["file_paths"][0] if "file_paths" in f else f["file_path"])
-    img_paths = natsorted(str(input_dir / p) for p in img_paths)
-    is_blender = all("file_paths" in f for f in frames)
-    is_nerf = all("file_path" in f for f in frames)
+    # Extract paths and ensure they are lexicographically sorted
+    frames = natsorted(transforms["frames"], key=lambda f: f["file_path"])
+    img_paths = [str(input_dir / f["file_path"]) for f in frames]
     exts = set(Path(p).suffix for p in img_paths)
 
     if len(exts) != 1:
         raise RuntimeError(f"All images must have same extension but found {exts}.")
-
-    if not is_blender and not is_nerf:
-        raise ValueError("Format not understood.")
 
     # Perform pose interpolation
     #   Ex for 4 frames, and n=4:
@@ -93,12 +90,6 @@ def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json",
     interp_indices = np.linspace(0, num_frames - 1, n * num_frames - (n - 1))
     pose_spline = pose_interp([f["transform_matrix"] for f in frames], ts=indices)
     new_poses = pose_spline(interp_indices)
-    keys = set().union(*[f.keys() for f in frames])
-
-    if len(keys) != 2:
-        raise RuntimeError(
-            f"Expected only two keys per frame ('transform_matrix' and 'file_paths'/'file_path')" f"but got {keys}."
-        )
 
     # Perform image interpolation
     rife(img_paths, output_dir / "frames", exp=np.log2(n).astype(int))
@@ -112,9 +103,7 @@ def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json",
         )
 
     new_frames = [
-        {"file_path": str(path), "transform_matrix": pose.tolist()}
-        if is_nerf
-        else {"file_paths": [str(path)], "transform_matrix": pose.tolist()}
+        {"file_path": str(path.relative_to(output_dir)), "transform_matrix": pose.tolist()}
         for path, pose in zip(new_paths, new_poses)
     ]
     transforms["frames"] = new_frames

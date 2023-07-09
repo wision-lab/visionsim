@@ -1,9 +1,4 @@
-import json
-
-import numpy as np
 from invoke import task
-
-from spsim.tasks.common import _validate_directories
 
 
 @task(
@@ -16,29 +11,41 @@ from spsim.tasks.common import _validate_directories
         "bitpack_dim": "Axis along which to pack bits (H=1, W=2), default: 2",
     }
 )
-def frames_to_npy(_, input_dir, output_dir, file_name="transforms.json", bitpack=False, bitpack_dim=None):
-    """Convert an image folder based dataset to a NPY dataset (experimental)"""
+def frames_to_npy(c, input_dir, output_dir, file_name="transforms.json", bitpack=False, bitpack_dim=None):
+    """Convert an image folder based dataset to a NPY dataset"""
+    # TODO: Add data integrity check
+    #   - If npy file is present, scan through it to check if any data is missing
+    #   - If so, fill in those frames only and skip the rest (add allow-skips arg?)
+    # TODO: Add check to stop the user from bitpacking non-binary data
+    # TODO: Support more types of frames, depth, normals, etc...
+    from pathlib import Path
+
+    import numpy as np
     from natsort import natsorted
     from numpy.lib.format import open_memmap
+    from torch.utils.data import DataLoader
     from tqdm.auto import tqdm
 
-    from spsim.io import read_img
+    from spsim.dataset import ImgDataset
+    from spsim.schema import NPY_SCHEMA, NS_SCHEMA, _read_and_validate, _validate_and_write
+    from spsim.tasks.common import _validate_directories
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
+    transforms = _read_and_validate(path=input_dir / file_name, schema=NS_SCHEMA)
 
-    with (input_dir / file_name).open("r") as f:
-        transforms = json.load(f)
+    # Extract paths and ensure they are lexicographically sorted
+    frames = natsorted(transforms["frames"], key=lambda f: f["file_path"])
+    img_paths = [str(input_dir / f["file_path"]) for f in frames]
+    exts = set(Path(p).suffix for p in img_paths)
 
-    # Expect either blender or nerf style transforms, giving priority to blender-style.
-    img_paths = [f["file_paths"][0] if "file_paths" in f else f["file_path"] for f in transforms["frames"]]
-    frames = natsorted(transforms["frames"], key=lambda f: f["file_paths"][0] if "file_paths" in f else f["file_path"])
-    img_paths = natsorted(str(input_dir / p) for p in img_paths)
+    if any(any(k != "file_path" and "path" in k for k in f.keys()) for f in frames):
+        raise NotImplementedError(
+            "Only color frames are supported for now. Keys such as 'depth_file_path' "
+            "or 'mask_path' are not supported."
+        )
 
-    # Ensure w/h are set in transforms.json
-    w = transforms["w"] if "w" in transforms else 2 * (transforms["camera"]["cx"] - transforms["camera"]["shift_x"])
-    h = transforms["h"] if "h" in transforms else 2 * (transforms["camera"]["cy"] - transforms["camera"]["shift_y"])
-    transforms["w"] = w
-    transforms["h"] = h
+    if len(exts) != 1:
+        raise RuntimeError(f"All images must have same extension but found {exts}.")
 
     # Bitpack if either is set, defaults to bitpacking width dimension
     if bitpack or bitpack_dim is not None:
@@ -50,28 +57,31 @@ def frames_to_npy(_, input_dir, output_dir, file_name="transforms.json", bitpack
 
         transforms["bitpack"] = bitpack
         transforms["bitpack_dim"] = bitpack_dim
-        shape = np.array([len(img_paths), int(h), int(w), 3])
+
+    h, w = transforms["h"], transforms["w"]
+    shape = np.array([len(img_paths), int(h), int(w), 3])
+
+    if bitpack:
         shape[bitpack_dim] /= 8
-    else:
-        shape = np.array([len(img_paths), int(h), int(w), 3])
 
     frames_array = open_memmap(
         output_dir / "frames.npy", mode="w+", dtype=np.uint8, shape=tuple(np.ceil(shape).astype(int))
     )
 
-    for i, path in enumerate(tqdm(img_paths)):
-        im, _ = read_img(path, apply_alpha=True)
+    dataset = ImgDataset(img_paths, apply_alpha=True, bitpack=bitpack, bitpack_dim=bitpack_dim)
+    loader = DataLoader(
+        dataset, batch_size=4, num_workers=c.get("max_threads"), prefetch_factor=1, collate_fn=lambda x: x
+    )
+    pbar = tqdm(total=len(dataset))
 
-        if bitpack:
-            im = im >= 0.5
-            im = np.packbits(im, axis=bitpack_dim - 1)
-        else:
-            im = (im * 255).astype(np.uint8)
-        frames_array[i] = im
+    for batch in loader:
+        for i, im in batch:
+            pbar.update(1)
+            frames_array[i] = im
 
     transforms["file_path"] = "frames.npy"
-    new_frames = [{k: v for k, v in f.items() if k not in ("file_path", "file_paths")} for f in frames]
+    new_frames = [{k: v for k, v in f.items() if "file_path" not in k} for f in frames]
     transforms["frames"] = new_frames
+    transforms["frames"] = transforms.pop("frames")  # place frames at bottom
 
-    with (output_dir / file_name).open("w") as f:
-        json.dump(transforms, f, indent=2)
+    _validate_and_write(schema=NPY_SCHEMA, path=output_dir / file_name, transforms=transforms)

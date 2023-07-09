@@ -10,3 +10,4 @@ invoke
 tqdm
 natsort
 rich
+jsonschema
