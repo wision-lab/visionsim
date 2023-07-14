@@ -3,14 +3,14 @@ import json
 
 from jsonschema import ValidationError, validate
 
-# Schema for nerfstudio-style transforms.json file.
+# Schema for nerfstudio-style transforms.json file, which uses a folder of imgs.
 # Note: The command `spsim blender.render` will output a compatible transform file,
 #   but with added information such as:
 #   "angle": {"type": "number"},  #  FoV in x axis in radians, same as `camera_angle_x` or `angle_x`.
 #   "shift_x": {"type": "number"},  #  Offset from center, in x axis, of sensor where optical axis lies
 #   "shift_y": {"type": "number"},  #  Offset from center, in y axis, of sensor where optical axis lies
 #   "type": {"type": "string", "pattern": "PERSP"},  # Type of camera: PERSP, ORTHO or PANO. Only PERSP is supported.
-NS_FRAME_SCHEMA = {
+IMG_FRAME_SCHEMA = {
     "type": "object",
     "properties": {
         "transform_matrix": {  # Ensure the transform matrix is a 4x4
@@ -30,7 +30,7 @@ NS_FRAME_SCHEMA = {
     "required": ["transform_matrix", "file_path"],
 }
 
-NS_SCHEMA = {
+IMG_SCHEMA = {
     "type": "object",
     "properties": {
         "fl_x": {"type": "number"},  # Focal length in X
@@ -39,9 +39,9 @@ NS_SCHEMA = {
         "cy": {"type": "number"},  # Center of optical axis in pixel coordinates in Y
         "w": {"type": "number"},  # Sensor width in pixels
         "h": {"type": "number"},  # Sensor height in pixels
-        "frames": {"type": "array", "items": NS_FRAME_SCHEMA},
+        "frames": {"type": "array", "items": IMG_FRAME_SCHEMA},
     },
-    "required": ["fl_x", "fl_y", "cx", "cy", "frames"],
+    "required": ["fl_x", "fl_y", "cx", "cy", "h", "w", "frames"],
 }
 
 
@@ -49,12 +49,12 @@ NS_SCHEMA = {
 # The main difference is that "*file_path", which was per-frame before, has been
 # extracted and is now the top level path to the npy file containing all frames.
 # Indexing into this npy file is done based on the frame's index in the `frames` list.
-NPY_FRAME_SCHEMA = copy.deepcopy(NS_FRAME_SCHEMA)
+NPY_FRAME_SCHEMA = copy.deepcopy(IMG_FRAME_SCHEMA)
 NPY_FRAME_SCHEMA["properties"]["file_path"] = False  # Cannot be present!
 NPY_FRAME_SCHEMA["properties"]["depth_file_path"] = False
 NPY_FRAME_SCHEMA["required"] = ["transform_matrix"]
 
-NPY_SCHEMA = copy.deepcopy(NS_SCHEMA)
+NPY_SCHEMA = copy.deepcopy(IMG_SCHEMA)
 NPY_SCHEMA["properties"]["frames"] = {"type": "array", "items": NPY_FRAME_SCHEMA}
 NPY_SCHEMA["properties"]["file_path"] = {"type": "string"}  # Path to npy file containing color images
 NPY_SCHEMA["properties"]["depth_file_path"] = {"type": "string"}  # Path to npy file containing depth images

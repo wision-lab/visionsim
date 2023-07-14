@@ -25,11 +25,10 @@ $ spsim --list
 Subcommands:
 
   blender.render              Render views of a .blend file while moving camera along a spline or animated trajectory
-  blender.to-nerf-format      Convert transform.json from blender format to nerf-style format
   colmap.generate-masks       Extract alpha channel from frames and create PNG masks that COLMAP understands
   colmap.run                  Run colmap on the provided images to get a rough pose/scene estimate
   colmap.to-nerf-format       Convert transform.json from colmap format to nerf-style format
-  dataset.frames-to-npy       Convert an image folder based dataset to a NPY dataset (experimental)
+  dataset.imgs-to-npy         Convert an image folder based dataset to a NPY dataset
   emulate.blur                Average together frames to create motion blur, similar to `emulate_rgb` but with no camera modeling
   emulate.rgb                 Simulate real camera, adding read/poisson noise and tonemapping
   emulate.spad                Perform bernoulli sampling on linearized RGB frames to yield binary frames
@@ -41,7 +40,6 @@ Subcommands:
   interpolate.video           Interpolate video by extracting all frames, performing frame-wise interpolation and re-assembling video
   transforms.colorize-depth   Convert .exr depth maps into color-coded images for visualization
   transforms.tonemap-exrs     Convert .exr linear intensity frames into tone-mapped sRGB images
-
 ```
 
 ## Autocompletion

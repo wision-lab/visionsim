@@ -1,3 +1,5 @@
+import inspect
+
 import pytest
 from invoke.context import Context
 
@@ -21,10 +23,21 @@ def test_task_has_doc(task):
 
 
 @pytest.mark.parametrize("task", ns.task_names.keys())
-def test_task_help_is_full(task):
-    # Copy help dict as `get_arguments` consumes it.
+def test_task_help_has_defaults(task):
     help_dict = dict((ns[task].help or {}).items())
-    func_args = set(arg.name for arg in ns[task].get_arguments())
+    params = {name: (p.kind, p.default) for name, p in ns[task].argspec(ns[task].body).parameters.items()}
+
+    for name, (kind, default) in params.items():
+        # We should be able to check if kind == KEYWORD, but for some
+        # reason they all show up as POSITIONAL_OR_KEYWORD...
+        if default is not inspect.Parameter.empty:
+            assert "default" in help_dict[name].lower()
+
+
+@pytest.mark.parametrize("task", ns.task_names.keys())
+def test_task_help_is_full(task):
+    help_dict = dict((ns[task].help or {}).items())
+    func_args = set(ns[task].argspec(ns[task].body).parameters.keys())
 
     assert all(help_dict.values())
     assert set(help_dict.keys()) == func_args

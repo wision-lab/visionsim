@@ -11,7 +11,7 @@ from spsim.tasks.common import _validate_directories
     help={
         "input_file": "path to video file from which to extract frames",
         "output_file": "path in which to save interpolated video",
-        "method": "interpolation method to use, only RIFE (ECCV22) is supported for now",
+        "method": "interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife'",
         "n": "interpolation factor, must be a multiple of 2, default: 2",
     }
 )
@@ -49,7 +49,7 @@ def video(c, input_file, output_file, method="rife", n=2):
     help={
         "input_dir": "directory in which to look for frames",
         "output_dir": "directory in which to save interpolated frames",
-        "method": "interpolation method to use, only RIFE (ECCV22) is supported for now",
+        "method": "interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife'",
         "file_name": "name of file containing transforms, default: 'transforms.json'",
         "n": "interpolation factor, must be a multiple of 2, default: 2",
     }
@@ -63,7 +63,7 @@ def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json",
     from natsort import natsorted
 
     from spsim.interpolate import pose_interp, rife
-    from spsim.schema import NS_SCHEMA, _read_and_validate
+    from spsim.schema import IMG_SCHEMA, _read_and_validate
 
     if method.lower() not in ("rife",):
         raise NotImplementedError("Only rife is currently supported as an interpolation method.")
@@ -71,7 +71,7 @@ def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json",
         raise ValueError(f"Can only interpolate by a power of 2, greater or equal to 2, not {n}.")
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
-    transforms = _read_and_validate(path=input_dir / file_name, schema=NS_SCHEMA)
+    transforms = _read_and_validate(path=input_dir / file_name, schema=IMG_SCHEMA)
 
     # Extract paths and ensure they are lexicographically sorted
     frames = natsorted(transforms["frames"], key=lambda f: f["file_path"])
