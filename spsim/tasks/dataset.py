@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from invoke import task
 
 
@@ -44,6 +46,9 @@ def imgs_to_npy(
     dataset = ImgDataset(input_dir)
     transforms_new = dataset.transforms or {}
 
+    if ".exr" in set(Path(p).suffix for p in dataset.paths):
+        # Note: This is due to the alpha blending below, we need alpha in [0, 1] to blend.
+        raise NotImplementedError("Task imgs-to-npy does not yet support EXRs")
     if dataset.transforms:
         if any(any(k != "file_path" and "path" in k for k in f.keys()) for f in dataset.transforms["frames"]):
             raise NotImplementedError(
@@ -58,7 +63,7 @@ def imgs_to_npy(
         # Peak into dataset to get H/W
         _, im, _ = dataset[0]
         h, w, _ = im.shape
-    shape = np.array([len(dataset), int(h), int(w), 3])
+    shape = np.array([len(dataset), int(h), int(w), 3+int(alpha_color is None)])
 
     # Bitpack if either is set, defaults to bitpacking width dimension
     if bitpack or bitpack_dim is not None:
@@ -79,11 +84,57 @@ def imgs_to_npy(
         output_dir, shape=np.ceil(shape).astype(int), transforms=transforms_new, force=force
     ) as writer:
         for i, (idxs, imgs, poses) in enumerate(loader):
-            if alpha_color is not None and imgs.ndim == 4 and imgs.shape[-1] in (2, 4):
-                alpha = imgs[..., -1][..., None]
+            if alpha_color is not None and imgs.ndim == 4 and imgs.shape[-1] == 4:
+                alpha = imgs[..., -1][..., None] / 255.0
                 imgs = imgs[..., :-1] * alpha + alpha_color * (1 - alpha)
             if bitpack:
                 imgs = imgs >= 128
                 imgs = np.packbits(imgs, axis=bitpack_dim)
+            writer[idxs] = (imgs, poses)
+            pbar.update(len(idxs))
+
+
+@task(
+    help={
+        "input_dir": "directory in which to look for frames",
+        "output_dir": "directory in which to save npy file",
+        "batch_size": "number of frames to write at once, default: 4",
+        "pattern": "filenames of frames will match this, default: 'frame_{:06}.png'",
+        "force": "if true, overwrite output file(s) if present, default: False",
+    }
+)
+def npy_to_imgs(
+    c,
+    input_dir,
+    output_dir,
+    batch_size=4,
+    pattern="frame_{:06}.png",
+    force=False,
+):
+    """Convert an NPY based dataset to an image-folder dataset"""
+    import copy
+
+    from torch.utils.data import DataLoader
+    from tqdm.auto import tqdm
+
+    from spsim.dataset import NpyDataset, ImgDatasetWriter, default_collate
+
+    from .common import _validate_directories
+
+    input_dir, output_dir = _validate_directories(input_dir, output_dir)
+    dataset = NpyDataset(input_dir)
+
+    transforms_new = copy.deepcopy(dataset.transforms or {})
+    transforms_new.pop("file_path", None)
+    transforms_new.pop("bitpack", None)
+    transforms_new.pop("bitpack_dim", None)
+
+    loader = DataLoader(dataset, batch_size=batch_size, num_workers=c.get("max_threads"), collate_fn=default_collate)
+    pbar = tqdm(total=len(dataset))
+
+    with ImgDatasetWriter(
+        output_dir, transforms=transforms_new, force=force, pattern=pattern
+    ) as writer:
+        for i, (idxs, imgs, poses) in enumerate(loader):
             writer[idxs] = (imgs, poses)
             pbar.update(len(idxs))

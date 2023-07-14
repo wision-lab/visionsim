@@ -115,56 +115,6 @@ def default_collate(batch):
     return img_idxs, imgs, poses
 
 
-class NpyDatasetWriter:
-    """NpyDataset writer implemented as a context manager
-
-    Usage:
-        src_dataset = ImgDataset(input_dir)
-        loader = DataLoader(src_dataset, ...)
-
-        with NpyDatasetWriter(root, transforms=...) as writer:
-            for idxs, data, poses in loader:
-                # Apply any transforms here
-                writer[idxs] = (data, poses)
-    """
-
-    def __init__(self, root, shape, transforms=None, force=False, strict=True):
-        if any((Path(root) / name).is_file() for name in ("frames.npy", "transforms.json")) and not force:
-            raise FileExistsError(f"Either 'frames.npy' or 'transforms.json' file already exists in {root}")
-
-        self.root = Path(root)
-        Path(root).mkdir(exist_ok=True)
-        self.data = open_memmap(root / "frames.npy", mode="w+", dtype=np.uint8, shape=tuple(shape))
-        self.poses = np.zeros((len(self.data), 4, 4))
-        self.transforms = copy.deepcopy(transforms or {})
-        self.transforms.pop("frames")
-        self.strict = strict
-
-        self._setidxs = np.zeros(len(self.data))
-
-    def __enter__(self):
-        return self
-
-    def __setitem__(self, idx, value):
-        data, poses = value
-        self.data[idx] = data
-        self.poses[idx] = poses
-        self._setidxs[idx] = 1
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        # TODO: Handle any errors...
-        self.data.flush()
-
-        if self.strict and not np.all(self._setidxs):
-            raise RuntimeError("Not all idxs were set, dataset is incomplete!")
-
-        if self.transforms:
-            self.transforms["file_path"] = "frames.npy"
-            self.transforms["frames"] = [{"transform_matrix": mat.tolist()} for mat in self.poses]
-
-            _validate_and_write(schema=NPY_SCHEMA, path=self.root / "transforms.json", transforms=self.transforms)
-
-
 class ImgDataset(Dataset):
     """Dataset to iterate over frames (stored as image files) and optionally poses (as .json)
 
@@ -207,6 +157,58 @@ class ImgDataset(Dataset):
             return img_idxs, imgs, np.array(poses)
 
         return [], [], np.array([]).reshape((0, 4, 4))
+
+
+class ImgDatasetWriter:
+    """ImgDataset writer implemented as a context manager
+
+    Args:
+        root: directory in which to save dataset (both frames/*.png and optionally .json)
+        transforms: transforms of source dataset, "frames" are discarded and camera info is kept
+        pattern: frame filename pattern, will be formatted with frame index
+        force: if true, overwrite output file(s) if present
+    """
+
+    def __init__(self, root, transforms=None, pattern="frame_{:06}.png", force=False):
+        if ((Path(root) / "transforms.json").is_file() or (Path(root) / "frames").is_dir()) and not force:
+            raise FileExistsError(f"Either 'frames/' directory or 'transforms.json' file already exists in {root}")
+
+        self.root = Path(root)
+        Path(root / "frames").mkdir(exist_ok=True, parents=True)
+        self.transforms = copy.deepcopy(transforms or {})
+        self.transforms.pop("frames", None)
+        self.pattern = pattern
+        self.frames = {}
+
+    def __enter__(self):
+        return self
+
+    def __setitem__(self, idx: Union[int, List[int]], value: Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]):
+        if isinstance(idx, (int, np.integer)):
+            path = self.root / "frames" / self.pattern.format(idx)
+            self.frames[idx] = {"file_path": str(path.relative_to(self.root))}
+
+            if isinstance(value, tuple):
+                data, pose = value
+                iio.imwrite(path, data)
+                self.frames[idx]["transform_matrix"] = np.array(pose).tolist()
+            elif self.transforms:
+                raise RuntimeError("Expected image and pose tuple.")
+            else:
+                iio.imwrite(path, value)
+        else:
+            if isinstance(value, tuple):
+                for i, data, pose in zip(idx, *value):
+                    self[i] = (data, pose)
+            else:
+                for i, data in zip(idx, value):
+                    self[i] = data
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # TODO: Handle any errors...
+        if self.transforms:
+            self.transforms["frames"] = list(self.frames.values())
+            _validate_and_write(schema=IMG_SCHEMA, path=self.root / "transforms.json", transforms=self.transforms)
 
 
 class NpyDataset(Dataset):
@@ -301,3 +303,65 @@ class NpyDataset(Dataset):
         # Idx of img might be a slice...
         img_idx = self._idxs[0][img_idx]
         return img_idx, data, self.poses[img_idx]
+
+
+class NpyDatasetWriter:
+    """NpyDataset writer implemented as a context manager
+
+    Usage:
+        src_dataset = ImgDataset(input_dir)
+        loader = DataLoader(src_dataset, ...)
+
+        with NpyDatasetWriter(root, shape, transforms=...) as writer:
+            for idxs, data, poses in loader:
+                # Apply any transforms here
+                writer[idxs] = (data, poses)
+
+    Args:
+        root: directory in which to save dataset (both .npy and optionally .json)
+        shape: shape of resulting array, must be known ahead of time for npy file creation
+        transforms: transforms of source dataset, "frames" are discarded and camera info is kept
+        force: if true, overwrite output file(s) if present
+        strict: if true, throw error if the whole dataset has not been filled
+    """
+
+    def __init__(self, root, shape, transforms=None, force=False, strict=True):
+        if any((Path(root) / name).is_file() for name in ("frames.npy", "transforms.json")) and not force:
+            raise FileExistsError(f"Either 'frames.npy' or 'transforms.json' file already exists in {root}")
+
+        self.root = Path(root)
+        Path(root).mkdir(exist_ok=True)
+        self.data = open_memmap(root / "frames.npy", mode="w+", dtype=np.uint8, shape=tuple(shape))
+        self.poses = np.zeros((len(self.data), 4, 4))
+        self.transforms = copy.deepcopy(transforms or {})
+        self.transforms.pop("frames", None)
+        self.strict = strict
+
+        self._setidxs = np.zeros(len(self.data))
+
+    def __enter__(self):
+        return self
+
+    def __setitem__(self, idx: Union[int, List[int]], value: Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]):
+        if isinstance(value, tuple):
+            data, poses = value
+            self.data[idx] = data
+            self.poses[idx] = poses
+        elif self.transforms:
+            raise RuntimeError("Expected image and pose tuple.")
+        else:
+            self.data[idx] = value
+        self._setidxs[idx] = 1
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # TODO: Handle any errors...
+        self.data.flush()
+
+        if self.transforms:
+            self.transforms["file_path"] = "frames.npy"
+            self.transforms["frames"] = [{"transform_matrix": mat.tolist()} for mat in self.poses]
+
+            _validate_and_write(schema=NPY_SCHEMA, path=self.root / "transforms.json", transforms=self.transforms)
+
+        if self.strict and not np.all(self._setidxs):
+            raise RuntimeError("Not all idxs were set, dataset is incomplete!")
