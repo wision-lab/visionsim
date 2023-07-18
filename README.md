@@ -29,7 +29,7 @@ Subcommands:
   colmap.run                  Run colmap on the provided images to get a rough pose/scene estimate
   colmap.to-nerf-format       Convert transform.json from colmap format to nerf-style format
   dataset.imgs-to-npy         Convert an image folder based dataset to a NPY dataset
-  emulate.blur                Average together frames to create motion blur, similar to `emulate_rgb` but with no camera modeling
+  dataset.npy-to-imgs         Convert an NPY based dataset to an image-folder dataset
   emulate.rgb                 Simulate real camera, adding read/poisson noise and tonemapping
   emulate.spad                Perform bernoulli sampling on linearized RGB frames to yield binary frames
   ffmpeg.animate              Combine generated frames into an MP4 using ffmpeg wizardry
