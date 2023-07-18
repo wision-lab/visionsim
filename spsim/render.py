@@ -598,6 +598,7 @@ class BlenderDatasetGenerator:
         #   angle_x != angle_y, so here we just use angle.
         transforms["w"] = self.width
         transforms["h"] = self.height
+        transforms["c"] = 4  # RGBA
         transforms["fl_x"] = 1 / 2 * self.width / np.tan(1 / 2 * self.camera.data.angle)
         transforms["fl_y"] = 1 / 2 * self.height / np.tan(1 / 2 * self.camera.data.angle)
         transforms["cx"] = 1 / 2 * self.width + transforms["shift_x"]

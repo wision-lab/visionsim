@@ -5,6 +5,7 @@ from typing import Collection, List, Tuple, Union
 import imageio
 import imageio.v3 as iio
 import numpy as np
+from jsonschema.exceptions import ValidationError
 from natsort import natsorted
 from numpy.lib.format import open_memmap
 from torch.utils.data import Dataset
@@ -115,6 +116,24 @@ def default_collate(batch):
     return img_idxs, imgs, poses
 
 
+def dataset_dispatch(root, *args, mode=None, **kwargs):
+    """Given a dataset root, resolve it and instantiate the correct dataset type"""
+    if mode is not None:
+        if mode.lower() == "img":
+            return ImgDataset(root, *args, **kwargs)
+        elif mode.lower() == "npy":
+            return NpyDataset(root, *args, **kwargs)
+        else:
+            raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
+
+    for klass in (NpyDataset, ImgDataset):
+        try:
+            return klass(root, *args, **kwargs)
+        except (FileNotFoundError, ValueError, RuntimeError, ValidationError):
+            pass
+    raise RuntimeError(f"Could not determine type of dataset at {root}")
+
+
 class ImgDataset(Dataset):
     """Dataset to iterate over frames (stored as image files) and optionally poses (as .json)
 
@@ -122,11 +141,24 @@ class ImgDataset(Dataset):
         root: Path of transforms.json file or parent directory, or image folder (if no pose info)
     """
 
-    def __init__(self, root):
+    def __init__(self, root, *args, **kwargs):
         self.paths, self.poses, self.transforms = _resolve_root(root, mode="img")
         self._idxs = np.arange(len(self))
         self._idxs.setflags(write=False)
+        self._full_shape = None
         super().__init__()
+
+    @property
+    def full_shape(self):
+        if self._full_shape is None:
+            if self.transforms:
+                h, w, c = self.transforms["h"], self.transforms["w"], self.transforms["c"]
+            else:
+                # Peak into dataset to get H/W
+                _, im, _ = self[0]
+                h, w, c = im.shape
+            self._full_shape = (len(self), h, w, c)
+        return self._full_shape
 
     def __len__(self):
         return len(self.paths)
@@ -212,18 +244,23 @@ class ImgDatasetWriter:
 
 
 class NpyDataset(Dataset):
-    def __init__(self, root):
+    def __init__(self, root, *args, **kwargs):
         (self.path,), self.poses, self.transforms = _resolve_root(root, mode="npy")
         self.data = np.load(str(self.path), mmap_mode="r")
 
         if self.transforms and self.transforms.get("bitpack"):
             self.bitpack_dim = self.transforms.get("bitpack_dim")
-            self.full_shape = (len(self.transforms["frames"]), self.transforms.get("h"), self.transforms.get("w"), 3)
+            self.full_shape = (
+                len(self.transforms["frames"]),
+                self.transforms.get("h"),
+                self.transforms.get("w"),
+                self.transforms.get("c"),
+            )
         else:
             self.bitpack_dim = None
             self.full_shape = self.data.shape
 
-        self._idxs = [np.arange(size) for size in self.full_shape]
+        self._idxs = [np.arange(size).astype(int) for size in self.full_shape]
 
         # Ensure these don't get changed!
         for array in self._idxs:

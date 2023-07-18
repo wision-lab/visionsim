@@ -33,6 +33,7 @@ def imgs_to_npy(
     # TODO: Add check to stop the user from bitpacking non-binary data
     # TODO: Support more types of frames, depth, normals, etc...
     import ast
+    import copy
 
     import numpy as np
     from torch.utils.data import DataLoader
@@ -44,11 +45,11 @@ def imgs_to_npy(
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     dataset = ImgDataset(input_dir)
-    transforms_new = dataset.transforms or {}
+    transforms_new = copy.deepcopy(dataset.transforms or {})
 
     if ".exr" in set(Path(p).suffix for p in dataset.paths):
-        # Note: This is due to the alpha blending below, we need alpha in [0, 1] to blend.
-        raise NotImplementedError("Task imgs-to-npy does not yet support EXRs")
+        # TODO: This is due to the alpha blending below, we need alpha in [0, 1] to blend.
+        raise NotImplementedError("Task does not yet support EXRs")
     if dataset.transforms:
         if any(any(k != "file_path" and "path" in k for k in f.keys()) for f in dataset.transforms["frames"]):
             raise NotImplementedError(
@@ -56,14 +57,7 @@ def imgs_to_npy(
                 "or 'mask_path' are not supported."
             )
     alpha_color = ast.literal_eval(alpha_color) if alpha_color else None
-
-    if dataset.transforms:
-        h, w = dataset.transforms["h"], dataset.transforms["w"]
-    else:
-        # Peak into dataset to get H/W
-        _, im, _ = dataset[0]
-        h, w, _ = im.shape
-    shape = np.array([len(dataset), int(h), int(w), 3+int(alpha_color is None)])
+    shape = np.array(dataset.full_shape)
 
     # Bitpack if either is set, defaults to bitpacking width dimension
     if bitpack or bitpack_dim is not None:
@@ -117,7 +111,7 @@ def npy_to_imgs(
     from torch.utils.data import DataLoader
     from tqdm.auto import tqdm
 
-    from spsim.dataset import NpyDataset, ImgDatasetWriter, default_collate
+    from spsim.dataset import ImgDatasetWriter, NpyDataset, default_collate
 
     from .common import _validate_directories
 
@@ -132,9 +126,7 @@ def npy_to_imgs(
     loader = DataLoader(dataset, batch_size=batch_size, num_workers=c.get("max_threads"), collate_fn=default_collate)
     pbar = tqdm(total=len(dataset))
 
-    with ImgDatasetWriter(
-        output_dir, transforms=transforms_new, force=force, pattern=pattern
-    ) as writer:
+    with ImgDatasetWriter(output_dir, transforms=transforms_new, force=force, pattern=pattern) as writer:
         for i, (idxs, imgs, poses) in enumerate(loader):
             writer[idxs] = (imgs, poses)
             pbar.update(len(idxs))

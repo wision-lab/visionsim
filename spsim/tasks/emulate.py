@@ -1,128 +1,105 @@
 import functools
-from pathlib import Path
 
 import numpy as np
 from invoke import task
-from tqdm.auto import tqdm
-
-from spsim.tasks.common import _validate_directories
 
 
-def _emulate_blur_single(item, grayscale=False, chunk_size=10, output_dir=None, ext=None):
-    from spsim.io import read_img, write_img
+def _spad_collate(batch, *, mode, rng, factor, alpha_color):
+    """Use default collate function on batch and then simulate SPAD, enabling compute to be done in threads"""
+    from spsim.color import apply_alpha, srgb_to_linearrgb
+    from spsim.dataset import default_collate
 
-    i, chunk_files = item
+    idxs, imgs, poses = default_collate(batch)
 
-    stream = (read_img(p, apply_alpha=True, grayscale=grayscale) for p in chunk_files)
-    avg_img, avg_alpha = next(stream)
+    # Assume image has been tonemapped and undo mapping
+    imgs = srgb_to_linearrgb((imgs / 255.0).astype(float))
+    imgs, alpha = apply_alpha(imgs, alpha_color=alpha_color, ret_alpha=True)
 
-    for img, alpha in stream:
-        avg_img += img
-        avg_alpha += alpha
-
-    avg_img = (avg_img / chunk_size * 255).astype(np.uint8)
-    avg_alpha = (avg_alpha / chunk_size * 255).astype(np.uint8)
-    path = output_dir / f"frame_{i:06}{ext}"
-    return write_img(str(path), np.concatenate([avg_img, avg_alpha], axis=-1))
-
-
-def _emulate_spad_single(item, grayscale=False, factor=1.0, output_dir=None, ext=None):
-    from spsim.color import srgb_to_linearrgb  # Lazy load
-    from spsim.io import read_img, write_img  # Lazy load
-    from spsim.utils import img_to_tensor, tensor_to_img  # Lazy Load
-
-    in_file, seed = item
-    rng = np.random.default_rng(int(seed))
-    img, alpha = read_img(in_file, apply_alpha=True, grayscale=grayscale)
-
-    # If the image filetype is anything but exr, assume it's been tonemapped and undo mapping
-    if not in_file.endswith(".exr"):
-        img = tensor_to_img(srgb_to_linearrgb(img_to_tensor(img)))
-
-    # If image is a PNG, the alpha channel might cause issues. We separate it and use it to modulate
-    # the bernoulli sampling such that areas with zero alpha have no photon detections
-    binary_img = rng.binomial(1, alpha - np.exp(-img[:, :, :3] * factor) * alpha)
-    binary_img = np.concatenate([binary_img, alpha], axis=-1) * 255
+    # Perform bernoulli sampling (equivalent to binomial w/ n=1)
+    binary_img = rng.binomial(1, 1.0 - np.exp(-imgs * factor)) * 255
     binary_img = binary_img.astype(np.uint8)
 
-    path = output_dir / Path(in_file).stem
-    write_img(str(path.with_suffix(ext)), binary_img)
-
-
-def _emulate_rgb_single(
-    item, grayscale=False, factor=1.0, chunk_size=10, readout_std=20, fwc=500, output_dir=None, ext=None
-):
-    from spsim.color import emulate_rgb_from_merged, srgb_to_linearrgb  # Lazy load
-    from spsim.io import read_img, write_img  # Lazy Load
-    from spsim.utils import img_to_tensor, tensor_to_img  # Lazy Load
-
-    i, chunk_files = item
-    path = output_dir / f"frame_{i:06}{ext}"
-
-    if path.is_file():
-        return
-
-    stream = (read_img(p, apply_alpha=True, grayscale=grayscale) for p in chunk_files)
-    avg_img, avg_alpha = None, None
-
-    for p, (img, alpha) in zip(chunk_files, stream):
-        # If the image filetype is anything but exr, assume it's been tonemapped and undo mapping
-        if not p.endswith(".exr"):
-            img = tensor_to_img(srgb_to_linearrgb(img_to_tensor(img)))
-
-        if avg_img is not None:
-            avg_img += img * factor
-        else:
-            avg_img = img * factor
-
-        if avg_alpha is not None:
-            avg_alpha += alpha
-        else:
-            avg_alpha = alpha
-
-    rgb_img = emulate_rgb_from_merged(
-        img_to_tensor(avg_img / chunk_size), burst_size=chunk_size, readout_std=readout_std, fwc=fwc, factor=factor
-    )
-
-    return write_img(str(path), np.concatenate([tensor_to_img(rgb_img * 255), avg_alpha], axis=-1).astype(np.uint8))
+    if mode.lower() == "npy":
+        binary_img = binary_img >= 128
+        binary_img = np.packbits(binary_img, axis=2)
+    return idxs, binary_img, poses
 
 
 @task(
     help={
         "input_dir": "directory in which to look for frames",
         "output_dir": "directory in which to save binary frames",
-        "grayscale": "if true, first convert to grayscale then sample. default: False",
-        "pattern": "filenames of frames should match this, default: 'frame_*.png'",
-        "ext": "which format to save colorized frames as, default: '.png'",
+        "alpha_color": "if set, blend with this background color and do not store "
+        "alpha channel. default: '(1.0, 1.0, 1.0)'",
+        "pattern": "filenames of frames should match this, default: 'frame_{:06}.png'",
         "factor": "multiplicative factor controlling dynamic range of output, default: 1.0",
         "seed": "random seed to use while sampling, ensures reproducibility. default: 2147483647",
+        "mode": "how to save binary frames, either as 'img' or as 'npy', default: 'npy'",
+        "batch_size": "number of frames to write at once, default: 4",
+        "force": "if true, overwrite output file(s) if present, default: False",
     }
 )
 def spad(
     c,
     input_dir,
     output_dir,
-    grayscale=False,
-    pattern="frame_*.png",
-    ext=".png",
+    alpha_color="(1.0, 1.0, 1.0)",
+    pattern="frame_{:06}.png",
     factor=1.0,
     seed=2147483647,
+    mode="npy",
+    batch_size=4,
+    force=False,
 ):
     """Perform bernoulli sampling on linearized RGB frames to yield binary frames"""
-    import multiprocessing
+    import ast
+    import copy
 
-    input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
+    from torch.utils.data import DataLoader
+    from tqdm.auto import tqdm
 
-    np.random.seed(seed)
-    seeds = np.random.randint(low=0, high=10e6, size=len(in_files))
+    from spsim.dataset import ImgDatasetWriter, NpyDatasetWriter, dataset_dispatch
 
-    emulate_single = functools.partial(
-        _emulate_spad_single, grayscale=grayscale, factor=factor, output_dir=output_dir, ext=ext
+    from .common import _validate_directories
+
+    input_dir, output_dir = _validate_directories(input_dir, output_dir)
+    dataset = dataset_dispatch(input_dir)
+    alpha_color = ast.literal_eval(alpha_color) if alpha_color else None
+    transforms_new = copy.deepcopy(dataset.transforms or {})
+    shape = np.array(dataset.full_shape)
+    shape[-1] = transforms_new["c"] = transforms_new.pop("c", 4) - 1
+
+    if mode.lower() == "img":
+        ...
+    elif mode.lower() == "npy":
+        # Default to bitpacking width
+        transforms_new["bitpack"] = True
+        transforms_new["bitpack_dim"] = 2
+        shape[2] /= 8
+    else:
+        raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
+
+    if any(str(p).endswith(".exr") for p in getattr(dataset, "paths", [])):
+        # TODO: This is due to the alpha blending below, we need alpha in [0, 1] to blend.
+        raise NotImplementedError("Task does not yet support EXRs")
+
+    rng = np.random.default_rng(int(seed))
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        num_workers=c.get("max_threads"),
+        collate_fn=functools.partial(_spad_collate, mode=mode, rng=rng, factor=factor, alpha_color=alpha_color),
     )
+    pbar = tqdm(total=len(dataset))
 
-    with multiprocessing.Pool(processes=c.get("max_threads")) as p:
-        tasks = p.imap(emulate_single, zip(in_files, seeds))
-        list(tqdm(tasks, total=len(in_files)))
+    with ImgDatasetWriter(
+        output_dir, transforms=transforms_new, force=force, pattern=pattern
+    ) if mode.lower() == "img" else NpyDatasetWriter(
+        output_dir, np.ceil(shape).astype(int), transforms=transforms_new, force=force
+    ) as writer:
+        for i, (idxs, imgs, poses) in enumerate(loader):
+            writer[idxs] = (imgs, poses)
+            pbar.update(len(idxs))
 
 
 @task(
@@ -130,39 +107,14 @@ def spad(
         "input_dir": "directory in which to look for frames",
         "output_dir": "directory in which to save binary frames",
         "chunk_size": "number of consecutive frames to average together, default: 10",
-        "grayscale": "if true, first convert to grayscale then sample. default: False",
-        "pattern": "filenames of frames should match this, default: 'frame_*.png'",
-        "ext": "which format to save colorized frames as, default: '.png'",
-    }
-)
-def blur(c, input_dir, output_dir, chunk_size=10, grayscale=False, pattern="frame_*.png", ext=".png"):
-    """Average together frames to create motion blur, similar to `emulate_rgb` but with no camera modeling"""
-    import multiprocessing
-
-    import more_itertools as mitertools
-
-    input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
-    emulate_single = functools.partial(
-        _emulate_blur_single, grayscale=grayscale, chunk_size=chunk_size, output_dir=output_dir, ext=ext
-    )
-
-    # TODO: This would probably be faster if we used a DataLoader to load and average image batches...
-    with multiprocessing.Pool(processes=c.get("max_threads")) as p:
-        tasks = p.imap(emulate_single, enumerate(mitertools.chunked(in_files, chunk_size)))
-        list(tqdm(tasks, total=np.ceil(len(in_files) / chunk_size).astype(int)))
-
-
-@task(
-    help={
-        "input_dir": "directory in which to look for frames",
-        "output_dir": "directory in which to save binary frames",
-        "chunk_size": "number of consecutive frames to average together, default: 10",
-        "factor": "multiple image's linear intensity by this weight, default: 1.0",
+        "factor": "multiply image's linear intensity by this weight, default: 1.0",
         "readout_std": "standard deviation of gaussian read noise, default: 20",
         "fwc": "full well capacity of sensor in arbitrary units (relative to factor & chunk_size), default: 500",
-        "grayscale": "if true, first convert to grayscale then sample. default: False",
-        "pattern": "filenames of frames should match this, default: 'frame_*.png'",
-        "ext": "which format to save colorized frames as, default: '.png'",
+        "alpha_color": "if set, blend with this background color and do not store "
+                       "alpha channel. default: '(1.0, 1.0, 1.0)'",
+        "pattern": "filenames of frames should match this, default: 'frame_{:06}.png'",
+        "mode": "how to save binary frames, either as 'img' or as 'npy', default: 'npy'",
+        "force": "if true, overwrite output file(s) if present, default: False",
     }
 )
 def rgb(
@@ -173,30 +125,65 @@ def rgb(
     factor=1.0,
     readout_std=20,
     fwc=500,
-    grayscale=False,
-    pattern="frame_*.png",
-    ext=".png",
+    alpha_color="(1.0, 1.0, 1.0)",
+    pattern="frame_{:06}.png",
+    mode="npy",
+    force=False,
 ):
     """Simulate real camera, adding read/poisson noise and tonemapping"""
-    import multiprocessing
+    import ast
+    import copy
 
     import more_itertools as mitertools
+    from torch.utils.data import DataLoader
+    from tqdm.auto import tqdm
 
-    input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
-    emulate_single = functools.partial(
-        _emulate_rgb_single,
-        grayscale=grayscale,
-        chunk_size=chunk_size,
-        factor=factor,
-        readout_std=readout_std,
-        fwc=fwc,
-        output_dir=output_dir,
-        ext=ext,
-    )
+    from spsim.color import apply_alpha, emulate_rgb_from_merged, srgb_to_linearrgb
+    from spsim.dataset import ImgDatasetWriter, NpyDatasetWriter, dataset_dispatch, default_collate
+    from spsim.interpolate import pose_interp
+    from spsim.utils import img_to_tensor, tensor_to_img  # Lazy Load
 
-    # TODO: This would probably be faster if we used a DataLoader to load and average image batches...
-    #   It would at least appear faster to the user as each image will be created with
-    #   multiple threads (making pbar advance bit by bit) instead of having one thread per image.
-    with multiprocessing.Pool(processes=c.get("max_threads")) as p:
-        tasks = p.imap(emulate_single, enumerate(mitertools.chunked(in_files, chunk_size)))
-        list(tqdm(tasks, total=np.ceil(len(in_files) / chunk_size).astype(int)))
+    from .common import _validate_directories
+
+    input_dir, output_dir = _validate_directories(input_dir, output_dir)
+    dataset = dataset_dispatch(input_dir)
+    alpha_color = ast.literal_eval(alpha_color) if alpha_color else None
+    transforms_new = copy.deepcopy(dataset.transforms or {})
+    shape = np.array(dataset.full_shape)
+    shape[-1] = transforms_new["c"] = transforms_new.pop("c", 4) - int(alpha_color is not None)
+    shape[0] = np.ceil(shape[0] / chunk_size).astype(int)
+
+    if mode.lower() not in ("img", "npy"):
+        raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
+
+    if any(str(p).endswith(".exr") for p in getattr(dataset, "paths", [])):
+        # TODO: This is due to the alpha blending below, we need alpha in [0, 1] to blend.
+        raise NotImplementedError("Task does not yet support EXRs")
+
+    loader = DataLoader(dataset, batch_size=1, num_workers=c.get("max_threads"), collate_fn=default_collate)
+    pbar = tqdm(total=len(dataset))
+
+    with ImgDatasetWriter(
+        output_dir, transforms=transforms_new, force=force, pattern=pattern
+    ) if mode.lower() == "img" else NpyDatasetWriter(
+        output_dir, np.ceil(shape).astype(int), transforms=transforms_new, force=force
+    ) as writer:
+        for i, batch in enumerate(mitertools.ichunked(loader, chunk_size)):
+            # Batch is an iterable of (idx, img, pose) that we need to reduce
+            idxs, imgs, poses = mitertools.unzip(batch)
+            imgs = sum((i / 255.0).astype(float) for i in imgs)
+            idxs, poses = np.concatenate(list(idxs)), np.concatenate(list(poses))
+            imgs = imgs.squeeze() / len(idxs)
+
+            # Assume image has been tonemapped and undo mapping
+            imgs = srgb_to_linearrgb(imgs)
+            imgs, alpha = apply_alpha(imgs, alpha_color=alpha_color, ret_alpha=True)
+
+            rgb_img = emulate_rgb_from_merged(
+                img_to_tensor(imgs * factor), burst_size=chunk_size, readout_std=readout_std, fwc=fwc, factor=factor
+            )
+            rgb_img = tensor_to_img(rgb_img * 255)
+            pose = pose_interp(poses)(0.5)
+
+            writer[i] = (rgb_img.astype(np.uint8), pose)
+            pbar.update(len(idxs))

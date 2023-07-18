@@ -11,7 +11,7 @@ from hypothesis.extra.numpy import basic_indices, integer_array_indices
 from spsim.dataset import ImgDataset, NpyDataset, _resolve_root
 
 
-def setup_dataset(tmp_path, mode="img", w=100, h=100, n=1, bitpack_dim=None):
+def setup_dataset(tmp_path, mode="img", w=100, h=100, c=3, n=1, bitpack_dim=None):
     np.random.seed(123456789)
     transforms = dict(
         **{
@@ -21,6 +21,7 @@ def setup_dataset(tmp_path, mode="img", w=100, h=100, n=1, bitpack_dim=None):
             "cy": 0,
             "h": h,
             "w": w,
+            "c": c,
             "frames": [
                 dict(
                     transform_matrix=np.random.rand(4, 4).tolist(),
@@ -39,7 +40,7 @@ def setup_dataset(tmp_path, mode="img", w=100, h=100, n=1, bitpack_dim=None):
     with open(tmp_path / "transforms.json", "w") as f:
         json.dump(transforms, f)
 
-    data = np.random.randint(0, 255, size=(n, h, w, 3), dtype=np.uint8)
+    data = np.random.randint(0, 255, size=(n, h, w, c), dtype=np.uint8)
 
     if bitpack_dim is not None:
         data = (data > 128).astype(np.uint8)

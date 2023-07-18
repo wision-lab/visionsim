@@ -1,7 +1,8 @@
+import numpy as np
 import torch
 
 
-def binary2rgb(binary_patch, factor=1.0):
+def binary_avg_to_rgb(mean_binary_patch, factor=1.0):
     """Invert the process by which binary frames are simulated. The result can be either
     linear RGB values or sRGB values depending on how the binary frames were constructed.
 
@@ -9,21 +10,38 @@ def binary2rgb(binary_patch, factor=1.0):
     then the average of binary frames tends to p. We can therefore recover the original rgb
     values as -log(1-bin)/factor.
     """
-    return -torch.log(1 - binary_patch) / factor
+    module = torch if torch.is_tensor(mean_binary_patch) else np
+    return -module.log(1 - mean_binary_patch) / factor
 
 
 def srgb_to_linearrgb(img):
     # https://github.com/blender/blender/blob/master/source/blender/blenlib/intern/math_color.c
+    module = torch if torch.is_tensor(img) else np
     mask = img < 0.04045
-    img[mask] = torch.clip(img[mask], 0.0, torch.inf) / 12.92
+    img[mask] = module.clip(img[mask], 0.0, module.inf) / 12.92
     return ((img + 0.055) / 1.055) ** 2.4
 
 
 def linearrgb_to_srgb(img):
     # https://github.com/blender/blender/blob/master/source/blender/blenlib/intern/math_color.c
+    module = torch if torch.is_tensor(img) else np
     mask = img < 0.0031308
-    img[mask] = torch.clip(img[mask], 0.0, torch.inf) * 12.92
-    return torch.clip(1.055 * img ** (1.0 / 2.4) - 0.055, 0.0, 1.0)
+    img[mask] = module.clip(img[mask], 0.0, module.inf) * 12.92
+    return module.clip(1.055 * img ** (1.0 / 2.4) - 0.055, 0.0, 1.0)
+
+
+def apply_alpha(img, alpha_color=(1.0, 1.0, 1.0), ret_alpha=True):
+    """Blend an image with a background color using the image's alpha channel"""
+    if not np.issubdtype(img.dtype, np.float) or img.max() > 1.0 or img.min() < 0.0:
+        raise RuntimeError("Expected image to be of dtype float and normalized to the range [0, 1].")
+
+    # At least 3d with added axis appended to end
+    img = np.expand_dims(img, -1 if img.ndim == 2 else ())
+
+    img, alpha = np.split(img, [-1], axis=-1) if img.shape[-1] == 4 else (img, 1.0)
+    img = img * alpha + np.array(alpha_color) * (1 - alpha)
+
+    return (img, alpha) if ret_alpha else img
 
 
 def emulate_rgb_from_merged(patch, burst_size=200, readout_std=20, fwc=500, factor=1.0, generator=None):

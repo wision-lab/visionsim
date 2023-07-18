@@ -39,9 +39,10 @@ IMG_SCHEMA = {
         "cy": {"type": "number"},  # Center of optical axis in pixel coordinates in Y
         "w": {"type": "number"},  # Sensor width in pixels
         "h": {"type": "number"},  # Sensor height in pixels
+        "c": {"type": "number"},  # Number of output channels (i.e: RGBA = 4)
         "frames": {"type": "array", "items": IMG_FRAME_SCHEMA},
     },
-    "required": ["fl_x", "fl_y", "cx", "cy", "h", "w", "frames"],
+    "required": ["fl_x", "fl_y", "cx", "cy", "h", "w", "c", "frames"],
 }
 
 
