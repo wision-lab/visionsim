@@ -13,6 +13,9 @@ class pose_interp:
         ts = np.linspace(0, 1, len(transforms)) if ts is None else ts
         self.ts, self.transforms = to_numpy(ts, transforms)
 
+        if not np.allclose(np.linalg.det(self.transforms[:, :3, :3]), 1.0):
+            raise RuntimeError("Rotation matrices in poses must have determinant of 1.")
+
         self._rotation_interp = Slerp(ts, Rotation.from_matrix(self.transforms[:, :3, :3]))
         self._translation_interp = interp1d(ts, self.transforms[:, :3, -1], kind="linear", axis=0)
 

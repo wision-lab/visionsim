@@ -58,6 +58,7 @@ def imgs_to_npy(
             )
     alpha_color = ast.literal_eval(alpha_color) if alpha_color else None
     shape = np.array(dataset.full_shape)
+    shape[-1] = shape[-1] - int(alpha_color is not None)
 
     # Bitpack if either is set, defaults to bitpacking width dimension
     if bitpack or bitpack_dim is not None:

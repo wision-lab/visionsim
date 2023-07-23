@@ -328,7 +328,7 @@ class BlenderDatasetGenerator:
             print(f"Multiple cameras found. Using active camera named: '{self.camera.name}'.")
         else:
             self.camera = cameras[0]
-            print(f"No active camera was found. Using active camera named: '{self.camera.name}'.")
+            print(f"No active camera was found. Using camera named: '{self.camera.name}'.")
 
         self.move_keyframes(scale=keyframe_multiplier)
         self.keyframe_multiplier = keyframe_multiplier
@@ -336,7 +336,7 @@ class BlenderDatasetGenerator:
         if unbind_camera:
             # Assume we are using provided spline for camera movements
             # Remove extra file output pipelines
-            for n in self.tree.nodes:
+            for n in getattr(self.tree, "nodes", []):
                 if isinstance(n, bpy.types.CompositorNodeOutputFile):
                     self.tree.nodes.remove(n)
 
@@ -631,9 +631,12 @@ class BlenderDatasetGenerator:
             self.scene.frame_set(frame_number if self.use_animation else 0)
             paths = self.generate_single(frame_number + shift if self.use_animation else i)
 
+            # Get camera pose and normalize rotation matrix axes
+            pose = np.array(self.camera.matrix_world)
+            pose[:3, :3] /= np.linalg.norm(pose[:3, :3], axis=0)
             frame_data = {
                 **{k: str(p) for k, p in paths.items()},
-                "transform_matrix": np.array(self.camera.matrix_world).tolist(),
+                "transform_matrix": pose.tolist(),
             }
             transforms["frames"].append(frame_data)
 

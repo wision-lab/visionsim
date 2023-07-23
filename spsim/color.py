@@ -32,7 +32,7 @@ def linearrgb_to_srgb(img):
 
 def apply_alpha(img, alpha_color=(1.0, 1.0, 1.0), ret_alpha=True):
     """Blend an image with a background color using the image's alpha channel"""
-    if not np.issubdtype(img.dtype, np.float) or img.max() > 1.0 or img.min() < 0.0:
+    if not np.issubdtype(img.dtype, float) or img.max() > 1.0 or img.min() < 0.0:
         raise RuntimeError("Expected image to be of dtype float and normalized to the range [0, 1].")
 
     # At least 3d with added axis appended to end
