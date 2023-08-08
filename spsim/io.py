@@ -2,7 +2,7 @@ import imageio.v3 as iio
 import numpy as np
 
 
-def read_img(in_file, apply_alpha=True, grayscale=False, bgcolor=(1.0, 1.0, 1.0)):
+def read_img(in_file, apply_alpha=True, grayscale=False, alpha_color=(1.0, 1.0, 1.0)):
     img = iio.imread(in_file)
 
     if img.ndim == 2:
@@ -10,7 +10,7 @@ def read_img(in_file, apply_alpha=True, grayscale=False, bgcolor=(1.0, 1.0, 1.0)
 
     img = img / (1.0 if str(in_file).endswith(".exr") else 255.0)
     alpha = img[:, :, -1][..., None] if img.shape[2] == 4 else 1.0
-    img = img[:, :, :3] if not apply_alpha else img[:, :, :3] * alpha + np.array(bgcolor) * (1 - alpha)
+    img = img[:, :, :3] if not apply_alpha else img[:, :, :3] * alpha + np.array(alpha_color) * (1 - alpha)
 
     if grayscale:
         # Manually grayscale as we've already converted to floating point pixel values
