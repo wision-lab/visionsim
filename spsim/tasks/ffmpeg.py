@@ -90,6 +90,151 @@ def animate(
         _run(c, cmd, hide=hide)
 
 
+@task(
+    iterable=["inputfiles"],
+    help={
+        "inputfiles": "video file to combine together or newline seperator ('\\n', '\\r', 'newline' or 'enter'), "
+        "this argument should be used once per video file.",
+        "outfile": "where to save generated mp4, default: 'combined.mp4'",
+        "matrix": "alternate way to specify videos to combine as a 2D matrix of file paths, default: None",
+        "mode": "if 'shortest' combined video will last as long s shortest input video. If 'static', the last frame of "
+        "videos that are shorter than the longest input video will be repeated. If 'pad', all videos as padded "
+        "with frames of `color` to last the same duration. default: 'shortest'",
+        "color": "color to pad videos with, only used if mode is 'pad'. default: 'white'",
+        "multiple": "some codecs require size to be a multiple of n, default: 2",
+        "force": "if true, overwrite output file if present, default: False",
+    },
+)
+def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest", color="white", multiple=2, force=False):
+    """Combine multiple videos into one by stacking, padding and resizing them using ffmpeg.
+
+    Internally this task will first optionally pad all videos to length using ffmpeg's `tpad` filter,
+    then `scale` all videos in a row to have the same height, combine rows together using the `hstack`
+    filter before finally `scale`ing row-videos to have same width and `vstack`ing them together.
+
+    Examples:
+        To combine two videos in a row:
+        $ spsim ffmpeg.combine -i "a.mp4" -i "b.mp4" -o "output.mp4"
+
+        To combine two videos in a column:
+        $ spsim ffmpeg.combine -i "a.mp4" -i="\n" -i "b.mp4" -o "output.mp4"
+
+        The input videos can also be specified in a 2D array using the `--matrix` argument like so:
+        $ spsim ffmpeg.combine --matrix='[["a.mp4", "b.mp4"]]' -o "output.mp4"
+    """
+
+    import ast
+    import shutil
+    import tempfile
+
+    import more_itertools as mitertools
+
+    if Path(outfile).is_file() and not force:
+        raise RuntimeError("Output file already exists, either specify different output path or `--force` to override.")
+
+    if not (len(inputfiles) != 0) ^ (matrix is not None):
+        raise ValueError("Use either `matrix` or `inputfile` argument, not both.")
+
+    if _run(c, "ffmpeg -version", hide=True).failed:
+        raise RuntimeError("No ffmpeg installation found on path!")
+
+    if inputfiles:
+        matrix = list(
+            mitertools.split_at(inputfiles, lambda i: i.lower() in ("n", "r", "\\n", "\\r", "enter", "newline"))
+        )
+    else:
+        matrix = ast.literal_eval(matrix) if isinstance(matrix, str) else matrix
+    flat_mat = [path for row in matrix for path in row]
+
+    try:
+        if any(not Path(p).is_file() for p in flat_mat):
+            raise FileNotFoundError(
+                "Expected video matrix to contain valid file paths or newline "
+                "delimiters such as '\\n'/'\\r' or 'newline'/'enter'"
+            )
+    except TypeError:
+        raise RuntimeError("Expected video matrix to be 2D.")
+
+    if mode.lower() not in ("shortest", "static", "pad"):
+        raise ValueError(f"Expected `mode` to be one of 'shortest', 'static', 'pad' but got {mode}.")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Keep track of new names of mp4s
+        mapping = {}
+        row_paths = []
+
+        # Keep track of all original dimensions
+        sizes = {path: dimensions(c, path) for path in flat_mat}
+
+        # Find longest video and pad all to this length
+        if mode.lower() == "pad":
+            max_duration = max(duration(c, path) for path in flat_mat)
+
+            for path in flat_mat:
+                print(f"\n\nPadding {path}...")
+                out_path = Path(tmpdir) / Path(path).name
+                out_path = out_path.with_stem(out_path.stem + "_padded")
+                cmd = f"ffmpeg -i {path} -vf tpad=stop=-1=color={color},trim=end={max_duration} {out_path} -y"
+                _run(c, cmd)
+                mapping[path] = out_path
+
+        for i, row in enumerate(matrix):
+            # Resize videos in each row
+            max_height = max(sizes[path][1] for path in row)
+            for path in row:
+                if sizes[path][1] != max_height:
+                    print(f"\n\nResizing {path}...")
+                    in_path = mapping.get(path, path)
+                    out_path = Path(tmpdir) / Path(path).name
+                    out_path = out_path.with_stem(out_path.stem + "_height_resize")
+                    _run(c, f"ffmpeg -i {in_path} -vf scale=-{multiple}:{max_height} {out_path} -y")
+                    mapping[path] = out_path
+
+            # Combine all videos in the row
+            if len(row) >= 2:
+                print("\n\nStacking rows...")
+                paths = " -i ".join(str(mapping.get(p, p)) for p in row)
+                out_file = Path(tmpdir) / f"row_{i:04}.mp4"
+                row_paths.append(out_file)
+                cmd = (
+                    f"ffmpeg -i {paths} -filter_complex "
+                    f"hstack=inputs={len(row)}:shortest={int(mode.lower() == 'shortest')} "
+                    f"{out_file} -vsync vfr -y"
+                )
+                _run(c, cmd)
+            else:
+                row_paths.append(mapping.get(row[0], row[0]))
+
+        # Combine all rows
+        if len(matrix) >= 2:
+            # Resize row videos if needed
+            row_sizes = {path: dimensions(c, path) for path in row_paths}
+            max_width = max(row_sizes[path][0] for path in row_paths)
+            new_row_paths = []
+
+            for path in row_paths:
+                if row_sizes[path][0] != max_width:
+                    print(f"\n\nResizing {path}...")
+                    out_path = Path(tmpdir) / Path(path).name
+                    out_path = out_path.with_stem(out_path.stem + "_width_resize")
+                    _run(c, f"ffmpeg -i {path} -vf scale={max_width}:-{multiple} {out_path} -y")
+                    new_row_paths.append(out_path)
+                else:
+                    new_row_paths.append(path)
+
+            # Join all row videos
+            paths = " -i ".join(str(p) for p in new_row_paths)
+            cmd = (
+                f"ffmpeg -i {paths} -filter_complex "
+                f"vstack=inputs={len(matrix)}:shortest={int(mode.lower() == 'shortest')} "
+                f"{outfile} -vsync vfr -y"
+            )
+            _run(c, cmd)
+        else:
+            # We already created the video, simply move/rename it to output file
+            shutil.move(row_paths[0], outfile)
+
+
 @task(help={"input_file": "video file input"})
 def count_frames(c, input_file):
     """Count the number of frames a video file contains using ffprobe"""
@@ -120,6 +265,19 @@ def duration(c, input_file):
     result = _run(c, cmd, hide=True)
     print(f"Video lasts {float(result.stdout.strip())} seconds.")
     return float(result.stdout.strip())
+
+
+@task(help={"input_file": "video file input"})
+def dimensions(c, input_file):
+    """Return size (WxH in pixels) of first video stream in file using ffprobe"""
+    # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
+    if _run(c, "ffprobe -version", hide=True).failed:
+        raise RuntimeError("No ffprobe installation found on path!")
+
+    cmd = f"ffprobe -v error -select_streams v:0 -show_entries stream=width,height " f"-of csv=s=x:p=0 {input_file}"
+    result = _run(c, cmd, hide=True)
+    print(f"Video has size {result.stdout.strip()}.")
+    return tuple(int(dim) for dim in result.stdout.strip().split("x"))
 
 
 @task(
