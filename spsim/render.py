@@ -3,6 +3,7 @@ import ast
 import itertools
 import json
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -361,6 +362,8 @@ class BlenderDatasetGenerator:
             self.tree.links.new(self.tree.nodes["Render Layers"].outputs["Image"], alpha_compositor.inputs[2])
             self.tree.links.new(self.tree.nodes["Render Layers"].outputs["Alpha"], alpha_compositor.inputs[0])
             self.tree.links.new(alpha_compositor.outputs[0], self.tree.nodes["Composite"].inputs["Image"])
+        else:
+            self.scene.render.film_transparent = False
 
         # Setup for getting normals and depth
         self.depth, self.normals = depth, normals
@@ -605,12 +608,13 @@ class BlenderDatasetGenerator:
         #   angle_x != angle_y, so here we just use angle.
         transforms["w"] = self.width
         transforms["h"] = self.height
-        transforms["c"] = 3 if self.alpha_color else 4 # RGB vs RGBA
+        transforms["c"] = 3 if self.alpha_color else 4  # RGB vs RGBA
         transforms["fl_x"] = 1 / 2 * self.width / np.tan(1 / 2 * self.camera.data.angle)
         transforms["fl_y"] = 1 / 2 * self.height / np.tan(1 / 2 * self.camera.data.angle)
         transforms["cx"] = 1 / 2 * self.width + transforms["shift_x"]
         transforms["cy"] = 1 / 2 * self.height + transforms["shift_y"]
         transforms["intrinsics"] = self.get_camera_intrinsics().tolist()
+        interrupted = False
 
         # Sanitize arguments if they come from CLI
         location_points = np.array(self.parse_json_str(location_points))
@@ -621,10 +625,19 @@ class BlenderDatasetGenerator:
         location_points = Spline(location_points, **kwargs) if self.unbind_camera else None
         viewing_points = Spline(viewing_points, **kwargs) if self.unbind_camera else None
 
+        # Handle CTRL+C
+        def sigint_handler(*args):
+            nonlocal interrupted
+            interrupted = True
+
+        signal.signal(signal.SIGINT, sigint_handler)
+
         # Capture frames!
         for i, (t, frame_number) in track(
             enumerate(zip(ts, new_frame_range)), description="Generating frames... ", total=len(ts)
         ):
+            if interrupted:
+                break
             if self.unbind_camera:
                 # If camera is unbound, then we are following explicit path,
                 # otherwise, assume the camera will be moved by an animation

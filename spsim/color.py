@@ -38,6 +38,10 @@ def apply_alpha(img, alpha_color=(1.0, 1.0, 1.0), ret_alpha=True):
     # At least 3d with added axis appended to end
     img = np.expand_dims(img, -1 if img.ndim == 2 else ())
 
+    # If image does not have 4 channels, pass through
+    if img.shape[-1] != 4:
+        return (img, 1.0) if ret_alpha else img
+
     img, alpha = np.split(img, [-1], axis=-1) if img.shape[-1] == 4 else (img, 1.0)
     img = img * alpha + np.array(alpha_color) * (1 - alpha)
 

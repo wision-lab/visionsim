@@ -67,7 +67,7 @@ def spad(
     alpha_color = ast.literal_eval(alpha_color) if alpha_color else None
     transforms_new = copy.deepcopy(dataset.transforms or {})
     shape = np.array(dataset.full_shape)
-    shape[-1] = transforms_new["c"] = transforms_new.pop("c", 4) - 1
+    shape[-1] = transforms_new["c"] = transforms_new.pop("c", 4) - int(alpha_color is not None)
 
     if mode.lower() == "img":
         ...
