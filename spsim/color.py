@@ -75,6 +75,10 @@ def apply_alpha(img, alpha_color=(1.0, 1.0, 1.0), ret_alpha=True):
     img = np.expand_dims(img, -1 if img.ndim == 2 else ())
 
     #RY. splits RGB and alpha channels, if doesnt have 4 channels, 1 alpha value
+    # If image does not have 4 channels, pass through
+    if img.shape[-1] != 4:
+        return (img, 1.0) if ret_alpha else img
+
     img, alpha = np.split(img, [-1], axis=-1) if img.shape[-1] == 4 else (img, 1.0)
     img = img * alpha + np.array(alpha_color) * (1 - alpha)
 

@@ -3,6 +3,7 @@ import ast
 import itertools
 import json
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -260,7 +261,7 @@ class BlenderDatasetGenerator:
         use_animation=True,
         keyframe_multiplier=1.0,
         use_motion_blur=True,
-        bgcolor=None,
+        alpha_color=None,
         **kwargs,
     ):
         # Load blender file
@@ -280,6 +281,7 @@ class BlenderDatasetGenerator:
         self.unbind_camera = unbind_camera
         self.file_format = file_format
         self.allow_skips = allow_skips
+        self.alpha_color = alpha_color
         self.render = render
 
         # Set frame resolution
@@ -288,17 +290,6 @@ class BlenderDatasetGenerator:
         self.scene.render.resolution_y = self.height
         self.scene.render.resolution_x = self.width
         self.scene.render.resolution_percentage = 100
-
-        # Set bg color if provided, disables any environment maps
-        if bgcolor:
-            self.scene.use_nodes = False
-            self.scene.world.color = bgcolor
-        else:
-            self.scene.use_nodes = True
-
-        # Set clear background
-        self.scene.render.dither_intensity = 0.0
-        self.scene.render.film_transparent = True
 
         # Render Optimizations and Settings
         self.scene.render.engine = "CYCLES"
@@ -312,7 +303,7 @@ class BlenderDatasetGenerator:
         # Image settings
         self.scene.render.image_settings.file_format = file_format.upper()
         self.scene.render.image_settings.color_depth = str(color_depth)
-        self.scene.render.image_settings.color_mode = "RGBA"
+        self.scene.render.image_settings.color_mode = "RGB" if self.alpha_color else "RGBA"
 
         # Make sure there's a camera
         cameras = [ob for ob in self.scene.objects if ob.type == "CAMERA"]
@@ -354,6 +345,25 @@ class BlenderDatasetGenerator:
                 and self.camera.animation_data is None
             ):
                 print("WARNING: Active camera nor it's parents are animated, camera will be static.")
+
+        # Setup alpha blending if needed...
+        if self.alpha_color:
+            # Set clear background
+            self.scene.render.dither_intensity = 0.0
+            self.scene.render.film_transparent = True
+
+            # Ensure we are using the compositor
+            self.scene.use_nodes = True
+
+            # Bypass everything, and only alpha blend
+            # This is a bit fragile atm, as it relies on the node to have correct names...
+            alpha_compositor = self.tree.nodes.new(type="CompositorNodeAlphaOver")
+            alpha_compositor.inputs[1].default_value = list(self.alpha_color) + [1.0]*(4-len(self.alpha_color))
+            self.tree.links.new(self.tree.nodes["Render Layers"].outputs["Image"], alpha_compositor.inputs[2])
+            self.tree.links.new(self.tree.nodes["Render Layers"].outputs["Alpha"], alpha_compositor.inputs[0])
+            self.tree.links.new(alpha_compositor.outputs[0], self.tree.nodes["Composite"].inputs["Image"])
+        else:
+            self.scene.render.film_transparent = False
 
         # Setup for getting normals and depth
         self.depth, self.normals = depth, normals
@@ -598,12 +608,13 @@ class BlenderDatasetGenerator:
         #   angle_x != angle_y, so here we just use angle.
         transforms["w"] = self.width
         transforms["h"] = self.height
-        transforms["c"] = 4  # RGBA
+        transforms["c"] = 3 if self.alpha_color else 4  # RGB vs RGBA
         transforms["fl_x"] = 1 / 2 * self.width / np.tan(1 / 2 * self.camera.data.angle)
         transforms["fl_y"] = 1 / 2 * self.height / np.tan(1 / 2 * self.camera.data.angle)
         transforms["cx"] = 1 / 2 * self.width + transforms["shift_x"]
         transforms["cy"] = 1 / 2 * self.height + transforms["shift_y"]
         transforms["intrinsics"] = self.get_camera_intrinsics().tolist()
+        interrupted = False
 
         # Sanitize arguments if they come from CLI
         location_points = np.array(self.parse_json_str(location_points))
@@ -614,10 +625,19 @@ class BlenderDatasetGenerator:
         location_points = Spline(location_points, **kwargs) if self.unbind_camera else None
         viewing_points = Spline(viewing_points, **kwargs) if self.unbind_camera else None
 
+        # Handle CTRL+C
+        def sigint_handler(*args):
+            nonlocal interrupted
+            interrupted = True
+
+        signal.signal(signal.SIGINT, sigint_handler)
+
         # Capture frames!
         for i, (t, frame_number) in track(
             enumerate(zip(ts, new_frame_range)), description="Generating frames... ", total=len(ts)
         ):
+            if interrupted:
+                break
             if self.unbind_camera:
                 # If camera is unbound, then we are following explicit path,
                 # otherwise, assume the camera will be moved by an animation
@@ -810,10 +830,11 @@ def parser_config():
             ),
             dict(name="--addons", type=str, default=None, help="list of extra addons to enable, default: None"),
             dict(
-                name="--bgcolor",
+                name="--alpha-color",
                 type=str,
                 default=None,
-                help="background color as specified by a RGB list in [0-1] range, default: None (no override)",
+                help="background color as specified by a RGB list in [0-1] range, if specified, renders will be "
+                     "composited with this color and be RGB instead of RGBA. default: None (no override)",
             ),
         ],
     }
@@ -855,12 +876,14 @@ def _render_views(args):
                 f"ensure this is a list of integers (i.e: [0, 1]) or 'all'/''."
             )
 
-    if args.bgcolor:
+    if args.alpha_color:
         try:
-            args.bgcolor = tuple(ast.literal_eval(args.bgcolor))
+            args.alpha_color = tuple(ast.literal_eval(args.alpha_color))
+            if args.alpha_color and len(args.alpha_color) not in (3, 4):
+                raise SyntaxError
         except SyntaxError:
             raise ValueError(
-                f"Failed to parse `bgcolor` value {args.bgcolor}. Please "
+                f"Failed to parse `alpha-color` value {args.alpha_color}. Please "
                 f"ensure this is a list of floats (i.e: [1.0,0.0,0.0] for red)"
             )
 

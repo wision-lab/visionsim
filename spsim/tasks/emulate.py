@@ -67,7 +67,7 @@ def spad(
     alpha_color = ast.literal_eval(alpha_color) if alpha_color else None
     transforms_new = copy.deepcopy(dataset.transforms or {})
     shape = np.array(dataset.full_shape)
-    shape[-1] = transforms_new["c"] = transforms_new.pop("c", 4) - 1
+    shape[-1] = transforms_new["c"] = transforms_new.pop("c", 4) - int(alpha_color is not None)
 
     if mode.lower() == "img":
         ...
@@ -111,7 +111,7 @@ def spad(
         "readout_std": "standard deviation of gaussian read noise, default: 20",
         "fwc": "full well capacity of sensor in arbitrary units (relative to factor & chunk_size), default: 500",
         "alpha_color": "if set, blend with this background color and do not store "
-                       "alpha channel. default: '(1.0, 1.0, 1.0)'",
+        "alpha channel. default: '(1.0, 1.0, 1.0)'",
         "pattern": "filenames of frames should match this, default: 'frame_{:06}.png'",
         "mode": "how to save binary frames, either as 'img' or as 'npy', default: 'npy'",
         "force": "if true, overwrite output file(s) if present, default: False",

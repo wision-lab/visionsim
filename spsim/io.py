@@ -15,6 +15,7 @@ def read_img(in_file, apply_alpha=True, grayscale=False, bgcolor=(1.0, 1.0, 1.0)
         
 
     """
+def read_img(in_file, apply_alpha=True, grayscale=False, alpha_color=(1.0, 1.0, 1.0)):
     img = iio.imread(in_file)
 
     #RY. if graysacle 2d make 3d
@@ -29,6 +30,7 @@ def read_img(in_file, apply_alpha=True, grayscale=False, bgcolor=(1.0, 1.0, 1.0)
     alpha = img[:, :, -1][..., None] if img.shape[2] == 4 else 1.0
     #RY. simply returnse extracted rgb data if not apply alpha, blends and uses background color if true.
     img = img[:, :, :3] if not apply_alpha else img[:, :, :3] * alpha + np.array(bgcolor) * (1 - alpha)
+    img = img[:, :, :3] if not apply_alpha else img[:, :, :3] * alpha + np.array(alpha_color) * (1 - alpha)
 
     if grayscale:
         # Manually grayscale as we've already converted to floating point pixel values
