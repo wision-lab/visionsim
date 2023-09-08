@@ -9,33 +9,57 @@ from tqdm.auto import tqdm
 
 
 def ignore_context(func: Callable) -> Callable:
-    """Modify function signature to include a `context` variable as first argument"""
+    """Decorator that modifies a function's signature to include a `context` variable as first argument.
+    
+    Args:
+        func: Function to decorate, should be a callable
+
+    :returns:
+        Decorated function with context argument, which is ultimately ignored when calling the original function.
+    """
+
     # Based on https://github.com/andrewtbiehl/gaslines/pull/82/files
     # See: https://github.com/pyinvoke/invoke/issues/445
+    #RY. Create paramter object named context with type positional only
     context_param = inspect.Parameter("context", inspect.Parameter.POSITIONAL_ONLY)
+    #RY. create signature object with signature of func callable
     signature = inspect.signature(func)
+    #RY. Stores iterable of Parameter objects 
     params = signature.parameters.values()
     ctx_params = (context_param, *params)
+    #RY. replace paramters of original signature
     func.__signature__ = signature.replace(parameters=ctx_params)
 
+    #RY. decorator to wrapper function that copies attributes like name and docstrings
     @functools.wraps(func)
+    #RY. ignore context
     def inner(context, *args, **kwargs):
-        del context  # Ignore context as original function doesn't use it
+        del context  
         func(*args, **kwargs)
 
     return inner
 
 
 def pass_if_present(func: Callable) -> Callable:
+    """Decorator that passes keyword arguments to a funciton  only if they were explicitly set on CLI.
+
+    Args:
+        func: Function to be decorated, should be a callable
+
+    :returns:
+        Decorated function with kwargs arguments modified and filtered.
+    """
     # Pass kwargs to func only if they were explicitly set on CLI
     # This is useful especially for boolean variables, i.e: if "kw" not in
     # kwargs then variable was not set. This enables us not to rely on defaults.
 
+    #RY. decorator wraps inner to have same metadata as func
     @functools.wraps(func)
     def inner(*args, **kwargs):
         # Re-prase arguments (I know! How wasteful...) to determine which ones were actually supplied
         program = Program()
         init_pc = ParserContext(args=program.core_args() + program.task_args())
+        #RY. parse commandline arguments in context of init_pc
         core = Parser(initial=init_pc, ignore_unknown=True).parse_argv(sys.argv[1:])
         pc = ParserContext(name=func.__name__, args=Task(func).get_arguments())
         p = Parser(initial=init_pc, contexts=(pc,)).parse_argv(core.unparsed)
@@ -66,7 +90,16 @@ def pass_if_present(func: Callable) -> Callable:
 
 
 def add_args_to_signature(*arg_names, replace_kw_only=True, **kwarg_names):
-    """Modify function signature by adding args and kwargs"""
+    """Decorator that extends a function's signature by adding new positional or keyword argumetns.
+
+    Args:
+        *arg_names: Names of positional arguments to add to function signature
+        replace_kw_only: Flag to downgrade keyword only arguments to positional or keyword arguments for compatibility defaults to true.
+
+    :returns:
+        Decorated function with extended signature.
+
+    """
 
     def inner(func: Callable) -> Callable:
         signature = inspect.signature(func)
@@ -83,6 +116,7 @@ def add_args_to_signature(*arg_names, replace_kw_only=True, **kwarg_names):
                 "Otherwise they'll have nowhere to go!"
             )
 
+        #RY. Create Parameter objects for args and kwargs
         args = [inspect.Parameter(arg, inspect.Parameter.POSITIONAL_OR_KEYWORD) for arg in arg_names]
         kwargs = [
             inspect.Parameter(kwarg, inspect.Parameter.POSITIONAL_OR_KEYWORD, default=default)
@@ -113,11 +147,21 @@ def add_args_to_signature(*arg_names, replace_kw_only=True, **kwarg_names):
 
 
 def remove_args_from_signature(*arg_or_kwarg_names, remove_var_args=False, remove_var_kwargs=False):
-    """Modify function signature by removing args and kwargs"""
+    """Decorator that selectively removes specified arguments from function signature.
+
+    Args:
+        *arg_or_kwarg_names: Names of positional or keyword arguments to be removed.
+        remove_var_args: Flag to remove variable length args.
+        remove_var_kwargs: Flag to remove keyword length args.
+
+    :returns:
+        Decorated argument with specified arguments removed
+    """
 
     def inner(func: Callable) -> Callable:
         signature = inspect.signature(func)
         params = list(signature.parameters.values())
+        #RY. filter out parameters matching specified params
         params = [p for p in params if p.name not in set(arg_or_kwarg_names)]
 
         # Optionally remove wildcard *args, **kwargs
@@ -126,6 +170,7 @@ def remove_args_from_signature(*arg_or_kwarg_names, remove_var_args=False, remov
         if remove_var_kwargs:
             params = [p for p in params if p.kind != inspect.Parameter.VAR_KEYWORD]
 
+        #RY. modify funciton signature and assigned back to func
         func.__signature__ = signature.replace(parameters=params)
         return functools.wraps(func)(func)
 
@@ -143,7 +188,22 @@ def modify_signature(
     docstring=None,
     **kwarg_names,
 ):
-    """Compose `add_args_to_signature`, `ignore_context` and `pass_if_present` together"""
+    """Dynamically modify function signature and behavior by combining add args, remove args, ignore context, and pass if present.
+
+    Args:
+        *arg_names: Arg names to be added.
+        remove_var_args: Flag to remove variable length args. Defaults to false.
+        remove_var_kwargs: Flag to remove variable length kwargs. Defaults to false.
+        remove_args_or_kwargs: Args ro kwarg names to be removed.
+        add_context: Flag to add context argument to funciton signature.
+        only_pass_if_present: Flag to only pass kwargs specified in CLI. Defaults to false.
+        replace_kw_only: Flag to downgrade kwargs to args or kwargs for compatibility. Defaults to true.
+        doctring: Docstring. Defaults to none.
+        **kwargs_names: Kwarg names to be added.
+    
+    :returns:
+        Returns decorated function with specified modifications.
+    """
 
     def inner(func: Callable) -> Callable:
         # We need to remove args/kwargs first in case new (kw)args
@@ -182,7 +242,7 @@ def modify_signature(
 
 
 class StreamWatcherTqdmPbar:
-    r"""Watch the streams generated by a `c.run` call and update a progress bar when
+    """Watch the streams generated by a `c.run` call and update a progress bar when
     something in the stream matches the regex `pattern`. If the pattern has a named
     group with the name 'n' (i.e: something like '(?P<n>\d+)'), we set the progress
     bar to that value, any other match simply increments the progressbar by a tick.
