@@ -22,7 +22,8 @@ def binary_avg_to_rgb(mean_binary_patch, factor=1.0):
 
 
 def srgb_to_linearrgb(img):
-    """Performs sRGB to linear RGB color space conversion by reversing gamma correction and obtaining values that represent the scene's intensities.
+    """Performs sRGB to linear RGB color space conversion by reversing gamma 
+    correction and obtaining values that represent the scene's intensities.
     
     Args:
         img: Tensor or np array to perform conversion.

@@ -60,7 +60,8 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
         mode: Specifies mode to process dataset. Can be either 'img' or 'npy'.
 
     :returns:
-        Tuple consisting of data_paths - list of paths to data files in dataset, poses - containing pose information for each data file, transforms - dictionary of information from json file.
+        Tuple consisting of data_paths - list of paths to data files in dataset, 
+        poses - containing pose information for each data file, transforms - dictionary of information from json file.
     """
     #RY. Makes provided root into Path object for easier manipulation
     root = Path(root)
@@ -71,7 +72,8 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
         if (root / "transforms.json").is_file():
             transforms_path = root / "transforms.json"
             data_path = None
-        #RY. if no transforms file and mode in 'img', checks for image files. if found, transforms path is none and data path to root.
+        #RY. if no transforms file and mode in 'img', checks for image files. 
+        #if found, transforms path is none and data path to root.
         elif mode.lower() == "img":
             img_exts = set(imageio.core.format.known_extensions.keys())
             found_exts = set(p.suffix for p in root.glob("*"))
@@ -81,7 +83,8 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
                 data_path = root
             else:
                 raise FileNotFoundError(f"No image files found in {root}.")
-        #Ry. if no transforms file and mode is 'npy', check for frames.npy. if found, transforms path is none, datat path is frames.npy
+        #Ry. if no transforms file and mode is 'npy', check for frames.npy. 
+        #if found, transforms path is none, datat path is frames.npy
         elif mode.lower() == "npy":
             if (root / "frames.npy").is_file():
                 transforms_path = None

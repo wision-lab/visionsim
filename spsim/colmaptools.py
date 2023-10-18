@@ -182,7 +182,8 @@ def get_image_data(text, indices=slice(None)):
 
 
 def reorient_to(transforms, new_up=(0, 0, 1)):
-    """Takes set of transformation matrices and reorients them to align with new up direction. Returns reoriented transformations and rotational matrix.
+    """Takes set of transformation matrices and reorients them to align with new up direction.
+    Returns reoriented transformations and rotational matrix.
 
     Args:
         transforms: Set of transformation matrices to reorient.
@@ -202,14 +203,16 @@ def reorient_to(transforms, new_up=(0, 0, 1)):
 
 
 def center_at(transforms, center=(0, 0, 0)):
-    """Centers set of transform matrices around specified point. Calculates attention center and adjusts translations to achieve centering.
+    """Centers set of transform matrices around specified point. 
+    Calculates attention center and adjusts translations to achieve centering.
 
     Args:
         transforms: Set of transformation matrices.
         center: Point to center around. Defaults to (0,0,0).
 
     :returns:
-        Updated transformation matrices with centered translations, and transformation matrix that can be used to revert to original.
+        Updated transformation matrices with centered translations, 
+        and transformation matrix that can be used to revert to original.
     """
     # find a central point they are all looking at
     attention_weight = 0.0
@@ -229,14 +232,16 @@ def center_at(transforms, center=(0, 0, 0)):
     transforms[:, 0:3, 3] += offset
     t = np.eye(4)
     t[:3, -1] = offset
-    #RY. Returns updates transforms array with centered translations, and transformation matrix t that can be used to revert to original
+    #RY. Returns updates transforms array with centered translations, and 
+    #transformation matrix t that can be used to revert to original
     return transforms, t
 
 
 def convert_from_colmap(
     images, text, out_file, aabb_scale=16, indices=slice(None), keep_colmap_coords=False, sharpness=False
 ):
-    """Converts camera and image data from colmap format to desired format, while applying transformations to different coordinate systems. Written to JSON file.
+    """Converts camera and image data from colmap format to desired format, 
+    while applying transformations to different coordinate systems. Written to JSON file.
 
     Args:
         images: Path to images.
@@ -250,7 +255,8 @@ def convert_from_colmap(
     :returns:
         Json file containing camera and image data from colmap format to new format.
 
-    Information on colmap coords:  In colmap, "the local camera coordinate system of an image is defined in a way
+    Information on colmap coords:  
+    In colmap, "the local camera coordinate system of an image is defined in a way
     that the X axis points to the right, the Y axis to the bottom, and the Z axis
     to the front as seen from the image", in other words, COLMAP uses the OPENCV
     coordinate frame convention. NeRF, uses the OpenGL camera convention, where +X

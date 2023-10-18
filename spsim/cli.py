@@ -94,7 +94,7 @@ def add_args_to_signature(*arg_names, replace_kw_only=True, **kwarg_names):
 
     Args:
         *arg_names: Names of positional arguments to add to function signature
-        replace_kw_only: Flag to downgrade keyword only arguments to positional or keyword arguments for compatibility defaults to true.
+        replace_kw_only: Flag to downgrade keyword only arguments to for compatibility defaults to true.
 
     :returns:
         Decorated function with extended signature.
@@ -188,7 +188,7 @@ def modify_signature(
     docstring=None,
     **kwarg_names,
 ):
-    """Dynamically modify function signature and behavior by combining add args, remove args, ignore context, and pass if present.
+    """Dynamically modify function signature  by combining add args, remove args, ignore context,  pass if present.
 
     Args:
         *arg_names: Arg names to be added.

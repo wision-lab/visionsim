@@ -3,12 +3,17 @@
 import argparse
 from pathlib import Path
 
+#robin
+import os
+os.environ["OPENCV_IO_ENABLE_OPENEXR"]="1"
+
+#robin
+
 import cv2
 import torch
 from natsort import natsorted
 from torch.nn import functional as F
 from tqdm.auto import trange
-
 from .RIFE_HDv3 import Model
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

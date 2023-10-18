@@ -1,4 +1,4 @@
-fail_fast: true
+fail_fast: false
 repos:
 - repo: local
   hooks:
@@ -17,5 +17,11 @@ repos:
   - id: inv-clean
     name: Clean Caches
     entry: invoke clean
+    pass_filenames: False
+    language: system
+
+  - id: inv-docs
+    name: Build Docs
+    entry: invoke build-docs
     pass_filenames: False
     language: system

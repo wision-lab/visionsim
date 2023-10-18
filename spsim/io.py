@@ -1,8 +1,11 @@
 import imageio.v3 as iio
 import numpy as np
+import os
+os.environ["OPENCV_IO_ENABLE_OPENEXR"]="1"
 
 
-def read_img(in_file, apply_alpha=True, grayscale=False, bgcolor=(1.0, 1.0, 1.0)):
+
+def read_img(in_file, apply_alpha=True, grayscale=False, alpha_color=(1.0, 1.0, 1.0)):
     """Reads imagine file, converts from grayscale to 3D, apply alpha blend with specified background color
     Args:
         in_file: Path to image file.
@@ -15,7 +18,6 @@ def read_img(in_file, apply_alpha=True, grayscale=False, bgcolor=(1.0, 1.0, 1.0)
         
 
     """
-def read_img(in_file, apply_alpha=True, grayscale=False, alpha_color=(1.0, 1.0, 1.0)):
     img = iio.imread(in_file)
 
     #RY. if graysacle 2d make 3d
@@ -25,11 +27,12 @@ def read_img(in_file, apply_alpha=True, grayscale=False, alpha_color=(1.0, 1.0, 
     #RY. normalized to 0,1
     img = img / (1.0 if str(in_file).endswith(".exr") else 255.0)
     #RY. blend alpha
-    #RY. [:,:,:-1] extracts alpha channel. [...,None] addes new channel to alpha channel. shape[2] checks if image has 4 channels(it has alpha).
+    #RY. [:,:,:-1] extracts alpha channel. [...,None] addes new channel to alpha channel. shape[2] 
+    #checks if image has 4 channels(it has alpha).
     #RY. if not alpha is set to 1. Ensures copntains alpha channel if it has, 1 if it doesnt
     alpha = img[:, :, -1][..., None] if img.shape[2] == 4 else 1.0
     #RY. simply returnse extracted rgb data if not apply alpha, blends and uses background color if true.
-    img = img[:, :, :3] if not apply_alpha else img[:, :, :3] * alpha + np.array(bgcolor) * (1 - alpha)
+    #img = img[:, :, :3] if not apply_alpha else img[:, :, :3] * alpha + np.array(bgcolor) * (1 - alpha)
     img = img[:, :, :3] if not apply_alpha else img[:, :, :3] * alpha + np.array(alpha_color) * (1 - alpha)
 
     if grayscale:

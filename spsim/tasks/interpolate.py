@@ -49,12 +49,15 @@ def video(c, input_file, output_file, method="rife", n=2):
     help={
         "input_dir": "directory in which to look for frames",
         "output_dir": "directory in which to save interpolated frames",
+        #added file type for frames normals depths
+        "file_type": "type of file interpolating. frames, normals, depths, default: frames",
         "method": "interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife'",
         "file_name": "name of file containing transforms, default: 'transforms.json'",
         "n": "interpolation factor, must be a multiple of 2, default: 2",
     }
 )
-def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json", n=2):
+#added file type to signature
+def frames(_, input_dir, output_dir, file_type="frames",  method="rife", file_name="transforms.json", n=2):
     """Interpolate between frames and poses (up to 16x) using RIFE (ECCV22)
 
     Note: Any keys other than 'file_path' and 'transform_matrix' (per frame) will not be interpolated.
@@ -70,12 +73,25 @@ def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json",
     if n < 2 or not n & (n - 1) == 0:
         raise ValueError(f"Can only interpolate by a power of 2, greater or equal to 2, not {n}.")
 
+    #dict converts file_type input key to transforms key
+    types = {"frames": "file_path", "normals": "normals_file_path", "depths": "depth_file_path"}
+
+    if file_type not in types: 
+        raise ValueError("Interpolation must be on rgb, normal, or depth files")
+    #file_path holds transforms key
+    file_path = types[file_type]
+    
+    print(file_type)
+    print(file_path)
+    
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     transforms = _read_and_validate(path=input_dir / file_name, schema=IMG_SCHEMA)
 
     # Extract paths and ensure they are lexicographically sorted
-    frames = natsorted(transforms["frames"], key=lambda f: f["file_path"])
-    img_paths = [str(input_dir / f["file_path"]) for f in frames]
+    #frames = natsorted(transforms["frames"], key=lambda f: f["file_path"])
+    frames = natsorted(transforms["frames"], key=lambda f: f[file_path])
+    #img_paths = [str(input_dir / f["file_path"]) for f in frames]
+    img_paths = [str(input_dir / f[file_path]) for f in frames]
     exts = set(Path(p).suffix for p in img_paths)
 
     if len(exts) != 1:
@@ -92,7 +108,8 @@ def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json",
     new_poses = pose_spline(interp_indices)
 
     # Perform image interpolation
-    rife(img_paths, output_dir / "frames", exp=np.log2(n).astype(int))
+    rife(img_paths, output_dir / file_type, exp=np.log2(n).astype(int))
+    #rife(img_paths, output_dir / "frames", exp=np.log2(n).astype(int))
 
     # Assemble new transforms.json
     new_paths = natsorted(output_dir.glob(f"frames/*{exts.pop()}"))
@@ -103,7 +120,9 @@ def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json",
         )
 
     new_frames = [
-        {"file_path": str(path.relative_to(output_dir)), "transform_matrix": pose.tolist()}
+        #{"file_path": str(path.relative_to(output_dir)), "transform_matrix": pose.tolist()}
+        {file_path: str(path.relative_to(output_dir)), "transform_matrix": pose.tolist()}
+        #{"depth_file_path": str(path.relative_to(output_dir)), "transform_matrix": pose.tolist()}
         for path, pose in zip(new_paths, new_poses)
     ]
     transforms["frames"] = new_frames
