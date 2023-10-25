@@ -112,7 +112,7 @@ def frames(_, input_dir, output_dir, file_type="frames",  method="rife", file_na
     #rife(img_paths, output_dir / "frames", exp=np.log2(n).astype(int))
 
     # Assemble new transforms.json
-    new_paths = natsorted(output_dir.glob(f"frames/*{exts.pop()}"))
+    new_paths = natsorted(output_dir.glob(f"{file_type}/*{exts.pop()}"))
 
     if len(new_paths) != len(new_poses):
         raise RuntimeError(

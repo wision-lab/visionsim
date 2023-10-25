@@ -496,7 +496,7 @@ class BlenderDatasetGenerator:
         depth_file_output.label = "Depth Output"
         depth_file_output.format.file_format = "OPEN_EXR"
         self.tree.links.new(self.render_layers.outputs["Depth"], depth_file_output.inputs[0])
-        depth_file_output.base_path = ""
+        depth_file_output.base_path = str(self.root_path)
         return depth_file_output
 
     def include_normals(self):
@@ -506,7 +506,7 @@ class BlenderDatasetGenerator:
         normal_file_output = self.tree.nodes.new(type="CompositorNodeOutputFile")
         normal_file_output.label = "Normal Output"
         self.tree.links.new(self.render_layers.outputs["Normal"], normal_file_output.inputs[0])
-        normal_file_output.base_path = ""
+        normal_file_output.base_path = str(self.root_path)
         return normal_file_output
 
     @staticmethod
@@ -676,12 +676,12 @@ class BlenderDatasetGenerator:
         self.scene.render.filepath = str(self.root_path / "frames" / f"frame_{index:06}")
         if self.depth:
            paths["depth_file_path"] = Path(f"depths/depth_{index:06}.exr")
-           self.depth_path.file_slots[0].path = str(self.root_path / "depths" / f"depth_{'#'*6}")
+           self.depth_path.file_slots[0].path = f"depths/depth_{'#'*6}"
            # paths["depth_file_path"] = Path(f"depths/depth_{index:06}.exr")
            # self.depth_path.file_slots[0].path = str(self.root_path / "depths" / f"depth_{'#'*6}")
         if self.normals:
             paths["normals_file_path"] = Path(f"normals/normal_{index:06}").with_suffix(self.scene.render.file_extension)
-            self.normals_path.file_slots[0].path = str(self.root_path / "normals" / f"normal_{'#'*6}")
+            self.normals_path.file_slots[0].path = f"normals/normal_{'#'*6}"
         exists_all = all(Path(self.root_path / p).exists() for p in paths.values())
 
         # Render frame(s), skip the render iff all files exist and `allow_skips`

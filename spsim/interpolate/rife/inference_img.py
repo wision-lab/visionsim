@@ -63,8 +63,8 @@ def interpolate_img(img_paths, output_dir, model_dir=None, exp=4, ratio=0, rthre
             continue
 
         if img_paths[0].endswith(".exr") and img_paths[1].endswith(".exr"):
-            img0 = cv2.imread(img_paths[0], cv2.IMREAD_COLOR | cv2.IMREAD_ANYDEPTH)
-            img1 = cv2.imread(img_paths[1], cv2.IMREAD_COLOR | cv2.IMREAD_ANYDEPTH)
+            img0 = cv2.imread(img_paths[0], cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+            img1 = cv2.imread(img_paths[1], cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
             img0 = (torch.tensor(img0.transpose(2, 0, 1)).to(device)).unsqueeze(0)
             img1 = (torch.tensor(img1.transpose(2, 0, 1)).to(device)).unsqueeze(0)
 
