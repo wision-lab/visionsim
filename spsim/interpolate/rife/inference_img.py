@@ -17,13 +17,14 @@ from tqdm.auto import trange
 from .RIFE_HDv3 import Model
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-torch.set_grad_enabled(False)
-if torch.cuda.is_available():
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = True
 
 
 def interpolate_img(img_paths, output_dir, model_dir=None, exp=4, ratio=0, rthreshold=0.02, rmaxcycles=8, **kwargs):
+    torch.set_grad_enabled(False)
+    if torch.cuda.is_available():
+        torch.backends.cudnn.enabled = True
+        torch.backends.cudnn.benchmark = True
+
     img_paths = natsorted(img_paths)
     Path(output_dir).mkdir(exist_ok=True, parents=True)
 
