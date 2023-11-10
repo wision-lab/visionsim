@@ -2,7 +2,7 @@ import numpy as np
 import torch
 
 
-def binary_avg_to_rgb(mean_binary_patch, factor=1.0):
+def binary_avg_to_rgb(mean_binary_patch, factor=1.0, epsilon=1e-6, quantile=None):
     """Invert the process by which binary frames are simulated. The result can be either
     linear RGB values or sRGB values depending on how the binary frames were constructed.
 
@@ -11,7 +11,13 @@ def binary_avg_to_rgb(mean_binary_patch, factor=1.0):
     values as -log(1-bin)/factor.
     """
     module = torch if torch.is_tensor(mean_binary_patch) else np
-    return -module.log(1 - mean_binary_patch) / factor
+    intensity = -module.log(module.clip(1 - mean_binary_patch, epsilon, 1)) / factor
+
+    if quantile is not None:
+        intensity = intensity / module.quantile(intensity, quantile)
+        intensity = module.clip(intensity, 0, 1)
+
+    return intensity
 
 
 def srgb_to_linearrgb(img):
@@ -36,13 +42,16 @@ def apply_alpha(img, alpha_color=(1.0, 1.0, 1.0), ret_alpha=True):
         raise RuntimeError("Expected image to be of dtype float and normalized to the range [0, 1].")
 
     # At least 3d with added axis appended to end
+    original_shape = img.shape
     img = np.expand_dims(img, -1 if img.ndim == 2 else ())
 
-    # If image does not have 4 channels, pass through
-    if img.shape[-1] != 4:
-        return (img, 1.0) if ret_alpha else img
-
+    # Get image and alpha
     img, alpha = np.split(img, [-1], axis=-1) if img.shape[-1] == 4 else (img, 1.0)
+
+    # If image does not have 4 channels, pass through
+    if original_shape[-1] != 4 or alpha_color is None:
+        return (img, alpha) if ret_alpha else img
+
     img = img * alpha + np.array(alpha_color) * (1 - alpha)
 
     return (img, alpha) if ret_alpha else img

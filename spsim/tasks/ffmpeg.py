@@ -173,7 +173,7 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
             for path in flat_mat:
                 print(f"\n\nPadding {path}...")
                 out_path = Path(tmpdir) / Path(path).name
-                out_path = out_path.with_stem(out_path.stem + "_padded")
+                out_path = out_path.with_name(f"{out_path.stem}_padded{out_path.suffix}")
                 cmd = f"ffmpeg -i {path} -vf tpad=stop=-1=color={color},trim=end={max_duration} {out_path} -y"
                 _run(c, cmd)
                 mapping[path] = out_path
@@ -186,7 +186,7 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
                     print(f"\n\nResizing {path}...")
                     in_path = mapping.get(path, path)
                     out_path = Path(tmpdir) / Path(path).name
-                    out_path = out_path.with_stem(out_path.stem + "_height_resize")
+                    out_path = out_path.with_name(f"{out_path.stem}_height_resize{out_path.suffix}")
                     _run(c, f"ffmpeg -i {in_path} -vf scale=-{multiple}:{max_height} {out_path} -y")
                     mapping[path] = out_path
 
@@ -216,7 +216,7 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
                 if row_sizes[path][0] != max_width:
                     print(f"\n\nResizing {path}...")
                     out_path = Path(tmpdir) / Path(path).name
-                    out_path = out_path.with_stem(out_path.stem + "_width_resize")
+                    out_path = out_path.with_name(f"{out_path.stem}_width_resize{out_path.suffix}")
                     _run(c, f"ffmpeg -i {path} -vf scale={max_width}:-{multiple} {out_path} -y")
                     new_row_paths.append(out_path)
                 else:

@@ -9,7 +9,7 @@ class pose_interp:
     """Linearly interpolate between 4x4 transformation matrices by interpolating it's components:
     Slerp the rotations and lerp the translations. This cannot do extrapolation (yet)."""
 
-    def __init__(self, transforms, ts=None):
+    def __init__(self, transforms, ts=None, kind="linear"):
         ts = np.linspace(0, 1, len(transforms)) if ts is None else ts
         self.ts, self.transforms = to_numpy(ts, transforms)
 
@@ -17,7 +17,7 @@ class pose_interp:
             raise RuntimeError("Rotation matrices in poses must have determinant of 1.")
 
         self._rotation_interp = Slerp(ts, Rotation.from_matrix(self.transforms[:, :3, :3]))
-        self._translation_interp = interp1d(ts, self.transforms[:, :3, -1], kind="linear", axis=0)
+        self._translation_interp = interp1d(ts, self.transforms[:, :3, -1], kind=kind, axis=0)
 
     def __call__(self, t):
         t_shape = np.shape(t)

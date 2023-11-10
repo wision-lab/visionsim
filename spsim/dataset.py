@@ -382,8 +382,9 @@ class NpyDatasetWriter:
     def __setitem__(self, idx: Union[int, List[int]], value: Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]):
         if isinstance(value, tuple):
             data, poses = value
+            if self.transforms:
+                self.poses[idx] = poses
             self.data[idx] = data
-            self.poses[idx] = poses
         elif self.transforms:
             raise RuntimeError("Expected image and pose tuple.")
         else:

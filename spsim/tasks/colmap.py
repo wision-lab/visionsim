@@ -1,12 +1,15 @@
 from pathlib import Path
 
+import numpy as np
 from invoke import task
 
 from spsim.tasks.common import _log_run, _raise_callback, _run, _validate_directories
 
 
 def _generate_mask_single(in_file, output_dir=None):
-    """Extract alpha channel as mask"""
+    """Extract alpha channel as mask
+    No features will be extracted in regions, where the mask image is black (pixel intensity value 0 in grayscale).
+    """
     import numpy as np
 
     from spsim.io import read_img, write_img
@@ -60,6 +63,9 @@ def generate_masks(
         "dense_reconstruction": "if true, perform dense reconstruction after sparse one. default: False",
         "skip_ba": "if true, skip bundle adjustment step, default: False",
         "cuda": "use cuda acceleration where possible, default: True",
+        "sharpness_quantile": "if specified, only use images that are sharper than this quantile, default: None",
+        "step": "sample input images with this step, if different than 1, a registered_frames.json "
+                "file will be created. default: 1",
         "force": "if true, overwrite output file if present, default: False",
     }
 )
@@ -76,6 +82,8 @@ def run(
     dense_reconstruction=False,
     skip_ba=False,
     cuda=True,
+    sharpness_quantile=None,
+    step=1,
     force=False,
 ):
     """Run colmap on the provided images to get a rough pose/scene estimate"""
@@ -83,7 +91,10 @@ def run(
     import json
     import shutil
 
+    from tqdm.auto import tqdm
+
     from spsim.cli import StreamWatcherTqdmPbar  # Lazy import
+    from spsim.colmaptools import compute_sharpness
 
     input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern="*")
     db = Path(output_dir) / "colmap.db"
@@ -101,14 +112,49 @@ def run(
         )
 
     db.unlink(missing_ok=True)
-    shutil.rmtree(str(text), ignore_errors=True)
-    shutil.rmtree(str(sparse), ignore_errors=True)
-    shutil.rmtree(str(dense), ignore_errors=True)
-    shutil.rmtree(str(log), ignore_errors=True)
+    shutil.rmtree(str(output_dir), ignore_errors=True)
     text.mkdir(parents=True, exist_ok=True)
     sparse.mkdir(parents=True, exist_ok=True)
     dense.mkdir(parents=True, exist_ok=True)
     log.mkdir(parents=True, exist_ok=True)
+
+    # Display status
+    print(f"\nFound {len(in_files)} files in {input_dir}...")
+
+    # Create folder with images that will actually be used
+    # If step == 1 this is redundant, but we do it to make the UX/API more consistent
+    if sharpness_quantile and step != 1:
+        raise ValueError("Cannot use both step and sharpness_quantile simultaneously.")
+    if sharpness_quantile:
+        print(
+            f"Found sharpness_quantile={sharpness_quantile}, creating folder "
+            f"{output_dir/'registered-frames'} with symlinks to used frames."
+        )
+        print("Computing sharpness of all images...  ")
+        img_sharpness = {
+            (i, path): compute_sharpness(path)
+            for i, path in tqdm(enumerate(in_files), total=len(in_files))
+        }
+        threshold = np.quantile(list(img_sharpness.values()), float(sharpness_quantile))
+        indices = np.array([
+            i for (i, path), sharpness in img_sharpness.items()
+            if sharpness > threshold or i == 0 or i == len(in_files)-1
+        ])
+        print(f"Found {len(indices)} images with sufficient sharpness.")
+    else:
+        print(f"Found step={step}, creating folder {output_dir/'registered-frames'} with symlinks to used frames.")
+
+        indices = np.arange(len(in_files))
+        indices = np.concatenate([indices[:-1:step], indices[-1:]])  # Always register endpoint images!
+
+    (output_dir / 'registered-frames').mkdir(parents=True, exist_ok=True)
+    for path in np.array(in_files)[indices]:
+        (output_dir / "registered-frames" / Path(path).name).symlink_to(path)
+
+    with (output_dir / "info.json").open("w") as f:
+        json.dump({"indices": indices.tolist(), "total_frames": len(in_files)}, f, indent=2)
+
+    input_dir, _, in_files = _validate_directories(output_dir/'registered-frames', pattern="*")
 
     # Generate masks if not present at mask_dir
     if mask_dir and not mask_dir.exists():
@@ -122,14 +168,27 @@ def run(
             print("\nArgument `camera_params` points to a json file, extracting camera model...")
 
             with open(camera_params, "r") as f:
-                camera_params_data = json.load(f).get("camera")
-                params = [camera_params_data.get(k) for k in ("fx", "fy", "cx", "cy")]
+                camera_params_data = json.load(f)
+                camera_params_data = (
+                    camera_params_data if "camera" not in camera_params_data else camera_params_data["camera"]
+                )
+                params = [
+                    camera_params_data.get(k, camera_params_data.get(k2))
+                    for k, k2 in (("fx", "fl_x"), ("fy", "fl_y"), ("cx", "cx"), ("cy", "cy"))
+                ]
                 if any(v is None for v in params):
                     raise ValueError(f"Missing one of fx, fy, cx, cy in {camera_params}.")
                 camera_params = ", ".join(str(i) for i in params + [0, 0, 0, 0])
                 print("Using parameters", camera_params)
         else:
             raise FileNotFoundError("Supplied `camera_params` path not found!")
+
+    print(
+        f"\nRunning colmap with:\n"
+        f"  -images from: {input_dir}\n"
+        f"  -output will be in: {output_dir}\n"
+        f"  -logs will be saved in: {log}\n"
+    )
 
     # CPU only as we are estimating affine shapes.
     # See: https://github.com/colmap/colmap/issues/1110
@@ -138,7 +197,7 @@ def run(
         f'--ImageReader.camera_params "{camera_params}" '
         f"--SiftExtraction.estimate_affine_shape=true --SiftExtraction.domain_size_pooling=true "
         f"--ImageReader.single_camera 1 --database_path {db} --image_path {input_dir} "
-        f"--SiftExtraction.use_gpu={'false' if not cuda else 'true'} "
+        f"--SiftExtraction.use_gpu='false' "
         f"--SiftExtraction.peak_threshold=0.001 "
     )
     sift_cmd += f"--ImageReader.mask_path {mask_dir} " if mask_dir else ""
@@ -155,8 +214,8 @@ def run(
     mapper_cmd = f"colmap {mapper + '_' if mapper else ''}mapper "
     mapper_cmd += f"--database_path {db} --image_path {input_dir} --output_path {sparse} "
     mapper_cmd += (
-        "--Mapper.ba_refine_focal_length=0 --Mapper.ba_refine_principal_point=0 "
-        "--Mapper.ba_refine_extra_params=0 "
+        "--Mapper.ba_refine_focal_length=1 --Mapper.ba_refine_principal_point=1 "
+        "--Mapper.ba_refine_extra_params=1 "
         "--Mapper.min_num_matches=5 --Mapper.init_min_num_inliers=15 "
         # if camera_params
         # else ""
@@ -164,7 +223,8 @@ def run(
 
     ba_cmd = (
         f"colmap bundle_adjuster --input_path {sparse}/0 --output_path {sparse}/0 "
-        f"--BundleAdjustment.refine_principal_point {int(not bool(camera_params))}"
+        # f"--BundleAdjustment.refine_principal_point {int(not bool(camera_params))}"
+        f"--BundleAdjustment.refine_principal_point=1"
     )
 
     convert_cmd = f"colmap model_converter --input_path {sparse}/0 --output_path {text} --output_type TXT"
@@ -187,14 +247,6 @@ def run(
     poisson_mesher_cmd = f"colmap poisson_mesher --input_path {dense}/fused.ply --output_path {dense}/meshed-poisson.ply"
 
     delaunay_mesher_cmd = f"colmap delaunay_mesher --input_path {dense} --output_path {dense}/meshed-delaunay.ply"
-
-    print(
-        f"\nRunning colmap with:\n"
-        f"  -images from: {input_dir}\n"
-        f"  -output will be in: {output_dir}\n"
-        f"  -logs will be saved in: {log}\n"
-    )
-    print(f"\nFound {len(in_files)} files in {input_dir}...")
 
     print("\nExtracting Features...")
     with StreamWatcherTqdmPbar(r"Processed file \[(?P<n>\d+)/\d+\]", total=len(in_files)) as pbar_watcher:

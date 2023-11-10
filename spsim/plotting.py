@@ -98,9 +98,10 @@ def plot_trajectory(
 
     pose_kwargs_ = dict(focal_len_scaled=-1, alpha=0.05, color=color)
     pose_kwargs_.update(pose_kwargs or {})
+    scale_transform = np.array(trajectory.get("scale_transform", np.eye(4))).reshape(4, 4)
 
     for frame in trajectory["frames"][::step]:
-        T = np.array(frame["transform_matrix"])
+        T = scale_transform @ np.array(frame["transform_matrix"])
         T[:-1, 3] = T[:-1, 3] * scale
         T[:-1, 3] = rot.as_matrix() @ T[:-1, 3] if rot is not None else T[:-1, 3]
         T[:3, :3] = rot.as_matrix() @ T[:3, :3] if rot is not None else T[:3, :3]
@@ -108,7 +109,9 @@ def plot_trajectory(
 
     path_kwargs_ = dict(color=color, alpha=0.4)
     path_kwargs_.update(path_kwargs or {})
-    points = [np.array(frame["transform_matrix"])[:-1, 3] for frame in trajectory["frames"]]
+    points = [scale_transform @ np.array(frame["transform_matrix"]) for frame in trajectory["frames"]]
+    points = [p[:-1, 3] for p in points]
+
     if rot is not None:
         points = [rot.as_matrix() @ p for p in points]
     ax.plot(*np.array(points).T * scale, label=label, **path_kwargs_)
@@ -137,7 +140,7 @@ def plot_trajectory(
     return ax
 
 
-def plot_sparse_reconstruction(points3d_path, ax=None, transform=None, percentile=None, min_track_len=None):
+def plot_sparse_reconstruction(points3d_path, ax=None, transform=None, percentile=None, min_track_len=None, full=False):
     points = np.loadtxt(points3d_path, delimiter=" ", usecols=(1, 2, 3, 4, 5, 6))
     errors = np.loadtxt(points3d_path, delimiter=" ", usecols=(7,))
 
@@ -156,11 +159,13 @@ def plot_sparse_reconstruction(points3d_path, ax=None, transform=None, percentil
 
         if path.exists():
             with open(str(path), "r") as f:
-                transform = json.load(f).get("post_transform")
-
-        if transform:
-            transform = np.array(transform).reshape(4, 4)
-            print(f"Loaded transform from {path.resolve()}.")
+                data = json.load(f)
+                post_transform = data.get("post_transform", np.eye(4))
+                post_transform = np.array(post_transform).reshape(4, 4)
+                scale_transform = data.get("scale_transform", np.eye(4))
+                scale_transform = np.array(scale_transform).reshape(4, 4)
+                transform = scale_transform @ post_transform
+                print(f"Loaded transform from {path.resolve()}.")
 
     x, y, z, *color = points.T
 
@@ -173,6 +178,8 @@ def plot_sparse_reconstruction(points3d_path, ax=None, transform=None, percentil
     ax = plt.figure(figsize=(8, 8)).add_subplot(projection="3d") if ax is None else ax
     ax.scatter(x, y, z, c=np.stack(color).T / 255)
 
+    if full:
+        return ax, (x, y, z)
     return ax
 
 
@@ -181,8 +188,6 @@ def _render_single_view(item, pickled_fig=None, savefig_kwargs=None):
     fig = pickle.loads(pickled_fig)
     ax = fig.gca()
     ax.view_init(*view_dir)  # altitude, azimuth, roll
-    ax.axis("off")
-    plt.tight_layout()
     plt.savefig(outfile, **savefig_kwargs)
 
 

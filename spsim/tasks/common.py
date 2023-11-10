@@ -33,14 +33,16 @@ def _raise_callback(*args, err_type=ValueError, message="", **kwargs):
     raise err_type(message)
 
 
-def _validate_directories(input_dir, output_dir, pattern=None):
+def _validate_directories(input_dir, output_dir=None, pattern=None):
     import glob  # Lazy import
 
     from natsort import natsorted
 
     input_dir = Path(input_dir).resolve()
-    output_dir = Path(output_dir).resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if output_dir is not None:
+        output_dir = Path(output_dir).resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     if not input_dir.exists():
         raise RuntimeError(f"Input directory {input_dir} does not exist.")
