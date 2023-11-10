@@ -22,6 +22,7 @@ def _tonemap_single(in_file, output_dir=None, ext=None):
 
 
 @task(
+    auto_shortflags = False,
     help={
         "input_dir": "directory in which to look for frames",
         "output_dir": "directory in which to save colorized frames",

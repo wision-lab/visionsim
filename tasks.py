@@ -11,7 +11,7 @@ import shutil
 import webbrowser
 from pathlib import Path
 
-from invoke import task
+from invoke import task, context
 
 MAX_LINE_LENGTH = 121
 
@@ -22,6 +22,7 @@ COVERAGE_FILE = ROOT_DIR.joinpath(".coverage")
 COVERAGE_DIR = ROOT_DIR.joinpath("htmlcov")
 COVERAGE_REPORT = COVERAGE_DIR.joinpath("index.html")
 PYTHON_DIRS = [str(d) for d in [SOURCE_DIR, TEST_DIR]]
+DOCS_DIR = ROOT_DIR.joinpath("docs")
 
 
 def _delete_file(file, except_patterns=None):
@@ -125,8 +126,20 @@ def clean_tests(c):
     _delete_file(COVERAGE_DIR)
     _delete_pattern(".pytest_cache")
 
+@task
+def clean_docs(c):
+    """Clean up docs build"""
+    with c.cd(DOCS_DIR):
+        _run(c, "make clean")
 
-@task(pre=[clean_build, clean_python, clean_tests])
+@task
+def build_docs(c):
+    """Confirm docs can be built"""
+    with c.cd(DOCS_DIR):
+        _run(c, "make html")
+
+
+@task(pre=[clean_build, clean_python, clean_tests, clean_docs])
 def clean(c):
     """Runs all clean sub-tasks"""
     _run(c, "ruff clean")

@@ -3,12 +3,17 @@
 import argparse
 from pathlib import Path
 
+#robin
+import os
+os.environ["OPENCV_IO_ENABLE_OPENEXR"]="1"
+
+#robin
+
 import cv2
 import torch
 from natsort import natsorted
 from torch.nn import functional as F
 from tqdm.auto import trange
-
 from .RIFE_HDv3 import Model
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -59,8 +64,8 @@ def interpolate_img(img_paths, output_dir, model_dir=None, exp=4, ratio=0, rthre
             continue
 
         if img_paths[0].endswith(".exr") and img_paths[1].endswith(".exr"):
-            img0 = cv2.imread(img_paths[0], cv2.IMREAD_COLOR | cv2.IMREAD_ANYDEPTH)
-            img1 = cv2.imread(img_paths[1], cv2.IMREAD_COLOR | cv2.IMREAD_ANYDEPTH)
+            img0 = cv2.imread(img_paths[0], cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+            img1 = cv2.imread(img_paths[1], cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
             img0 = (torch.tensor(img0.transpose(2, 0, 1)).to(device)).unsqueeze(0)
             img1 = (torch.tensor(img1.transpose(2, 0, 1)).to(device)).unsqueeze(0)
 

@@ -5,3 +5,4 @@ pre-commit
 coverage
 hypothesis
 ruff
+sphinx
