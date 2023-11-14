@@ -15,8 +15,6 @@ def read_img(in_file, apply_alpha=True, grayscale=False, alpha_color=(1.0, 1.0, 
     
     :returns:
         Processed image data and alpha channels data.
-        
-
     """
     img = iio.imread(in_file)
 

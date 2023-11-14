@@ -334,6 +334,7 @@ class BlenderDatasetGenerator:
         keyframe_multiplier=1.0,
         use_motion_blur=True,
         alpha_color=None,
+        adaptive_threshold=0.1,
         **kwargs,
     ):
         # Load blender file
@@ -369,7 +370,7 @@ class BlenderDatasetGenerator:
         # Render Optimizations and Settings
         self.scene.render.engine = "CYCLES"
         self.scene.cycles.use_denoising = True
-        self.scene.cycles.adaptive_threshold = 0.1
+        self.scene.cycles.adaptive_threshold = adaptive_threshold
         # self.scene.cycles.debug_use_spatial_splits = True
         self.scene.render.use_persistent_data = True
         self.scene.render.use_motion_blur = use_motion_blur
@@ -1012,6 +1013,13 @@ def parser_config():
                 help="background color as specified by a RGB list in [0-1] range, if specified, renders will be "
                      "composited with this color and be RGB instead of RGBA. default: None (no override)",
             ),
+            dict(
+                name="--adaptive-threshold",
+                type=float,
+                default=0.1,
+                help="Noise threshold of rendered images, for higher quality frames make this threshold smaller. "
+                     "The default value is intentionally a little high to speed up renders. default: 0.1"
+            )
         ],
     }
     return parser_conf

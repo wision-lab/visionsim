@@ -8,21 +8,24 @@ from tqdm.auto import tqdm
 from spsim.tasks.common import _validate_directories
 
 
-def _tonemap_single(in_file, output_dir=None, ext=None):
+def _tonemap_single(in_file, output_dir=None, ext=None, save=True, hdr_quantile=0.01):
     from spsim.color import linearrgb_to_srgb  # Lazy load
     from spsim.io import read_img, write_img  # Lazy load
-    from spsim.utils import img_to_tensor, tensor_to_img  # Lazy Load
 
     # Open with opencv, apply tone mapping and save as png.
     img, _ = read_img(in_file, apply_alpha=True)
-    img = tensor_to_img(linearrgb_to_srgb(img_to_tensor(img)))
-    img = (np.clip(img, 0, 1) * 255).astype(np.uint8)
-    path = output_dir / Path(in_file).stem
-    write_img(str(path.with_suffix(ext)), img)
+    high, low = np.quantile(img, [1-hdr_quantile, hdr_quantile])
+
+    if save:
+        img = linearrgb_to_srgb(img)
+        img = (np.clip(img, 0, 1) * 255).astype(np.uint8)
+        path = output_dir / Path(in_file).stem
+        write_img(str(path.with_suffix(ext)), img)
+    return high/low
 
 
 @task(
-    auto_shortflags = False,
+    auto_shortflags=False,
     help={
         "input_dir": "directory in which to look for frames",
         "output_dir": "directory in which to save colorized frames",
@@ -87,20 +90,23 @@ def colorize_depth(
 @task(
     help={
         "input_dir": "directory in which to look for frames",
-        "output_dir": "directory in which to save tone mapped frames",
+        "output_dir": "directory in which to save tone mapped frames, if not specified the dynamic "
+                      "range is calculated and no tonemapping occurs. default: None",
         "pattern": "filenames of frames should match this, default: 'frame_*.exr'",
         "ext": "which format to save colorized frames as, default: '.png'",
         "step": "drop some frames when tone mapping, use frames 0+step*n, default: 1",
     }
 )
-def tonemap_exrs(c, input_dir, output_dir, pattern="frame_*.exr", ext=".png", step=1):
+def tonemap_exrs(c, input_dir, output_dir=None, pattern="frame_*.exr", ext=".png", step=1):
     """Convert .exr linear intensity frames into tone-mapped sRGB images"""
     import multiprocessing
 
     input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
 
-    tonemap_single = functools.partial(_tonemap_single, output_dir=output_dir, ext=ext)
+    tonemap_single = functools.partial(_tonemap_single, output_dir=output_dir, ext=ext, save=output_dir is not None)
 
     with multiprocessing.Pool(processes=c.get("max_threads")) as p:
         tasks = p.imap(tonemap_single, in_files[::step])
-        list(tqdm(tasks, total=len(in_files) // step))
+        hdrs = np.array(list(tqdm(tasks, total=len(in_files) // step)))
+
+    print(f"Mean dynamic range is {hdrs.mean():0.2f}, with range ({hdrs.min():0.2f}, {hdrs.max():0.2f})")

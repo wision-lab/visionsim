@@ -41,7 +41,8 @@ def srgb_to_linearrgb(img):
     module = torch if torch.is_tensor(img) else np
     mask = img < 0.04045
     img[mask] = module.clip(img[mask], 0.0, module.inf) / 12.92
-    return ((img + 0.055) / 1.055) ** 2.4
+    img[~mask] = ((img[~mask] + 0.055) / 1.055) ** 2.4
+    return img
 
 
 def linearrgb_to_srgb(img):
@@ -55,8 +56,10 @@ def linearrgb_to_srgb(img):
     # https://github.com/blender/blender/blob/master/source/blender/blenlib/intern/math_color.c
     module = torch if torch.is_tensor(img) else np
     mask = img < 0.0031308
-    img[mask] = module.clip(img[mask], 0.0, module.inf) * 12.92
-    return module.clip(1.055 * img ** (1.0 / 2.4) - 0.055, 0.0, 1.0)
+    img[img < 0.0] = 0.0
+    img[mask] = img[mask] * 12.92
+    img[~mask] = module.clip(1.055 * img[~mask] ** (1.0 / 2.4) - 0.055, 0.0, 1.0)
+    return img
 
 
 def apply_alpha(img, alpha_color=(1.0, 1.0, 1.0), ret_alpha=True):

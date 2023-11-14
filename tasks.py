@@ -11,7 +11,7 @@ import shutil
 import webbrowser
 from pathlib import Path
 
-from invoke import task, context
+from invoke import task
 
 MAX_LINE_LENGTH = 121
 
