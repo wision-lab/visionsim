@@ -55,25 +55,25 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
     - A list of poses, or list[None]
     - The contents of the transforms file or None
 
-    Args: 
+    Args:
         root: Root path of the dataset. Representd as a string or Path object.
         mode: Specifies mode to process dataset. Can be either 'img' or 'npy'.
 
     :returns:
-        Tuple consisting of data_paths - list of paths to data files in dataset, 
+        Tuple consisting of data_paths - list of paths to data files in dataset,
         poses - containing pose information for each data file, transforms - dictionary of information from json file.
     """
-    #RY. Makes provided root into Path object for easier manipulation
+    # RY. Makes provided root into Path object for easier manipulation
     root = Path(root)
 
-    #RY. if root is a directory
+    # RY. if root is a directory
     if root.is_dir():
-        #Ry. if transforms file is found, set transforms path and data path to none
+        # Ry. if transforms file is found, set transforms path and data path to none
         if (root / "transforms.json").is_file():
             transforms_path = root / "transforms.json"
             data_path = None
-        #RY. if no transforms file and mode in 'img', checks for image files. 
-        #if found, transforms path is none and data path to root.
+        # RY. if no transforms file and mode in 'img', checks for image files.
+        # if found, transforms path is none and data path to root.
         elif mode.lower() == "img":
             img_exts = set(imageio.core.format.known_extensions.keys())
             found_exts = set(p.suffix for p in root.glob("*"))
@@ -83,8 +83,8 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
                 data_path = root
             else:
                 raise FileNotFoundError(f"No image files found in {root}.")
-        #Ry. if no transforms file and mode is 'npy', check for frames.npy. 
-        #if found, transforms path is none, datat path is frames.npy
+        # Ry. if no transforms file and mode is 'npy', check for frames.npy.
+        # if found, transforms path is none, datat path is frames.npy
         elif mode.lower() == "npy":
             if (root / "frames.npy").is_file():
                 transforms_path = None
@@ -93,9 +93,9 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
                 raise FileNotFoundError("Expected one of 'transforms.json' or 'frames.npy'. Please give full path.")
         else:
             raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
-    #Ry. else if root is a file
+    # Ry. else if root is a file
     elif root.is_file():
-        #Ry. if json file, becomes transforms path, data path none.
+        # Ry. if json file, becomes transforms path, data path none.
         if root.suffix == ".json":
             transforms_path = root
             data_path = None
@@ -112,16 +112,16 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
     else:
         raise FileNotFoundError(f"Dataset root ({root}) not found!")
 
-    #Ry. if mode is img
+    # Ry. if mode is img
     if mode.lower() == "img":
         # Extract paths and ensure they are lexicographically sorted
-        #Ry. if transforms path is not none, reads and validates
+        # Ry. if transforms path is not none, reads and validates
         if transforms_path:
             transforms = _read_and_validate(path=transforms_path, schema=IMG_SCHEMA)
             frames = natsorted(transforms["frames"], key=lambda f: f["file_path"])
             data_paths = [transforms_path.parent / f["file_path"] for f in frames]
             poses = [f["transform_matrix"] for f in frames]
-        #RY. if transforms path is none, data paths are sorted files, poses none, transforms none.
+        # RY. if transforms path is none, data paths are sorted files, poses none, transforms none.
         else:
             data_paths = natsorted(data_path.glob("*"))
             poses = [None] * len(data_paths)
@@ -129,7 +129,7 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
 
         if len(exts := set(Path(p).suffix for p in data_paths)) != 1:
             raise RuntimeError(f"All images must have same extension but found {exts}.")
-    #Ry. if mode is npy
+    # Ry. if mode is npy
     else:
         if transforms_path:
             transforms = _read_and_validate(path=transforms_path, schema=NPY_SCHEMA)
@@ -145,8 +145,8 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
 
 def default_collate(batch):
     """Collate function that takes in a batch of [(img_idx, img, pose), ...] and returns (img_idxs, imgs, poses)
-    
-    Args: 
+
+    Args:
         batch: List of tuples (img_idx, img, pose).
 
     :returns:
@@ -161,10 +161,7 @@ def default_collate(batch):
 
 
 def dataset_dispatch(root, *args, mode=None, **kwargs):
-    """Given a dataset root, resolve it and instantiate the correct dataset type
-
-
-    """
+    """Given a dataset root, resolve it and instantiate the correct dataset type"""
     if mode is not None:
         if mode.lower() == "img":
             return ImgDataset(root, *args, **kwargs)

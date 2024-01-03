@@ -4,15 +4,17 @@ import numpy as np
 from invoke import task
 
 
-def _spad_collate(batch, *, mode, rng, factor, alpha_color):
+def _spad_collate(batch, *, mode, rng, factor, alpha_color, is_tonemapped=True):
     """Use default collate function on batch and then simulate SPAD, enabling compute to be done in threads"""
     from spsim.color import apply_alpha, srgb_to_linearrgb
     from spsim.dataset import default_collate
 
     idxs, imgs, poses = default_collate(batch)
 
-    # Assume image has been tonemapped and undo mapping
-    imgs = srgb_to_linearrgb((imgs / 255.0).astype(float))
+    if is_tonemapped:
+        # Image has been tonemapped so undo mapping
+        imgs = srgb_to_linearrgb((imgs / 255.0).astype(float))
+
     imgs, alpha = apply_alpha(imgs, alpha_color=alpha_color, ret_alpha=True)
 
     # Perform bernoulli sampling (equivalent to binomial w/ n=1)
@@ -79,16 +81,18 @@ def spad(
     else:
         raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
 
-    if any(str(p).endswith(".exr") for p in getattr(dataset, "paths", [])):
-        # TODO: This is due to the alpha blending below, we need alpha in [0, 1] to blend.
-        raise NotImplementedError("Task does not yet support EXRs")
+    is_tonemapped = all(not str(p).endswith(".exr") for p in getattr(dataset, "paths", []))
+    # # TODO: This is due to the alpha blending below, we need alpha in [0, 1] to blend.
+    # raise NotImplementedError("Task does not yet support EXRs")
 
     rng = np.random.default_rng(int(seed))
     loader = DataLoader(
         dataset,
         batch_size=batch_size,
         num_workers=c.get("max_threads"),
-        collate_fn=functools.partial(_spad_collate, mode=mode, rng=rng, factor=factor, alpha_color=alpha_color),
+        collate_fn=functools.partial(
+            _spad_collate, mode=mode, rng=rng, factor=factor, alpha_color=alpha_color, is_tonemapped=is_tonemapped
+        ),
     )
     pbar = tqdm(total=len(dataset))
 
@@ -97,7 +101,7 @@ def spad(
     ) if mode.lower() == "img" else NpyDatasetWriter(
         output_dir, np.ceil(shape).astype(int), transforms=transforms_new, force=force
     ) as writer:
-        for i, (idxs, imgs, poses) in enumerate(loader):
+        for idxs, imgs, poses in loader:
             writer[idxs] = (imgs, poses)
             pbar.update(len(idxs))
 

@@ -65,7 +65,7 @@ def generate_masks(
         "cuda": "use cuda acceleration where possible, default: True",
         "sharpness_quantile": "if specified, only use images that are sharper than this quantile, default: None",
         "step": "sample input images with this step, if different than 1, a registered_frames.json "
-                "file will be created. default: 1",
+        "file will be created. default: 1",
         "force": "if true, overwrite output file if present, default: False",
     }
 )
@@ -132,14 +132,16 @@ def run(
         )
         print("Computing sharpness of all images...  ")
         img_sharpness = {
-            (i, path): compute_sharpness(path)
-            for i, path in tqdm(enumerate(in_files), total=len(in_files))
+            (i, path): compute_sharpness(path) for i, path in tqdm(enumerate(in_files), total=len(in_files))
         }
         threshold = np.quantile(list(img_sharpness.values()), float(sharpness_quantile))
-        indices = np.array([
-            i for (i, path), sharpness in img_sharpness.items()
-            if sharpness > threshold or i == 0 or i == len(in_files)-1
-        ])
+        indices = np.array(
+            [
+                i
+                for (i, path), sharpness in img_sharpness.items()
+                if sharpness > threshold or i == 0 or i == len(in_files) - 1
+            ]
+        )
         print(f"Found {len(indices)} images with sufficient sharpness.")
     else:
         print(f"Found step={step}, creating folder {output_dir/'registered-frames'} with symlinks to used frames.")
@@ -147,14 +149,14 @@ def run(
         indices = np.arange(len(in_files))
         indices = np.concatenate([indices[:-1:step], indices[-1:]])  # Always register endpoint images!
 
-    (output_dir / 'registered-frames').mkdir(parents=True, exist_ok=True)
+    (output_dir / "registered-frames").mkdir(parents=True, exist_ok=True)
     for path in np.array(in_files)[indices]:
         (output_dir / "registered-frames" / Path(path).name).symlink_to(path)
 
     with (output_dir / "info.json").open("w") as f:
         json.dump({"indices": indices.tolist(), "total_frames": len(in_files)}, f, indent=2)
 
-    input_dir, _, in_files = _validate_directories(output_dir/'registered-frames', pattern="*")
+    input_dir, _, in_files = _validate_directories(output_dir / "registered-frames", pattern="*")
 
     # Generate masks if not present at mask_dir
     if mask_dir and not mask_dir.exists():

@@ -126,11 +126,13 @@ def clean_tests(c):
     _delete_file(COVERAGE_DIR)
     _delete_pattern(".pytest_cache")
 
+
 @task
 def clean_docs(c):
     """Clean up docs build"""
     with c.cd(DOCS_DIR):
         _run(c, "make clean")
+
 
 @task
 def build_docs(c):

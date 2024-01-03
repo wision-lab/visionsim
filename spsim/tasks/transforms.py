@@ -1,4 +1,3 @@
-import functools
 from pathlib import Path
 
 import numpy as np
@@ -8,20 +7,17 @@ from tqdm.auto import tqdm
 from spsim.tasks.common import _validate_directories
 
 
-def _tonemap_single(in_file, output_dir=None, ext=None, save=True, hdr_quantile=0.01):
-    from spsim.color import linearrgb_to_srgb  # Lazy load
-    from spsim.io import read_img, write_img  # Lazy load
+def _tonemap_collate(batch, *, hdr_quantile=0.01):
+    """Use default collate function on batch and then tonemap, enabling compute to be done in threads"""
+    from spsim.color import linearrgb_to_srgb
+    from spsim.dataset import default_collate
 
-    # Open with opencv, apply tone mapping and save as png.
-    img, _ = read_img(in_file, apply_alpha=True)
-    high, low = np.quantile(img, [1-hdr_quantile, hdr_quantile])
+    idxs, imgs, poses = default_collate(batch)
+    high, low = np.quantile(imgs, [1 - hdr_quantile, hdr_quantile])
+    imgs = linearrgb_to_srgb(imgs)
+    imgs = (np.clip(imgs, 0, 1) * 255).astype(np.uint8)
 
-    if save:
-        img = linearrgb_to_srgb(img)
-        img = (np.clip(img, 0, 1) * 255).astype(np.uint8)
-        path = output_dir / Path(in_file).stem
-        write_img(str(path.with_suffix(ext)), img)
-    return high/low
+    return idxs, imgs, poses, high / low
 
 
 @task(
@@ -37,7 +33,7 @@ def _tonemap_single(in_file, output_dir=None, ext=None, save=True, hdr_quantile=
         "percentage": "if vmin/vmax are None, sample a subset of frames to determine range. "
         "This sets the sampling amount, default: 0.2",
         "step": "drop some frames when colorizing, use frames 0+step*n, default: 1",
-    }
+    },
 )
 def colorize_depth(
     _,
@@ -91,22 +87,32 @@ def colorize_depth(
     help={
         "input_dir": "directory in which to look for frames",
         "output_dir": "directory in which to save tone mapped frames, if not specified the dynamic "
-                      "range is calculated and no tonemapping occurs. default: None",
-        "pattern": "filenames of frames should match this, default: 'frame_*.exr'",
-        "ext": "which format to save colorized frames as, default: '.png'",
-        "step": "drop some frames when tone mapping, use frames 0+step*n, default: 1",
+        "range is calculated and no tonemapping occurs. default: None",
+        "batch_size": "number of frames to write at once, default: 4",
+        "force": "if true, overwrite output file(s) if present, default: False",
     }
 )
-def tonemap_exrs(c, input_dir, output_dir=None, pattern="frame_*.exr", ext=".png", step=1):
+def tonemap_exrs(c, input_dir, output_dir=None, batch_size=4, force=False):
     """Convert .exr linear intensity frames into tone-mapped sRGB images"""
-    import multiprocessing
+    from torch.utils.data import DataLoader
+    from tqdm.auto import tqdm
 
-    input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
+    from spsim.dataset import ImgDatasetWriter, dataset_dispatch
 
-    tonemap_single = functools.partial(_tonemap_single, output_dir=output_dir, ext=ext, save=output_dir is not None)
+    from .common import _validate_directories
 
-    with multiprocessing.Pool(processes=c.get("max_threads")) as p:
-        tasks = p.imap(tonemap_single, in_files[::step])
-        hdrs = np.array(list(tqdm(tasks, total=len(in_files) // step)))
+    input_dir, output_dir = _validate_directories(input_dir, output_dir)
+    dataset = dataset_dispatch(input_dir)
 
+    loader = DataLoader(dataset, batch_size=batch_size, num_workers=c.get("max_threads"), collate_fn=_tonemap_collate)
+    pbar = tqdm(total=len(dataset))
+    hdrs = []
+
+    with ImgDatasetWriter(output_dir, transforms=dataset.transforms, force=force, pattern="frame_{:06}.png") as writer:
+        for idxs, imgs, poses, hdr in loader:
+            writer[idxs] = (imgs, poses)
+            hdrs.append(hdr)
+            pbar.update(len(idxs))
+
+    hdrs = np.array(hdrs)
     print(f"Mean dynamic range is {hdrs.mean():0.2f}, with range ({hdrs.min():0.2f}, {hdrs.max():0.2f})")
