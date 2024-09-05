@@ -14,6 +14,7 @@ from spsim.tasks.common import _run, _validate_directories
         "crf": "constant rate factor for video encoding (0-51), lower is better quality but more memory, default: 22",
         "vcodec": "video codec to use (either libx264 or libx265), default: libx264",
         "step": "drop some frames when making video, use frames 0+step*n, default: 1",
+        "multiple": "some codecs require size to be a multiple of n, default: 2",
         "force": "if true, overwrite output file if present, default: False",
         "bg_color": "for images with transparencies, namely PNGs, use this color as a background, default: 'black'",
         "png_filter": "if false, do not pre-process PNGs to remove transparencies, default: True",
@@ -30,6 +31,7 @@ def animate(
     crf=22,
     vcodec="libx264",
     step=1,
+    multiple=2,
     force=False,
     bg_color="black",
     png_filter=True,
@@ -81,12 +83,16 @@ def animate(
         else:
             # No transformation needed, simply symlink files
             for i, p in enumerate(in_files[::step]):
-                (tmpdirname / f"{i:09}{ext}").symlink_to(p)
+                (tmpdirname / f"{i:09}{ext}").symlink_to(p, target_is_directory=False)
 
         cmd = (
             f"ffmpeg -framerate {fps} -f image2 -i {tmpdirname / ('%09d' + ext)} {png_filter}"
-            f"{'-y' if force else ''} -vcodec {vcodec} -crf {crf} -pix_fmt yuv420p {outfile}"
+            f"{'-y' if force else ''} -vcodec {vcodec} -crf {crf} -pix_fmt yuv420p "
         )
+        if multiple:
+            cmd += f"-vf scale=-{multiple}:2048 "
+
+        cmd += f"{outfile} "
         _run(c, cmd, hide=hide)
 
 

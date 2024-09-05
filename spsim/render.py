@@ -168,7 +168,7 @@ class Spline:
             spline: Spline curve to be smoothed.
             t: Time when spline is evaluted.
             samples: Number of samples used for smoothing. Defaults to 5.
-            interval: Interval used for between samplings. Defaultsto 0.01.
+            interval: Interval used for between samplings. Defaults to 0.01.
         """
         return np.mean([spline(t + offset) for offset in (np.arange(samples) - samples // 2) * interval], axis=0)
 
@@ -429,8 +429,10 @@ class BlenderDatasetGenerator:
             self.scene.render.dither_intensity = 0.0
             self.scene.render.film_transparent = True
 
-            # Ensure we are using the compositor
+            # Ensure we are using the compositor, reload tree if didn't exist.
             self.scene.use_nodes = True
+            self.scene = bpy.context.scene
+            self.tree = self.scene.node_tree
 
             # Bypass everything, and only alpha blend
             # This is a bit fragile atm, as it relies on the node to have correct names...
@@ -589,7 +591,7 @@ class BlenderDatasetGenerator:
         try:
             return json.loads(string)
         except json.JSONDecodeError:
-            path = Path(string).resolve()
+            path = Path(string).expanduser().resolve()
             with open(str(path), "r") as f:
                 return json.load(f)
 

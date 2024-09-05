@@ -140,7 +140,7 @@ def plot_trajectory(
     return ax
 
 
-def plot_sparse_reconstruction(points3d_path, ax=None, transform=None, percentile=None, min_track_len=None, full=False):
+def plot_sparse_reconstruction(points3d_path, ax=None, transform=None, percentile=None, min_track_len=None, scale=1.0, full=False):
     points = np.loadtxt(points3d_path, delimiter=" ", usecols=(1, 2, 3, 4, 5, 6))
     errors = np.loadtxt(points3d_path, delimiter=" ", usecols=(7,))
 
@@ -176,7 +176,7 @@ def plot_sparse_reconstruction(points3d_path, ax=None, transform=None, percentil
         x, y, z = x / ones, y / ones, z / ones
 
     ax = plt.figure(figsize=(8, 8)).add_subplot(projection="3d") if ax is None else ax
-    ax.scatter(x, y, z, c=np.stack(color).T / 255)
+    ax.scatter(x*scale, y*scale, z*scale, c=np.stack(color).T / 255)
 
     if full:
         return ax, (x, y, z)

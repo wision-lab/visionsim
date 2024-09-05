@@ -14,8 +14,10 @@ def _spad_collate(batch, *, mode, rng, factor, alpha_color, is_tonemapped=True):
     if is_tonemapped:
         # Image has been tonemapped so undo mapping
         imgs = srgb_to_linearrgb((imgs / 255.0).astype(float))
+    else:
+        imgs = imgs.astype(float) / 255.0
 
-    imgs, alpha = apply_alpha(imgs, alpha_color=alpha_color, ret_alpha=True)
+    imgs, alpha = apply_alpha(imgs[..., 0], alpha_color=alpha_color, ret_alpha=True)
 
     # Perform bernoulli sampling (equivalent to binomial w/ n=1)
     binary_img = rng.binomial(1, 1.0 - np.exp(-imgs * factor)) * 255
@@ -82,8 +84,6 @@ def spad(
         raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
 
     is_tonemapped = all(not str(p).endswith(".exr") for p in getattr(dataset, "paths", []))
-    # # TODO: This is due to the alpha blending below, we need alpha in [0, 1] to blend.
-    # raise NotImplementedError("Task does not yet support EXRs")
 
     rng = np.random.default_rng(int(seed))
     loader = DataLoader(
@@ -127,8 +127,8 @@ def rgb(
     output_dir,
     chunk_size=10,
     factor=1.0,
-    readout_std=20,
-    fwc=500,
+    readout_std=20.0,
+    fwc=500.0,
     alpha_color="(1.0, 1.0, 1.0)",
     pattern="frame_{:06}.png",
     mode="npy",
@@ -156,6 +156,7 @@ def rgb(
     shape = np.array(dataset.full_shape)
     shape[-1] = transforms_new["c"] = 3
     shape[0] = np.ceil(shape[0] / chunk_size).astype(int)
+    transforms_new = transforms_new if dataset.transforms else {}
 
     if mode.lower() not in ("img", "npy"):
         raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
@@ -175,7 +176,7 @@ def rgb(
         for i, batch in enumerate(mitertools.ichunked(loader, chunk_size)):
             # Batch is an iterable of (idx, img, pose) that we need to reduce
             idxs, imgs, poses = mitertools.unzip(batch)
-            imgs = sum((i / 255.0).astype(float) for i in imgs)
+            imgs = sum((i.astype(float) / 255.0).astype(float) for i in imgs)
             idxs, poses = np.concatenate(list(idxs)), np.concatenate(list(poses))
             imgs = imgs.squeeze() / len(idxs)
 
@@ -184,10 +185,13 @@ def rgb(
             imgs, alpha = apply_alpha(imgs, alpha_color=alpha_color, ret_alpha=True)
 
             rgb_img = emulate_rgb_from_merged(
-                img_to_tensor(imgs * factor), burst_size=chunk_size, readout_std=readout_std, fwc=fwc, factor=factor
+                img_to_tensor(imgs[..., 0] * factor), burst_size=chunk_size, readout_std=readout_std, fwc=fwc, factor=factor
             )
             rgb_img = tensor_to_img(rgb_img * 255)
-            pose = pose_interp(poses)(0.5)
+            pose = pose_interp(poses)(0.5) if transforms_new else None
+
+            if rgb_img.shape[-1] == 1:
+                rgb_img = np.repeat(rgb_img, 3, axis=-1)
 
             writer[i] = (rgb_img.astype(np.uint8), pose)
             pbar.update(len(idxs))

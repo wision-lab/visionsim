@@ -1,3 +1,4 @@
+import functools
 from pathlib import Path
 
 import numpy as np
@@ -92,7 +93,7 @@ def colorize_depth(
         "force": "if true, overwrite output file(s) if present, default: False",
     }
 )
-def tonemap_exrs(c, input_dir, output_dir=None, batch_size=4, force=False):
+def tonemap_exrs(c, input_dir, output_dir=None, batch_size=4, hdr_quantile=0.01, force=False):
     """Convert .exr linear intensity frames into tone-mapped sRGB images"""
     from torch.utils.data import DataLoader
     from tqdm.auto import tqdm
@@ -104,7 +105,12 @@ def tonemap_exrs(c, input_dir, output_dir=None, batch_size=4, force=False):
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     dataset = dataset_dispatch(input_dir)
 
-    loader = DataLoader(dataset, batch_size=batch_size, num_workers=c.get("max_threads"), collate_fn=_tonemap_collate)
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        num_workers=c.get("max_threads"),
+        collate_fn=functools.partial(_tonemap_collate, hdr_quantile=hdr_quantile),
+    )
     pbar = tqdm(total=len(dataset))
     hdrs = []
 
