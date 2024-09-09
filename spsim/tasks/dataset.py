@@ -135,7 +135,7 @@ def npy_to_imgs(
     loader = DataLoader(dataset, sampler=sampler, batch_size=batch_size, num_workers=c.get("max_threads"), collate_fn=default_collate)
     pbar = tqdm(total=len(sampler))
 
-    with ImgDatasetWriter(output_dir, transforms={}, force=force, pattern=pattern) as writer:
+    with ImgDatasetWriter(output_dir, transforms=transforms_new, force=force, pattern=pattern) as writer:
         for i, (idxs, imgs, poses) in enumerate(loader):
             print(imgs.shape)
             writer[idxs] = (np.repeat((imgs*255).astype(np.uint8), 3, -1), poses)
