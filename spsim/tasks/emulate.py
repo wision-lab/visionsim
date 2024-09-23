@@ -185,7 +185,11 @@ def rgb(
             imgs, alpha = apply_alpha(imgs, alpha_color=alpha_color, ret_alpha=True)
 
             rgb_img = emulate_rgb_from_merged(
-                img_to_tensor(imgs[..., 0] * factor), burst_size=chunk_size, readout_std=readout_std, fwc=fwc, factor=factor
+                img_to_tensor(imgs[..., 0] * factor),
+                burst_size=chunk_size,
+                readout_std=readout_std,
+                fwc=fwc,
+                factor=factor,
             )
             rgb_img = tensor_to_img(rgb_img * 255)
             pose = pose_interp(poses)(0.5) if transforms_new else None

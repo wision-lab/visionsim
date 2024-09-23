@@ -87,9 +87,9 @@ def colorize_depth(
 @task(
     help={
         "input_dir": "directory in which to look for frames",
-        "output_dir": "directory in which to save tone mapped frames, if not specified the dynamic "
-        "range is calculated and no tonemapping occurs. default: None",
+        "output_dir": "directory in which to save tone mapped frames, if not specified the dynamic range is calculated and no tonemapping occurs, default: None",
         "batch_size": "number of frames to write at once, default: 4",
+        "hdr_quantile": "calculate dynamic range using brightness quantiles instead of extrema, default: 0.01",
         "force": "if true, overwrite output file(s) if present, default: False",
     }
 )

@@ -18,8 +18,7 @@ class pose_interp:
             self.transforms[:, :3, :3] /= self.determinants[:, None, None]
         elif not np.allclose(self.determinants, 1.0):
             raise RuntimeError(
-                "Rotation matrices in poses must have determinant of 1. "
-                "You may also try setting normalize to True."
+                "Rotation matrices in poses must have determinant of 1. " "You may also try setting normalize to True."
             )
 
         self._rotation_interp = Slerp(ts, Rotation.from_matrix(self.transforms[:, :3, :3]))

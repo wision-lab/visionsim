@@ -1,8 +1,8 @@
-isort
-black
-pytest
-pre-commit
 coverage
 hypothesis
+isort
+pre-commit
+pytest
 ruff
 sphinx
+sphinxcontrib-programoutput

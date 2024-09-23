@@ -3,6 +3,7 @@ Tasks for maintaining the project.
 
 Execute 'inv[oke] --list' for a list of dev tasks.
 """
+
 import fnmatch
 import glob
 import os
@@ -66,15 +67,15 @@ def format(c, check=False):
     # Run isort
     isort_options = f"--line-length={MAX_LINE_LENGTH}" + " --check-only --diff" if check else ""
     _run(c, f"isort {isort_options} {python_dirs_string}")
-    # Run Black
+    # Run ruff
     yapf_options = "--diff --check" if check else ""
-    _run(c, f"black --line-length={MAX_LINE_LENGTH} {yapf_options} {python_dirs_string}")
+    _run(c, f"ruff format {yapf_options} {python_dirs_string}")
 
 
 @task
 def lint(c):
     """Lint code with ruff"""
-    _run(c, f"ruff --line-length={MAX_LINE_LENGTH} {' '.join(PYTHON_DIRS)}")
+    _run(c, f"ruff check {' '.join(PYTHON_DIRS)}")
 
 
 @task

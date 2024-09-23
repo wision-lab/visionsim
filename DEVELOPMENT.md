@@ -2,7 +2,7 @@
 
 You'll need blender and FFmpeg installed, as well as this repository cloned and installed with the extra dev-dependencies:
 ```shell
-pip install -e .[dev]
+pip install -e ".[dev]"
 ```
 
 # Dev tools
