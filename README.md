@@ -115,6 +115,8 @@ To create the lego10k dataset, we first need to create all the RGB frames it con
 ```
 $ spsim blender.render blend_files/nerf/lego.blend lego10k --num-frames=10000 --width=800 --height=800
 ```
+_If running on MacOS, add ```--device=metal``` to the end of the command_
+
 _Warning: This takes ~7h using a single RTX3090._
 
 All the rendered frames will be in `lego10k/frames`. Let's create a quick preview of this dataset by animating every 100th frame:

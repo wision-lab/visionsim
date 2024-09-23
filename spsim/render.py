@@ -38,7 +38,7 @@ except ImportError:
         "into blender's python interpreter like so:\n"
     )
     print(f"$ {sys.exec_prefix}/bin/python* -m ensurepip")
-    print(f"$ {sys.exec_prefix}/bin/python* -m pip install scipy rich")
+    print(f"$ {sys.exec_prefix}/bin/python* -m pip install scipy rich --target={sys.exec_prefix}/lib/python*/site-packages")
     sys.exit()
 
 usage = (
