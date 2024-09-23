@@ -14,7 +14,7 @@ from invoke import task
         "batch_size": "number of frames to write at once, default: 4",
         "alpha_color": "if set, blend with this background color and do not store "
         "alpha channel. default: (255, 255, 255)",
-        "is_grayscale": "If set, assume images are grayscale and only save first channel",
+        "is_grayscale": "If set, assume images are grayscale and only save first channel, default: False",
         "force": "if true, overwrite output file(s) if present, default: False",
     }
 )
@@ -132,18 +132,21 @@ def npy_to_imgs(
     transforms_new.pop("bitpack_dim", None)
 
     sampler = range(0, len(dataset) - 1, step)
-    loader = DataLoader(dataset, sampler=sampler, batch_size=batch_size, num_workers=c.get("max_threads"), collate_fn=default_collate)
+    loader = DataLoader(
+        dataset, sampler=sampler, batch_size=batch_size, num_workers=c.get("max_threads"), collate_fn=default_collate
+    )
     pbar = tqdm(total=len(sampler))
 
     with ImgDatasetWriter(output_dir, transforms=transforms_new, force=force, pattern=pattern) as writer:
         for i, (idxs, imgs, poses) in enumerate(loader):
             print(imgs.shape)
-            writer[idxs] = (np.repeat((imgs*255).astype(np.uint8), 3, -1), poses)
+            writer[idxs] = (np.repeat((imgs * 255).astype(np.uint8), 3, -1), poses)
             pbar.update(len(idxs))
 
 
 @task(help={"input_dir": "directory in which to look for frames"})
 def length(_, input_dir):
+    """Print the length of the trajectory"""
     from spsim.dataset import dataset_dispatch
     from .common import _validate_directories
 
@@ -156,6 +159,6 @@ def length(_, input_dir):
 
     points = dataset.poses[:, :3, -1]
     dp = np.gradient(points, axis=0)
-    dist = np.sqrt((dp ** 2).sum(axis=1)).sum()
+    dist = np.sqrt((dp**2).sum(axis=1)).sum()
 
     print(f"Trajectory length is ~{dist:0.2f} units.")
