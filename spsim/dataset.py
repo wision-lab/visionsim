@@ -40,7 +40,7 @@ def unpackbits(image: np.ndarray, dim: int = 1) -> np.ndarray:
         dim: Int representing which dimension to unpack in, 0(height) and 1(width). Defaults to 1.
 
     :returns:
-        Binary images unpacked in specified dimenision as np array.
+        Binary images unpacked in specified dimension as np array.
     """
     if dim not in (0, 1):
         raise NotImplementedError(f"Bit unpacking can only be done along height (dim=0) or height (dim=1), got {dim}.")
@@ -56,23 +56,19 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
     - The contents of the transforms file or None
 
     Args:
-        root: Root path of the dataset. Representd as a string or Path object.
+        root: Root path of the dataset. Represented as a string or Path object.
         mode: Specifies mode to process dataset. Can be either 'img' or 'npy'.
 
     :returns:
         Tuple consisting of data_paths - list of paths to data files in dataset,
         poses - containing pose information for each data file, transforms - dictionary of information from json file.
     """
-    # RY. Makes provided root into Path object for easier manipulation
     root = Path(root)
 
-    # RY. if root is a directory
     if root.is_dir():
-        # Ry. if transforms file is found, set transforms path and data path to none
         if (root / "transforms.json").is_file():
             transforms_path = root / "transforms.json"
             data_path = None
-        # RY. if no transforms file and mode in 'img', checks for image files.
         # if found, transforms path is none and data path to root.
         elif mode.lower() == "img":
             img_exts = set(imageio.core.format.known_extensions.keys())
@@ -83,7 +79,6 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
                 data_path = root
             else:
                 raise FileNotFoundError(f"No image files found in {root}.")
-        # Ry. if no transforms file and mode is 'npy', check for frames.npy.
         # if found, transforms path is none, datat path is frames.npy
         elif mode.lower() == "npy":
             if (root / "frames.npy").is_file():
@@ -93,9 +88,7 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
                 raise FileNotFoundError("Expected one of 'transforms.json' or 'frames.npy'. Please give full path.")
         else:
             raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
-    # Ry. else if root is a file
     elif root.is_file():
-        # Ry. if json file, becomes transforms path, data path none.
         if root.suffix == ".json":
             transforms_path = root
             data_path = None
@@ -112,16 +105,13 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
     else:
         raise FileNotFoundError(f"Dataset root ({root}) not found!")
 
-    # Ry. if mode is img
     if mode.lower() == "img":
         # Extract paths and ensure they are lexicographically sorted
-        # Ry. if transforms path is not none, reads and validates
         if transforms_path:
             transforms = _read_and_validate(path=transforms_path, schema=IMG_SCHEMA)
             frames = natsorted(transforms["frames"], key=lambda f: f["file_path"])
             data_paths = [transforms_path.parent / f["file_path"] for f in frames]
             poses = [f["transform_matrix"] for f in frames]
-        # RY. if transforms path is none, data paths are sorted files, poses none, transforms none.
         else:
             data_paths = natsorted(data_path.glob("*"))
             poses = [None] * len(data_paths)
@@ -129,7 +119,6 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
 
         if len(exts := set(Path(p).suffix for p in data_paths)) != 1:
             raise RuntimeError(f"All images must have same extension but found {exts}.")
-    # Ry. if mode is npy
     else:
         if transforms_path:
             transforms = _read_and_validate(path=transforms_path, schema=NPY_SCHEMA)

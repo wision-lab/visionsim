@@ -15,7 +15,7 @@ def binary_avg_to_rgb(mean_binary_patch, factor=1.0, epsilon=1e-6, quantile=None
         mean_binary_patch: Binary avg to convert to rgb
         factor: Arbitrary Brightness factor. Defaults to 1.0.
     :return:
-        RGB value corresponding to specificed factor.
+        RGB value corresponding to specified factor.
     """
     module = torch if torch.is_tensor(mean_binary_patch) else np
     intensity = -module.log(module.clip(1 - mean_binary_patch, epsilon, 1)) / factor
@@ -68,7 +68,7 @@ def apply_alpha(img, alpha_color=(1.0, 1.0, 1.0), ret_alpha=True):
 
     Args:
         img: Np array to perform blending.
-        alpha_color: Backgroud color to blend. Defaults to (1.0,1.0,1.0).
+        alpha_color: Background color to blend. Defaults to (1.0,1.0,1.0).
         ret_alpha: Flag to return alpha value. Defaults to true.
 
     :returns:

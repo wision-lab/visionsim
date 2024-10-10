@@ -27,13 +27,11 @@ def compute_sharpness(imagePath):
     """Calculate the variance of laplacian of image converted to gray colorspace
 
     Args:
-        imagePath: Path to image to comptue sharpness.
+        imagePath: Path to image to compute sharpness.
     :returns:
         Variance of laplacian.
     """
-    # RY. Reads image and transforms to np array
     image = cv2.imread(imagePath)
-    # RY. Convert image from colorspace to BGR2GRAY
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return variance_of_laplacian(gray)
 
@@ -47,13 +45,10 @@ def rotmat(a, b):
     :returns:
         Returns a rotational matrix.
     """
-    # RY. Divide each vector by Euclidean norm, ensuring unit vector
     a, b = a / np.linalg.norm(a), b / np.linalg.norm(b)
-    # RY. Gives vector prependicular to both a and b
     v = np.cross(a, b)
     c = np.dot(a, b)
     # handle exception for the opposite direction input
-    # RY. If a and b in almost opposite directions, recurively calculate
     if c < -1 + 1e-10:
         return rotmat(a + np.random.uniform(-1e-2, 1e-2, 3), b)
 
@@ -75,10 +70,8 @@ def closest_point_2_lines(oa, da, ob, db):
     """
     # returns point closest to both rays of form o+t*d, and a weight
     # factor that goes to 0 if the lines are parallel
-    # RY. Ensure unit vectors da and db
     da = da / np.linalg.norm(da)
     db = db / np.linalg.norm(db)
-    # RY. Squared magnitude of cross product, decreases as lines become more parallel
     c = np.cross(da, db)
     denom = np.linalg.norm(c) ** 2
     t = ob - oa
@@ -88,7 +81,6 @@ def closest_point_2_lines(oa, da, ob, db):
         ta = 0
     if tb > 0:
         tb = 0
-    # RY. Finds midpoint between two lines, returned with weight factor as tuple
     return (oa + ta * da + ob + tb * db) * 0.5, denom
 
 
@@ -108,11 +100,9 @@ def get_camera_model(text):
     """
     cameras = np.loadtxt(Path(text) / "cameras.txt", dtype=object)
 
-    # RY. Check if only one camera entry
     if cameras.squeeze().ndim > 1:
         raise RuntimeError(f"Expected to find only a single camera, instead found {cameras.shape[0]}.")
 
-    # RY. Use squeeze to get rid of one dimensional entries
     _, model, *params = cameras.squeeze()
 
     if model not in ("SIMPLE_PINHOLE", "PINHOLE", "SIMPLE_RADIAL", "RADIAL", "OPENCV"):
@@ -142,7 +132,7 @@ def get_camera_model(text):
 
 
 def get_image_data(text, indices=slice(None)):
-    """Process and sort data from file to return imagie ids, transformation matrices, camera ids, names, and 2d points.
+    """Process and sort data from file to return image ids, transformation matrices, camera ids, names, and 2d points.
 
     Args:
         text: Path to directory that contains images.txt.
@@ -150,11 +140,9 @@ def get_image_data(text, indices=slice(None)):
     :returns: Returns image ids, transform matrices, camera ids, names, and 2d points.
     """
     with open(str(Path(text) / "images.txt"), "r") as f:
-        # RY. Iterates through f.readlines removes lines starting with #
         lines = filter(lambda line: not line.strip().startswith("#"), f.readlines())
         data = np.loadtxt((line for i, line in enumerate(lines) if i % 2 == 0), dtype=object)
 
-    # RY. Creates np array of tuples of xy coordinates and pid
     with open(str(Path(text) / "images.txt"), "r") as f:
         lines = filter(lambda line: not line.strip().startswith("#"), f.readlines())
         points2d = (mitertools.chunked(line.split(" "), 3) for i, line in enumerate(lines) if i % 2 == 1)
@@ -190,11 +178,9 @@ def reorient_to(transforms, new_up=(0, 0, 1)):
     :returns:
         Reoriented transformations ad rotational matrices.
     """
-    # RY. calculates average "up" vector
     up = transforms[:, 0:3, 1].mean(axis=0)
     up = up / np.linalg.norm(up)
     R = rotmat(up, new_up)
-    # RY. Pad rotational matrix and set elements of last row to 1
     R = np.pad(R, [0, 1])
     R[-1, -1] = 1
 
@@ -216,11 +202,9 @@ def center_at(transforms, center=(0, 0, 0)):
     # find a central point they are all looking at
     attention_weight = 0.0
     attention_center = np.array([0.0, 0.0, 0.0])
-    # RY. Iterates through all matrices and calls closest point 2 lines
     for transform_a in transforms:
         for transform_b in transforms:
             p, w = closest_point_2_lines(transform_a[:3, 3], transform_a[:3, 2], transform_b[:3, 3], transform_b[:3, 2])
-            # RY. if w is above small threshold, then contributes to attention center
             if w > 0.00001:
                 attention_center += p * w
                 attention_weight += w
@@ -231,7 +215,6 @@ def center_at(transforms, center=(0, 0, 0)):
     transforms[:, 0:3, 3] += offset
     t = np.eye(4)
     t[:3, -1] = offset
-    # RY. Returns updates transforms array with centered translations, and
     # transformation matrix t that can be used to revert to original
     return transforms, t
 

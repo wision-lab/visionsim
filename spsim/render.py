@@ -9,7 +9,6 @@ from pathlib import Path
 
 import numpy as np
 
-# RY. try importing blender specific modules.
 try:
     # These are blender specific modules which aren't easily installed but
     # are loaded in when this script is ran from blender. You can install fake
@@ -25,7 +24,6 @@ except ImportError:
     mathutils = None
     addon_utils = None
 
-# RY. Try importing rich and scipy. Error if not found.
 try:
     from rich.progress import track
     from scipy.interpolate import CubicSpline, interp1d
@@ -55,12 +53,10 @@ class LogRedirect:
     creating a lot of (usually) unnecessary noise.
 
     Args:
-        root_path = root path to cretae log files for stdout and sterr.
+        root_path = root path to create log files for stdout and stderr.
     """
 
     # Adapted from: https://stackoverflow.com/questions/66858529
-    # RY. Constructor, optional root path argument. If not specified, essentially ignores log
-    # RY. if provided, creates file paths for stdout and stderr
     def __init__(self, root_path=None):
         if not root_path:
             self.logpath_out = os.devnull
@@ -72,7 +68,6 @@ class LogRedirect:
         sys.stdout.flush()
         sys.stderr.flush()
 
-    # RY. Redirects stdout and std err to log files
     def __enter__(self):
         self.logfile_out = os.open(str(self.logpath_out), os.O_WRONLY | os.O_TRUNC | os.O_CREAT)
         self.logfile_err = os.open(str(self.logpath_err), os.O_WRONLY | os.O_TRUNC | os.O_CREAT)
@@ -85,7 +80,6 @@ class LogRedirect:
         sys.stdout = os.fdopen(self.new_stdout, "w")
         sys.stderr = os.fdopen(self.new_stderr, "w")
 
-    # RY. Restores original stdout and stderr streams and cleans up from enter
     def __exit__(self, exc_type, exc_val, exc_tb):
         sys.stdout.flush()
         sys.stderr.flush()
@@ -105,29 +99,25 @@ class Spline:
     Args:
         spline_points: Array of points that define spline curve. Expected in N x 3, where N is number of points.
         periodic: Boolean indicating whether spline should be made periodic. Defaults to true.
-        unit_speed: Boolean indicating whether to reparamaterize for speed. Defaults to false.
+        unit_speed: Boolean indicating whether to re-parameterize for speed. Defaults to false.
         samples: Number of samples to use for spline. Defaults to 1000.
         kind: Cubic or linear spline. Determines type of spline interpolation Defaults to "cubic".
         **kwargs
     """
 
     def __init__(self, spline_points, periodic=True, unit_speed=False, samples=1000, kind="cubic", **kwargs):
-        # RY. make spline np.ndarray. and get n number of points and c dimensions
         spline_points = np.array(spline_points) if not isinstance(spline_points, np.ndarray) else spline_points
         n, c, *_ = spline_points.shape
 
-        # RY. Validate dimension
         if spline_points.ndim != 2 and c != 3:
             raise ValueError(f"Expected `spline_points` to have dimensions Nx3, instead got {spline_points.shape}.")
 
-        # RY. if only one point, static spline, simple linear interpolation
         if n == 1:
             # If only one point, it's static. Return spline that only maps to that point.
             t = np.array([0, 1])
             points = np.tile(spline_points, (2, 1))
             spline = interp1d(t, points, kind="linear", axis=0, fill_value="extrapolate")
         else:
-            # RY. If periodic, cyclical spline
             if periodic:
                 # Make spline cyclical, i.e f(0)=f(1) and f'(0)=f'(1).
                 t = np.linspace(-1, 2, n * 3, endpoint=False)
@@ -173,7 +163,7 @@ class Spline:
         return np.mean([spline(t + offset) for offset in (np.arange(samples) - samples // 2) * interval], axis=0)
 
     def _arclength_reparameterize(self):
-        """Perform arclength reparameterization to achieve unit speed. Ensure equal distance over equal time intervals"""
+        """Perform arclength re-parameterization to achieve unit speed. Ensure equal distance over equal time intervals"""
         # Arc-length re-parameterization
         if self.unit_spline is None:
             if self.n != 1:
@@ -271,7 +261,7 @@ class Spline:
         """Visualizes Frenet Serret Frame t a specific t value using show method
         Args:
         t: T value to use along spline.
-        lenght: Length of arrow.
+        length: Length of arrow.
         """
         ax = self.show(**kwargs)
         self._arclength_reparameterize()
@@ -302,9 +292,9 @@ class BlenderDatasetGenerator:
         blend_file: Optional Blender file to use. Defaults to none and assumes file is already open.
         resolution: Width and height of frames. Defaults to (800, 800).
         depth: Boolean flag to enable depth. Defaults to false.
-        normals: Boolena flag to enable normals. Defaults to false.
+        normals: Boolean flag to enable normals. Defaults to false.
         file_format: File format of images to be saved. defaults to PNG.
-        color_dpeth: Bits per channel for color depth. Defaults to 8.
+        color_depth: Bits per channel for color depth. Defaults to 8.
         device: Device to use to render. Defaults to "optix".
         render: Boolean flag to render. Defaults to true.
         unbind_camera: Boolean flag specifying whether camera should be unbound and moved explicitly. Defaults to true.
@@ -338,7 +328,6 @@ class BlenderDatasetGenerator:
         **kwargs,
     ):
         # Load blender file
-        # RY. Check whether Blender file is already in bpy.data.filepath
         if not bpy.data.filepath:
             if not blend_file:
                 raise ValueError("No blender file was specified!")
@@ -347,7 +336,6 @@ class BlenderDatasetGenerator:
         elif blend_file:
             raise ValueError("A blender file already opened, cannot also specify `blend_file` param.")
 
-        # RY. Set up root directory and frames directory. Configure parameters.
         self.root_path = Path(root_path).resolve()
         self.root_path.mkdir(parents=True, exist_ok=True)
         (self.root_path / "frames").mkdir(parents=True, exist_ok=True)
@@ -360,7 +348,6 @@ class BlenderDatasetGenerator:
         self.render = render
 
         # Set frame resolution
-        # RY. Access Blender scene and node tree. Set height and width for rendering resolution
         self.scene = bpy.context.scene
         self.tree = self.scene.node_tree
         self.scene.render.resolution_y = self.height
@@ -390,7 +377,6 @@ class BlenderDatasetGenerator:
             # self.camera = bpy.data.objects.new("Camera", camera_data)
             # self.scene.collection.objects.link(self.camera)
             # self.scene.camera = self.camera
-        # RY. if multiple cameras, selects active  camera. or if no active, first camera found
         elif len(cameras) > 1 and self.scene.camera:
             self.camera = self.scene.camera
             print(f"Multiple cameras found. Using active camera named: '{self.camera.name}'.")
@@ -450,7 +436,6 @@ class BlenderDatasetGenerator:
         self.normals_path = None
         self.render_layers = None
 
-        # RY. Configures rendering process to include depth and normal passes
         if depth or normals:
             # Add passes for additionally dumping albedo and normals.
             if len(keys := list(self.scene.view_layers.keys())) != 1:
@@ -479,9 +464,7 @@ class BlenderDatasetGenerator:
         """
         # TODO: This method can be slow if there's a lot of keyframes
         #   See: https://blender.stackexchange.com/questions/111644
-        # RY. if use animation is disabled, function does nothing.
         if self.use_animation:
-            # RY. Iterates through all actions in the Blender scene.
             for action in bpy.data.actions:
                 for fcurve in action.fcurves or []:
                     for kfp in fcurve.keyframe_points or []:
@@ -538,29 +521,25 @@ class BlenderDatasetGenerator:
         Args:
             device_type: Name of device to use. "none", "cuda", "optix", "metal".
             indices: Specify which devices to activate. Defaults to all devices.
-            use_cpus: Boolean flag to enable CPUs alonside GPU devices.
+            use_cpus: Boolean flag to enable CPUs alongside GPU devices.
 
         :return:
             List of activated devices.
         """
         # Modified from: https://blender.stackexchange.com/questions/156503
-        # RY. Accesses Blender's preferneces for rendering engine.
         preferences = bpy.context.preferences
         cycles_preferences = preferences.addons["cycles"].preferences
         cycles_preferences.refresh_devices()
         devices = cycles_preferences.devices
 
-        # RY. Checks if device is supported
         if not devices:
             raise RuntimeError("No devices found!")
         if device_type.lower() not in ("none", "cuda", "optix", "metal"):
             raise ValueError("Unrecognized device type!")
 
-        # RY. Deactivates all devices initailly.
         for device in devices:
             device.use = False
 
-        # RY. Activates devices cooresponding to provided device type and indices.
         activated_devices = []
         device_type_ = "CPU" if device_type.lower() == "none" else device_type
         devices_ = filter(lambda d: d.type == device_type_, devices)
@@ -570,7 +549,6 @@ class BlenderDatasetGenerator:
             print("INFO: Activated gpu", device.name, device.type)
             activated_devices.append(device.name)
             device.use = True
-        # RY. Sets device in Blender settings.
         cycles_preferences.compute_device_type = device_type
         bpy.context.scene.cycles.device = "CPU" if device_type == "CPU" else "GPU"
         return activated_devices
@@ -615,7 +593,7 @@ class BlenderDatasetGenerator:
         which defines how 3D points are projected onto 2D.
 
         :return:
-            Camera intrinsics matrix based on cmaera properties.
+            Camera intrinsics matrix based on camera properties.
         """
 
         # Based on: https://mcarletti.github.io/articles/blenderintrinsicparams/
@@ -640,8 +618,8 @@ class BlenderDatasetGenerator:
         Positions and orients camera in Blender scene according to specified parameters.
 
         Args:
-            camera_location: Locaiton to place camera in 3D space.
-            target_locaiton: Location to point camera. Defaults to none.
+            camera_location: Location to place camera in 3D space.
+            target_location: Location to point camera. Defaults to none.
             camera_rotation: Rotation matrix for camera. Defaults to none.
 
         """
@@ -848,7 +826,6 @@ def parser_config():
     :return:
         Dictionary containing configuration for argument parser.
     """
-    # RY. Checks compatibility for argument types
     if sys.version_info < (3, 9, 0):
         boolean_action = None
     else:
@@ -978,7 +955,7 @@ def parser_config():
                 type=bool,
                 action=boolean_action,
                 default=False,
-                help="whether or not to reparametrize splines so that movement is of constant speed, default: False",
+                help="whether or not to reparameterize splines so that movement is of constant speed, default: False",
             ),
             dict(
                 name="--depth",
@@ -1041,7 +1018,6 @@ def _render_views(args):
     Args:
         args: Contains command line arguments parsed.
     """
-    # RY. if both, error bc mutually exclusive
     if not args.unbind_camera and (args.location_points or args.viewing_points):
         raise ValueError(
             "Camera cannot be bound to parents and follow provided path. Either remove "
@@ -1049,16 +1025,13 @@ def _render_views(args):
             "animation (if any) or remove unbind camera."
         )
 
-    # RY. Circular trajectory for camera
     if not args.location_points:
         theta = np.linspace(0, 2 * np.pi, 10, endpoint=False)
         args.location_points = np.stack([5 * np.cos(theta), 5 * np.sin(theta), np.ones_like(theta)]).T
 
-    # RY. static origin
     if not args.viewing_points:
         args.viewing_points = np.zeros((1, 3))
 
-    # RY. configures devices to use
     if not args.device_idxs or args.device_idxs.lower() == "all":
         args.device_idxs = slice(None)
     else:
@@ -1098,9 +1071,7 @@ def _render_views(args):
         args.frame_step,
     )
 
-    # RY. Uses LogRedirect to open log files for stdout and stderr
     with LogRedirect(args.log_file):
-        # RY. initalize BlenderDatasetGenerator with settings from args object. Calls generate views method with args.
         bds = BlenderDatasetGenerator(
             **(
                 vars(args)
