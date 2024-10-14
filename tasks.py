@@ -17,13 +17,14 @@ from invoke import task
 MAX_LINE_LENGTH = 121
 
 ROOT_DIR = Path(__file__).parent
-TEST_DIR = ROOT_DIR.joinpath("tests")
-SOURCE_DIR = ROOT_DIR.joinpath("spsim")
-COVERAGE_FILE = ROOT_DIR.joinpath(".coverage")
-COVERAGE_DIR = ROOT_DIR.joinpath("htmlcov")
-COVERAGE_REPORT = COVERAGE_DIR.joinpath("index.html")
+TEST_DIR = ROOT_DIR / "tests"
+SOURCE_DIR = ROOT_DIR / "spsim"
+COVERAGE_FILE = ROOT_DIR / ".coverage"
+COVERAGE_DIR = ROOT_DIR / "htmlcov"
+COVERAGE_REPORT = COVERAGE_DIR / "index.html"
 PYTHON_DIRS = [str(d) for d in [SOURCE_DIR, TEST_DIR]]
-DOCS_DIR = ROOT_DIR.joinpath("docs")
+DOCS_DIR = ROOT_DIR / "docs"
+DOCS_INDEX = DOCS_DIR / "build" / "html" / "index.html"
 
 
 def _delete_file(file, except_patterns=None):
@@ -102,6 +103,16 @@ def coverage(c):
 
 
 @task
+def build_docs(c, preview=True):
+    """Confirm docs can be built"""
+    with c.cd(DOCS_DIR):
+        _run(c, "make html")
+
+    if preview:
+        webbrowser.open(DOCS_INDEX.as_uri())
+
+
+@task
 def clean_build(c):
     """Clean up files from package building"""
     _delete_file("build/")
@@ -133,13 +144,6 @@ def clean_docs(c):
     """Clean up docs build"""
     with c.cd(DOCS_DIR):
         _run(c, "make clean")
-
-
-@task
-def build_docs(c):
-    """Confirm docs can be built"""
-    with c.cd(DOCS_DIR):
-        _run(c, "make html")
 
 
 @task(pre=[clean_build, clean_python, clean_tests, clean_docs])
