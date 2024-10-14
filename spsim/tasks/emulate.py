@@ -17,7 +17,7 @@ def _spad_collate(batch, *, mode, rng, factor, alpha_color, is_tonemapped=True):
     else:
         imgs = imgs.astype(float) / 255.0
 
-    imgs, alpha = apply_alpha(imgs[..., 0], alpha_color=alpha_color, ret_alpha=True)
+    imgs, alpha = apply_alpha(imgs, alpha_color=alpha_color, ret_alpha=True)
 
     # Perform bernoulli sampling (equivalent to binomial w/ n=1)
     binary_img = rng.binomial(1, 1.0 - np.exp(-imgs * factor)) * 255
@@ -113,7 +113,7 @@ def spad(
         "chunk_size": "number of consecutive frames to average together, default: 10",
         "factor": "multiply image's linear intensity by this weight, default: 1.0",
         "readout_std": "standard deviation of gaussian read noise, default: 20",
-        "fwc": "full well capacity of sensor in arbitrary units (relative to factor & chunk_size), default: 500",
+        "fwc": "full well capacity of sensor in arbitrary units (relative to factor & chunk_size), default: chunk_size",
         "alpha_color": "if set, blend with this background color and do not store "
         "alpha channel. default: '(1.0, 1.0, 1.0)'",
         "pattern": "filenames of frames should match this, default: 'frame_{:06}.png'",
@@ -128,10 +128,10 @@ def rgb(
     chunk_size=10,
     factor=1.0,
     readout_std=20.0,
-    fwc=500.0,
+    fwc=None,
     alpha_color="(1.0, 1.0, 1.0)",
     pattern="frame_{:06}.png",
-    mode="npy",
+    mode="img",
     force=False,
 ):
     """Simulate real camera, adding read/poisson noise and tonemapping"""
@@ -185,10 +185,10 @@ def rgb(
             imgs, alpha = apply_alpha(imgs, alpha_color=alpha_color, ret_alpha=True)
 
             rgb_img = emulate_rgb_from_merged(
-                img_to_tensor(imgs[..., 0] * factor),
+                img_to_tensor(imgs * factor),
                 burst_size=chunk_size,
                 readout_std=readout_std,
-                fwc=fwc,
+                fwc=fwc or chunk_size,
                 factor=factor,
             )
             rgb_img = tensor_to_img(rgb_img * 255)

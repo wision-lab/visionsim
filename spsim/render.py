@@ -437,12 +437,14 @@ class BlenderDatasetGenerator:
         self.render_layers = None
 
         if depth or normals:
-            # Add passes for additionally dumping albedo and normals.
+            # Add passes for additionally dumping depth and normals.
             if len(keys := list(self.scene.view_layers.keys())) != 1:
                 raise ValueError(f"Expected only one key, either 'RenderLayer' or 'ViewLayer', but got {keys}.")
             self.scene.view_layers[keys[0]].use_pass_normal = normals
             self.scene.view_layers[keys[0]].use_pass_z = depth
             self.render_layers = self.tree.nodes.new("CompositorNodeRLayers")
+            self.scene.render.use_compositing = True
+            self.scene.use_nodes = True 
 
             if depth:
                 self.depth_path = self.include_depth()
