@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 from invoke import task
 
+from spsim.interpolate_wrapper import interpolate_wrapper
 from spsim.tasks.common import _validate_directories
 
 
@@ -44,7 +45,26 @@ def video(c, input_file, output_file, method="rife", n=2):
         # Assemble final video at correct frame-rate
         animate(c, dst_dir, pattern="frames_*.png", outfile=output_file, fps=avg_fps)
 
+# TODO: reaname to interpolate_cli or better name
+@task(
+    help={
+        "interpolation_type": "Whether we want to interpolate frames (frames), poses (poses), or both (both)",
+        "input_dir": "directory in which to look for frames",
+        "output_dir": "directory in which to save interpolated frames",
+        # added file type for frames normals depths
+        "file_type": "type of file interpolating. frames, normals, depths, default: frames",
+        "method": "interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife'",
+        "file_name": "name of file containing transforms, default: 'transforms.json'",
+        "n": "interpolation factor, must be a multiple of 2, default: 2",
+    }
+)
+def frames(_, interpolation_type, input_dir, output_dir, file_type="frames", method="rife", file_name="transforms.json", n=2):
+    """Interpolate between either frames, poses, or both
+    """
+    interpolate_wrapper(interpolation_type, input_dir, output_dir, file_type, method, file_name, n)
 
+
+'''
 @task(
     help={
         "input_dir": "directory in which to look for frames",
@@ -90,7 +110,7 @@ def frames(_, input_dir, output_dir, file_type="frames", method="rife", file_nam
     # Extract paths and ensure they are lexicographically sorted
     # frames = natsorted(transforms["frames"], key=lambda f: f["file_path"])
     frames = natsorted(transforms["frames"], key=lambda f: f[file_path])
-    # img_paths = [str(input_dir / f["file_path"]) for f in frames]
+    # img_paths =  [str(input_dir / f["file_path"]) for f in frames]
     img_paths = [str(input_dir / f[file_path]) for f in frames]
     exts = set(Path(p).suffix for p in img_paths)
 
@@ -114,6 +134,8 @@ def frames(_, input_dir, output_dir, file_type="frames", method="rife", file_nam
     # Assemble new transforms.json
     new_paths = natsorted(output_dir.glob(f"{file_type}/*{exts.pop()}"))
 
+    print(new_paths)
+
     if len(new_paths) != len(new_poses):
         raise RuntimeError(
             f"Image and pose mismatch! Found {len(new_poses)} new poses " f"and {len(new_paths)} new images."
@@ -129,3 +151,4 @@ def frames(_, input_dir, output_dir, file_type="frames", method="rife", file_nam
 
     with (output_dir / file_name).open("w") as f:
         json.dump(transforms, f, indent=2)
+'''
