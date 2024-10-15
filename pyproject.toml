@@ -1,7 +1,7 @@
 [project]
 name = "spsim"
 description = "Single Photon Simulator and Tools"
-version = "0.1.2"
+version = "0.0.1"
 dynamic = ["readme", "dependencies", "optional-dependencies"]
 requires-python = ">=3.8"
 

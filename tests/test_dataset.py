@@ -8,7 +8,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import basic_indices, integer_array_indices
 
-from spsim.dataset import ImgDataset, NpyDataset, _resolve_root
+from spsim.dataset import Dataset, ImgDataset, NpyDataset, _resolve_root
 
 
 def setup_dataset(tmp_path, mode="img", w=100, h=100, c=3, n=1, bitpack_dim=None):
@@ -163,12 +163,12 @@ def test_npyds_invalid_resolve_root(tmp_path):
 @pytest.mark.parametrize(
     "ds_klass, mode, bitpack_dim",
     [
-        (ImgDataset, "img", None),
-        (NpyDataset, "npy", None),
-        (NpyDataset, "npy", 0),
-        (NpyDataset, "npy", 1),
-        (NpyDataset, "npy", 2),
-        (NpyDataset, "npy", 3),  # No point in bitpacking if channels < 8, but it works.
+        (Dataset, "img", None),
+        (Dataset, "npy", None),
+        (Dataset, "npy", 0),
+        (Dataset, "npy", 1),
+        (Dataset, "npy", 2),
+        (Dataset, "npy", 3),  # No point in bitpacking if channels < 8, but it works.
     ],
 )
 @given(idx=basic_indices((10, 50, 50, 3), allow_newaxis=False, allow_ellipsis=False))
@@ -187,7 +187,7 @@ def test_dataset_slicing(tmp_path_factory, ds_klass, mode, bitpack_dim, idx):
     # Since ImgDataset returns a list on ndarrays, and gt is just an ndarray,
     # we can have gt.shape == (0, x, x, x) and np.array(im).shape == (0,) which
     # do not broadcast together and cause the allclose below to fail.
-    if isinstance(ds, ImgDataset) and gt.size == 0:
+    if isinstance(ds.dataset, ImgDataset) and gt.size == 0:
         im = np.array(im).reshape(gt.shape)
 
     assert np.allclose(gt_idx, im_idx)

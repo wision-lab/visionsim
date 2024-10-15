@@ -145,20 +145,14 @@ def npy_to_imgs(
 
 
 @task(help={"input_dir": "directory in which to look for frames"})
-def length(_, input_dir):
-    """Print the length of the trajectory"""
-    from spsim.dataset import dataset_dispatch
+def info(_, input_dir):
+    """Print information about the dataset"""
+    from spsim.dataset import Dataset
     from .common import _validate_directories
 
     input_dir, _ = _validate_directories(input_dir=input_dir)
-    dataset = dataset_dispatch(input_dir)
+    dataset = Dataset(input_dir)
 
-    if not dataset.transforms:
-        print("No transforms file found, cannot estimate trajectory length.")
-        return
-
-    points = dataset.poses[:, :3, -1]
-    dp = np.gradient(points, axis=0)
-    dist = np.sqrt((dp**2).sum(axis=1)).sum()
-
-    print(f"Trajectory length is ~{dist:0.2f} units.")
+    print(f"arclength: {dataset.arclength}")
+    print(f"full_shape: {dataset.full_shape}")
+    print(f"path: {dataset.paths}")
