@@ -1,4 +1,4 @@
-from spsim.interpolate_wrapper import *
+from spsim.interpolate_wrapper import interpolate_poses, interpolate_frames, poses_and_frames_to_json
 
 
 def test_interpolate_poses_4():
