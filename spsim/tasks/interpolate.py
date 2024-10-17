@@ -58,7 +58,7 @@ def video(c, input_file, output_file, method="rife", n=2):
     }
 )
 def frames(_, input_dir, output_dir, file_type="frames", method="rife", file_name="transforms.json", n=2):
-    """Interpolate between either frames, poses, or both
+    """Interpolate poses and frames seperately, then combine into transforms.json file
     """
     
     print("Interpolating poses")
