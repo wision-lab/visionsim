@@ -354,10 +354,14 @@ class BlenderDatasetGenerator:
         self.scene.render.resolution_percentage = 100
 
         # Render Optimizations and Settings
-        self.scene.render.engine = "CYCLES"
-        self.scene.cycles.use_denoising = True
-        self.scene.cycles.adaptive_threshold = adaptive_threshold
-        # self.scene.cycles.debug_use_spatial_splits = True
+        if self.scene.render.engine.upper() == "CYCLES":
+            self.scene.cycles.use_denoising = True
+            self.scene.cycles.adaptive_threshold = adaptive_threshold
+        else:
+            print(
+                f"WARNING: Using {self.scene.render.engine.upper()} rendering engine, "
+                f"with default OpenGL rendering device(s)."
+            )
         self.scene.render.use_persistent_data = True
         self.scene.render.use_motion_blur = use_motion_blur
         self.scene.render.motion_blur_shutter /= keyframe_multiplier
@@ -439,11 +443,12 @@ class BlenderDatasetGenerator:
             # Add passes for additionally dumping depth and normals.
             if len(keys := list(self.scene.view_layers.keys())) < 1:
                 raise ValueError(f"Expected at least one view layer, cannot render without it. Please add one manually.")
+            
+            self.scene.use_nodes = True
+            self.scene.render.use_compositing = True
             self.scene.view_layers[keys[0]].use_pass_normal = normals
             self.scene.view_layers[keys[0]].use_pass_z = depth
             self.render_layers = self.tree.nodes.new("CompositorNodeRLayers")
-            self.scene.render.use_compositing = True
-            self.scene.use_nodes = True
 
             if depth:
                 self.depth_path = self.include_depth()
@@ -530,6 +535,9 @@ class BlenderDatasetGenerator:
             List of activated devices.
         """
         # Modified from: https://blender.stackexchange.com/questions/156503
+        if bpy.context.scene.render.engine.upper() != "CYCLES":
+            return []
+        
         preferences = bpy.context.preferences
         cycles_preferences = preferences.addons["cycles"].preferences
         cycles_preferences.refresh_devices()
