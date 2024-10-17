@@ -18,6 +18,3 @@ def test_interpolate_poses_4():
     exts = interpolate_frames(input_dir, output_dir, n=4)
 
     poses_and_frames_to_json(input_dir, output_dir, interpolated_poses, exts)
-
-
-test_interpolate_poses_4()
