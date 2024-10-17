@@ -4,7 +4,6 @@ import numpy as np
 from invoke import task
 
 from spsim.interpolate_wrapper import interpolate_poses, interpolate_frames, poses_and_frames_to_json
-from spsim.tasks.common import _validate_directories
 
 
 @task(
