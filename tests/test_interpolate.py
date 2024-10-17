@@ -1,4 +1,4 @@
-from spsim.interpolate_wrapper import interpolate_wrapper
+from spsim.interpolate_wrapper import *
 
 
 def test_interpolate_poses_4():
@@ -8,19 +8,16 @@ def test_interpolate_poses_4():
     Interpolate 4 times
     """
 
-    # TODO: create tmp folder for output files
-
     # Initialize test file paths
-    baseline_transforms_json_dir = "test_files/lego100/"
-    new_transforms_json_dir = "tmp/lego400/"
+    input_dir = "test_files/lego100/"
+    output_dir = "tmp/lego400/"
 
+    print("Interpolating poses")
+    interpolated_poses = interpolate_poses(input_dir, n=4)
+    print("Interpolating frames")
+    exts = interpolate_frames(input_dir, output_dir, n=4)
 
-    interpolate_wrapper("poses", baseline_transforms_json_dir, new_transforms_json_dir, file_type="frames", method="rife", file_name="transforms.json", n=4)
-
-
-    # TODO: Add check between output and input transforms.json
-
-    # TODO: get rid of tmp file after test is run
+    poses_and_frames_to_json(input_dir, output_dir, interpolated_poses, exts)
 
 
 test_interpolate_poses_4()
