@@ -8,7 +8,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import basic_indices, integer_array_indices
 
-from spsim.dataset import Dataset, ImgDataset, NpyDataset, _resolve_root
+from spsim.dataset import Dataset, ImgDataset, NpyDataset
 
 
 def setup_dataset(tmp_path, mode="img", w=100, h=100, c=3, n=1, bitpack_dim=None):
@@ -66,19 +66,22 @@ def test_imgds_valid_resolve_root(tmp_path):
     gt_poses = [f["transform_matrix"] for f in gt_transforms["frames"]]
 
     # Test when given direct path to json file
-    img_paths, poses, transforms = _resolve_root(tmp_path / "transforms.json", mode="img")
+    dataset = Dataset(tmp_path / "transforms.json", mode="img")
+    img_paths, poses, transforms = dataset.paths, dataset.poses, dataset.transforms
     assert img_paths == [tmp_path / "frames/frame_0000.png"]
     assert np.allclose(poses, gt_poses)
     assert transforms == gt_transforms
 
     # Test when given parent directory of json
-    img_paths, poses, transforms = _resolve_root(tmp_path, mode="img")
+    dataset = Dataset(tmp_path, mode="img")
+    img_paths, poses, transforms = dataset.paths, dataset.poses, dataset.transforms
     assert img_paths == [tmp_path / "frames/frame_0000.png"]
     assert np.allclose(poses, gt_poses)
     assert transforms == gt_transforms
 
     # Test when given image directory only
-    img_paths, poses, transforms = _resolve_root(tmp_path / "frames", mode="img")
+    dataset = Dataset(tmp_path / "frames", mode="img")
+    img_paths, poses, transforms = dataset.paths, dataset.poses, dataset.transforms
     assert img_paths == [tmp_path / "frames/frame_0000.png"]
     assert poses == [None]
     assert transforms is None
@@ -90,23 +93,23 @@ def test_imgds_invalid_resolve_root(tmp_path):
     # No file named `transforms.json`
     (tmp_path / "transforms.json").rename(tmp_path / "poses.yaml")
     with pytest.raises(ValueError, match="not understood"):
-        _resolve_root(tmp_path / "poses.yaml", mode="img")
+        Dataset(tmp_path / "poses.yaml", mode="img")
 
     # Images in folder do not all have the same extension
     with pytest.raises(RuntimeError, match="images must have same extension"):
         shutil.copy(tmp_path / "frames/frame_0000.png", tmp_path / "frames/frame_0000.jpg")
-        _resolve_root(tmp_path / "frames", mode="img")
+        Dataset(tmp_path / "frames", mode="img")
 
     # Folder provided is not filled with images or a transforms file
     with pytest.raises(FileNotFoundError, match="No image files found"):
-        _resolve_root(tmp_path, mode="img")
+        Dataset(tmp_path, mode="img")
 
     # No dataset exists
     with pytest.raises(FileNotFoundError, match="not found"):
-        _resolve_root(tmp_path / "transforms.json", mode="img")
+        Dataset(tmp_path / "transforms.json", mode="img")
 
     with pytest.raises(FileNotFoundError, match="not found"):
-        _resolve_root("some/path/that/does/not/exist", mode="img")
+        Dataset("some/path/that/does/not/exist", mode="img")
 
 
 def test_npyds_valid_resolve_root(tmp_path):
@@ -114,27 +117,31 @@ def test_npyds_valid_resolve_root(tmp_path):
     gt_poses = [f["transform_matrix"] for f in gt_transforms["frames"]]
 
     # Test when given direct path to json file
-    (npy_path,), poses, transforms = _resolve_root(tmp_path / "transforms.json", mode="npy")
-    assert npy_path == tmp_path / "frames.npy"
+    dataset = Dataset(tmp_path / "transforms.json", mode="npy")
+    npy_paths, poses, transforms = dataset.paths, dataset.poses, dataset.transforms
+    assert npy_paths == tmp_path / "frames.npy"
     assert np.allclose(poses, gt_poses)
     assert transforms == gt_transforms
 
     # Test when given parent directory of json
-    (npy_path,), poses, transforms = _resolve_root(tmp_path, mode="npy")
-    assert npy_path == tmp_path / "frames.npy"
+    dataset = Dataset(tmp_path, mode="npy")
+    npy_paths, poses, transforms = dataset.paths, dataset.poses, dataset.transforms
+    assert npy_paths == tmp_path / "frames.npy"
     assert np.allclose(poses, gt_poses)
     assert transforms == gt_transforms
 
     # Test when given npy file directly
-    (npy_path,), poses, transforms = _resolve_root(tmp_path / "frames.npy", mode="npy")
-    assert npy_path == tmp_path / "frames.npy"
+    dataset = Dataset(tmp_path / "frames.npy", mode="npy")
+    npy_paths, poses, transforms = dataset.paths, dataset.poses, dataset.transforms
+    assert npy_paths == tmp_path / "frames.npy"
     assert poses == [None]
     assert transforms is None
 
     # Test when given no transforms file
     (tmp_path / "transforms.json").rename(tmp_path / "poses.yaml")
-    (npy_path,), poses, transforms = _resolve_root(tmp_path, mode="npy")
-    assert npy_path == tmp_path / "frames.npy"
+    dataset = Dataset(tmp_path, mode="npy")
+    npy_paths, poses, transforms = dataset.paths, dataset.poses, dataset.transforms
+    assert npy_paths == tmp_path / "frames.npy"
     assert poses == [None]
     assert transforms is None
 
@@ -145,19 +152,19 @@ def test_npyds_invalid_resolve_root(tmp_path):
     # No file named `transforms.json`
     (tmp_path / "transforms.json").rename(tmp_path / "poses.yaml")
     with pytest.raises(ValueError, match="not understood"):
-        _resolve_root(tmp_path / "poses.yaml", mode="npy")
+        Dataset(tmp_path / "poses.yaml", mode="npy")
 
     # Folder provided is not filled with npy or a transforms file
     (tmp_path / "frames.npy").rename(tmp_path / "images.npy")
     with pytest.raises(FileNotFoundError, match="one of 'transforms.json' or 'frames.npy'"):
-        _resolve_root(tmp_path, mode="npy")
+        Dataset(tmp_path, mode="npy")
 
     # No dataset exists
     with pytest.raises(FileNotFoundError, match="not found"):
-        _resolve_root(tmp_path / "transforms.json", mode="npy")
+        Dataset(tmp_path / "transforms.json", mode="npy")
 
     with pytest.raises(FileNotFoundError, match="not found"):
-        _resolve_root("some/path/that/does/not/exist", mode="npy")
+        Dataset("some/path/that/does/not/exist", mode="npy")
 
 
 @pytest.mark.parametrize(

@@ -182,8 +182,7 @@ class Dataset(torch.utils.data.Dataset):
         """Print the length of the trajectory"""
 
         if not self.dataset.transforms:
-            print("No transforms file found, cannot estimate trajectory length.")
-            return
+            return np.nan
 
         points = self.dataset.poses[:, :3, -1]
         dp = np.gradient(points, axis=0)
@@ -192,12 +191,20 @@ class Dataset(torch.utils.data.Dataset):
         return dist
     
     @cached_property
-    def full_shape(self):
-        return self.dataset.full_shape
-    
-    @cached_property
     def paths(self):
         return self.dataset.paths
+    
+    @cached_property
+    def poses(self):
+        return self.dataset.poses
+    
+    @cached_property
+    def transforms(self):
+        return self.dataset.transforms
+    
+    @cached_property
+    def full_shape(self):
+        return self.dataset.full_shape
 
 
 class ImgDataset(Dataset):
@@ -310,8 +317,8 @@ class ImgDatasetWriter:
 
 class NpyDataset(Dataset):
     def __init__(self, root, *args, **kwargs):
-        (self.path,), self.poses, self.transforms = _resolve_root(root, mode="npy")
-        self.data = np.load(str(self.path), mmap_mode="r")
+        (self.paths,), self.poses, self.transforms = _resolve_root(root, mode="npy")
+        self.data = np.load(str(self.paths), mmap_mode="r")
 
         if self.transforms and self.transforms.get("bitpack"):
             self.bitpack_dim = self.transforms.get("bitpack_dim")
