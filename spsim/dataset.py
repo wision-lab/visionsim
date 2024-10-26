@@ -150,61 +150,45 @@ def default_collate(batch):
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, root, mode=None, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
+        raise Warning("Do not instantiate Dataset directly, no value will be defined. Use Dataset.from_path() to instantiate a dataset instead.")
+
+    @classmethod
+    def from_path(self, root, mode=None, *args, **kwargs):
         """Given a dataset root, resolve it and instantiate the correct dataset type"""
+        dataset = None
+
         if mode is not None:
             if mode.lower() == "img":
-                self.dataset = ImgDataset(root, *args, **kwargs)
+                dataset = ImgDataset(root, *args, **kwargs)
             elif mode.lower() == "npy":
-                self.dataset = NpyDataset(root, *args, **kwargs)
+                dataset = NpyDataset(root, *args, **kwargs)
             else:
                 raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
 
         for klass in (NpyDataset, ImgDataset):
             try:
-                self.dataset = klass(root, *args, **kwargs)
+                dataset = klass(root, *args, **kwargs)
             except (FileNotFoundError, ValueError, RuntimeError, ValidationError):
                 pass
         
-        if self.dataset is None:
+        if dataset is None:
             raise RuntimeError(f"Could not determine type of dataset at {root}")
-    
-        super().__init__()
-
-    def __len__(self):
-        return self.dataset.__len__()
-
-    def __getitem__(self, idx):
-        return self.dataset.__getitem__(idx)
+        
+        return dataset
     
     @cached_property
     def arclength(self):
         """Print the length of the trajectory"""
 
-        if not self.dataset.transforms:
+        if not self.transforms:
             return np.nan
 
-        points = self.dataset.poses[:, :3, -1]
+        points = self.poses[:, :3, -1]
         dp = np.gradient(points, axis=0)
         dist = np.sqrt((dp**2).sum(axis=1)).sum()
 
         return dist
-    
-    @cached_property
-    def paths(self):
-        return self.dataset.paths
-    
-    @cached_property
-    def poses(self):
-        return self.dataset.poses
-    
-    @cached_property
-    def transforms(self):
-        return self.dataset.transforms
-    
-    @cached_property
-    def full_shape(self):
-        return self.dataset.full_shape
 
 
 class ImgDataset(Dataset):

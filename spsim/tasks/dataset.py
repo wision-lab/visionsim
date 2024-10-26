@@ -157,7 +157,7 @@ def info(_, input_dir, json=False):
     import json as j
 
     input_dir, _ = _validate_directories(input_dir=input_dir)
-    dataset = Dataset(input_dir)
+    dataset = Dataset.from_path(input_dir)
 
     if json:
         print(j.dumps(

@@ -66,21 +66,21 @@ def test_imgds_valid_resolve_root(tmp_path):
     gt_poses = [f["transform_matrix"] for f in gt_transforms["frames"]]
 
     # Test when given direct path to json file
-    dataset = Dataset(tmp_path / "transforms.json", mode="img")
+    dataset = Dataset.from_path(tmp_path / "transforms.json", mode="img")
     img_paths, poses, transforms = dataset.paths, dataset.poses, dataset.transforms
     assert img_paths == [tmp_path / "frames/frame_0000.png"]
     assert np.allclose(poses, gt_poses)
     assert transforms == gt_transforms
 
     # Test when given parent directory of json
-    dataset = Dataset(tmp_path, mode="img")
+    dataset = Dataset.from_path(tmp_path, mode="img")
     img_paths, poses, transforms = dataset.paths, dataset.poses, dataset.transforms
     assert img_paths == [tmp_path / "frames/frame_0000.png"]
     assert np.allclose(poses, gt_poses)
     assert transforms == gt_transforms
 
     # Test when given image directory only
-    dataset = Dataset(tmp_path / "frames", mode="img")
+    dataset = Dataset.from_path(tmp_path / "frames", mode="img")
     img_paths, poses, transforms = dataset.paths, dataset.poses, dataset.transforms
     assert img_paths == [tmp_path / "frames/frame_0000.png"]
     assert poses == [None]
@@ -93,23 +93,23 @@ def test_imgds_invalid_resolve_root(tmp_path):
     # No file named `transforms.json`
     (tmp_path / "transforms.json").rename(tmp_path / "poses.yaml")
     with pytest.raises(ValueError, match="not understood"):
-        Dataset(tmp_path / "poses.yaml", mode="img")
+        Dataset.from_path(tmp_path / "poses.yaml", mode="img")
 
     # Images in folder do not all have the same extension
     with pytest.raises(RuntimeError, match="images must have same extension"):
         shutil.copy(tmp_path / "frames/frame_0000.png", tmp_path / "frames/frame_0000.jpg")
-        Dataset(tmp_path / "frames", mode="img")
+        Dataset.from_path(tmp_path / "frames", mode="img")
 
     # Folder provided is not filled with images or a transforms file
     with pytest.raises(FileNotFoundError, match="No image files found"):
-        Dataset(tmp_path, mode="img")
+        Dataset.from_path(tmp_path, mode="img")
 
     # No dataset exists
     with pytest.raises(FileNotFoundError, match="not found"):
-        Dataset(tmp_path / "transforms.json", mode="img")
+        Dataset.from_path(tmp_path / "transforms.json", mode="img")
 
     with pytest.raises(FileNotFoundError, match="not found"):
-        Dataset("some/path/that/does/not/exist", mode="img")
+        Dataset.from_path("some/path/that/does/not/exist", mode="img")
 
 
 def test_npyds_valid_resolve_root(tmp_path):
@@ -117,21 +117,21 @@ def test_npyds_valid_resolve_root(tmp_path):
     gt_poses = [f["transform_matrix"] for f in gt_transforms["frames"]]
 
     # Test when given direct path to json file
-    dataset = Dataset(tmp_path / "transforms.json", mode="npy")
+    dataset = Dataset.from_path(tmp_path / "transforms.json", mode="npy")
     npy_paths, poses, transforms = dataset.paths, dataset.poses, dataset.transforms
     assert npy_paths == tmp_path / "frames.npy"
     assert np.allclose(poses, gt_poses)
     assert transforms == gt_transforms
 
     # Test when given parent directory of json
-    dataset = Dataset(tmp_path, mode="npy")
+    dataset = Dataset.from_path(tmp_path, mode="npy")
     npy_paths, poses, transforms = dataset.paths, dataset.poses, dataset.transforms
     assert npy_paths == tmp_path / "frames.npy"
     assert np.allclose(poses, gt_poses)
     assert transforms == gt_transforms
 
     # Test when given npy file directly
-    dataset = Dataset(tmp_path / "frames.npy", mode="npy")
+    dataset = Dataset.from_path(tmp_path / "frames.npy", mode="npy")
     npy_paths, poses, transforms = dataset.paths, dataset.poses, dataset.transforms
     assert npy_paths == tmp_path / "frames.npy"
     assert poses == [None]
@@ -139,7 +139,7 @@ def test_npyds_valid_resolve_root(tmp_path):
 
     # Test when given no transforms file
     (tmp_path / "transforms.json").rename(tmp_path / "poses.yaml")
-    dataset = Dataset(tmp_path, mode="npy")
+    dataset = Dataset.from_path(tmp_path, mode="npy")
     npy_paths, poses, transforms = dataset.paths, dataset.poses, dataset.transforms
     assert npy_paths == tmp_path / "frames.npy"
     assert poses == [None]
@@ -152,38 +152,38 @@ def test_npyds_invalid_resolve_root(tmp_path):
     # No file named `transforms.json`
     (tmp_path / "transforms.json").rename(tmp_path / "poses.yaml")
     with pytest.raises(ValueError, match="not understood"):
-        Dataset(tmp_path / "poses.yaml", mode="npy")
+        Dataset.from_path(tmp_path / "poses.yaml", mode="npy")
 
     # Folder provided is not filled with npy or a transforms file
     (tmp_path / "frames.npy").rename(tmp_path / "images.npy")
     with pytest.raises(FileNotFoundError, match="one of 'transforms.json' or 'frames.npy'"):
-        Dataset(tmp_path, mode="npy")
+        Dataset.from_path(tmp_path, mode="npy")
 
     # No dataset exists
     with pytest.raises(FileNotFoundError, match="not found"):
-        Dataset(tmp_path / "transforms.json", mode="npy")
+        Dataset.from_path(tmp_path / "transforms.json", mode="npy")
 
     with pytest.raises(FileNotFoundError, match="not found"):
-        Dataset("some/path/that/does/not/exist", mode="npy")
+        Dataset.from_path("some/path/that/does/not/exist", mode="npy")
 
 
 @pytest.mark.parametrize(
-    "ds_klass, mode, bitpack_dim",
+    "mode, bitpack_dim",
     [
-        (Dataset, "img", None),
-        (Dataset, "npy", None),
-        (Dataset, "npy", 0),
-        (Dataset, "npy", 1),
-        (Dataset, "npy", 2),
-        (Dataset, "npy", 3),  # No point in bitpacking if channels < 8, but it works.
+        ("img", None),
+        ("npy", None),
+        ("npy", 0),
+        ("npy", 1),
+        ("npy", 2),
+        ("npy", 3),  # No point in bitpacking if channels < 8, but it works.
     ],
 )
 @given(idx=basic_indices((10, 50, 50, 3), allow_newaxis=False, allow_ellipsis=False))
-def test_dataset_slicing(tmp_path_factory, ds_klass, mode, bitpack_dim, idx):
+def test_dataset_slicing(tmp_path_factory, mode, bitpack_dim, idx):
     tmp_path = tmp_path_factory.mktemp(f"{mode}-{bitpack_dim}")
     gt_data, gt_transforms = setup_dataset(tmp_path, mode=mode, w=50, h=50, n=10, bitpack_dim=bitpack_dim)
     frames = np.array([f["transform_matrix"] for f in gt_transforms["frames"]])
-    ds = ds_klass(tmp_path)
+    ds = Dataset.from_path(tmp_path)
 
     gt = gt_data[idx]
     gt_idx, *_ = np.atleast_1d(idx)
@@ -194,7 +194,7 @@ def test_dataset_slicing(tmp_path_factory, ds_klass, mode, bitpack_dim, idx):
     # Since ImgDataset returns a list on ndarrays, and gt is just an ndarray,
     # we can have gt.shape == (0, x, x, x) and np.array(im).shape == (0,) which
     # do not broadcast together and cause the allclose below to fail.
-    if isinstance(ds.dataset, ImgDataset) and gt.size == 0:
+    if isinstance(ds, ImgDataset) and gt.size == 0:
         im = np.array(im).reshape(gt.shape)
 
     assert np.allclose(gt_idx, im_idx)
@@ -228,3 +228,7 @@ def test_dataset_slicing_notimplemented(tmp_path_factory, ds_klass, mode, bitpac
 
     with pytest.raises(NotImplementedError):
         _, _, _ = ds[idx]
+
+def test_dataset_direct_instantiation(tmp_path):
+    with pytest.raises(Warning):
+        Dataset(tmp_path)
