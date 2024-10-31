@@ -67,6 +67,7 @@ class LogRedirect:
             self.root_path = Path(root_path).resolve().with_suffix("")
             self.logpath_out = str(self.root_path) + "_stdout.log"
             self.logpath_err = str(self.root_path) + "_stderr.log"
+            self.root_path.parent.mkdir(parents=True, exist_ok=True)
         sys.stdout.flush()
         sys.stderr.flush()
 
@@ -346,9 +347,13 @@ class BlenderDatasetGenerator:
         self.alpha_color = alpha_color
         self.render = render
 
-        # Set frame resolution
+        # Ensure we are using the compositor, and node tree.
         self.scene = bpy.context.scene
+        self.scene.use_nodes = True
+        self.scene.render.use_compositing = True
         self.tree = self.scene.node_tree
+
+        # Set frame resolution
         self.scene.render.resolution_y = self.height
         self.scene.render.resolution_x = self.width
         self.scene.render.resolution_percentage = 100
@@ -418,11 +423,6 @@ class BlenderDatasetGenerator:
             self.scene.render.dither_intensity = 0.0
             self.scene.render.film_transparent = True
 
-            # Ensure we are using the compositor, reload tree if didn't exist.
-            self.scene.use_nodes = True
-            self.scene = bpy.context.scene
-            self.tree = self.scene.node_tree
-
             # Bypass everything, and only alpha blend
             # This is a bit fragile atm, as it relies on the node to have correct names...
             alpha_compositor = self.tree.nodes.new(type="CompositorNodeAlphaOver")
@@ -442,10 +442,8 @@ class BlenderDatasetGenerator:
         if depth or normals:
             # Add passes for additionally dumping depth and normals.
             if len(keys := list(self.scene.view_layers.keys())) < 1:
-                raise ValueError(f"Expected at least one view layer, cannot render without it. Please add one manually.")
+                raise ValueError("Expected at least one view layer, cannot render without it. Please add one manually.")
             
-            self.scene.use_nodes = True
-            self.scene.render.use_compositing = True
             self.scene.view_layers[keys[0]].use_pass_normal = normals
             self.scene.view_layers[keys[0]].use_pass_z = depth
             self.render_layers = self.tree.nodes.new("CompositorNodeRLayers")
@@ -650,7 +648,7 @@ class BlenderDatasetGenerator:
 
     def generate_single(self, index):
         """
-        Generates a single frame in Blender and manages the file paths for that frame, including depth nad normals.
+        Generates a single frame in Blender and manages the file paths for that frame, including depth and normals.
 
         Args:
             index: index of frame to generate.
