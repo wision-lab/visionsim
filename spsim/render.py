@@ -442,7 +442,7 @@ class BlenderDatasetGenerator:
         if depth or normals:
             # Add passes for additionally dumping depth and normals.
             if len(keys := list(self.scene.view_layers.keys())) < 1:
-                raise ValueError(f"Expected at least one view layer, cannot render without it. Please add one manually.")
+                raise ValueError("Expected at least one view layer, cannot render without it. Please add one manually.")
             
             self.scene.use_nodes = True
             self.scene.render.use_compositing = True

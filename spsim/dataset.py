@@ -1,14 +1,14 @@
 import copy
 from pathlib import Path
 from typing import Collection, List, Tuple, Union
-
+from functools import cached_property
 import imageio
 import imageio.v3 as iio
 import numpy as np
 from jsonschema.exceptions import ValidationError
 from natsort import natsorted
 from numpy.lib.format import open_memmap
-from torch.utils.data import Dataset
+import torch.utils.data
 
 from .schema import IMG_SCHEMA, NPY_SCHEMA, _read_and_validate, _validate_and_write
 
@@ -149,22 +149,46 @@ def default_collate(batch):
     return img_idxs, imgs, poses
 
 
-def dataset_dispatch(root, *args, mode=None, **kwargs):
-    """Given a dataset root, resolve it and instantiate the correct dataset type"""
-    if mode is not None:
-        if mode.lower() == "img":
-            return ImgDataset(root, *args, **kwargs)
-        elif mode.lower() == "npy":
-            return NpyDataset(root, *args, **kwargs)
-        else:
-            raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
+class Dataset(torch.utils.data.Dataset):
+    def __init__(self, *args, **kwargs):
+        raise Warning("Do not instantiate Dataset directly, no value will be defined. Use Dataset.from_path() to instantiate a dataset instead.")
 
-    for klass in (NpyDataset, ImgDataset):
-        try:
-            return klass(root, *args, **kwargs)
-        except (FileNotFoundError, ValueError, RuntimeError, ValidationError):
-            pass
-    raise RuntimeError(f"Could not determine type of dataset at {root}")
+    @classmethod
+    def from_path(self, root, mode=None, *args, **kwargs):
+        """Given a dataset root, resolve it and instantiate the correct dataset type"""
+        dataset = None
+
+        if mode is not None:
+            if mode.lower() == "img":
+                dataset = ImgDataset(root, *args, **kwargs)
+            elif mode.lower() == "npy":
+                dataset = NpyDataset(root, *args, **kwargs)
+            else:
+                raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
+
+        for klass in (NpyDataset, ImgDataset):
+            try:
+                dataset = klass(root, *args, **kwargs)
+            except (FileNotFoundError, ValueError, RuntimeError, ValidationError):
+                pass
+        
+        if dataset is None:
+            raise RuntimeError(f"Could not determine type of dataset at {root}")
+        
+        return dataset
+    
+    @cached_property
+    def arclength(self):
+        """Print the length of the trajectory"""
+
+        if not self.transforms:
+            return np.nan
+
+        points = self.poses[:, :3, -1]
+        dp = np.gradient(points, axis=0)
+        dist = np.sqrt((dp**2).sum(axis=1)).sum()
+
+        return dist
 
 
 class ImgDataset(Dataset):
@@ -179,9 +203,8 @@ class ImgDataset(Dataset):
         self._idxs = np.arange(len(self))
         self._idxs.setflags(write=False)
         self._full_shape = None
-        super().__init__()
 
-    @property
+    @cached_property
     def full_shape(self):
         if self._full_shape is None:
             if self.transforms:
@@ -278,8 +301,8 @@ class ImgDatasetWriter:
 
 class NpyDataset(Dataset):
     def __init__(self, root, *args, **kwargs):
-        (self.path,), self.poses, self.transforms = _resolve_root(root, mode="npy")
-        self.data = np.load(str(self.path), mmap_mode="r")
+        (self.paths,), self.poses, self.transforms = _resolve_root(root, mode="npy")
+        self.data = np.load(str(self.paths), mmap_mode="r")
 
         if self.transforms and self.transforms.get("bitpack"):
             self.bitpack_dim = self.transforms.get("bitpack_dim")
@@ -298,7 +321,6 @@ class NpyDataset(Dataset):
         # Ensure these don't get changed!
         for array in self._idxs:
             array.setflags(write=False)
-        super().__init__()
 
     def __len__(self):
         return self.full_shape[0]
