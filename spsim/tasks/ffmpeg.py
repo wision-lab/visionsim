@@ -99,7 +99,7 @@ def animate(
 @task(
     iterable=["inputfiles"],
     help={
-        "inputfiles": "video file to combine together or newline seperator ('\\n', '\\r', 'newline' or 'enter'), "
+        "inputfiles": "video file to combine together or newline separator ('\\n', '\\r', 'newline' or 'enter'), "
         "this argument should be used once per video file.",
         "outfile": "where to save generated mp4, default: 'combined.mp4'",
         "matrix": "alternate way to specify videos to combine as a 2D matrix of file paths, default: None",
@@ -136,6 +136,7 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
     import tempfile
 
     import more_itertools as mitertools
+    import numpy as np
 
     if Path(outfile).is_file() and not force:
         raise RuntimeError("Output file already exists, either specify different output path or `--force` to override.")
@@ -185,6 +186,26 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
                 cmd = f"ffmpeg -i {path} -vf tpad=stop=-1=color={color},trim=end={max_duration} {out_path} -y"
                 _run(c, cmd)
                 mapping[path] = out_path
+
+        # If the matrix is not jagged, we can use ffmpeg's xstack instead
+        if len(num_cols := set(len(row) for row in matrix)) == 1:
+            in_paths = [mapping.get(p, p) for row in matrix for p in row]
+            in_paths_str = "".join(f"-i {p} " for p in in_paths)
+            filter_inputs_str = "".join(
+                f"[{i}:v] setpts=PTS-STARTPTS, scale=qvga [a{i}]; " for i, _ in enumerate(in_paths)
+            )
+            W, H = np.meshgrid(
+                ["+".join(f"w{i}" for i in range(j)) or "0" for j in range(num_cols.pop())],
+                ["+".join(f"h{i}" for i in range(j)) or "0" for j in range(len(matrix))],
+            )
+            layout_spec = "|".join(f"{i}_{j}" for i, j in zip(W.flatten(), H.flatten()))
+            placement = (
+                "".join(f"[a{i}]" for i, _ in enumerate(in_paths))
+                + f"xstack=inputs={len(in_paths)}:layout={layout_spec}[out]"
+            )
+            cmd = f'ffmpeg {in_paths_str} -filter_complex "{filter_inputs_str} {placement}" -map "[out]" -c:v libx264 {outfile}'
+            _run(c, cmd, echo=True)
+            return
 
         for i, row in enumerate(matrix):
             # Resize videos in each row
@@ -241,6 +262,44 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
         else:
             # We already created the video, simply move/rename it to output file
             shutil.move(row_paths[0], outfile)
+
+
+@task(
+    help={
+        "input_dir": "directory containing all video files (mp4's expected)",
+        "width": "width of video grid to produce, default: -1 (infer)",
+        "height": "height of video grid to produce, default: -1 (infer)",
+        "outfile": "where to save generated mp4, default: 'combined.mp4'",
+        "force": "if true, overwrite output file if present, default: False",
+    },
+)
+def grid(c, input_dir, width=-1, height=-1, outfile="combined.mp4", force=False):
+    """Make a mosaic from videos in a folder, organizing them in a grid"""
+    import numpy as np
+    from natsort import natsorted
+
+    files = natsorted(Path(input_dir).glob("*.mp4"))
+
+    if width <= 0 and height <= 0:
+        candidates = [(w, int(len(files) / w)) for w in range(1, len(files)) if int(len(files) / w) == (len(files) / w)]
+
+        print("Please select size (width x height):")
+        for i, candidate in enumerate(candidates):
+            print(f"{i}) {candidate}")
+        selection = int(input(">  "))
+        width, height = candidates[selection]
+    elif width <= 0:
+        width = len(files) / height
+    elif height <= 0:
+        height = len(files) / width
+
+    if int(width) != width or int(height) != height:
+        raise ValueError(f"Width and height should be integers, instead got {width}, {height}.")
+    else:
+        width, height = int(width), int(height)
+
+    matrix = np.array([str(p) for p in files]).reshape((height, width)).tolist()
+    combine(c, [], outfile, matrix=str(matrix), force=force)
 
 
 @task(help={"input_file": "video file input"})

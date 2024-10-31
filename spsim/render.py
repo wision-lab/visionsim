@@ -36,7 +36,9 @@ except ImportError:
         "into blender's python interpreter like so:\n"
     )
     print(f"$ {sys.exec_prefix}/bin/python* -m ensurepip")
-    print(f"$ {sys.exec_prefix}/bin/python* -m pip install scipy rich --target={sys.exec_prefix}/lib/python*/site-packages")
+    print(
+        f"$ {sys.exec_prefix}/bin/python* -m pip install scipy rich --target={sys.exec_prefix}/lib/python*/site-packages"
+    )
     sys.exit()
 
 usage = (
@@ -65,6 +67,7 @@ class LogRedirect:
             self.root_path = Path(root_path).resolve().with_suffix("")
             self.logpath_out = str(self.root_path) + "_stdout.log"
             self.logpath_err = str(self.root_path) + "_stderr.log"
+            self.root_path.parent.mkdir(parents=True, exist_ok=True)
         sys.stdout.flush()
         sys.stderr.flush()
 
@@ -284,9 +287,6 @@ class Spline:
 class BlenderDatasetGenerator:
     """Generate a dataset of different views of a blend file.
 
-    (Very) loosely inspired and adapted from UPstartDeveloper's code here:
-    https://github.com/UPstartDeveloper/nerf/blob/generate-blender-dataset-json/360_view.py
-
     Args:
         root_path: Root where dataset will be saved.
         blend_file: Optional Blender file to use. Defaults to none and assumes file is already open.
@@ -347,18 +347,26 @@ class BlenderDatasetGenerator:
         self.alpha_color = alpha_color
         self.render = render
 
-        # Set frame resolution
+        # Ensure we are using the compositor, and node tree.
         self.scene = bpy.context.scene
+        self.scene.use_nodes = True
+        self.scene.render.use_compositing = True
         self.tree = self.scene.node_tree
+
+        # Set frame resolution
         self.scene.render.resolution_y = self.height
         self.scene.render.resolution_x = self.width
         self.scene.render.resolution_percentage = 100
 
         # Render Optimizations and Settings
-        self.scene.render.engine = "CYCLES"
-        self.scene.cycles.use_denoising = True
-        self.scene.cycles.adaptive_threshold = adaptive_threshold
-        # self.scene.cycles.debug_use_spatial_splits = True
+        if self.scene.render.engine.upper() == "CYCLES":
+            self.scene.cycles.use_denoising = True
+            self.scene.cycles.adaptive_threshold = adaptive_threshold
+        else:
+            print(
+                f"WARNING: Using {self.scene.render.engine.upper()} rendering engine, "
+                f"with default OpenGL rendering device(s)."
+            )
         self.scene.render.use_persistent_data = True
         self.scene.render.use_motion_blur = use_motion_blur
         self.scene.render.motion_blur_shutter /= keyframe_multiplier
@@ -415,11 +423,6 @@ class BlenderDatasetGenerator:
             self.scene.render.dither_intensity = 0.0
             self.scene.render.film_transparent = True
 
-            # Ensure we are using the compositor, reload tree if didn't exist.
-            self.scene.use_nodes = True
-            self.scene = bpy.context.scene
-            self.tree = self.scene.node_tree
-
             # Bypass everything, and only alpha blend
             # This is a bit fragile atm, as it relies on the node to have correct names...
             alpha_compositor = self.tree.nodes.new(type="CompositorNodeAlphaOver")
@@ -438,13 +441,12 @@ class BlenderDatasetGenerator:
 
         if depth or normals:
             # Add passes for additionally dumping depth and normals.
-            if len(keys := list(self.scene.view_layers.keys())) != 1:
-                raise ValueError(f"Expected only one key, either 'RenderLayer' or 'ViewLayer', but got {keys}.")
+            if len(keys := list(self.scene.view_layers.keys())) < 1:
+                raise ValueError("Expected at least one view layer, cannot render without it. Please add one manually.")
+
             self.scene.view_layers[keys[0]].use_pass_normal = normals
             self.scene.view_layers[keys[0]].use_pass_z = depth
             self.render_layers = self.tree.nodes.new("CompositorNodeRLayers")
-            self.scene.render.use_compositing = True
-            self.scene.use_nodes = True 
 
             if depth:
                 self.depth_path = self.include_depth()
@@ -466,6 +468,8 @@ class BlenderDatasetGenerator:
         """
         # TODO: This method can be slow if there's a lot of keyframes
         #   See: https://blender.stackexchange.com/questions/111644
+        if scale == 1.0 and shift == 0.0:
+            return
         if self.use_animation:
             for action in bpy.data.actions:
                 for fcurve in action.fcurves or []:
@@ -529,6 +533,9 @@ class BlenderDatasetGenerator:
             List of activated devices.
         """
         # Modified from: https://blender.stackexchange.com/questions/156503
+        if bpy.context.scene.render.engine.upper() != "CYCLES":
+            return []
+
         preferences = bpy.context.preferences
         cycles_preferences = preferences.addons["cycles"].preferences
         cycles_preferences.refresh_devices()
@@ -603,12 +610,12 @@ class BlenderDatasetGenerator:
         scale = scene.render.resolution_percentage / 100
         width = scene.render.resolution_x * scale  # px
         height = scene.render.resolution_y * scale  # px
-        camdata = scene.camera.data
+        camera_data = scene.camera.data
 
         aspect_ratio = width / height
         K = np.zeros((3, 3), dtype=np.float32)
-        K[0][0] = width / 2.0 / np.tan(camdata.angle / 2)
-        K[1][1] = height / 2.0 / np.tan(camdata.angle / 2) * aspect_ratio
+        K[0][0] = width / 2.0 / np.tan(camera_data.angle / 2)
+        K[1][1] = height / 2.0 / np.tan(camera_data.angle / 2) * aspect_ratio
         K[0][2] = width / 2.0
         K[1][2] = height / 2.0
         K[2][2] = 1.0
@@ -641,7 +648,7 @@ class BlenderDatasetGenerator:
 
     def generate_single(self, index):
         """
-        Generates a single frame in Blender and manages the file paths for that frame, including depth nad normals.
+        Generates a single frame in Blender and manages the file paths for that frame, including depth and normals.
 
         Args:
             index: index of frame to generate.
@@ -675,7 +682,16 @@ class BlenderDatasetGenerator:
         return paths
 
     def generate_views_along_spline(
-        self, *, location_points, viewing_points=np.zeros((1, 3)), frame_range=range(100), tnb=False, **kwargs
+        self,
+        *,
+        location_points,
+        viewing_points=np.zeros((1, 3)),
+        frame_start=None,
+        frame_end=None,
+        frame_step=None,
+        num_frames=None,
+        tnb=False,
+        **kwargs,
     ):
         """
         This is the core frame generation process. Determines frame range to render,
@@ -685,56 +701,68 @@ class BlenderDatasetGenerator:
         Args:
             location_points: Locations on spline path camera should follow during rendering.
             viewing_points: Specifies points camera should be directed at during rendering. Defaults to (0,0,0).
-            frame_range: Specifies range of frames to render. Defaults to first 100 frames.
+            frame_start: Starting index of frames to render as seen in blender. Defaults to value from `.blend` file.
+            frame_end: Ending index of frames to render as seen in blender. Defaults to value from `.blend` file.
+            frame_step: Skip every nth frame. This is applied after scaling by `keyframe-multiplier`. Defaults to value from `.blend` file.
+            num_frames: Total number of frames to be rendered, applied after scaling by `keyframe-multiplier`. Cannot be used with `frame-end`. Default: None.
             tnb: Boolean flag indicating camera orientation should be based on TNB frame. Defaults to false.
 
-
         """
-        if self.use_animation:
-            # Warn if generated frames lie outside animation range
-            if frame_range.start < self.scene.frame_start or self.scene.frame_end < frame_range.stop:
-                print(
-                    f"WARNING: Current animation starts at frame #{self.scene.frame_start} and ends at "
-                    f"#{self.scene.frame_end} (with step={self.scene.frame_step}), but you requested frames "
-                    f"#{frame_range.start} to #{frame_range.stop} (step={frame_range.step}) to be rendered.\n"
-                )
+        # Remap requested frame range according to keyframe multiplier
+        # Cases:
+        #   1) frame/start/end and step are set:
+        #      - remap range(start, end, step) w/ keyframe multiplier and render
+        #   2) Nothing is set, render default animation w/ kf multiplier
+        #   3) start and num-frames is set, render start*mul to start*mul + num-frames with step size
+        if num_frames is not None and frame_end is not None:
+            raise ValueError("Cannot use both `num-frames` and `frame-end` simultaneously.")
 
-            # Apply animation slowdown/speedup factor and shift frames so the start at zero
-            if self.keyframe_multiplier != 1.0:
-                shift = int(frame_range.start * self.keyframe_multiplier)
-                new_frame_range = range(
-                    0,
-                    int(frame_range.stop * self.keyframe_multiplier) - shift,
-                    frame_range.step,
-                )
-                self.move_keyframes(shift=-shift)
-                print(
-                    f"INFO: Requested frames were {frame_range}, but these were remapped to "
-                    f"{range(new_frame_range.start+shift, new_frame_range.stop+shift, frame_range.step)} "
-                    f"due to a `keyframe_multiplier` value of {self.keyframe_multiplier}, and finally "
-                    f"shifted to start at frame zero. The final frames are now {new_frame_range}."
-                )
+        frame_start = int((self.scene.frame_start if frame_start is None else frame_start) * self.keyframe_multiplier)
+        frame_step = self.scene.frame_step if frame_step is None else frame_step
+
+        if frame_end is None:
+            if num_frames is None:
+                frame_end = int(self.scene.frame_end * self.keyframe_multiplier)
             else:
-                shift = 0
-                new_frame_range = frame_range
+                frame_end = frame_start + num_frames
+        frame_range = range(frame_start, frame_end, frame_step)
 
-            if new_frame_range.stop - new_frame_range.start >= 1_048_574:
-                raise RuntimeError(
-                    f"Blender cannot currently render more than 1,048,574 frames, yet requested you "
-                    f"requested {len(new_frame_range)} frames to be rendered. For more please see: "
-                    f"https://docs.blender.org/manual/en/latest/advanced/limits.html"
-                )
+        # Warn if generated frames lie outside animation range
+        if self.use_animation and (
+            (frame_start / self.keyframe_multiplier < self.scene.frame_start)
+            or (self.scene.frame_end < frame_end / self.keyframe_multiplier)
+        ):
+            print(
+                f"WARNING: Current animation starts at frame #{self.scene.frame_start} and ends at "
+                f"#{self.scene.frame_end} (with step={self.scene.frame_step}), but you requested frames "
+                f"#{frame_start / self.keyframe_multiplier} to #{frame_end / self.keyframe_multiplier} "
+                f"(step={frame_step}) to be rendered.\n"
+            )
 
-            # If we request to render frames outside the nominal animation range,
-            # blender will just wrap around and go back to that range. As a workaround,
-            # extend the animation range if we exceed it.
-            # Max number of frames is 1,048,574 as of Blender 3.4
-            # See: https://docs.blender.org/manual/en/latest/advanced/limits.html
-            scene_original_range = self.scene.frame_start, self.scene.frame_end
-            self.scene.frame_start, self.scene.frame_end = 0, 1_048_574
+        # Apply animation slowdown/speedup factor and shift keyframes so they start at zero
+        if self.use_animation and self.keyframe_multiplier != 1.0:
+            shift = frame_start
+            new_frame_range = range(0, frame_end - shift, frame_step)
+            self.move_keyframes(shift=-shift)
         else:
             new_frame_range = frame_range
-            scene_original_range, shift = None, 0
+            shift = 0
+
+        # Max number of frames is 1,048,574 as of Blender 3.4
+        # See: https://docs.blender.org/manual/en/latest/advanced/limits.html
+        if new_frame_range.stop - new_frame_range.start >= 1_048_574:
+            raise RuntimeError(
+                f"Blender cannot currently render more than 1,048,574 frames, yet requested you "
+                f"requested {new_frame_range.stop - new_frame_range.start} frames to be rendered. For more please see: "
+                f"https://docs.blender.org/manual/en/latest/advanced/limits.html"
+            )
+
+        # If we request to render frames outside the nominal animation range,
+        # blender will just wrap around and go back to that range. As a workaround,
+        # extend the animation range to it's maximum, even if we do not exceed it,
+        # it will be restored at the end.
+        scene_original_range = self.scene.frame_start, self.scene.frame_end
+        self.scene.frame_start, self.scene.frame_end = 0, 1_048_574
 
         # Store transforms as we go
         transforms = {
@@ -802,7 +830,7 @@ class BlenderDatasetGenerator:
                     self.position_camera(location_points(t), target_location=viewing_points(t))
 
             self.scene.frame_set(frame_number if self.use_animation else 0)
-            paths = self.generate_single(frame_number + shift if self.use_animation else i)
+            paths = self.generate_single(frame_number)
 
             # Get camera pose and normalize rotation matrix axes
             pose = np.array(self.camera.matrix_world)
@@ -814,9 +842,8 @@ class BlenderDatasetGenerator:
             transforms["frames"].append(frame_data)
 
         # Restore animation range if modified, and shift back keyframes
-        if scene_original_range:
-            self.scene.frame_start, self.scene.frame_end = scene_original_range
-            self.move_keyframes(shift=shift)
+        self.scene.frame_start, self.scene.frame_end = scene_original_range
+        self.move_keyframes(shift=shift)
 
         with open(str(self.root_path / "transforms.json"), "w") as f:
             json.dump(transforms, f, indent=2)
@@ -846,7 +873,12 @@ def parser_config():
             dict(name="root_path", type=str, help="location at which to save dataset"),
             dict(name="--blend-file", type=str, default="", help="path to blender file to use"),
             # Defaults are set below in `_render_views` to allow for some validation checks
-            dict(name="--num-frames", type=int, default=None, help="number of frame to capture, default: 100"),
+            dict(
+                name="--num-frames",
+                type=int,
+                default=None,
+                help="number of frame to capture, this argument is affected by `keyframe-multiplier`. default: 100",
+            ),
             dict(
                 name="--frame-start",
                 type=int,

@@ -12,3 +12,4 @@ natsort
 rich
 jsonschema
 torchvision
+OpenEXR

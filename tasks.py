@@ -61,22 +61,18 @@ def _run(c, command):
     return c.run(command, pty=platform.system() != "Windows")
 
 
-@task(help={"check": "Checks if source is formatted without applying changes"})
-def format(c, check=False):
-    """Format code"""
+@task
+def format(c):
+    """Format code (and sort imports)"""
     python_dirs_string = " ".join(PYTHON_DIRS + glob.glob(os.path.join(ROOT_DIR, "*.py")))
-    # Run isort
-    isort_options = f"--line-length={MAX_LINE_LENGTH}" + " --check-only --diff" if check else ""
-    _run(c, f"isort {isort_options} {python_dirs_string}")
-    # Run ruff
-    yapf_options = "--diff --check" if check else ""
-    _run(c, f"ruff format {yapf_options} {python_dirs_string}")
+    _run(c, f"ruff check --select I --fix {python_dirs_string}")
+    _run(c, f"ruff format {python_dirs_string}")
 
 
 @task
 def lint(c):
     """Lint code with ruff"""
-    _run(c, f"ruff check {' '.join(PYTHON_DIRS)}")
+    _run(c, f"ruff check --extend-select I {' '.join(PYTHON_DIRS)}")
 
 
 @task

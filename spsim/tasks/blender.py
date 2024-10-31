@@ -10,6 +10,7 @@ from spsim.tasks.common import _run
 # Dynamically populate arguments of the `render` task
 conf = parser_config()
 render_help = {arg["name"].lstrip("-").replace("-", "_"): arg["help"] for arg in conf["arguments"]}
+render_help["blender_path"] = "specify which blender to use if there exists multiple, default: version on system $PATH"
 render_help["autoexec"] = "if true, enable the execution of bundled code. default: False"
 render_args = [arg["name"].lstrip("-").replace("-", "_") for arg in conf["arguments"] if "default" not in arg]
 render_kwargs = {
@@ -18,7 +19,7 @@ render_kwargs = {
 render_kwargs.pop("blend_file")
 
 
-def render(c, blend_file, *args, autoexec=False, **kwargs):
+def render(c, blend_file, *args, blender_path=None, autoexec=False, **kwargs):
     """Wrapper that calls the `blender.py` CLI within blender. All arguments
     are first verified here using invoke and then again using argparse."""
     # TODO: Enable parallelization by spinning up different workers (and blender
@@ -35,7 +36,7 @@ def render(c, blend_file, *args, autoexec=False, **kwargs):
     # Call `render.py` script through blender's python interpreter
     path = Path(__file__).parent.parent / "render.py"
     autoexec = "--enable-autoexec" if autoexec else "--disable-autoexec"
-    cmd = f"blender --background {autoexec} --python {path} -- {' '.join(sys.argv[3:])} --blend-file={blend_file}"
+    cmd = f"{blender_path or 'blender'} --background {autoexec} --python {path} -- {' '.join(sys.argv[3:])} --blend-file={blend_file}"
     _run(c, cmd)
 
 
