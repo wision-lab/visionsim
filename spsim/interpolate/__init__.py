@@ -65,7 +65,7 @@ def poses_and_frames_to_json(transforms, new_poses, output_dir, file_name="trans
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # NOTE: We only output png files in frames dir
-    new_paths = natsorted(output_dir.glob(f"frames/*.png")) 
+    new_paths = natsorted(output_dir.glob("frames/*.png")) 
 
     if len(new_paths) != len(new_poses):
         raise RuntimeError(
