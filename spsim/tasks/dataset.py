@@ -146,27 +146,32 @@ def npy_to_imgs(
 
 @task(
     help={
-        "input_dir": "directory in which to look for frames",
-        "json": "print the output in a json-formatted string, default: False"
+        "input_dir": "directory in which to look for dataset",
+        "json": "print the output in a json-formatted string, default: False",
     }
 )
 def info(_, input_dir, json=False):
     """Print information about the dataset"""
+    import json
+
     from spsim.dataset import Dataset
+
     from .common import _validate_directories
-    import json as j
 
     input_dir, _ = _validate_directories(input_dir=input_dir)
     dataset = Dataset.from_path(input_dir)
 
     if json:
-        print(j.dumps(
-            {
-                "arclength": dataset.arclength,
-                "full_shape": dataset.full_shape,
-                "paths": [str(p) for p in dataset.paths],
-            },
-            indent=2, sort_keys=True)
+        print(
+            json.dumps(
+                {
+                    "arclength": dataset.arclength,
+                    "full_shape": dataset.full_shape,
+                    "paths": [str(p) for p in dataset.paths],
+                },
+                indent=2,
+                sort_keys=True,
+            )
         )
     else:
         print(f"arclength: {dataset.arclength}")

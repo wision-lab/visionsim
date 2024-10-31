@@ -443,7 +443,7 @@ class BlenderDatasetGenerator:
             # Add passes for additionally dumping depth and normals.
             if len(keys := list(self.scene.view_layers.keys())) < 1:
                 raise ValueError("Expected at least one view layer, cannot render without it. Please add one manually.")
-            
+
             self.scene.view_layers[keys[0]].use_pass_normal = normals
             self.scene.view_layers[keys[0]].use_pass_z = depth
             self.render_layers = self.tree.nodes.new("CompositorNodeRLayers")
@@ -469,7 +469,7 @@ class BlenderDatasetGenerator:
         # TODO: This method can be slow if there's a lot of keyframes
         #   See: https://blender.stackexchange.com/questions/111644
         if scale == 1.0 and shift == 0.0:
-            return 
+            return
         if self.use_animation:
             for action in bpy.data.actions:
                 for fcurve in action.fcurves or []:
@@ -535,7 +535,7 @@ class BlenderDatasetGenerator:
         # Modified from: https://blender.stackexchange.com/questions/156503
         if bpy.context.scene.render.engine.upper() != "CYCLES":
             return []
-        
+
         preferences = bpy.context.preferences
         cycles_preferences = preferences.addons["cycles"].preferences
         cycles_preferences.refresh_devices()

@@ -2,9 +2,9 @@ import functools
 from pathlib import Path
 
 import numpy as np
+import OpenEXR
 from invoke import task
 from tqdm.auto import tqdm
-import OpenEXR
 
 from spsim.tasks.common import _validate_directories
 
@@ -17,6 +17,7 @@ def _read_exr(path):
             raise RuntimeError("Encountered EXR file with multiple channels!")
         c, *_ = f.channels().keys()
         return f.channels()[c].pixels.squeeze()
+
 
 def _tonemap_collate(batch, *, hdr_quantile=0.01):
     """Use default collate function on batch and then tonemap, enabling compute to be done in threads"""

@@ -1,14 +1,15 @@
 import copy
+from functools import cached_property
 from pathlib import Path
 from typing import Collection, List, Tuple, Union
-from functools import cached_property
+
 import imageio
 import imageio.v3 as iio
 import numpy as np
+import torch.utils.data
 from jsonschema.exceptions import ValidationError
 from natsort import natsorted
 from numpy.lib.format import open_memmap
-import torch.utils.data
 
 from .schema import IMG_SCHEMA, NPY_SCHEMA, _read_and_validate, _validate_and_write
 
@@ -151,10 +152,13 @@ def default_collate(batch):
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, *args, **kwargs):
-        raise Warning("Do not instantiate Dataset directly, no value will be defined. Use Dataset.from_path() to instantiate a dataset instead.")
+        raise Warning(
+            "Do not instantiate Dataset directly, no value will be defined. "
+            "Use Dataset.from_path() to instantiate a dataset instead."
+        )
 
     @classmethod
-    def from_path(self, root, mode=None, *args, **kwargs):
+    def from_path(cls, root, mode=None, *args, **kwargs):
         """Given a dataset root, resolve it and instantiate the correct dataset type"""
         dataset = None
 
@@ -171,12 +175,12 @@ class Dataset(torch.utils.data.Dataset):
                 dataset = klass(root, *args, **kwargs)
             except (FileNotFoundError, ValueError, RuntimeError, ValidationError):
                 pass
-        
+
         if dataset is None:
             raise RuntimeError(f"Could not determine type of dataset at {root}")
-        
+
         return dataset
-    
+
     @cached_property
     def arclength(self):
         """Print the length of the trajectory"""
