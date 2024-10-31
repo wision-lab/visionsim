@@ -3,7 +3,9 @@ from pathlib import Path
 import numpy as np
 from invoke import task
 
-from spsim.interpolate_wrapper import interpolate_poses, interpolate_frames, poses_and_frames_to_json
+from spsim.interpolate import interpolate_poses, interpolate_frames, poses_and_frames_to_json
+from spsim.schema import _read_and_validate, IMG_SCHEMA
+from spsim.tasks.common import _validate_directories
 
 
 @task(
@@ -49,21 +51,25 @@ def video(c, input_file, output_file, method="rife", n=2):
         "input_dir": "directory in which to look for frames",
         "output_dir": "directory in which to save interpolated frames",
         # added file type for frames normals depths
-        "file_type": "type of file interpolating. frames, normals, depths, default: frames",
         "method": "interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife'",
         "file_name": "name of file containing transforms, default: 'transforms.json'",
         "n": "interpolation factor, must be a multiple of 2, default: 2",
     }
 )
-def frames(_, input_dir, output_dir, file_type="frames", method="rife", file_name="transforms.json", n=2):
+def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json", n=2):
     """Interpolate poses and frames seperately, then combine into transforms.json file
     """
-    
+
+    # Extract transforms from transforms.json file
+    input_dir, output_dir = _validate_directories(input_dir, output_dir)
+    transforms = _read_and_validate(path=input_dir / file_name, schema=IMG_SCHEMA)
+
+
     print("Interpolating poses")
-    interpolated_poses = interpolate_poses(input_dir, file_type, file_name, n)
+    interpolated_poses = interpolate_poses(transforms, n)
 
     print("Interpolating frames")
-    exts = interpolate_frames(input_dir, output_dir, file_type, file_name, method, n)
+    interpolate_frames(input_dir, output_dir, method, n)
 
     print(f"Generating {file_name}")
-    poses_and_frames_to_json(input_dir, output_dir, interpolated_poses, exts, file_type, file_name)
+    poses_and_frames_to_json(transforms, interpolated_poses, output_dir, file_name="transforms.json")
