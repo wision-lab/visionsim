@@ -272,6 +272,7 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
     },
 )
 def grid(c, input_dir, width=-1, height=-1, outfile="combined.mp4", force=False):
+    """Make a mosaic from videos in a folder, organizing them in a grid"""
     import numpy as np
     from natsort import natsorted
 
