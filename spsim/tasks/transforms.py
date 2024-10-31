@@ -4,9 +4,19 @@ from pathlib import Path
 import numpy as np
 from invoke import task
 from tqdm.auto import tqdm
+import OpenEXR
 
 from spsim.tasks.common import _validate_directories
 
+
+def _read_exr(path):
+    # imageio and cv2's cannot read an exr file when the data is stored in any other channel than RGB(A)
+    # but as of blender 4.x depth maps are correctly saved as single channel exrs, in the V channel.
+    with OpenEXR.File(path) as f:
+        if len(f.channels()) != 1:
+            raise RuntimeError("Encountered EXR file with multiple channels!")
+        c, *_ = f.channels().keys()
+        return f.channels()[c].pixels.squeeze()
 
 def _tonemap_collate(batch, *, hdr_quantile=0.01):
     """Use default collate function on batch and then tonemap, enabling compute to be done in threads"""
@@ -42,7 +52,7 @@ def colorize_depth(
     output_dir,
     pattern="depth_*.exr",
     cmap="turbo",
-    ext=".jpg",
+    ext=".png",
     vmin=None,
     vmax=None,
     percentage=0.2,
@@ -54,7 +64,7 @@ def colorize_depth(
     import matplotlib as mpl
     import matplotlib.cm as cm
 
-    from spsim.io import read_img, write_img
+    from spsim.io import write_img
 
     input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
     in_files = in_files[::step]
@@ -66,10 +76,10 @@ def colorize_depth(
 
         for in_file in tqdm(probe_files):
             # Open with opencv, convert to color using matplotlib's cmaps and save as png.
-            depth, _ = read_img(in_file, apply_alpha=False)
+            depth = _read_exr(in_file)
             depth[depth == 10000000000] = np.nan
-            vmin = np.minimum(vmin, np.nanmin(depth[:, :, 0]))
-            vmax = np.maximum(vmax, np.nanmax(depth[:, :, 0]))
+            vmin = np.minimum(vmin, np.nanmin(depth))
+            vmax = np.maximum(vmax, np.nanmax(depth))
         print(f"\nUsing range [{vmin}, {vmax}]\n")
 
     cmap = getattr(cm, cmap)
@@ -77,9 +87,9 @@ def colorize_depth(
 
     for in_file in tqdm(in_files):
         # Open with imageio, convert to color using matplotlib's cmaps and save as png.
-        depth, _ = read_img(in_file, apply_alpha=False)
+        depth = _read_exr(in_file)
         depth[depth == 10000000000] = np.nan
-        img = (cmap(norm(depth[:, :, 0])) * 255).astype(np.uint8)
+        img = (cmap(norm(depth)) * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
         write_img(str(path.with_suffix(ext)), img)
 
