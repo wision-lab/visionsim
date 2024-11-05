@@ -62,12 +62,12 @@ def spad(
     from torch.utils.data import DataLoader
     from tqdm.auto import tqdm
 
-    from spsim.dataset import ImgDatasetWriter, NpyDatasetWriter, dataset_dispatch
+    from spsim.dataset import Dataset, ImgDatasetWriter, NpyDatasetWriter
 
     from .common import _validate_directories
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
-    dataset = dataset_dispatch(input_dir)
+    dataset = Dataset.from_path(input_dir)
     alpha_color = ast.literal_eval(alpha_color) if alpha_color else None
     transforms_new = copy.deepcopy(dataset.transforms or {})
     shape = np.array(dataset.full_shape)
@@ -143,14 +143,14 @@ def rgb(
     from tqdm.auto import tqdm
 
     from spsim.color import apply_alpha, emulate_rgb_from_merged, srgb_to_linearrgb
-    from spsim.dataset import ImgDatasetWriter, NpyDatasetWriter, dataset_dispatch, default_collate
+    from spsim.dataset import Dataset, ImgDatasetWriter, NpyDatasetWriter, default_collate
     from spsim.interpolate import pose_interp
     from spsim.utils import img_to_tensor, tensor_to_img  # Lazy Load
 
     from .common import _validate_directories
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
-    dataset = dataset_dispatch(input_dir)
+    dataset = Dataset.from_path(input_dir)
     alpha_color = ast.literal_eval(alpha_color) if alpha_color else None
     transforms_new = copy.deepcopy(dataset.transforms or {})
     shape = np.array(dataset.full_shape)
