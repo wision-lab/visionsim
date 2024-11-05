@@ -1,0 +1,8 @@
+table.borderless,
+table.borderless td,
+table.borderless th {
+    border: 0px solid transparent;
+    padding: 0px;
+    padding-right: 0.5em;
+    box-shadow: none
+}

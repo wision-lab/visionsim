@@ -14,8 +14,6 @@ from pathlib import Path
 
 from invoke import task
 
-MAX_LINE_LENGTH = 121
-
 ROOT_DIR = Path(__file__).parent
 TEST_DIR = ROOT_DIR / "tests"
 SOURCE_DIR = ROOT_DIR / "spsim"
@@ -25,6 +23,7 @@ COVERAGE_REPORT = COVERAGE_DIR / "index.html"
 PYTHON_DIRS = [str(d) for d in [SOURCE_DIR, TEST_DIR]]
 DOCS_DIR = ROOT_DIR / "docs"
 DOCS_INDEX = DOCS_DIR / "build" / "html" / "index.html"
+DOCS_STATIC = DOCS_DIR / "source" / "_static"
 
 
 def _delete_file(file, except_patterns=None):
@@ -99,8 +98,34 @@ def coverage(c):
 
 
 @task
-def build_docs(c, preview=True):
+def build_docs(c, preview=False, full=False):
     """Confirm docs can be built"""
+    if full:
+        # Create examples from the quick start guide
+        if not Path("data/lego.blend").exists():
+            print("File `data/lego.blend` not found, you can get it by running the command:")
+            print("gdown https://drive.google.com/file/d/1ZRViAN1iaO9ySJmgiasdA61Wo37WkPQy/view?usp=drive_link --fuzzy")
+            return
+
+        Path("cache").mkdir(exist_ok=True)
+        _run(c, f"spsim blender.render data/lego.blend cache/lego-gt/ --num-frames=500 --width=320 --height=320")
+        _run(
+            c,
+            f"gifski $(ls -1a cache/lego-gt/frames/*.png | sed -n '1~4p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif",
+        )
+
+        _run(c, f"spsim interpolate.frames cache/lego-gt/ -o cache/lego-interp/ -n=32")
+        # _run(c, f"gifski $(ls -1a cache/lego-interp/frames/*.png | sed -n '1~128p') --fps 25 -o {DOCS_STATIC}/lego-interp-preview.gif")
+
+        _run(c, f"spsim emulate.rgb cache/lego-interp/ -o cache/lego-rgb25fps/ --chunk-size=160 --readout-std=0 --force")
+        _run(c, f"gifski cache/lego-rgb25fps/frames/*.png --fps 25 -o {DOCS_STATIC}/lego-rgb25fps-preview.gif")
+
+        _run(c, f"spsim emulate.spad cache/lego-interp/ -o cache/lego-spc4kHz/ --mode=img --force")
+        _run(
+            c,
+            f"gifski $(ls -1a cache/lego-spc4kHz/frames/*.png | sed -n '1~160p') --fps 25 -o {DOCS_STATIC}/lego-spc4kHz-preview.gif",
+        )
+
     with c.cd(DOCS_DIR):
         _run(c, "make html")
 
