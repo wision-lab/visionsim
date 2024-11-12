@@ -21,7 +21,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install ruff
-          ruff check
+          ruff check --extend-select I tasks.py spsim/ tests/
       - name: Install Spsim and dependencies
         run: |
           pip install .[dev]

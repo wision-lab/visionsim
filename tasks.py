@@ -110,24 +110,24 @@ def build_docs(c, preview=False, full=False):
         Path("cache/quickstart").mkdir(exist_ok=True, parents=True)
         _run(
             c,
-            f"spsim blender.render data/lego.blend cache/quickstart/lego-gt/ --num-frames=500 --width=320 --height=320",
+            "spsim blender.render data/lego.blend cache/quickstart/lego-gt/ --num-frames=500 --width=320 --height=320",
         )
         _run(
             c,
             f"gifski $(ls -1a cache/quickstart/lego-gt/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif",
         )
 
-        _run(c, f"spsim interpolate.frames cache/quickstart/lego-gt/ -o cache/quickstart/lego-interp/ -n=32")
+        _run(c, "spsim interpolate.frames cache/quickstart/lego-gt/ -o cache/quickstart/lego-interp/ -n=32")
 
         _run(
             c,
-            f"spsim emulate.rgb cache/quickstart/lego-interp/ -o cache/quickstart/lego-rgb25fps/ --chunk-size=160 --readout-std=0 --force",
+            "spsim emulate.rgb cache/quickstart/lego-interp/ -o cache/quickstart/lego-rgb25fps/ --chunk-size=160 --readout-std=0 --force",
         )
         _run(
             c, f"gifski cache/quickstart/lego-rgb25fps/frames/*.png --fps 25 -o {DOCS_STATIC}/lego-rgb25fps-preview.gif"
         )
 
-        _run(c, f"spsim emulate.spad cache/quickstart/lego-interp/ -o cache/quickstart/lego-spc4kHz/ --mode=img --force")
+        _run(c, "spsim emulate.spad cache/quickstart/lego-interp/ -o cache/quickstart/lego-spc4kHz/ --mode=img --force")
         _run(
             c,
             f"gifski $(ls -1a cache/quickstart/lego-spc4kHz/frames/*.png | sed -n '1~160p') --fps 25 -o {DOCS_STATIC}/lego-spc4kHz-preview.gif",
