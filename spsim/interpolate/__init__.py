@@ -1,16 +1,16 @@
+import json
+from pathlib import Path
+
+import numpy as np
+from natsort import natsorted
+
 from .pose import pose_interp  # noqa: F401
 from .rife.inference_img import interpolate_img as rife  # noqa: F401
 
-import json
-import numpy as np
 
-from natsort import natsorted
-from pathlib import Path
-
-
-def interpolate_poses(transforms, n = 2):
+def interpolate_poses(transforms, n=2):
     """
-    Interpolate between poses. 
+    Interpolate between poses.
     Returns the interpolated poses in matrices.
     """
     # Process from frames folder
@@ -26,7 +26,7 @@ def interpolate_poses(transforms, n = 2):
     return new_poses
 
 
-def interpolate_frames(input_dir, output_dir, interpolation_method = "rife", n = 2):
+def interpolate_frames(input_dir, output_dir, interpolation_method="rife", n=2):
     """
     Interpolate between image frames.
     Returns the file extension of the images
@@ -46,11 +46,11 @@ def interpolate_frames(input_dir, output_dir, interpolation_method = "rife", n =
     img_paths = [str(p) for p in input_dir.glob("frames/*.png")]
 
     # Route request to proper image interpolation method
-    if(interpolation_method.lower() == "rife"):
+    if interpolation_method.lower() == "rife":
         rife(img_paths, output_dir / "frames", exp=np.log2(n).astype(int))
     else:
         raise NotImplementedError("Requested interpolation method is not supported at this time.")
-    
+
 
 def poses_and_frames_to_json(transforms, new_poses, output_dir, file_name="transforms.json"):
     """
@@ -65,7 +65,7 @@ def poses_and_frames_to_json(transforms, new_poses, output_dir, file_name="trans
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # NOTE: We only output png files in frames dir
-    new_paths = natsorted(output_dir.glob("frames/*.png")) 
+    new_paths = natsorted(output_dir.glob("frames/*.png"))
 
     if len(new_paths) != len(new_poses):
         raise RuntimeError(
