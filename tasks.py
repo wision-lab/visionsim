@@ -107,24 +107,47 @@ def build_docs(c, preview=False, full=False):
             print("gdown https://drive.google.com/file/d/1ZRViAN1iaO9ySJmgiasdA61Wo37WkPQy/view?usp=drive_link --fuzzy")
             return
 
-        Path("cache").mkdir(exist_ok=True)
-        _run(c, f"spsim blender.render data/lego.blend cache/lego-gt/ --num-frames=500 --width=320 --height=320")
+        Path("cache/quickstart").mkdir(exist_ok=True, parents=True)
         _run(
             c,
-            f"gifski $(ls -1a cache/lego-gt/frames/*.png | sed -n '1~4p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif",
+            f"spsim blender.render data/lego.blend cache/quickstart/lego-gt/ --num-frames=500 --width=320 --height=320",
         )
-
-        _run(c, f"spsim interpolate.frames cache/lego-gt/ -o cache/lego-interp/ -n=32")
-        # _run(c, f"gifski $(ls -1a cache/lego-interp/frames/*.png | sed -n '1~128p') --fps 25 -o {DOCS_STATIC}/lego-interp-preview.gif")
-
-        _run(c, f"spsim emulate.rgb cache/lego-interp/ -o cache/lego-rgb25fps/ --chunk-size=160 --readout-std=0 --force")
-        _run(c, f"gifski cache/lego-rgb25fps/frames/*.png --fps 25 -o {DOCS_STATIC}/lego-rgb25fps-preview.gif")
-
-        _run(c, f"spsim emulate.spad cache/lego-interp/ -o cache/lego-spc4kHz/ --mode=img --force")
         _run(
             c,
-            f"gifski $(ls -1a cache/lego-spc4kHz/frames/*.png | sed -n '1~160p') --fps 25 -o {DOCS_STATIC}/lego-spc4kHz-preview.gif",
+            f"gifski $(ls -1a cache/quickstart/lego-gt/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif",
         )
+
+        _run(c, f"spsim interpolate.frames cache/quickstart/lego-gt/ -o cache/quickstart/lego-interp/ -n=32")
+
+        _run(
+            c,
+            f"spsim emulate.rgb cache/quickstart/lego-interp/ -o cache/quickstart/lego-rgb25fps/ --chunk-size=160 --readout-std=0 --force",
+        )
+        _run(
+            c, f"gifski cache/quickstart/lego-rgb25fps/frames/*.png --fps 25 -o {DOCS_STATIC}/lego-rgb25fps-preview.gif"
+        )
+
+        _run(c, f"spsim emulate.spad cache/quickstart/lego-interp/ -o cache/quickstart/lego-spc4kHz/ --mode=img --force")
+        _run(
+            c,
+            f"gifski $(ls -1a cache/quickstart/lego-spc4kHz/frames/*.png | sed -n '1~160p') --fps 25 -o {DOCS_STATIC}/lego-spc4kHz-preview.gif",
+        )
+
+        # Create interpolation examples
+        Path("cache/interpolation").mkdir(exist_ok=True, parents=True)
+        for i, n in enumerate((25, 50, 100, 200)):
+            _run(
+                c,
+                f"spsim blender.render data/lego.blend cache/interpolation/lego-{n:04}/ --num-frames={n} --width=320 --height=320",
+            )
+            _run(
+                c,
+                f"spsim interpolate.frames cache/interpolation/lego-{n:04}/ -o cache/interpolation/lego{n:04}-interp/ -n={int(64/2**i)}",
+            )
+            _run(
+                c,
+                f"gifski $(ls -1a cache/interpolation/lego{n:04}-interp/frames/*.png | sed -n '1~8p') --fps 25 -o {DOCS_STATIC}/lego{n:04}-interp.gif",
+            )
 
     with c.cd(DOCS_DIR):
         _run(c, "make html")

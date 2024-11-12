@@ -20,7 +20,7 @@ The single photon simulation engine today is made up of four layers and accessib
 
 - Ground Truth Simulation Layer: Generate ground truth data using existing high-quality rendering engines via either custom plugins or render scripts. The output of this layer will consist of clean, blur and noise free, RGB images, depth maps, as well as segmentation maps, normal maps, and other data modalities where applicable. These should be stored in a common format described below, or something that the next later can ingest.
 
-- Interpolation Layer: The simulated data from layer#1, or in fact, data from existing datasets such as the [XVFI](https://github.com/JihyongOh/XVFI), can be interpolated to yield higher framerate datasets. The reasoning for this layer is two fold: i) Simulations can be slow and expensive to run, especially when the single photon sensors run at hundreds of thousands of frames per second, filling the gaps between adjacent frames is fast and relatively cheap to compute. Similarly, existing datasets can be uplifted to single photon regimes using interpolation techniques. ii) While interpolation can produce some artifacts, these are minor when the frames we interpolate between are close and are further muddled as we use the interpolated frames to emulate different camera modalities.
+- Interpolation Layer: The simulated data from layer#1, or in fact, data from existing datasets such as the `XVFI <https://github.com/JihyongOh/XVFI>`_, can be interpolated to yield higher framerate datasets. The reasoning for this layer is two fold: i) Simulations can be slow and expensive to run, especially when the single photon sensors run at hundreds of thousands of frames per second, filling the gaps between adjacent frames is fast and relatively cheap to compute. Similarly, existing datasets can be uplifted to single photon regimes using interpolation techniques. ii) While interpolation can produce some artifacts, these are minor when the frames we interpolate between are close and are further muddled as we use the interpolated frames to emulate different camera modalities.
 
 - Emulation Layer: At this stage we have access to high speed interpolated data which we'll need to further process into the desired modality. We'll refer to this process as `emulation` and reserve the term `simulation` for layer#1. Specifically we are interested in the following:
   
@@ -33,15 +33,14 @@ The single photon simulation engine today is made up of four layers and accessib
 
 
 
-
 .. toctree::
    :hidden:
 
-   usage/quick-start
-   usage/interpolation 
-   usage/autocomplete
+   quick-start
+   simulation
+   interpolation
+   autocomplete
    development
-
 
 ..
    usage/simulation
@@ -50,8 +49,6 @@ The single photon simulation engine today is made up of four layers and accessib
    concepts/architecture
    concepts/imaging-model
       FAQs <faq>
-      installing
-      development
       prior-art
       changelog
 
