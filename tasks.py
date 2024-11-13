@@ -14,16 +14,16 @@ from pathlib import Path
 
 from invoke import task
 
-MAX_LINE_LENGTH = 121
-
 ROOT_DIR = Path(__file__).parent
-TEST_DIR = ROOT_DIR.joinpath("tests")
-SOURCE_DIR = ROOT_DIR.joinpath("spsim")
-COVERAGE_FILE = ROOT_DIR.joinpath(".coverage")
-COVERAGE_DIR = ROOT_DIR.joinpath("htmlcov")
-COVERAGE_REPORT = COVERAGE_DIR.joinpath("index.html")
+TEST_DIR = ROOT_DIR / "tests"
+SOURCE_DIR = ROOT_DIR / "spsim"
+COVERAGE_FILE = ROOT_DIR / ".coverage"
+COVERAGE_DIR = ROOT_DIR / "htmlcov"
+COVERAGE_REPORT = COVERAGE_DIR / "index.html"
 PYTHON_DIRS = [str(d) for d in [SOURCE_DIR, TEST_DIR]]
-DOCS_DIR = ROOT_DIR.joinpath("docs")
+DOCS_DIR = ROOT_DIR / "docs"
+DOCS_INDEX = DOCS_DIR / "build" / "html" / "index.html"
+DOCS_STATIC = DOCS_DIR / "source" / "_static"
 
 
 def _delete_file(file, except_patterns=None):
@@ -98,6 +98,65 @@ def coverage(c):
 
 
 @task
+def build_docs(c, preview=False, full=False):
+    """Confirm docs can be built"""
+    if full:
+        # Create examples from the quick start guide
+        if not Path("data/lego.blend").exists():
+            print("File `data/lego.blend` not found, you can get it by running the command:")
+            print("gdown https://drive.google.com/file/d/1ZRViAN1iaO9ySJmgiasdA61Wo37WkPQy/view?usp=drive_link --fuzzy")
+            return
+
+        Path("cache/quickstart").mkdir(exist_ok=True, parents=True)
+        _run(
+            c,
+            "spsim blender.render data/lego.blend cache/quickstart/lego-gt/ --num-frames=500 --width=320 --height=320",
+        )
+        _run(
+            c,
+            f"gifski $(ls -1a cache/quickstart/lego-gt/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif",
+        )
+
+        _run(c, "spsim interpolate.frames cache/quickstart/lego-gt/ -o cache/quickstart/lego-interp/ -n=32")
+
+        _run(
+            c,
+            "spsim emulate.rgb cache/quickstart/lego-interp/ -o cache/quickstart/lego-rgb25fps/ --chunk-size=160 --readout-std=0 --force",
+        )
+        _run(
+            c, f"gifski cache/quickstart/lego-rgb25fps/frames/*.png --fps 25 -o {DOCS_STATIC}/lego-rgb25fps-preview.gif"
+        )
+
+        _run(c, "spsim emulate.spad cache/quickstart/lego-interp/ -o cache/quickstart/lego-spc4kHz/ --mode=img --force")
+        _run(
+            c,
+            f"gifski $(ls -1a cache/quickstart/lego-spc4kHz/frames/*.png | sed -n '1~160p') --fps 25 -o {DOCS_STATIC}/lego-spc4kHz-preview.gif",
+        )
+
+        # Create interpolation examples
+        Path("cache/interpolation").mkdir(exist_ok=True, parents=True)
+        for i, n in enumerate((25, 50, 100, 200)):
+            _run(
+                c,
+                f"spsim blender.render data/lego.blend cache/interpolation/lego-{n:04}/ --num-frames={n} --width=320 --height=320",
+            )
+            _run(
+                c,
+                f"spsim interpolate.frames cache/interpolation/lego-{n:04}/ -o cache/interpolation/lego{n:04}-interp/ -n={int(64/2**i)}",
+            )
+            _run(
+                c,
+                f"gifski $(ls -1a cache/interpolation/lego{n:04}-interp/frames/*.png | sed -n '1~8p') --fps 25 -o {DOCS_STATIC}/lego{n:04}-interp.gif",
+            )
+
+    with c.cd(DOCS_DIR):
+        _run(c, "make html")
+
+    if preview:
+        webbrowser.open(DOCS_INDEX.as_uri())
+
+
+@task
 def clean_build(c):
     """Clean up files from package building"""
     _delete_file("build/")
@@ -129,13 +188,6 @@ def clean_docs(c):
     """Clean up docs build"""
     with c.cd(DOCS_DIR):
         _run(c, "make clean")
-
-
-@task
-def build_docs(c):
-    """Confirm docs can be built"""
-    with c.cd(DOCS_DIR):
-        _run(c, "make html")
 
 
 @task(pre=[clean_build, clean_python, clean_tests, clean_docs])

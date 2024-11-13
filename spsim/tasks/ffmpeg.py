@@ -128,6 +128,8 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
         The input videos can also be specified in a 2D array using the `--matrix` argument like so:
         $ spsim ffmpeg.combine --matrix='[["a.mp4", "b.mp4"]]' -o "output.mp4"
     """
+    # TODO: Allow borders and use xstack for better performance
+    #   See: https://stackoverflow.com/questions/11552565/vertically-or-horizontally-stack-mosaic-several-videos-using-ffmpeg/33764934#33764934
 
     import ast
     import shutil

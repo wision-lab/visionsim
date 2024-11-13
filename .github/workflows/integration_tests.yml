@@ -21,7 +21,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install ruff
-          ruff check
+          ruff check --extend-select I tasks.py spsim/ tests/
       - name: Install Spsim and dependencies
         run: |
           pip install .[dev]
@@ -40,6 +40,8 @@ jobs:
       #    echo "Found blender python interpreter at $BLENDER_PY"
       #    $BLENDER_PY -m ensurepip
       #    $BLENDER_PY -m pip install scipy rich
+      - name: Build Docs
+        run : inv build-docs
       - name: Run Tests
         run: |
           pytest --durations=0
