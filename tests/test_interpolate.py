@@ -1,13 +1,14 @@
+import os
 import json
 import numpy as np
 from spsim.interpolate import interpolate_frames, interpolate_poses
 from spsim.schema import IMG_SCHEMA, _read_and_validate
-from pathlib import Path
 from PIL import Image
-import shutil
 
 
-def test_interpolate_poses(test_transforms_path, tmp_path="tmp/"):
+def test_interpolate_poses():
+    test_transforms_path = "test_files/interpolate_transforms/"
+
     # Load in initial transforms file
     transforms = _read_and_validate(path=test_transforms_path+"transforms.json", schema=IMG_SCHEMA)
     # Interpolate the poses
@@ -30,38 +31,42 @@ def test_interpolate_poses(test_transforms_path, tmp_path="tmp/"):
         assert np.array_equal(expected_pose, interpolated_pose)
 
 
-def test_interpolate_frames(test_frames_path, tmp_path="tmp/"):
+def test_interpolate_frames(tmp_path):
+    # Generate white and black frames
+    white_square = Image.new('RGB', (100, 100), 'white')
+    black_square = Image.new('RGB', (100, 100), 'black')
+
+    # Save the image as a PNG file
+    os.mkdir(tmp_path / "frames")
+    white_square.save(tmp_path / "frames/0.png")
+    black_square.save(tmp_path / "frames/1.png")
+
     # Interpolate the test frames
-    interpolate_frames(test_frames_path, tmp_path, n=8)
+    interpolate_frames(tmp_path, tmp_path, n=8)
 
     # Check to make sure each image is getting darker
-    prev_dark_percentage = -1 # Make sure that first frame is "darker"
-    img_paths = sorted(Path(tmp_path).glob("frames/*.png"))
+    # In greyscale white=255, black=0
+    prev_mean_color = 255 # Start at white
+    img_paths = sorted(tmp_path.glob("frames/*.png"))
     for img_path in img_paths:
-        dark_percentage, _ = calculate_dark_and_light(img_path)
+        mean_color = calculate_mean_color(img_path)
 
-        # Make sure this image is darker
-        assert dark_percentage >= prev_dark_percentage
-        prev_dark_percentage = dark_percentage
-
-
-    # Get rid of interpolated frames
-    shutil.rmtree(tmp_path)
+        # Make sure this image is darker (mean color moving towards 0 for black)
+        assert mean_color <= prev_mean_color
+        prev_mean_color = mean_color
 
 
-def calculate_dark_and_light(img_path, darkness_threshold=128):
+def calculate_mean_color(img_path):
+    # TODO: Maybe get mean pixel color
+
     # Get Greyscale of image
     img = Image.open(img_path).convert("L")
 
     # Convert to numpy array for easier processing
     img_array = np.array(img)
     
-    # Calculate percentages
-    total_pixels = img_array.size
-    dark_pixels = np.sum(img_array < darkness_threshold)
-    light_pixels = np.sum(img_array >= darkness_threshold)
-    
-    dark_percentage = (dark_pixels / total_pixels) * 100
-    light_percentage = (light_pixels / total_pixels) * 100
+    # Calculate mean pixel color
+    mean_color = img_array.mean()
+    print(mean_color)
 
-    return dark_percentage, light_percentage
+    return mean_color
