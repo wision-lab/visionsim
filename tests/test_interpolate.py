@@ -1,8 +1,33 @@
+import json
 import numpy as np
 from spsim.interpolate import interpolate_frames, interpolate_poses
+from spsim.schema import IMG_SCHEMA, _read_and_validate
 from pathlib import Path
 from PIL import Image
 import shutil
+
+
+def test_interpolate_poses(test_transforms_path, tmp_path="tmp/"):
+    # Load in initial transforms file
+    transforms = _read_and_validate(path=test_transforms_path+"transforms.json", schema=IMG_SCHEMA)
+    # Interpolate the poses
+    new_poses = interpolate_poses(transforms)
+
+    # Extract matrices from expected transform file
+    with open(test_transforms_path + "expected_transforms.json", "r") as f:
+        transforms = json.load(f)
+
+    expected_poses = list()
+    for frame in transforms["frames"]:
+        expected_poses.append(frame["transform_matrix"])
+    
+    # Compare them
+    for expected_pose, interpolated_pose in zip(expected_poses, new_poses):
+        # Cast as numpy array for comparison
+        expected_pose = np.array(expected_pose)
+        interpolated_pose = np.array(interpolated_pose)
+
+        assert np.array_equal(expected_pose, interpolated_pose)
 
 
 def test_interpolate_frames(test_frames_path, tmp_path="tmp/"):
