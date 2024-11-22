@@ -7,7 +7,7 @@ from PIL import Image
 
 
 def test_interpolate_poses():
-    test_transforms_path = "test_files/interpolate_transforms/"
+    test_transforms_path = "tests/test_files/interpolate_transforms/"
 
     # Load in initial transforms file
     transforms = _read_and_validate(path=test_transforms_path+"transforms.json", schema=IMG_SCHEMA)
