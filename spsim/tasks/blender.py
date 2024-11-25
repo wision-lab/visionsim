@@ -4,11 +4,11 @@ from pathlib import Path
 from invoke import task
 
 from spsim.cli import modify_signature
-from spsim.render import parser_config
+from spsim.render import _parser_config
 from spsim.tasks.common import _run
 
 # Dynamically populate arguments of the `render` task
-conf = parser_config()
+conf = _parser_config()
 render_help = {arg["name"].lstrip("-").replace("-", "_"): arg["help"] for arg in conf["arguments"]}
 render_help["blender_path"] = "specify which blender to use if there exists multiple, default: version on system $PATH"
 render_help["autoexec"] = "if true, enable the execution of bundled code. default: False"

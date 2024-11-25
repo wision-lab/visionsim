@@ -1,10 +1,18 @@
 import argparse
 import ast
+import functools
+import importlib
 import itertools
 import json
 import os
+import shlex
 import signal
+import site
+import subprocess
 import sys
+import time
+from contextlib import ExitStack
+from multiprocessing import Process
 from pathlib import Path
 
 import numpy as np
@@ -25,6 +33,10 @@ except ImportError:
     addon_utils = None
 
 try:
+    sys.path.insert(0, site.USER_SITE)
+
+    import rpyc
+    import rpyc.utils.registry
     from rich.progress import track
     from scipy.interpolate import CubicSpline, interp1d
 except ImportError:
@@ -35,10 +47,8 @@ except ImportError:
         "it is accessible from blender, you need to pip install it "
         "into blender's python interpreter like so:\n"
     )
-    print(f"$ {sys.exec_prefix}/bin/python* -m ensurepip")
-    print(
-        f"$ {sys.exec_prefix}/bin/python* -m pip install scipy rich --target={sys.exec_prefix}/lib/python*/site-packages"
-    )
+    print(f"${sys.executable} -m ensurepip")
+    print(f"${sys.executable} -m pip install scipy rich rpyc --target {site.USER_SITE}")
     sys.exit()
 
 usage = (
@@ -46,6 +56,8 @@ usage = (
     "$ blender scene.blend --background --python render.py -- <script arguments>\n\n"
     "Or by using the spsim cli: `spsim -h blender.render`"
 )
+
+REGISTRY = None
 
 
 class LogRedirect:
@@ -108,7 +120,15 @@ class Spline:
         **kwargs
     """
 
-    def __init__(self, spline_points, periodic=True, unit_speed=False, samples=1000, kind="cubic", **kwargs):
+    def __init__(
+        self,
+        spline_points,
+        periodic=True,
+        unit_speed=False,
+        samples=1000,
+        kind="cubic",
+        **kwargs,
+    ):
         spline_points = np.array(spline_points) if not isinstance(spline_points, np.ndarray) else spline_points
         n, c, *_ = spline_points.shape
 
@@ -159,11 +179,14 @@ class Spline:
 
         Args:
             spline: Spline curve to be smoothed.
-            t: Time when spline is evaluted.
+            t: Time when spline is evaluated.
             samples: Number of samples used for smoothing. Defaults to 5.
             interval: Interval used for between samplings. Defaults to 0.01.
         """
-        return np.mean([spline(t + offset) for offset in (np.arange(samples) - samples // 2) * interval], axis=0)
+        return np.mean(
+            [spline(t + offset) for offset in (np.arange(samples) - samples // 2) * interval],
+            axis=0,
+        )
 
     def _arclength_reparameterize(self):
         """Perform arclength re-parameterization to achieve unit speed. Ensure equal distance over equal time intervals"""
@@ -257,7 +280,12 @@ class Spline:
                 for i in range(len(t) - 1):
                     if step and (i // step) % 2 == 0:
                         continue
-                    ax.plot(x[i : i + 2], y[i : i + 2], z[i : i + 2], color=plt.cm.hsv(i / len(t)))
+                    ax.plot(
+                        x[i : i + 2],
+                        y[i : i + 2],
+                        z[i : i + 2],
+                        color=plt.cm.hsv(i / len(t)),
+                    )
         return ax
 
     def show_tnb(self, t=0.5, length=1, **kwargs):
@@ -284,7 +312,740 @@ class Spline:
         return self.spline(t)
 
 
-class BlenderDatasetGenerator:
+class BlenderServer(rpyc.utils.server.OneShotServer):
+    def __init__(self, hostname=None, port=0, service_klass=None, extra_config=None, **kwargs):
+        if bpy is None:
+            raise RuntimeError(f"{type(self).__name__} needs to be instantiated from within blender's python runtime.")
+        if service_klass and not issubclass(service_klass, BlenderService):
+            raise ValueError(f"Parameter 'service_klass' must be 'BlenderService' or subclass.")
+
+        super().__init__(
+            service_klass or BlenderService,
+            hostname=hostname,
+            port=port,
+            protocol_config={"allow_all_attrs": True, "allow_setattr": True} | (extra_config or {}),
+            auto_register=True,
+            **kwargs,
+        )
+        print(f"INFO: Started listening on {self.host}:{self.port}")
+
+    @staticmethod
+    def spawn(jobs=1):
+        # Blender has trouble spawning threads within itself, ..........
+        cmd = shlex.split(f"blender -b --python {__file__}")
+        return [subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in range(jobs)]
+
+    @staticmethod
+    def spawn_registry():
+        global REGISTRY
+
+        def launch_registry():
+            try:
+                registry = rpyc.utils.registry.UDPRegistryServer()
+                registry.start()
+            except OSError:
+                # Note: Address is likely already in use, meaning there's
+                #   already a spawned registry in another thread/process which
+                #   we should be able to use. No need to re-spawn one then.
+                pass
+
+        if not REGISTRY or not REGISTRY[0].is_alive():
+            registry = Process(target=launch_registry, daemon=True)
+            client = rpyc.utils.registry.UDPRegistryClient()
+            registry.start()
+            REGISTRY = (registry, client)
+        return REGISTRY
+
+    @staticmethod
+    def discover():
+        _, client = BlenderServer.spawn_registry()
+        return client.discover("BLENDER")
+
+
+class BlenderClient:
+    """Main API to generate a dataset of different views of a blend file, this
+    blender client is responsible for communicating with (and potentially spawning)
+    separate threads that will actually perform the rendering.
+
+    Args:
+
+    """
+
+    def __init__(self, addr):
+        self.addr = addr
+        self.conn = None
+        self.awaitable = None
+
+    @classmethod
+    def spawn(cls, timeout=10):
+        BlenderServer.spawn_registry()
+        existing = BlenderServer.discover()
+        (worker,) = BlenderServer.spawn(jobs=1)
+        start = time.time()
+
+        while True:
+            if (time.time() - start) > timeout:
+                worker.terminate()
+                raise TimeoutError("Unable to spawn and discover server in alloted time.")
+            if len(conns := set(BlenderServer.discover()) - set(existing)) == 1:
+                break
+            time.sleep(0.1)
+
+        return cls(conns.pop())
+
+    def render_animation_async(self, *args, **kwargs):
+        if not self.conn:
+            raise RuntimeError(f"'BlenderClient' must be initialized before calling 'render_animation_async'")
+        render_animation_async = rpyc.async_(self.conn.root.render_animation)
+        async_result = render_animation_async(*args, **kwargs)
+        self.awaitable = async_result
+        async_result.add_callback(lambda _: setattr(self, "awaitables", None))
+        return async_result
+
+    def wait(self):
+        if self.awaitable:
+            self.awaitable.wait()
+
+    def __enter__(self):
+        self.conn = rpyc.connect(*self.addr, config={"sync_request_timeout": -1,  "allow_pickle": True})
+
+        for method_name in dir(BlenderService):
+            if method_name.startswith("exposed_"):
+                name = method_name.replace("exposed_", "")
+                method = getattr(self.conn.root, method_name)
+                setattr(self, name, method)
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.conn.close()
+
+
+class BlenderClients(tuple):
+    """Collection of `BlenderClient` instances.
+
+    Most methods in this class simply call the equivalent method
+    of each client, that is, calling `clients.set_resolution` is
+    equivalent to calling `set_resolution` for each client in clients.
+    Some special methods, namely the `render_frames*` methods will
+    instead distribute the rendering load to all clients.
+    Finally, entering each client's context-manager, and closing each
+    client connection (and by extension killing the server process)
+    is ensured by using this class' context-manager.
+    """
+
+    def __new__(cls, *objs):
+        objs = [BlenderClient(o) if isinstance(o, tuple) else o for o in objs]
+        if not all(isinstance(o, BlenderClient) for o in objs):
+            raise TypeError("'BlenderClients' can only contain 'BlenderClient' instances or their hostnames and ports.")
+        return super().__new__(cls, objs)
+
+    def __init__(self, *objs):
+        # Note: At this point the tuple is already
+        #       initialized, i.e: objs == list(self)
+        for method_name in dir(BlenderService):
+            if method_name.startswith("exposed_") and "render" not in method_name:
+                name = method_name.replace("exposed_", "")
+                method = getattr(BlenderService, method_name)
+                multicall = self._method_dispatch_factory(name, method)
+                setattr(self, name, multicall)
+        self.stack = ExitStack()
+
+    def _method_dispatch_factory(self, name, method):
+        @functools.wraps(method)
+        def inner(*args, **kwargs):
+            for client in self:
+                getattr(client, name)(*args, **kwargs)
+
+        return inner
+    
+    @classmethod
+    def spawn(cls, jobs=1, timeout=10):
+        BlenderServer.spawn_registry()
+        existing = BlenderServer.discover()
+        workers = BlenderServer.spawn(jobs=jobs)
+        start = time.time()
+
+        while True:
+            if (time.time() - start) > timeout:
+                for worker in workers:
+                    worker.terminate()
+                raise TimeoutError("Unable to spawn and discover server in alloted time.")
+            if len(conns := set(BlenderServer.discover()) - set(existing)) == jobs:
+                break
+            time.sleep(0.1)
+
+        return cls(*conns)
+
+    def wait(self):
+        """Wait for all clients at once."""
+        awaitables = [client.awaitable for client in self]
+
+        while awaitables:
+            awaitables = [a for a in awaitables if a._waiting()]
+
+            for awaitable in awaitables:
+                # Here we query the property `awaitable.ready` which enables
+                # the underlying connection to poll and serve any incoming events.
+                # Roughly equivalent to the following (but does not rely on private API):
+                #     awaitable._conn.serve(awaitable._ttl, waiting=awaitable._waiting)
+                awaitable.ready
+
+    def __enter__(self):
+        self.stack.__enter__()
+        for client in self:
+            self.stack.enter_context(client)
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.stack.__exit__(type, value, traceback)
+
+
+class BlenderService(rpyc.Service):
+    def __init__(self):
+        if bpy is None:
+            raise RuntimeError(f"{type(self).__name__} needs to be instantiated from within blender's python runtime.")
+        self.render_update_fn = None
+        self.initialized = False
+        self._conn = None
+
+    def require_initialized(func):
+        @functools.wraps(func)
+        def _decorator(self, *args, **kwargs):
+            if not self.initialized:
+                raise RuntimeError(f"'BlenderService' must be initialized before calling '{func.__name__}'")
+            return func(self, *args, **kwargs)
+
+        return _decorator
+
+    def validate_camera_moved(func):
+        @functools.wraps(func)
+        def _decorator(self, *args, **kwargs):
+            prev_matrix = np.array(self.camera.matrix_world.copy())
+            retval = func(self, *args, **kwargs)
+            post_matrix = np.array(self.camera.matrix_world.copy())
+
+            if np.allclose(prev_matrix, post_matrix):
+                raise RuntimeError("Camera has not moved as intended, perhaps it is still bound by parent or animation?")
+            return retval
+
+        return _decorator
+
+    def on_connect(self, conn):
+        # TODO: Proper logging
+        print(f"INFO: Successfully connected to BlenderClient instance.")
+        self._conn = conn
+
+    def on_disconnect(self, conn):
+        # De-initialize service by restoring blender to it's startup state,
+        # ensuring we clear any cached attrs (otherwise objects will be stale),
+        # and resetting any instance variables we previously initialized.
+        bpy.ops.wm.read_factory_settings()
+        self.clear_cached_properties()
+        self.initialized = False
+        self._conn = None
+        print(f"INFO: Successfully disconnected from BlenderClient instance.")
+
+    def clear_cached_properties(self):
+        # Based on: https://stackoverflow.com/a/71579485
+        for name in dir(type(self)):
+            if isinstance(getattr(type(self), name), functools.cached_property):
+                vars(self).pop(name, None)
+
+    def exposed_initialize(self, blend_file, root_path):
+        if self.initialized:
+            self.on_disconnect(None)
+
+        # Load blendfile
+        self.blend_file = blend_file
+        bpy.ops.wm.open_mainfile(filepath=blend_file)
+        print(f"INFO: Successfully loaded {blend_file}")
+
+        # Ensure root paths exist, set default vars
+        self.root_path = Path(str(root_path)).resolve()
+        self.root_path.mkdir(parents=True, exist_ok=True)
+        (self.root_path / "frames").mkdir(parents=True, exist_ok=True)
+
+        # Init various variables to track state
+        self.depth_path, self.normals_path = None, None
+        self.initialized = True
+        self.unbind_camera = False
+        self.use_animation = True
+
+        # Ensure we are using the compositor, and node tree.
+        self.scene.use_nodes = True
+        self.scene.render.use_compositing = True
+
+        # Set default render settings
+        self.scene.render.use_persistent_data = True
+        self.scene.render.film_transparent = False
+
+        # Warn if extra file output pipelines are found
+        for n in getattr(self.tree, "nodes", []):
+            if isinstance(n, bpy.types.CompositorNodeOutputFile):
+                print(f"WARNING: Found output node {n}")
+
+        # Catalogue any animations that are already disabled, otherwise 
+        # disabling and re-enabling animations would enable them.
+        self.disabled_fcurves = set([
+            fcurve
+            for action in bpy.data.actions
+            for fcurve in (action.fcurves or [])
+            if fcurve.mute
+        ])
+
+    @property
+    @require_initialized
+    def scene(self):
+        # Ensures self.scene is always fresh
+        return bpy.context.scene
+
+    @property
+    @require_initialized
+    def tree(self):
+        # Ensures self.tree is always fresh
+        return self.scene.node_tree
+
+    @functools.cached_property
+    @require_initialized
+    def render_layers(self):
+        for node in self.tree.nodes:
+            if node.type == "R_LAYERS":
+                return node
+        return self.tree.nodes.new("CompositorNodeRLayers")
+
+    @property
+    @require_initialized
+    def view_layer(self):
+        # Ensures self.view_layer is always fresh
+        if not bpy.context.view_layer:
+            raise ValueError("Expected at least one view layer, cannot render without it. Please add one manually.")
+        return bpy.context.view_layer
+
+    @functools.cached_property
+    @require_initialized
+    def camera(self):
+        # Make sure there's a camera
+        cameras = [ob for ob in self.scene.objects if ob.type == "CAMERA"]
+        if not cameras:
+            raise RuntimeError("No camera found, please add one manually.")
+        elif len(cameras) > 1 and self.scene.camera:
+            print(f"Multiple cameras found. Using active camera named: '{self.scene.camera}'.")
+            return self.scene.camera
+        else:
+            print(f"No active camera was found. Using camera named: '{cameras[0]}'.")
+            return cameras[0]
+
+    @require_initialized
+    def exposed_empty_transforms(self):
+        transforms = {
+            k: getattr(self.camera.data, k)
+            for k in [
+                "angle",
+                "angle_x",
+                "angle_y",
+                "clip_start",
+                "clip_end",
+                "lens",
+                "lens_unit",
+                "sensor_height",
+                "sensor_width",
+                "sensor_fit",
+                "shift_x",
+                "shift_y",
+                "type",
+            ]
+        }
+        transforms["frames"] = []
+
+        # Note: This might be a blender bug, but when height==width,
+        #   angle_x != angle_y, so here we just use angle.
+        transforms["c"] = 3
+        transforms["w"] = self.scene.render.resolution_x
+        transforms["h"] = self.scene.render.resolution_y
+        transforms["fl_x"] = 1 / 2 * self.scene.render.resolution_x / np.tan(1 / 2 * self.camera.data.angle)
+        transforms["fl_y"] = 1 / 2 * self.scene.render.resolution_y / np.tan(1 / 2 * self.camera.data.angle)
+        transforms["cx"] = 1 / 2 * self.scene.render.resolution_x + transforms["shift_x"]
+        transforms["cy"] = 1 / 2 * self.scene.render.resolution_y + transforms["shift_y"]
+        transforms["intrinsics"] = self.exposed_camera_intrinsics().tolist()
+        return transforms
+
+    @require_initialized
+    def get_parents(self, obj):
+        """Recursively retrieves parent objects of a given object in Blender
+
+        Args:
+            obj: Object to find parent of.
+
+        :return:
+            List of parent objects of obj.
+        """
+        if getattr(obj, "parent", None):
+            return [obj.parent] + self.get_parents(obj.parent)
+        return []
+
+    @require_initialized
+    def exposed_animation_range(self):
+        return range(self.scene.frame_start, self.scene.frame_end + 1, self.scene.frame_step)
+
+    @require_initialized
+    def exposed_include_depths(self):
+        """Sets up Blender compositor to include depth map in rendered images."""
+        self.view_layer.use_pass_z = True
+        (self.root_path / "depths").mkdir(parents=True, exist_ok=True)
+        self.depth_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+        self.depth_path.label = "Depth Output"
+        self.depth_path.format.file_format = "OPEN_EXR"
+        self.tree.links.new(self.render_layers.outputs["Depth"], self.depth_path.inputs[0])
+        self.depth_path.base_path = str(self.root_path / "depths")
+        self.depth_path.file_slots[0].path = f"depth_{'#'*6}"
+
+    @require_initialized
+    def exposed_include_normals(self):
+        """Sets up Blender compositer to include normal map in rendered images."""
+        self.view_layer.use_pass_normal = True
+        (self.root_path / "normals").mkdir(parents=True, exist_ok=True)
+        self.normals_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+        self.normals_path.label = "Normal Output"
+        self.tree.links.new(self.render_layers.outputs["Normal"], self.normals_path.inputs[0])
+        self.normals_path.base_path = str(self.root_path / "normals")
+        self.normals_path.file_slots[0].path = f"normal_{'#'*6}"
+
+    @require_initialized
+    def exposed_set_resolution(self, resolution):
+        """Set frame resolution (height, width) in pixels"""
+        self.scene.render.resolution_y, self.scene.render.resolution_x = resolution
+        self.scene.render.resolution_percentage = 100
+
+    @require_initialized
+    def exposed_image_settings(self, file_format="PNG", bitdepth=8):
+        self.scene.render.image_settings.file_format = file_format.upper()
+        self.scene.render.image_settings.color_depth = str(bitdepth)
+        self.scene.render.image_settings.color_mode = "RGB"
+
+    @require_initialized
+    def exposed_use_motion_blur(self, enable):
+        self.scene.render.use_motion_blur = enable
+
+    @require_initialized
+    def exposed_use_animations(self, enable):
+        for action in bpy.data.actions:
+            for fcurve in action.fcurves or []:
+                if fcurve not in self.disabled_fcurves:
+                    fcurve.mute = not enable
+        self.use_animation = enable
+
+    @require_initialized
+    def exposed_cycles_settings(
+        self,
+        device_type="optix",
+        use_cpu=False,
+        adaptive_threshold=0.1,
+        use_denoising=True,
+    ):
+        """Enables/activates cycles render devices and settings.
+
+        Args:
+            device_type: Name of device to use, one of "cpu", "cuda", "optix", "metal"...
+            use_cpu: Boolean flag to enable CPUs alongside GPU devices.
+            adaptive_threshold: Set noise threshold upon which to stop taking samples.
+            use_denoising: If enabled, a denoising pass will be used.
+
+        :return:
+            List of activated devices.
+        """
+        if self.scene.render.engine.upper() != "CYCLES":
+            print(
+                f"WARNING: Using {self.scene.render.engine.upper()} rendering engine, "
+                f"with default OpenGL rendering device(s)."
+            )
+            return []
+
+        self.scene.cycles.use_denoising = use_denoising
+        self.scene.cycles.adaptive_threshold = adaptive_threshold
+
+        preferences = bpy.context.preferences
+        cycles_preferences = preferences.addons["cycles"].preferences
+        cycles_preferences.refresh_devices()
+
+        if not cycles_preferences.devices:
+            raise RuntimeError("No devices found!")
+
+        for device in cycles_preferences.devices:
+            device.use = False
+
+        activated_devices = []
+        devices = filter(lambda d: d.type.upper() == device_type.upper(), cycles_preferences.devices)
+
+        for device in itertools.chain(devices, filter(lambda d: d.type == "CPU" and use_cpu, devices)):
+            print("INFO: Activated device", device.name, device.type)
+            activated_devices.append(device.name)
+            device.use = True
+        cycles_preferences.compute_device_type = "NONE" if device_type.upper() == "CPU" else device_type
+        self.scene.cycles.device = "CPU" if device_type.upper() == "CPU" else "GPU"
+        return activated_devices
+
+    @require_initialized
+    def exposed_unbind_camera(self):
+        """Remove constraints, animations and parents from main camera.
+
+        Note: In order to undo this, you'll need to re-initialize the instance.
+        """
+        for c in self.camera.constraints:
+            self.camera.constraints.remove(c)
+        self.camera.animation_data_clear()
+        self.unbind_camera = True
+        self.camera.parent = None
+
+    @require_initialized
+    def exposed_move_keyframes(self, scale=1.0, shift=0.0):
+        """Adjusts keyframes in Blender animations, keypoints are first scaled then shifted.
+
+        Args:
+            scale: Factor used to rescale keyframe positions along x-axis. Defaults to 1.0.
+            shift: Factor used to shift keyframe positions along x-axis. Defaults to 0.0.
+        """
+        # TODO: This method can be slow if there's a lot of keyframes
+        #   See: https://blender.stackexchange.com/questions/111644
+        if scale == 1.0 and shift == 0.0:
+            return
+
+        # No idea why, but if we don't break this out into separate
+        # variables the value we store is incorrect, often off by one.
+        start = round(self.scene.frame_start * scale + shift)
+        end = round(self.scene.frame_end * scale + shift)
+
+        if start < 0 or start >= 1_048_574 or end < 0 or end >= 1_048_574:
+            raise RuntimeError(
+                "Cannot scale and shift keyframes past render limits. For more please see: "
+                "https://docs.blender.org/manual/en/latest/advanced/limits.html"
+            )
+        self.scene.frame_start = start
+        self.scene.frame_end = end
+
+        for action in bpy.data.actions:
+            for fcurve in action.fcurves or []:
+                for kfp in fcurve.keyframe_points or []:
+                    # Note: Updating `co_ui` does not move the handles properly!!!
+                    kfp.co.x = kfp.co.x * scale + shift
+                    kfp.handle_left.x = kfp.handle_left.x * scale + shift
+                    kfp.handle_right.x = kfp.handle_right.x * scale + shift
+                    kfp.period *= scale
+        self.scene.render.motion_blur_shutter /= scale
+
+    @require_initialized
+    def exposed_set_current_frame(self, frame_number):
+        self.scene.frame_set(frame_number)
+
+    @require_initialized
+    def exposed_camera_extrinsics(self):
+        pose = np.array(self.camera.matrix_world)
+        pose[:3, :3] /= np.linalg.norm(pose[:3, :3], axis=0)
+        return pose
+
+    @require_initialized
+    def exposed_camera_intrinsics(self):
+        """Calculates camera intrinsics matrix for active camera in Blender,
+        which defines how 3D points are projected onto 2D.
+
+        :return:
+            Camera intrinsics matrix based on camera properties.
+        """
+        scale = self.scene.render.resolution_percentage / 100
+        width = self.scene.render.resolution_x * scale
+        height = self.scene.render.resolution_y * scale
+        camera_data = self.scene.camera.data
+
+        aspect_ratio = width / height
+        K = np.eye(3, dtype=np.float32)
+        K[0, 0] = width / 2.0 / np.tan(camera_data.angle / 2)
+        K[1, 1] = height / 2.0 / np.tan(camera_data.angle / 2) * aspect_ratio
+        K[0, 2] = width / 2.0
+        K[1, 2] = height / 2.0
+        return K
+
+    @require_initialized
+    @validate_camera_moved
+    def exposed_position_camera(self, location=None, rotation=None, look_at=None):
+        """
+        Positions and orients camera in Blender scene according to specified parameters.
+
+        Note: Only one of `look_at` or `rotation` can be set at once.
+
+        Args:
+            location: Location to place camera in 3D space. Defaults to none.
+            rotation: Rotation matrix for camera. Defaults to none.
+            look_at: Location to point camera. Defaults to none.
+        """
+        # Move camera to position, orient it towards object
+        if not (look_at is not None) ^ (rotation is not None):
+            raise ValueError("Only one of `look_at` or `rotation` can be set.")
+
+        if location is not None:
+            self.camera.location = mathutils.Vector(location)
+
+        if look_at is not None:
+            # point the camera's '-Z' towards `look_at` and use its 'Y' as up
+            direction = mathutils.Vector(look_at) - self.camera.location
+            rot_quat = direction.to_track_quat("-Z", "Y")
+            rotation = rot_quat.to_matrix()
+
+        if rotation is not None:
+            location = self.camera.location.copy()
+            self.camera.matrix_world = mathutils.Matrix(rotation).to_4x4()
+            self.camera.location = location
+        self.view_layer.update()
+
+    @require_initialized
+    @validate_camera_moved
+    def exposed_rotate_camera(self, angle):
+        """
+        Rotate camera around it's optical axis.
+
+        Args:
+            angle: Amount to rotate by (in radians).
+        """
+        location = self.camera.location.copy()
+        right, up, _ = self.camera.matrix_world.to_3x3().transposed()
+        look_at_direction = mathutils.Vector(np.cross(up, right))
+        rotation = mathutils.Matrix.Rotation(angle, 3, look_at_direction)
+        rotation = rotation @ self.camera.matrix_world.to_3x3()
+        self.camera.matrix_world = rotation.to_4x4()
+        self.camera.location = location
+        self.view_layer.update()
+
+    @require_initialized
+    def exposed_render_current_frame(self, allow_skips=True):
+        """
+        Generates a single frame in Blender at the current camera location,
+        return the file paths for that frame, potentially including depth and normals.
+
+        Args:
+            allow_skips: if true, blender will not re-render and overwrite existing frames.
+                This does not however apply to depth/normals, which cannot be skipped.
+
+        :return:
+            dictionary containing paths to rendered frames for this index and camera pose.
+        """
+        # Assumes the camera position, frame number and all other params have been set
+        index = self.scene.frame_current
+        self.scene.render.filepath = str(self.root_path / "frames" / f"frame_{index:06}")
+        paths = {"file_path": Path(f"frames/frame_{index:06}").with_suffix(self.scene.render.file_extension)}
+
+        if self.depth_path is not None:
+            paths["depth_file_path"] = Path(f"depths/depth_{index:06}.exr")
+        if self.normals_path is not None:
+            paths["normals_file_path"] = Path(f"normals/normal_{index:06}").with_suffix(self.scene.render.file_extension)
+
+        # Render frame(s), skip the render iff all files exist and `allow_skips`
+        if not allow_skips or any(not Path(self.root_path / p).exists() for p in paths.values()):
+            # If `write_still` is false, depth & normals can be written but rgb will be skipped
+            skip_frame = Path(self.root_path / paths["file_path"]).exists() and allow_skips
+            bpy.ops.render.render(write_still=not skip_frame)
+
+        # Returns paths that were written
+        return {
+            **{k: str(p) for k, p in paths.items()},
+            "transform_matrix": self.exposed_camera_extrinsics().tolist(),
+        }
+    
+    @require_initialized
+    def exposed_render_frame(self, frame_number, allow_skips=True):
+        """Same as first setting current frame then rendering it."""
+        self.exposed_set_current_frame(frame_number)
+        return self.exposed_render_current_frame(allow_skips=allow_skips)
+    
+    @require_initialized
+    def exposed_render_frames(self, frame_numbers, allow_skips=True, update_fn=None):
+        """Render all requested frames and return associated transforms dictionary"""
+        # Ensure frame_numbers is a list to find extrema
+        frame_numbers = list(frame_numbers)
+
+        # Max number of frames is 1,048,574 as of Blender 3.4
+        # See: https://docs.blender.org/manual/en/latest/advanced/limits.html
+        if max(frame_numbers) >= 1_048_574:
+            raise RuntimeError(
+                f"Blender cannot currently render more than 1,048,574 frames, yet requested you "
+                f"requested {max(frame_numbers)} frames to be rendered. For more please see: "
+                f"https://docs.blender.org/manual/en/latest/advanced/limits.html"
+            )
+        if min(frame_numbers) < 0:
+            raise RuntimeError("Cannot render frames at negative indices. You can try shifting keyframes.")
+
+        # If we request to render frames outside the nominal animation range,
+        # blender will just wrap around and go back to that range. As a workaround,
+        # extend the animation range to it's maximum, even if we do not exceed it,
+        # it will be restored at the end.
+        scene_original_range = self.scene.frame_start, self.scene.frame_end
+        self.scene.frame_start, self.scene.frame_end = 0, 1_048_574
+
+        # Store transforms as we go
+        transforms = self.exposed_empty_transforms()
+
+        # Capture frames!
+        for frame_number in frame_numbers:
+            # Tell blender to update camera position and all animations and render frame
+            frame_data = self.exposed_render_frame(frame_number, allow_skips=allow_skips)
+            transforms["frames"].append(frame_data)
+
+            # Call any progress callbacks
+            if update_fn is not None:
+                update_fn()
+
+        # Restore animation range to original values
+        self.scene.frame_start, self.scene.frame_end = scene_original_range
+        return transforms
+
+    @require_initialized
+    def exposed_render_animation(
+        self, frame_start=None, frame_end=None, frame_step=None, allow_skips=True, update_fn=None
+    ):
+        """
+        This is the core frame generation process. Determines frame range to render,
+        sets camera positions and orientations,
+        and renders all frames.
+
+        Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
+              If the animation is from (1-100) and you've scaled it by calling `move_keyframes(scale=2.0)`
+              then calling `render_animation(frame_start=1, frame_end=100)` will only render half of the animation.
+              By default the whole animation will render when no start/end and step values are set.
+
+        Args:
+            frame_start: Starting index (inclusive) of frames to render as seen in blender. Defaults to value from `.blend` file.
+            frame_end: Ending index (inclusive) of frames to render as seen in blender. Defaults to value from `.blend` file.
+            frame_step: Skip every nth frame. Defaults to value from `.blend` file.
+            allow_skips: Same as `(exposed_)render_frame_here`.
+            update_fn: Callback which expects no arguments, that will get called after each frame has rendered. Useful for tracking progress.
+        """
+        if not self.use_animation:
+            raise ValueError(
+                "Animations are disabled, scene will be entirely static. "
+                "To instead render a single frame, use `render_frame`."
+            )
+        elif all(p.animation_data is None for p in self.get_parents(self.camera)) and self.camera.animation_data is None:
+            print("WARNING: Active camera nor it's parents are animated, camera will be static.")
+
+        frame_start = self.scene.frame_start if frame_start is None else frame_start
+        frame_end = self.scene.frame_end if frame_end is None else frame_end
+        frame_step = self.scene.frame_step if frame_step is None else frame_step
+        frame_range = range(frame_start, frame_end + 1, frame_step)
+
+        # Warn if requested frames lie outside animation range
+        if self.use_animation and (frame_start < self.scene.frame_start or self.scene.frame_end < frame_end):
+            print(
+                f"WARNING: Current animation starts at frame #{self.scene.frame_start} and ends at "
+                f"#{self.scene.frame_end} (with step={self.scene.frame_step}), but you requested frames "
+                f"#{frame_start} to #{frame_end} (step={frame_step}) to be rendered.\n"
+            )
+
+        return self.exposed_render_frames(frame_range, allow_skips=allow_skips, update_fn=update_fn)
+
+    @require_initialized
+    def exposed_save_file(self, path):
+        """Save opened blender file. This is useful for introspecting the state of the compositor/scene/etc."""
+        bpy.ops.wm.save_as_mainfile(filepath=path)
+
+
+class _BlenderDatasetGenerator:
     """Generate a dataset of different views of a blend file.
 
     Args:
@@ -427,9 +1188,18 @@ class BlenderDatasetGenerator:
             # This is a bit fragile atm, as it relies on the node to have correct names...
             alpha_compositor = self.tree.nodes.new(type="CompositorNodeAlphaOver")
             alpha_compositor.inputs[1].default_value = list(self.alpha_color) + [1.0] * (4 - len(self.alpha_color))
-            self.tree.links.new(self.tree.nodes["Render Layers"].outputs["Image"], alpha_compositor.inputs[2])
-            self.tree.links.new(self.tree.nodes["Render Layers"].outputs["Alpha"], alpha_compositor.inputs[0])
-            self.tree.links.new(alpha_compositor.outputs[0], self.tree.nodes["Composite"].inputs["Image"])
+            self.tree.links.new(
+                self.tree.nodes["Render Layers"].outputs["Image"],
+                alpha_compositor.inputs[2],
+            )
+            self.tree.links.new(
+                self.tree.nodes["Render Layers"].outputs["Alpha"],
+                alpha_compositor.inputs[0],
+            )
+            self.tree.links.new(
+                alpha_compositor.outputs[0],
+                self.tree.nodes["Composite"].inputs["Image"],
+            )
         else:
             self.scene.render.film_transparent = False
 
@@ -593,7 +1363,7 @@ class BlenderDatasetGenerator:
             List of parent objects of obj.
         """
         if getattr(obj, "parent", None):
-            return [obj.parent] + BlenderDatasetGenerator.get_parents(obj.parent)
+            return [obj.parent] + _BlenderDatasetGenerator.get_parents(obj.parent)
         return []
 
     @staticmethod
@@ -664,8 +1434,6 @@ class BlenderDatasetGenerator:
         if self.depth:
             paths["depth_file_path"] = Path(f"depths/depth_{index:06}.exr")
             self.depth_path.file_slots[0].path = f"depths/depth_{'#'*6}"
-            # paths["depth_file_path"] = Path(f"depths/depth_{index:06}.exr")
-            # self.depth_path.file_slots[0].path = str(self.root_path / "depths" / f"depth_{'#'*6}")
         if self.normals:
             paths["normals_file_path"] = Path(f"normals/normal_{index:06}").with_suffix(self.scene.render.file_extension)
             self.normals_path.file_slots[0].path = f"normals/normal_{'#'*6}"
@@ -815,7 +1583,9 @@ class BlenderDatasetGenerator:
 
         # Capture frames!
         for i, (t, frame_number) in track(
-            enumerate(zip(ts, new_frame_range)), description="Generating frames... ", total=len(ts)
+            enumerate(zip(ts, new_frame_range)),
+            description="Generating frames... ",
+            total=len(ts),
         ):
             if interrupted:
                 break
@@ -849,7 +1619,7 @@ class BlenderDatasetGenerator:
             json.dump(transforms, f, indent=2)
 
 
-def parser_config():
+def _parser_config():
     """Define all arguments for the default Argparse CLI
 
     :return:
@@ -871,7 +1641,12 @@ def parser_config():
         ),
         "arguments": [
             dict(name="root_path", type=str, help="location at which to save dataset"),
-            dict(name="--blend-file", type=str, default="", help="path to blender file to use"),
+            dict(
+                name="--blend-file",
+                type=str,
+                default="",
+                help="path to blender file to use",
+            ),
             # Defaults are set below in `_render_views` to allow for some validation checks
             dict(
                 name="--num-frames",
@@ -891,7 +1666,12 @@ def parser_config():
                 default=None,
                 help="frame number to stop capture at (exclusive), default: 100",
             ),
-            dict(name="--frame-step", type=int, default=1, help="step with which to capture frames, default: 1"),
+            dict(
+                name="--frame-step",
+                type=int,
+                default=1,
+                help="step with which to capture frames, default: 1",
+            ),
             dict(
                 name="--location-points",
                 type=str,
@@ -910,9 +1690,24 @@ def parser_config():
                 ),
                 default="",
             ),
-            dict(name="--height", type=int, default=800, help="height of frame to capture, default: 800"),
-            dict(name="--width", type=int, default=800, help="width of frame to capture, default: 800"),
-            dict(name="--bit-depth", type=int, default=8, help="bit depth for frames, usually 8 for pngs, default: 8"),
+            dict(
+                name="--height",
+                type=int,
+                default=800,
+                help="height of frame to capture, default: 800",
+            ),
+            dict(
+                name="--width",
+                type=int,
+                default=800,
+                help="width of frame to capture, default: 800",
+            ),
+            dict(
+                name="--bit-depth",
+                type=int,
+                default=8,
+                help="bit depth for frames, usually 8 for pngs, default: 8",
+            ),
             dict(
                 name="--device",
                 type=str,
@@ -1015,9 +1810,17 @@ def parser_config():
                 ),
             ),
             dict(
-                name="--log-file", type=str, default=None, help="where to save log to, default: None (no log is saved)"
+                name="--log-file",
+                type=str,
+                default=None,
+                help="where to save log to, default: None (no log is saved)",
             ),
-            dict(name="--addons", type=str, default=None, help="list of extra addons to enable, default: None"),
+            dict(
+                name="--addons",
+                type=str,
+                default=None,
+                help="list of extra addons to enable, default: None",
+            ),
             dict(
                 name="--alpha-color",
                 type=str,
@@ -1037,8 +1840,8 @@ def parser_config():
     return parser_conf
 
 
-def get_parser():
-    conf = parser_config()
+def _get_parser():
+    conf = _parser_config()
     parser = argparse.ArgumentParser(**conf["parser"])
     for argument in conf["arguments"]:
         parser.add_argument(argument.pop("name"), **argument)
@@ -1106,7 +1909,7 @@ def _render_views(args):
     )
 
     with LogRedirect(args.log_file):
-        bds = BlenderDatasetGenerator(
+        bds = _BlenderDatasetGenerator(
             **(
                 vars(args)
                 | dict(
@@ -1119,23 +1922,26 @@ def _render_views(args):
         bds.generate_views_along_spline(frame_range=frame_range, **vars(args))
 
 
-# This script has only been tested using Blender 3.3.1 (hash b292cfe5a936 built 2022-10-05 00:14:35)
+# This script has only been tested using Blender 3.3.1 (hash b292cfe5a936 built 2022-10-05 00:14:35) and above.
 if __name__ == "__main__":
     if sys.version_info < (3, 9, 0):
         raise RuntimeError("Please use newer blender version with a python version of at least 3.9.")
 
-    if bpy is None:
-        print(usage)
-        sys.exit()
+    server = BlenderServer(port=0)
+    server.start()
 
-    # Get script specific arguments
-    try:
-        index = sys.argv.index("--") + 1
-    except ValueError:
-        index = len(sys.argv)
+    # if bpy is None:
+    #     print(usage)
+    #     sys.exit()
 
-    # Parse args and ignore any additional arguments
-    # enabling upstream CLI more flexibility.
-    parser = get_parser()
-    args, extra_args = parser.parse_known_args(sys.argv[index:])
-    _render_views(args)
+    # # Get script specific arguments
+    # try:
+    #     index = sys.argv.index("--") + 1
+    # except ValueError:
+    #     index = len(sys.argv)
+
+    # # Parse args and ignore any additional arguments
+    # # enabling upstream CLI more flexibility.
+    # parser = _get_parser()
+    # args, extra_args = parser.parse_known_args(sys.argv[index:])
+    # _render_views(args)
