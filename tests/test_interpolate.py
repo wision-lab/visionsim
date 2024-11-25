@@ -9,46 +9,12 @@ from spsim.schema import IMG_SCHEMA, _read_and_validate
 from PIL import Image
 
 
-def test_interpolate_poses():
-    test_transforms_path = Path("test_files/interpolate_transforms/")
-
-    # Load in initial transforms file
-    transforms = _read_and_validate(path=test_transforms_path / "transforms.json", schema=IMG_SCHEMA)
-    # Interpolate the poses
-    new_poses = interpolate_poses(transforms)
-
-    # Extract matrices from expected transform file
-    with open(test_transforms_path / "expected_transforms.json", "r") as f:
-        transforms = json.load(f)
-
-    expected_poses = list()
-    for frame in transforms["frames"]:
-        expected_poses.append(frame["transform_matrix"])
-    
-    # Compare them
-    for expected_pose, interpolated_pose in zip(expected_poses, new_poses):
-        # Cast as numpy array for comparison
-        expected_pose = np.array(expected_pose)
-        interpolated_pose = np.array(interpolated_pose)
-
-        assert np.allclose(expected_pose, interpolated_pose)
-
-
 def test_interplate_rotation_matrix():
     # Pose at origin with no rotation
-    start_pose = np.array([
-        [1,0,0,0],
-        [0,1,0,0],
-        [0,0,1,0],
-        [0,0,0,1]
-    ], dtype=float64)
+    start_pose = np.eye(4, dtype=float64)
     # Pose at (1,1,1) with 45 degree rotation around x axis
-    end_pose = np.array([
-        [1,0,0,1],
-        [0,1,0,1],
-        [0,0,1,1],
-        [0,0,0,1]
-    ], dtype=float64)
+    end_pose = np.eye(4, dtype=float64)
+    end_pose[:3, -1] = [1,1,1]
     # Add rotation matrix
     end_pose[:3, :3] = R.from_euler('x', 45, degrees=True).as_matrix()
     # Put test matrices in transforms format
@@ -66,7 +32,11 @@ def test_interplate_rotation_matrix():
     }
     # Interpolate the poses
     new_poses = interpolate_poses(transforms, normalize=True)
-    interpolated_pose = new_poses[1]
+    interpolated_start, interpolated_pose, interpolated_end = new_poses
+
+    # Make sure first and last pose haven't changed
+    assert np.allclose(start_pose, interpolated_start)
+    assert np.allclose(end_pose, interpolated_end)
 
     # The interpolated position should be at (.5,.5,.5)
     test_position = np.array([0.5, 0.5, 0.5])
@@ -106,19 +76,11 @@ def test_interpolate_frames(tmp_path):
 
 
 def calculate_mean_color(img_path):
-    # TODO: Maybe get mean pixel color
-
     # Get Greyscale of image
     img = Image.open(img_path).convert("L")
-
     # Convert to numpy array for easier processing
     img_array = np.array(img)
-    
     # Calculate mean pixel color
     mean_color = img_array.mean()
-    print(mean_color)
 
     return mean_color
-
-
-test_interplate_rotation_matrix()
