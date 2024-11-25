@@ -407,7 +407,15 @@ class BlenderClient:
             self.awaitable.wait()
 
     def __enter__(self):
+        from rpyc.core.service import ModuleNamespace
+        from rpyc.utils.classic import teleport_function
+        
         self.conn = rpyc.connect(*self.addr, config={"sync_request_timeout": -1,  "allow_pickle": True})
+        modules = ModuleNamespace(self.conn.root.getmodule)
+        self.conn.modules = modules
+        self.conn.builtins = modules.builtins
+        self.conn.namespace = {}
+        self.teleport = functools.partial(teleport_function, self.conn)
 
         for method_name in dir(BlenderService):
             if method_name.startswith("exposed_"):
@@ -475,6 +483,22 @@ class BlenderClients(tuple):
             time.sleep(0.1)
 
         return cls(*conns)
+
+    def map(self, func, iterable):
+        # Move func over to each client's service
+        teleported_funcs = [
+            c.teleport(func)
+            for c in self
+        ]
+        async_funcs = [rpyc.async_(f) for f in teleported_funcs]
+        
+        while iterable:
+            for c, f in zip(self, async_funcs):
+                if c.awaitable is None:
+                    c.awaitable = f(c, iterable.pop())
+                    c.awaitable.add_callback(lambda _: setattr(c, "awaitables", None))
+                else:
+                    c.awaitable.ready
 
     def wait(self):
         """Wait for all clients at once."""
@@ -544,6 +568,12 @@ class BlenderService(rpyc.Service):
         self.initialized = False
         self._conn = None
         print(f"INFO: Successfully disconnected from BlenderClient instance.")
+
+    def getmodule(self, name):
+        """imports an arbitrary module"""
+        if type(name) is tuple:
+            name = ".".join(name)
+        return importlib.import_module(name)
 
     def clear_cached_properties(self):
         # Based on: https://stackoverflow.com/a/71579485
