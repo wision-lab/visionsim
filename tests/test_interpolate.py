@@ -1,6 +1,7 @@
 import os
 import json
 import numpy as np
+from numpy import float64
 from pathlib import Path
 from scipy.spatial.transform import Rotation as R
 from spsim.interpolate import interpolate_frames, interpolate_poses
@@ -40,15 +41,16 @@ def test_interplate_rotation_matrix():
         [0,1,0,0],
         [0,0,1,0],
         [0,0,0,1]
-    ])
-    # Pose at (1,1,1) with 45 degree rotation
+    ], dtype=float64)
+    # Pose at (1,1,1) with 45 degree rotation around x axis
     end_pose = np.array([
-        [45,0,0,1],
-        [0,45,0,1],
-        [0,0,45,1],
+        [1,0,0,1],
+        [0,1,0,1],
+        [0,0,1,1],
         [0,0,0,1]
-    ])
-    end_pose = end_pose/np.linalg.det(end_pose)
+    ], dtype=float64)
+    # Add rotation matrix
+    end_pose[:3, :3] = R.from_euler('x', 45, degrees=True).as_matrix()
     # Put test matrices in transforms format
     transforms = {
         "frames": [
@@ -62,10 +64,19 @@ def test_interplate_rotation_matrix():
             }
         ]
     }
-
     # Interpolate the poses
-    new_poses = interpolate_poses(transforms)
-    print(new_poses)
+    new_poses = interpolate_poses(transforms, normalize=True)
+    interpolated_pose = new_poses[1]
+
+    # The interpolated position should be at (.5,.5,.5)
+    test_position = np.array([0.5, 0.5, 0.5])
+    assert np.allclose(interpolated_pose[:3, 3], test_position)
+
+    # The interpolated rotation should be 22.5 degrees
+    # Extract interpolated rotation matrix from interpolated poses
+    interpolated_rotation = R.from_matrix(interpolated_pose[:3,:3])
+    test_rotation = R.from_euler('x', 22.5, degrees=True)
+    assert interpolated_rotation.approx_equal(test_rotation)
 
 
 
@@ -108,3 +119,6 @@ def calculate_mean_color(img_path):
     print(mean_color)
 
     return mean_color
+
+
+test_interplate_rotation_matrix()
