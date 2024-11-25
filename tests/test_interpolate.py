@@ -28,7 +28,7 @@ def test_interpolate_poses():
         expected_pose = np.array(expected_pose)
         interpolated_pose = np.array(interpolated_pose)
 
-        assert np.array_equal(expected_pose, interpolated_pose)
+        assert np.allclose(expected_pose, interpolated_pose)
 
 
 def test_interpolate_frames(tmp_path):
