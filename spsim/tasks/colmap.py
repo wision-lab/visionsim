@@ -12,12 +12,15 @@ def _generate_mask_single(in_file, output_dir=None):
     """
     import numpy as np
 
-    from spsim.io import read_img, write_img
+    import imageio.v3 as iio
 
-    img, alpha = read_img(in_file, apply_alpha=True)
+    # Get alpha from input image
+    img = iio.imread(in_file)
+    # checks if image has 4 channels (it has alpha).
+    alpha = img[:, :, -1][..., None] if img.shape[2] == 4 else 1.0
     mask = (alpha * 255).astype(np.uint8)
     path = output_dir / Path(in_file).with_suffix(".png").name
-    return write_img(str(path), mask)
+    return iio.imwrite(str(path), mask)
 
 
 @task(

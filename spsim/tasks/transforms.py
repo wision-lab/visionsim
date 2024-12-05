@@ -65,7 +65,7 @@ def colorize_depth(
     import matplotlib as mpl
     import matplotlib.cm as cm
 
-    from spsim.io import write_img
+    import imageio.v3 as iio
 
     input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
     in_files = in_files[::step]
@@ -92,7 +92,7 @@ def colorize_depth(
         depth[depth == 10000000000] = np.nan
         img = (cmap(norm(depth)) * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
-        write_img(str(path.with_suffix(ext)), img)
+        iio.imwrite(str(path.with_suffix(ext)), img)
 
 
 @task(
