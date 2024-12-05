@@ -10,9 +10,8 @@ def _generate_mask_single(in_file, output_dir=None):
     """Extract alpha channel as mask
     No features will be extracted in regions, where the mask image is black (pixel intensity value 0 in grayscale).
     """
-    import numpy as np
-
     import imageio.v3 as iio
+    import numpy as np
 
     # Get alpha from input image
     img = iio.imread(in_file)

@@ -62,10 +62,10 @@ def colorize_depth(
     """Convert .exr depth maps into color-coded images for visualization"""
     # TODO: Multiprocess this
     # Lazy load imports to improve CLI responsiveness
+    import imageio.v3 as iio
     import matplotlib as mpl
     import matplotlib.cm as cm
 
-    import imageio.v3 as iio
 
     input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
     in_files = in_files[::step]
