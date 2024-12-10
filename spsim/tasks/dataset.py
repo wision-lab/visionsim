@@ -40,7 +40,7 @@ def imgs_to_npy(
 
     import numpy as np
     from torch.utils.data import DataLoader
-    from tqdm.auto import tqdm
+    from rich.progress import Progress
 
     from spsim.dataset import ImgDataset, NpyDatasetWriter, default_collate
 
@@ -76,11 +76,12 @@ def imgs_to_npy(
         shape[bitpack_dim] /= 8
 
     loader = DataLoader(dataset, batch_size=batch_size, num_workers=c.get("max_threads"), collate_fn=default_collate)
-    pbar = tqdm(total=len(dataset))
 
     with NpyDatasetWriter(
         output_dir, shape=np.ceil(shape).astype(int), transforms=transforms_new, force=force
-    ) as writer:
+    ) as writer, Progress() as progress:
+        task1 = progress.add_task("Writing frames...", total=len(dataset))
+
         for i, (idxs, imgs, poses) in enumerate(loader):
             if alpha_color is not None and imgs.ndim == 4 and imgs.shape[-1] == 4:
                 alpha = imgs[..., -1][..., None] / 255.0
@@ -91,7 +92,7 @@ def imgs_to_npy(
             if is_grayscale:
                 imgs = imgs[..., :1]
             writer[idxs] = (imgs, poses)
-            pbar.update(len(idxs))
+            progress.update(task1, advance=len(idxs))
 
 
 @task(
@@ -117,7 +118,7 @@ def npy_to_imgs(
     import copy
 
     from torch.utils.data import DataLoader
-    from tqdm.auto import tqdm
+    from rich.progress import Progress
 
     from spsim.dataset import ImgDatasetWriter, NpyDataset, default_collate
 
@@ -135,13 +136,14 @@ def npy_to_imgs(
     loader = DataLoader(
         dataset, sampler=sampler, batch_size=batch_size, num_workers=c.get("max_threads"), collate_fn=default_collate
     )
-    pbar = tqdm(total=len(sampler))
 
-    with ImgDatasetWriter(output_dir, transforms=transforms_new, force=force, pattern=pattern) as writer:
+    with ImgDatasetWriter(output_dir, transforms=transforms_new, force=force, pattern=pattern) as writer, Progress() as progress:
+        task1 = progress.add_task("Writing frames...", total=len(sampler))
+
         for i, (idxs, imgs, poses) in enumerate(loader):
             print(imgs.shape)
             writer[idxs] = (np.repeat((imgs * 255).astype(np.uint8), 3, -1), poses)
-            pbar.update(len(idxs))
+            progress.update(task1, advance=len(idxs))
 
 
 @task(
