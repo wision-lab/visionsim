@@ -39,8 +39,8 @@ def imgs_to_npy(
     import copy
 
     import numpy as np
-    from torch.utils.data import DataLoader
     from rich.progress import Progress
+    from torch.utils.data import DataLoader
 
     from spsim.dataset import ImgDataset, NpyDatasetWriter, default_collate
 
@@ -117,8 +117,8 @@ def npy_to_imgs(
     """Convert an NPY based dataset to an image-folder dataset"""
     import copy
 
-    from torch.utils.data import DataLoader
     from rich.progress import Progress
+    from torch.utils.data import DataLoader
 
     from spsim.dataset import ImgDatasetWriter, NpyDataset, default_collate
 

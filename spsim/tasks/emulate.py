@@ -59,8 +59,8 @@ def spad(
     import ast
     import copy
 
-    from torch.utils.data import DataLoader
     from rich.progress import Progress
+    from torch.utils.data import DataLoader
 
     from spsim.dataset import Dataset, ImgDatasetWriter, NpyDatasetWriter
 
@@ -139,8 +139,8 @@ def rgb(
     import copy
 
     import more_itertools as mitertools
-    from torch.utils.data import DataLoader
     from rich.progress import Progress
+    from torch.utils.data import DataLoader
 
     from spsim.color import apply_alpha, emulate_rgb_from_merged, srgb_to_linearrgb
     from spsim.dataset import Dataset, ImgDatasetWriter, NpyDatasetWriter, default_collate
