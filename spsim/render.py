@@ -1,7 +1,7 @@
 import argparse
 import ast
 import functools
-import importlib
+import inspect
 import itertools
 import json
 import os
@@ -11,7 +11,7 @@ import site
 import subprocess
 import sys
 import time
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from multiprocessing import Process
 from pathlib import Path
 
@@ -312,7 +312,7 @@ class Spline:
         return self.spline(t)
 
 
-class BlenderServer(rpyc.utils.server.OneShotServer):
+class BlenderServer(rpyc.utils.server.Server):
     def __init__(self, hostname=None, port=0, service_klass=None, extra_config=None, **kwargs):
         if bpy is None:
             raise RuntimeError(f"{type(self).__name__} needs to be instantiated from within blender's python runtime.")
@@ -329,11 +329,62 @@ class BlenderServer(rpyc.utils.server.OneShotServer):
         )
         print(f"INFO: Started listening on {self.host}:{self.port}")
 
+    def _accept_method(self, sock):
+        self._authenticate_and_serve_client(sock)
+
     @staticmethod
-    def spawn(jobs=1):
+    @contextmanager
+    def spawn(jobs=1, timeout=10, log_dir=None):
         # Blender has trouble spawning threads within itself, ..........
+
+        @contextmanager
+        def terminate_jobs(procs):
+            try:
+                yield
+
+            finally:
+                for p in procs:
+                    # We need to send two CTRL+C events to blender to kill it
+                    p.send_signal(signal.SIGINT)
+                    p.send_signal(signal.SIGINT)
+
+                for p in procs:
+                    # Ensure process is killed if CTRL+C failed
+                    p.terminate()
+
+        BlenderServer.spawn_registry()
+        existing = BlenderServer.discover()
         cmd = shlex.split(f"blender -b --python {__file__}")
-        return [subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in range(jobs)]
+        procs = []
+
+        if log_dir:
+            log_dir = Path(log_dir).resolve()
+            log_dir.mkdir(parents=True, exist_ok=True)
+
+        with ExitStack() as stack:
+            for i in range(jobs):
+                if log_dir:
+                    (log_dir / f"job{i:03}").mkdir(parents=True, exist_ok=True)
+                    stdout = stack.enter_context(open(log_dir / f"job{i:03}" / "stdout.log", "w"))
+                    stderr = stack.enter_context(open(log_dir / f"job{i:03}" / "stderr.log", "w"))
+                else:
+                    stdout, stderr = subprocess.DEVNULL, subprocess.DEVNULL
+                proc = subprocess.Popen(cmd, stdout=stdout, stderr=stderr, universal_newlines=True)
+                procs.append(proc)
+            stack.enter_context(terminate_jobs(procs))
+
+            start = time.time()
+
+            while True:
+                if (time.time() - start) > timeout:
+                    # Terminate all procs and close fds
+                    stack.close()
+                    raise TimeoutError("Unable to spawn and discover server(s) in alloted time.")
+                if len(conns := set(BlenderServer.discover()) - set(existing)) == jobs:
+                    break
+                time.sleep(0.1)
+
+            yield (procs, conns)
 
     @staticmethod
     def spawn_registry():
@@ -375,29 +426,40 @@ class BlenderClient:
         self.addr = addr
         self.conn = None
         self.awaitable = None
+        self.process = None
+
+    def require_connected(func):
+        @functools.wraps(func)
+        def _decorator(self, *args, **kwargs):
+            if not self.conn:
+                raise RuntimeError(
+                    f"'BlenderClient' must be connected to a server instance before calling '{func.__name__}'"
+                )
+            return func(self, *args, **kwargs)
+
+        return _decorator
 
     @classmethod
-    def spawn(cls, timeout=10):
-        BlenderServer.spawn_registry()
-        existing = BlenderServer.discover()
-        (worker,) = BlenderServer.spawn(jobs=1)
-        start = time.time()
+    @contextmanager
+    def spawn(cls, timeout=10, log_dir=None):
+        with BlenderServer.spawn(jobs=1, timeout=timeout, log_dir=log_dir) as (procs, conns):
+            with cls(conns.pop()) as client:
+                client.process = procs[0]
+                yield client
+                client.process = None
 
-        while True:
-            if (time.time() - start) > timeout:
-                worker.terminate()
-                raise TimeoutError("Unable to spawn and discover server in alloted time.")
-            if len(conns := set(BlenderServer.discover()) - set(existing)) == 1:
-                break
-            time.sleep(0.1)
-
-        return cls(conns.pop())
-
+    @require_connected
     def render_animation_async(self, *args, **kwargs):
-        if not self.conn:
-            raise RuntimeError(f"'BlenderClient' must be initialized before calling 'render_animation_async'")
         render_animation_async = rpyc.async_(self.conn.root.render_animation)
         async_result = render_animation_async(*args, **kwargs)
+        self.awaitable = async_result
+        async_result.add_callback(lambda _: setattr(self, "awaitables", None))
+        return async_result
+
+    @require_connected
+    def render_frames_async(self, *args, **kwargs):
+        render_frames_async = rpyc.async_(self.conn.root.render_frames)
+        async_result = render_frames_async(*args, **kwargs)
         self.awaitable = async_result
         async_result.add_callback(lambda _: setattr(self, "awaitables", None))
         return async_result
@@ -407,15 +469,7 @@ class BlenderClient:
             self.awaitable.wait()
 
     def __enter__(self):
-        from rpyc.core.service import ModuleNamespace
-        from rpyc.utils.classic import teleport_function
-        
-        self.conn = rpyc.connect(*self.addr, config={"sync_request_timeout": -1,  "allow_pickle": True})
-        modules = ModuleNamespace(self.conn.root.getmodule)
-        self.conn.modules = modules
-        self.conn.builtins = modules.builtins
-        self.conn.namespace = {}
-        self.teleport = functools.partial(teleport_function, self.conn)
+        self.conn = rpyc.connect(*self.addr, config={"sync_request_timeout": -1, "allow_pickle": True})
 
         for method_name in dir(BlenderService):
             if method_name.startswith("exposed_"):
@@ -431,14 +485,12 @@ class BlenderClient:
 class BlenderClients(tuple):
     """Collection of `BlenderClient` instances.
 
-    Most methods in this class simply call the equivalent method
-    of each client, that is, calling `clients.set_resolution` is
-    equivalent to calling `set_resolution` for each client in clients.
-    Some special methods, namely the `render_frames*` methods will
-    instead distribute the rendering load to all clients.
-    Finally, entering each client's context-manager, and closing each
-    client connection (and by extension killing the server process)
-    is ensured by using this class' context-manager.
+    Most methods in this class simply call the equivalent method of each client, that is,
+    calling `clients.set_resolution` is equivalent to calling `set_resolution` for each
+    client in clients. Some special methods, namely the `render_frames*` methods will
+    instead distribute the rendering load to all clients. Finally, entering each client's
+    context-manager, and closing each client connection (and by extension killing the
+    server process if they were spawned) is ensured by using this class' context-manager.
     """
 
     def __new__(cls, *objs):
@@ -451,54 +503,162 @@ class BlenderClients(tuple):
         # Note: At this point the tuple is already
         #       initialized, i.e: objs == list(self)
         for method_name in dir(BlenderService):
-            if method_name.startswith("exposed_") and "render" not in method_name:
+            if method_name.startswith("exposed_"):
                 name = method_name.replace("exposed_", "")
-                method = getattr(BlenderService, method_name)
-                multicall = self._method_dispatch_factory(name, method)
-                setattr(self, name, multicall)
+
+                if name not in dir(self):
+                    method = getattr(BlenderService, method_name)
+                    multicall = self._method_dispatch_factory(name, method)
+                    setattr(self, name, multicall)
         self.stack = ExitStack()
 
     def _method_dispatch_factory(self, name, method):
         @functools.wraps(method)
         def inner(*args, **kwargs):
-            for client in self:
-                getattr(client, name)(*args, **kwargs)
+            return tuple(getattr(client, name)(*args, **kwargs) for client in self)
 
         return inner
-    
+
+    def require_all_connected(func):
+        @functools.wraps(func)
+        def _decorator(self, *args, **kwargs):
+            if not all(c.conn for c in self):
+                raise RuntimeError(
+                    f"All client instances in 'BlenderClients' must be connected before calling '{func.__name__}'"
+                )
+            return func(self, *args, **kwargs)
+
+        return _decorator
+
     @classmethod
-    def spawn(cls, jobs=1, timeout=10):
-        BlenderServer.spawn_registry()
-        existing = BlenderServer.discover()
-        workers = BlenderServer.spawn(jobs=jobs)
-        start = time.time()
+    @contextmanager
+    def spawn(cls, jobs=1, timeout=10, log_dir=None):
+        with BlenderServer.spawn(jobs=jobs, timeout=timeout, log_dir=log_dir) as (procs, conns):
+            with cls(*conns) as clients:
+                for client, p in zip(clients, procs):
+                    client.process = p
 
-        while True:
-            if (time.time() - start) > timeout:
-                for worker in workers:
-                    worker.terminate()
-                raise TimeoutError("Unable to spawn and discover server in alloted time.")
-            if len(conns := set(BlenderServer.discover()) - set(existing)) == jobs:
-                break
-            time.sleep(0.1)
+                yield clients
 
-        return cls(*conns)
+                for client in clients:
+                    client.process = None
 
-    def map(self, func, iterable):
-        # Move func over to each client's service
-        teleported_funcs = [
-            c.teleport(func)
-            for c in self
-        ]
-        async_funcs = [rpyc.async_(f) for f in teleported_funcs]
+    @staticmethod
+    @contextmanager
+    def pool(jobs=1, timeout=10, log_dir=None):
+        """Spawns a multiprocessing-like worker pool, each with their own `BlenderClient` instance.
+        The first argument to the function supplied to pool.map/imap/starmap and their async variants will
+        be automagically passed a client instance as their first argument that they can use for rendering.
+
+        Example Usage:
+
+            def render(client, blend_file):
+                root = Path("tmp") / Path(blend_file).stem
+                client.initialize(blend_file, root)
+                client.render_animation()
+
+            if __name__ == "__main__":
+                with BlenderClients.pool(2) as pool:
+                    pool.map(render, ["monkey.blend", "cube.blend", "metaballs.blend"])
+
+        Note: Here we use `multiprocess` instead of the builtin multiprocessing library to take
+            advantage of the more advanced dill serialization (as opposed to the standard pickling).
+
+        Args:
+            Same as `BlenderServer.spawn`
+
+        Returns:
+            A `multiprocess.Pool` instance which has had it's applicator methods (map/imap/starmap/etc)
+            monkey-patched to inject a client instance as first argument.
+        """
+        # Note import here as this is a dependency only on the client-side
+        import multiprocess
+        import multiprocess.pool
+
+        def inject_client(func, conns):
+            # Note: Usually it's good practice to add `@functools.wraps(func)`
+            # here, but it makes dill freak out with a rather cryptic
+            # "disallowed for security reasons" error... Works fine otherwise.
+            def inner(*args, **kwargs):
+                conn = conns.get()
+
+                with BlenderClient(conn) as client:
+                    retval = func(client, *args, **kwargs)
+
+                conns.put(conn)
+                return retval
+
+            return inner
+
+        def modify_applicator(applicator, conns):
+            @functools.wraps(applicator)
+            def inner(func, *args, **kwargs):
+                func = inject_client(func, conns)
+                return applicator(func, *args, **kwargs)
+
+            return inner
+
+        with multiprocess.Manager() as manager:
+            with BlenderServer.spawn(jobs=jobs, timeout=timeout, log_dir=log_dir) as (_, conns):
+                q = manager.Queue()
+
+                for conn in conns:
+                    q.put(conn)
+
+                with multiprocess.Pool(jobs) as pool:
+                    for name, method in inspect.getmembers(pool, predicate=inspect.ismethod):
+                        params = list(inspect.signature(method).parameters.keys())
+
+                        # Get all map/starmap/apply/etc variants
+                        if not name.startswith("_") and next(iter(params), None) == "func":
+                            setattr(pool, name, modify_applicator(method, q))
+                    yield pool
+
+    @require_all_connected
+    def common_animation_range(self):
+        if len(ranges := set(self.animation_range_tuple())) != 1:
+            raise RuntimeError("Found different animation ranges. All connected servers should be in the same state.")
+        return range(*ranges.pop())
+
+    @require_all_connected
+    def render_frames(self, frame_numbers, allow_skips=True, update_fn=None):
+        # Equivalent to more-itertools' distribute
+        children = itertools.tee(frame_numbers, len(self))
+        frame_chunks = [itertools.islice(it, index, None, len(self)) for index, it in enumerate(children)]
         
-        while iterable:
-            for c, f in zip(self, async_funcs):
-                if c.awaitable is None:
-                    c.awaitable = f(c, iterable.pop())
-                    c.awaitable.add_callback(lambda _: setattr(c, "awaitables", None))
-                else:
-                    c.awaitable.ready
+        transforms = [
+            client.render_frames_async(frames, allow_skips=allow_skips, update_fn=update_fn)
+            for client, frames in zip(self, frame_chunks)
+        ]
+        self.wait()
+
+        # Equivalent to more-itertools' interleave_longest
+        _marker = object()
+        frames = [
+            frame
+            for frame in itertools.chain.from_iterable(
+                itertools.zip_longest(*[t.value["frames"] for t in transforms], fillvalue=_marker)
+            )
+            if frame is not _marker
+        ]
+        transforms = transforms.pop().value
+        transforms["frames"] = frames
+        return transforms
+
+    @require_all_connected
+    def render_animation(
+        self, frame_start=None, frame_end=None, frame_step=None, allow_skips=True, update_fn=None
+    ):
+        if len(ranges := set(self.animation_range_tuple())) != 1:
+            raise RuntimeError("Found different animation ranges. All connected servers should be in the same state.")
+
+        start, end, step = ranges.pop()
+        frame_start = start if frame_start is None else frame_start
+        frame_end = end if frame_end is None else frame_end
+        frame_step = step if frame_step is None else frame_step
+        frame_range = range(frame_start, frame_end + 1, frame_step)
+
+        return self.render_frames(frame_range, allow_skips=allow_skips, update_fn=update_fn)
 
     def wait(self):
         """Wait for all clients at once."""
@@ -569,12 +729,6 @@ class BlenderService(rpyc.Service):
         self._conn = None
         print(f"INFO: Successfully disconnected from BlenderClient instance.")
 
-    def getmodule(self, name):
-        """imports an arbitrary module"""
-        if type(name) is tuple:
-            name = ".".join(name)
-        return importlib.import_module(name)
-
     def clear_cached_properties(self):
         # Based on: https://stackoverflow.com/a/71579485
         for name in dir(type(self)):
@@ -614,14 +768,11 @@ class BlenderService(rpyc.Service):
             if isinstance(n, bpy.types.CompositorNodeOutputFile):
                 print(f"WARNING: Found output node {n}")
 
-        # Catalogue any animations that are already disabled, otherwise 
+        # Catalogue any animations that are already disabled, otherwise
         # disabling and re-enabling animations would enable them.
-        self.disabled_fcurves = set([
-            fcurve
-            for action in bpy.data.actions
-            for fcurve in (action.fcurves or [])
-            if fcurve.mute
-        ])
+        self.disabled_fcurves = set(
+            [fcurve for action in bpy.data.actions for fcurve in (action.fcurves or []) if fcurve.mute]
+        )
 
     @property
     @require_initialized
@@ -716,6 +867,10 @@ class BlenderService(rpyc.Service):
     @require_initialized
     def exposed_animation_range(self):
         return range(self.scene.frame_start, self.scene.frame_end + 1, self.scene.frame_step)
+
+    @require_initialized
+    def exposed_animation_range_tuple(self):
+        return (self.scene.frame_start, self.scene.frame_end, self.scene.frame_step)
 
     @require_initialized
     def exposed_include_depths(self):
@@ -977,13 +1132,13 @@ class BlenderService(rpyc.Service):
             **{k: str(p) for k, p in paths.items()},
             "transform_matrix": self.exposed_camera_extrinsics().tolist(),
         }
-    
+
     @require_initialized
     def exposed_render_frame(self, frame_number, allow_skips=True):
         """Same as first setting current frame then rendering it."""
         self.exposed_set_current_frame(frame_number)
         return self.exposed_render_current_frame(allow_skips=allow_skips)
-    
+
     @require_initialized
     def exposed_render_frames(self, frame_numbers, allow_skips=True, update_fn=None):
         """Render all requested frames and return associated transforms dictionary"""
@@ -992,14 +1147,22 @@ class BlenderService(rpyc.Service):
 
         # Max number of frames is 1,048,574 as of Blender 3.4
         # See: https://docs.blender.org/manual/en/latest/advanced/limits.html
-        if max(frame_numbers) >= 1_048_574:
+        if (frame_end := max(frame_numbers)) >= 1_048_574:
             raise RuntimeError(
                 f"Blender cannot currently render more than 1,048,574 frames, yet requested you "
                 f"requested {max(frame_numbers)} frames to be rendered. For more please see: "
                 f"https://docs.blender.org/manual/en/latest/advanced/limits.html"
             )
-        if min(frame_numbers) < 0:
+        if (frame_start := min(frame_numbers)) < 0:
             raise RuntimeError("Cannot render frames at negative indices. You can try shifting keyframes.")
+
+        # Warn if requested frames lie outside animation range
+        if self.use_animation and (frame_start < self.scene.frame_start or self.scene.frame_end < frame_end):
+            print(
+                f"WARNING: Current animation starts at frame #{self.scene.frame_start} and ends at "
+                f"#{self.scene.frame_end} (with step={self.scene.frame_step}), but you requested "
+                f"some frames between #{frame_start} and to #{frame_end} to be rendered.\n"
+            )
 
         # If we request to render frames outside the nominal animation range,
         # blender will just wrap around and go back to that range. As a workaround,
@@ -1046,6 +1209,11 @@ class BlenderService(rpyc.Service):
             allow_skips: Same as `(exposed_)render_frame_here`.
             update_fn: Callback which expects no arguments, that will get called after each frame has rendered. Useful for tracking progress.
         """
+        frame_start = self.scene.frame_start if frame_start is None else frame_start
+        frame_end = self.scene.frame_end if frame_end is None else frame_end
+        frame_step = self.scene.frame_step if frame_step is None else frame_step
+        frame_range = range(frame_start, frame_end + 1, frame_step)
+
         if not self.use_animation:
             raise ValueError(
                 "Animations are disabled, scene will be entirely static. "
@@ -1053,19 +1221,6 @@ class BlenderService(rpyc.Service):
             )
         elif all(p.animation_data is None for p in self.get_parents(self.camera)) and self.camera.animation_data is None:
             print("WARNING: Active camera nor it's parents are animated, camera will be static.")
-
-        frame_start = self.scene.frame_start if frame_start is None else frame_start
-        frame_end = self.scene.frame_end if frame_end is None else frame_end
-        frame_step = self.scene.frame_step if frame_step is None else frame_step
-        frame_range = range(frame_start, frame_end + 1, frame_step)
-
-        # Warn if requested frames lie outside animation range
-        if self.use_animation and (frame_start < self.scene.frame_start or self.scene.frame_end < frame_end):
-            print(
-                f"WARNING: Current animation starts at frame #{self.scene.frame_start} and ends at "
-                f"#{self.scene.frame_end} (with step={self.scene.frame_step}), but you requested frames "
-                f"#{frame_start} to #{frame_end} (step={frame_step}) to be rendered.\n"
-            )
 
         return self.exposed_render_frames(frame_range, allow_skips=allow_skips, update_fn=update_fn)
 
