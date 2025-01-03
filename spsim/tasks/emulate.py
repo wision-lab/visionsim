@@ -199,3 +199,86 @@ def rgb(
 
             writer[i] = (rgb_img.astype(np.uint8), pose)
             pbar.update(len(idxs))
+
+@task(
+        help={
+            "input_dir": "directory in which to look for transforms.json",
+            "output_file": ("file in which to save simulated IMU data. "
+                "Prints to stdout if empty. "
+                "default: ''"),
+            "seed": "RNG seed value for reproducibility. default: 2147483647",
+            "grav_w": ("gravity vector in world coordinate frame. "
+                "Given in m/s^2. "
+                "default: [0,0,-9.8]"),
+            "Dt": ("time between IMU samples (assumed regularly spaced). "
+                "Given in seconds. "
+                "default: 0.00125"),
+            "init_bias_acc": ("initial bias/drift in accelerometer reading. "
+                "Given in m/s^2. "
+                "default: [0,0,0]"),
+            "init_bias_gyro": ("initial bias/drift in gyroscope reading. "
+                "Given in rad/s. "
+                "default: [0,0,0]"),
+            "std_bias_acc": ("stdev for random-walk component of error (drift) in accelerometer. "
+                "Given in m/(s^3 \sqrt{Hz}). "
+                "default: 5.5e-5"),
+            "std_bias_gyro": ("stdev for random-walk component of error (drift) in gyroscope. "
+                "Given in rad/(s^2 \sqrt{Hz}). "
+                "default: 2e-5"),
+            "std_acc": ("stdev for white-noise component of error in accelerometer. "
+                "Given in m/(s^2 \sqrt{Hz}). "
+                "default: 8e-3"),
+            "std_gyro": ("stdev for white-noise component of error in gyroscope. "
+                "Given in rad/(s \sqrt{Hz}). "
+                "default: 1.2e-3"),
+            }
+        )
+def imu(
+        c,
+        input_dir,
+        output_file="",
+        seed=2147483647,
+        grav_w="(0.0, 0.0, -9.8)",
+        Dt=0.00125,
+        init_bias_acc="(0.0,0.0,0.0)",
+        init_bias_gyro="(0.0,0.0,0.0)",
+        std_bias_acc=5.5e-5,
+        std_bias_gyro=2e-5,
+        std_acc=8e-3,
+        std_gyro=1.2e-3,
+        ):
+    """Simulate data from a co-located IMU using the poses in transforms.json."""
+
+    from pathlib import Path
+    import sys
+    from spsim.dataset import Dataset
+
+    assert(Path(input_dir).resolve().exists())
+    dataset = Dataset.from_path(input_dir)
+    assert(dataset.transforms is not None)
+
+    import ast
+
+    rng = np.random.default_rng(int(seed))
+    grav_w = np.array(ast.literal_eval(grav_w))
+    init_bias_acc = np.array(ast.literal_eval(init_bias_acc))
+    init_bias_gyro = np.array(ast.literal_eval(init_bias_gyro))
+
+    from spsim.imu import sim_IMU
+
+    data_gen = sim_IMU(dataset.poses, rng=rng, Dt=Dt, grav_w=grav_w, 
+                    init_bias_acc=init_bias_acc, 
+                    std_bias_acc=std_bias_acc, std_acc=std_acc,
+                    init_bias_gyro=init_bias_gyro,
+                    std_bias_gyro=std_bias_gyro, std_gyro=std_gyro)
+
+    with open(output_file, "w") if output_file else sys.stdout as out:
+        out.write("t,acc_x,acc_y,acc_z,gyro_x,gyro_y,gyro_z,bias_ax,bias_ay,bias_az,bias_gx,bias_gy,bias_gz\n")
+        for d in data_gen:
+            out.write("{},{},{},{},{},{},{},{},{},{},{},{},{}\n".format(d["t"], 
+                d["acc_reading"][0], d["acc_reading"][1], d["acc_reading"][2],
+                d["gyro_reading"][0], d["gyro_reading"][1], d["gyro_reading"][2],
+                d["acc_bias"][0], d["acc_bias"][1], d["acc_bias"][2],
+                d["gyro_bias"][0], d["gyro_bias"][1], d["gyro_bias"][2]))
+    return
+
