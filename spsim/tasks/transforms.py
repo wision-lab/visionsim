@@ -66,7 +66,6 @@ def colorize_depth(
     import matplotlib as mpl
     import matplotlib.cm as cm
 
-
     input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
     in_files = in_files[::step]
 
