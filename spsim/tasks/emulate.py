@@ -59,8 +59,8 @@ def spad(
     import ast
     import copy
 
+    from rich.progress import Progress
     from torch.utils.data import DataLoader
-    from tqdm.auto import tqdm
 
     from spsim.dataset import Dataset, ImgDatasetWriter, NpyDatasetWriter
 
@@ -94,16 +94,16 @@ def spad(
             _spad_collate, mode=mode, rng=rng, factor=factor, alpha_color=alpha_color, is_tonemapped=is_tonemapped
         ),
     )
-    pbar = tqdm(total=len(dataset))
 
     with ImgDatasetWriter(
         output_dir, transforms=transforms_new, force=force, pattern=pattern
     ) if mode.lower() == "img" else NpyDatasetWriter(
         output_dir, np.ceil(shape).astype(int), transforms=transforms_new, force=force
-    ) as writer:
+    ) as writer, Progress() as progress:
+        task1 = progress.add_task("Writing SPAD frames", total=len(dataset))
         for idxs, imgs, poses in loader:
             writer[idxs] = (imgs, poses)
-            pbar.update(len(idxs))
+            progress.update(task1, advance=len(idxs))
 
 
 @task(
@@ -139,8 +139,8 @@ def rgb(
     import copy
 
     import more_itertools as mitertools
+    from rich.progress import Progress
     from torch.utils.data import DataLoader
-    from tqdm.auto import tqdm
 
     from spsim.color import apply_alpha, emulate_rgb_from_merged, srgb_to_linearrgb
     from spsim.dataset import Dataset, ImgDatasetWriter, NpyDatasetWriter, default_collate
@@ -166,13 +166,13 @@ def rgb(
         raise NotImplementedError("Task does not yet support EXRs")
 
     loader = DataLoader(dataset, batch_size=1, num_workers=c.get("max_threads"), collate_fn=default_collate)
-    pbar = tqdm(total=len(dataset))
 
     with ImgDatasetWriter(
         output_dir, transforms=transforms_new, force=force, pattern=pattern
     ) if mode.lower() == "img" else NpyDatasetWriter(
         output_dir, np.ceil(shape).astype(int), transforms=transforms_new, force=force
-    ) as writer:
+    ) as writer, Progress() as progress:
+        task1 = progress.add_task("Writing SPAD frames", total=len(dataset))
         for i, batch in enumerate(mitertools.ichunked(loader, chunk_size)):
             # Batch is an iterable of (idx, img, pose) that we need to reduce
             idxs, imgs, poses = mitertools.unzip(batch)
@@ -198,7 +198,8 @@ def rgb(
                 rgb_img = np.repeat(rgb_img, 3, axis=-1)
 
             writer[i] = (rgb_img.astype(np.uint8), pose)
-            pbar.update(len(idxs))
+            progress.update(task1, advance=len(idxs))
+
 
 @task(
         help={
@@ -281,4 +282,3 @@ def imu(
                 d["acc_bias"][0], d["acc_bias"][1], d["acc_bias"][2],
                 d["gyro_bias"][0], d["gyro_bias"][1], d["gyro_bias"][2]))
     return
-
