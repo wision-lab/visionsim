@@ -59,8 +59,8 @@ def spad(
     import ast
     import copy
 
+    from rich.progress import Progress
     from torch.utils.data import DataLoader
-    from tqdm.auto import tqdm
 
     from spsim.dataset import Dataset, ImgDatasetWriter, NpyDatasetWriter
 
@@ -94,16 +94,16 @@ def spad(
             _spad_collate, mode=mode, rng=rng, factor=factor, alpha_color=alpha_color, is_tonemapped=is_tonemapped
         ),
     )
-    pbar = tqdm(total=len(dataset))
 
     with ImgDatasetWriter(
         output_dir, transforms=transforms_new, force=force, pattern=pattern
     ) if mode.lower() == "img" else NpyDatasetWriter(
         output_dir, np.ceil(shape).astype(int), transforms=transforms_new, force=force
-    ) as writer:
+    ) as writer, Progress() as progress:
+        task1 = progress.add_task("Writing SPAD frames", total=len(dataset))
         for idxs, imgs, poses in loader:
             writer[idxs] = (imgs, poses)
-            pbar.update(len(idxs))
+            progress.update(task1, advance=len(idxs))
 
 
 @task(
@@ -139,8 +139,8 @@ def rgb(
     import copy
 
     import more_itertools as mitertools
+    from rich.progress import Progress
     from torch.utils.data import DataLoader
-    from tqdm.auto import tqdm
 
     from spsim.color import apply_alpha, emulate_rgb_from_merged, srgb_to_linearrgb
     from spsim.dataset import Dataset, ImgDatasetWriter, NpyDatasetWriter, default_collate
@@ -166,13 +166,13 @@ def rgb(
         raise NotImplementedError("Task does not yet support EXRs")
 
     loader = DataLoader(dataset, batch_size=1, num_workers=c.get("max_threads"), collate_fn=default_collate)
-    pbar = tqdm(total=len(dataset))
 
     with ImgDatasetWriter(
         output_dir, transforms=transforms_new, force=force, pattern=pattern
     ) if mode.lower() == "img" else NpyDatasetWriter(
         output_dir, np.ceil(shape).astype(int), transforms=transforms_new, force=force
-    ) as writer:
+    ) as writer, Progress() as progress:
+        task1 = progress.add_task("Writing SPAD frames", total=len(dataset))
         for i, batch in enumerate(mitertools.ichunked(loader, chunk_size)):
             # Batch is an iterable of (idx, img, pose) that we need to reduce
             idxs, imgs, poses = mitertools.unzip(batch)
@@ -198,4 +198,94 @@ def rgb(
                 rgb_img = np.repeat(rgb_img, 3, axis=-1)
 
             writer[i] = (rgb_img.astype(np.uint8), pose)
-            pbar.update(len(idxs))
+            progress.update(task1, advance=len(idxs))
+
+
+@task(
+    help={
+        "input_dir": "directory in which to look for transforms.json",
+        "output_file": "file in which to save simulated IMU data. Prints to stdout if empty. default: ''",
+        "seed": "RNG seed value for reproducibility. default: 2147483647",
+        "grav_w": "gravity vector in world coordinate frame. Given in m/s^2. default: [0,0,-9.8]",
+        "Dt": "time between IMU samples (assumed regularly spaced). Given in seconds. default: 0.00125",
+        "init_bias_acc": "initial bias/drift in accelerometer reading. Given in m/s^2. default: [0,0,0]",
+        "init_bias_gyro": "initial bias/drift in gyroscope reading. Given in rad/s. default: [0,0,0]",
+        "std_bias_acc": (
+            "stdev for random-walk component of error (drift) in accelerometer. "
+            "Given in m/(s^3 \sqrt{Hz}). "
+            "default: 5.5e-5"
+        ),
+        "std_bias_gyro": (
+            "stdev for random-walk component of error (drift) in gyroscope. "
+            "Given in rad/(s^2 \sqrt{Hz}). "
+            "default: 2e-5"
+        ),
+        "std_acc": (
+            "stdev for white-noise component of error in accelerometer. " "Given in m/(s^2 \sqrt{Hz}). " "default: 8e-3"
+        ),
+        "std_gyro": (
+            "stdev for white-noise component of error in gyroscope. " "Given in rad/(s \sqrt{Hz}). " "default: 1.2e-3"
+        ),
+    }
+)
+def imu(
+    c,
+    input_dir,
+    output_file="",
+    seed=2147483647,
+    grav_w="(0.0, 0.0, -9.8)",
+    Dt=0.00125,
+    init_bias_acc="(0.0,0.0,0.0)",
+    init_bias_gyro="(0.0,0.0,0.0)",
+    std_bias_acc=5.5e-5,
+    std_bias_gyro=2e-5,
+    std_acc=8e-3,
+    std_gyro=1.2e-3,
+):
+    """Simulate data from a co-located IMU using the poses in transforms.json."""
+
+    import sys
+    from pathlib import Path
+
+    from spsim.dataset import Dataset
+
+    if not Path(input_dir).resolve().exists():
+        raise RuntimeError("Input directory path doesn't exist!")
+    dataset = Dataset.from_path(input_dir)
+    if dataset.transforms is None:
+        raise RuntimeError("dataset.transforms not found!")
+
+    import ast
+
+    rng = np.random.default_rng(int(seed))
+    grav_w = np.array(ast.literal_eval(grav_w))
+    init_bias_acc = np.array(ast.literal_eval(init_bias_acc))
+    init_bias_gyro = np.array(ast.literal_eval(init_bias_gyro))
+
+    from spsim.imu import sim_IMU
+
+    data_gen = sim_IMU(
+        dataset.poses,
+        rng=rng,
+        Dt=Dt,
+        grav_w=grav_w,
+        init_bias_acc=init_bias_acc,
+        std_bias_acc=std_bias_acc,
+        std_acc=std_acc,
+        init_bias_gyro=init_bias_gyro,
+        std_bias_gyro=std_bias_gyro,
+        std_gyro=std_gyro,
+    )
+
+    with open(output_file, "w") if output_file else sys.stdout as out:
+        out.write("t,acc_x,acc_y,acc_z,gyro_x,gyro_y,gyro_z,bias_ax,bias_ay,bias_az,bias_gx,bias_gy,bias_gz\n")
+        for d in data_gen:
+            out.write(
+                "{},{},{},{},{},{},{},{},{},{},{},{},{}\n".format(
+                    d["t"],
+                    d["acc_reading"][0], d["acc_reading"][1], d["acc_reading"][2],
+                    d["gyro_reading"][0], d["gyro_reading"][1], d["gyro_reading"][2],
+                    d["acc_bias"][0], d["acc_bias"][1], d["acc_bias"][2],
+                    d["gyro_bias"][0], d["gyro_bias"][1], d["gyro_bias"][2],
+                )
+            )

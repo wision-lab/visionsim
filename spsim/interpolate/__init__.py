@@ -8,7 +8,7 @@ from .pose import pose_interp  # noqa: F401
 from .rife.inference_img import interpolate_img as rife  # noqa: F401
 
 
-def interpolate_poses(transforms, n=2):
+def interpolate_poses(transforms, normalize = False, n=2):
     """
     Interpolate between poses.
     Returns the interpolated poses in matrices.
@@ -20,7 +20,7 @@ def interpolate_poses(transforms, n=2):
     num_frames = len(transforms["frames"])
     indices = np.linspace(0, num_frames - 1, num_frames)
     interp_indices = np.linspace(0, num_frames - 1, n * num_frames - (n - 1))
-    pose_spline = pose_interp([f["transform_matrix"] for f in frames], ts=indices)
+    pose_spline = pose_interp([f["transform_matrix"] for f in frames], ts=indices, normalize=normalize)
     new_poses = pose_spline(interp_indices)
 
     return new_poses
