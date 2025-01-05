@@ -1,0 +1,216 @@
+# These were made in Blender and exported here as code
+# using https://github.com/BrendanParmer/NodeToPython
+# and then manually cleaned up/formatted.
+
+# NOTE: This needs to be imported by blender to work properly.
+
+import bpy
+
+
+# initialize Cartesian2Polar node group
+def cartesian2polar_node_group():
+    cartesian2polar = bpy.data.node_groups.new(type="CompositorNodeTree", name="Cartesian2Polar")
+
+    # cartesian2polar interface
+    # Socket r
+    r_socket = cartesian2polar.interface.new_socket(name="r", in_out="OUTPUT", socket_type="NodeSocketFloat")
+    r_socket.attribute_domain = "POINT"
+
+    # Socket theta
+    theta_socket = cartesian2polar.interface.new_socket(name="theta", in_out="OUTPUT", socket_type="NodeSocketFloat")
+    theta_socket.attribute_domain = "POINT"
+
+    # Socket x
+    x_socket = cartesian2polar.interface.new_socket(name="x", in_out="INPUT", socket_type="NodeSocketFloat")
+    x_socket.attribute_domain = "POINT"
+
+    # Socket y
+    y_socket = cartesian2polar.interface.new_socket(name="y", in_out="INPUT", socket_type="NodeSocketFloat")
+    y_socket.attribute_domain = "POINT"
+
+    # initialize cartesian2polar nodes
+    # node Group Output
+    group_output = cartesian2polar.nodes.new("NodeGroupOutput")
+    group_output.name = "Group Output"
+    group_output.is_active_output = True
+
+    # node Group Input
+    group_input = cartesian2polar.nodes.new("NodeGroupInput")
+    group_input.name = "Group Input"
+
+    # node Arctan2
+    arctan2 = cartesian2polar.nodes.new("CompositorNodeMath")
+    arctan2.name = "Arctan2"
+    arctan2.operation = "ARCTAN2"
+    arctan2.use_clamp = False
+
+    # node Sqrt
+    sqrt = cartesian2polar.nodes.new("CompositorNodeMath")
+    sqrt.name = "Sqrt"
+    sqrt.operation = "SQRT"
+    sqrt.use_clamp = False
+
+    # node Sum
+    sum = cartesian2polar.nodes.new("CompositorNodeMath")
+    sum.name = "Sum"
+    sum.operation = "ADD"
+    sum.use_clamp = False
+
+    # node SquareX
+    squarex = cartesian2polar.nodes.new("CompositorNodeMath")
+    squarex.name = "SquareX"
+    squarex.operation = "POWER"
+    squarex.use_clamp = False
+    # Value_001
+    squarex.inputs[1].default_value = 2.0
+
+    # node SquareY
+    squarey = cartesian2polar.nodes.new("CompositorNodeMath")
+    squarey.name = "SquareY"
+    squarey.operation = "POWER"
+    squarey.use_clamp = False
+    # Value_001
+    squarey.inputs[1].default_value = 2.0
+
+    # initialize cartesian2polar links
+    # sum.Value -> sqrt.Value
+    cartesian2polar.links.new(sum.outputs[0], sqrt.inputs[0])
+    # squarey.Value -> sum.Value
+    cartesian2polar.links.new(squarey.outputs[0], sum.inputs[1])
+    # squarex.Value -> sum.Value
+    cartesian2polar.links.new(squarex.outputs[0], sum.inputs[0])
+    # group_input.x -> squarex.Value
+    cartesian2polar.links.new(group_input.outputs[0], squarex.inputs[0])
+    # group_input.x -> arctan2.Value
+    cartesian2polar.links.new(group_input.outputs[0], arctan2.inputs[1])
+    # group_input.y -> squarey.Value
+    cartesian2polar.links.new(group_input.outputs[1], squarey.inputs[0])
+    # sqrt.Value -> group_output.r
+    cartesian2polar.links.new(sqrt.outputs[0], group_output.inputs[0])
+    # group_input.y -> arctan2.Value
+    cartesian2polar.links.new(group_input.outputs[1], arctan2.inputs[0])
+    # arctan2.Value -> group_output.theta
+    cartesian2polar.links.new(arctan2.outputs[0], group_output.inputs[1])
+    return cartesian2polar
+
+
+cartesian2polar = cartesian2polar_node_group()
+
+
+# initialize FlowDebug node group
+def flowdebug_node_group():
+    flowdebug = bpy.data.node_groups.new(type="CompositorNodeTree", name="FlowDebug")
+
+    # flowdebug interface
+    # Socket Image
+    image_socket = flowdebug.interface.new_socket(name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
+    image_socket.attribute_domain = "POINT"
+
+    # Socket Orientation
+    orientation_socket = flowdebug.interface.new_socket(
+        name="Orientation", in_out="INPUT", socket_type="NodeSocketFloat"
+    )
+    orientation_socket.attribute_domain = "POINT"
+
+    # Socket x
+    x_socket_1 = flowdebug.interface.new_socket(name="x", in_out="INPUT", socket_type="NodeSocketFloat")
+    x_socket_1.attribute_domain = "POINT"
+
+    # Socket y
+    y_socket_1 = flowdebug.interface.new_socket(name="y", in_out="INPUT", socket_type="NodeSocketFloat")
+    y_socket_1.attribute_domain = "POINT"
+
+    # initialize flowdebug nodes
+    # node Group Output
+    group_output_1 = flowdebug.nodes.new("NodeGroupOutput")
+    group_output_1.name = "Group Output"
+    group_output_1.is_active_output = True
+
+    # node Group Input
+    group_input_1 = flowdebug.nodes.new("NodeGroupInput")
+    group_input_1.name = "Group Input"
+
+    # node Group
+    group = flowdebug.nodes.new("CompositorNodeGroup")
+    group.label = "Cartesian2Polar"
+    group.name = "Group"
+    group.node_tree = cartesian2polar
+
+    # node Normalize
+    normalize = flowdebug.nodes.new("CompositorNodeNormalize")
+    normalize.name = "Normalize"
+
+    # node Map Range
+    map_range = flowdebug.nodes.new("CompositorNodeMapRange")
+    map_range.name = "Map Range"
+    map_range.use_clamp = False
+    # From Min
+    map_range.inputs[1].default_value = -3.1415927410125732
+    # From Max
+    map_range.inputs[2].default_value = 3.1415927410125732
+    # To Min
+    map_range.inputs[3].default_value = 0.0
+    # To Max
+    map_range.inputs[4].default_value = 6.2831854820251465
+
+    # node Combine Color
+    combine_color = flowdebug.nodes.new("CompositorNodeCombineColor")
+    combine_color.name = "Combine Color"
+    combine_color.mode = "HSV"
+    combine_color.inputs[1].default_value = 1.0
+    combine_color.inputs[3].default_value = 1.0
+
+    # node Orientation offset
+    orientation_offset = flowdebug.nodes.new("CompositorNodeMath")
+    orientation_offset.name = "Orientation offset"
+    orientation_offset.operation = "ADD"
+    orientation_offset.use_clamp = False
+
+    # node Mod2pi
+    mod2pi = flowdebug.nodes.new("CompositorNodeMath")
+    mod2pi.name = "Mod2pi"
+    mod2pi.operation = "MODULO"
+    mod2pi.use_clamp = False
+    # Value_001
+    mod2pi.inputs[1].default_value = 6.2831854820251465
+
+    # node HueNorm
+    huenorm = flowdebug.nodes.new("CompositorNodeMapRange")
+    huenorm.name = "HueNorm"
+    huenorm.use_clamp = False
+    # From Min
+    huenorm.inputs[1].default_value = 0.0
+    # From Max
+    huenorm.inputs[2].default_value = 6.2831854820251465
+    # To Min
+    huenorm.inputs[3].default_value = 0.0
+    # To Max
+    huenorm.inputs[4].default_value = 1.0
+
+    # initialize flowdebug links
+    # group.r -> normalize.Value
+    flowdebug.links.new(group.outputs[0], normalize.inputs[0])
+    # group_input_1.x -> group.x
+    flowdebug.links.new(group_input_1.outputs[1], group.inputs[0])
+    # group_input_1.y -> group.y
+    flowdebug.links.new(group_input_1.outputs[2], group.inputs[1])
+    # normalize.Value -> combine_color.Blue
+    flowdebug.links.new(normalize.outputs[0], combine_color.inputs[2])
+    # combine_color.Image -> group_output_1.Image
+    flowdebug.links.new(combine_color.outputs[0], group_output_1.inputs[0])
+    # orientation_offset.Value -> mod2pi.Value
+    flowdebug.links.new(orientation_offset.outputs[0], mod2pi.inputs[0])
+    # group.theta -> map_range.Value
+    flowdebug.links.new(group.outputs[1], map_range.inputs[0])
+    # huenorm.Value -> combine_color.Red
+    flowdebug.links.new(huenorm.outputs[0], combine_color.inputs[0])
+    # mod2pi.Value -> huenorm.Value
+    flowdebug.links.new(mod2pi.outputs[0], huenorm.inputs[0])
+    # group_input_1.Orientation -> orientation_offset.Value
+    flowdebug.links.new(group_input_1.outputs[0], orientation_offset.inputs[0])
+    # map_range.Value -> orientation_offset.Value
+    flowdebug.links.new(map_range.outputs[0], orientation_offset.inputs[1])
+    return flowdebug
+
+
+flowdebug = flowdebug_node_group()

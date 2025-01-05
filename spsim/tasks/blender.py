@@ -33,6 +33,7 @@ from spsim.tasks.common import _run
         "allow_skips": "whether or not to skip rendering a frame if it already exists, default: True",
         "depths": "whether or not to capture depth images, default: False",
         "normals": "whether or not to capture normals images, default: False",
+        "flows": "whether or not to capture optical flow images, default: False",
         "file_format": (
             "frame file format to use. Depth is always 'OPEN_EXR' thus is " "unaffected by this setting, default: PNG"
         ),
@@ -68,6 +69,7 @@ def render_animation(
     allow_skips=True,
     depths=False,
     normals=False,
+    flows=False,
     file_format="PNG",
     log_dir=None,
     addons=None,
@@ -108,6 +110,8 @@ def render_animation(
             clients.include_depth()
         if normals:
             clients.include_normals()
+        if flows:
+            clients.include_flows()
         if unbind_camera:
             clients.unbind_camera()
         if use_motion_blur is not None:

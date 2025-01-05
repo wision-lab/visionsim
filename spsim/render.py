@@ -30,23 +30,34 @@ except ImportError:
 
 try:
     sys.path.insert(0, site.USER_SITE)
+    sys.path.insert(0, str(Path(__file__).parent.resolve()))
 
     import rpyc
     import rpyc.utils.registry
-except ImportError:
+except ImportError as e:
     # Note: the same can be done for np, mathutils, etc but these
-    # should already be installed by default.
-    print(
-        "Some dependencies are needed to run this script. To install it so that "
-        "it is accessible from blender, you need to pip install it "
-        "into blender's python interpreter like so:\n"
-    )
-    print(f"${sys.executable} -m ensurepip")
-    print(f"${sys.executable} -m pip install rpyc --target {site.USER_SITE}")
-
-    subprocess.check_output(shlex.split(f"{sys.executable} -m ensurepip"))
-    subprocess.check_output(shlex.split(f"{sys.executable} -m pip install rpyc --target {site.USER_SITE}"))
-    sys.exit()
+    # should already be installed by default inside of blender.
+    try:
+        if bpy is not None:
+            print("Attempting to auto install dependencies into blender's runtime...")
+            print(subprocess.check_output(shlex.split(f"{sys.executable} -m ensurepip"), universal_newlines=True))
+            print(
+                subprocess.check_output(
+                    shlex.split(f"{sys.executable} -m pip install rpyc --target {site.USER_SITE}"),
+                    universal_newlines=True,
+                )
+            )
+            sys.exit()
+        else:
+            raise e
+    except subprocess.CalledProcessError:
+        print(
+            "Some dependencies are needed to run this script. To install it so that "
+            "it is accessible from blender, you need to pip install it "
+            "into blender's python interpreter like so:\n"
+        )
+        print(f"$ {sys.executable} -m ensurepip")
+        print(f"$ {sys.executable} -m pip install rpyc --target {site.USER_SITE}")
 
 REGISTRY = None
 
@@ -96,7 +107,7 @@ class BlenderServer(rpyc.utils.server.Server):
         procs = []
 
         if log_dir:
-            log_dir = Path(log_dir).resolve()
+            log_dir = Path(log_dir).expanduser().resolve()
             log_dir.mkdir(parents=True, exist_ok=True)
 
         with ExitStack() as stack:
@@ -644,9 +655,39 @@ class BlenderService(rpyc.Service):
         (self.root_path / "normals").mkdir(parents=True, exist_ok=True)
         self.normals_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.normals_path.label = "Normal Output"
+        self.normals_path.format.file_format = "OPEN_EXR"
         self.tree.links.new(self.render_layers.outputs["Normal"], self.normals_path.inputs[0])
         self.normals_path.base_path = str(self.root_path / "normals")
         self.normals_path.file_slots[0].path = f"normal_{'#'*6}"
+
+    @require_initialized
+    def exposed_include_flows(self, debug=True):
+        """Sets up Blender compositor to include optical flow in rendered images."""
+        self.view_layer.use_pass_vector = True
+        (self.root_path / "flows").mkdir(parents=True, exist_ok=True)
+
+        if debug:
+            from nodes import flowdebug
+
+            # Seperate forward and backward flows (with a seperate color not vector node)
+            split_flow = self.tree.nodes.new(type="CompositorNodeSeparateColor")
+            self.tree.links.new(self.render_layers.outputs["Vector"], split_flow.inputs["Image"])
+
+            # Instantiate and link flow debug node group
+            flow_group = self.tree.nodes.new("CompositorNodeGroup")
+            flow_group.label = "FlowDebug"
+            flow_group.node_tree = flowdebug
+            self.tree.links.new(split_flow.outputs["Red"], flow_group.inputs["x"])
+            self.tree.links.new(split_flow.outputs["Green"], flow_group.inputs["y"])
+
+            # Connect output node
+            self.flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+            self.flow_path.label = "Flow Debug Output"
+            self.tree.links.new(flow_group.outputs["Image"], self.flow_path.inputs[0])
+            self.flow_path.base_path = str(self.root_path / "flows")
+            self.flow_path.file_slots[0].path = f"fwd_flow_{'#'*6}"
+        else:
+            raise NotImplementedError
 
     @require_initialized
     def exposed_load_addons(self, *addons):
@@ -893,7 +934,7 @@ class BlenderService(rpyc.Service):
         :return:
             dictionary containing paths to rendered frames for this index and camera pose.
         """
-        # TODO: Implement skipping for depth/normals?
+        # TODO: Implement skipping for depth/normals/flow?
 
         # Assumes the camera position, frame number and all other params have been set
         index = self.scene.frame_current
@@ -903,7 +944,9 @@ class BlenderService(rpyc.Service):
         if self.depth_path is not None:
             paths["depth_file_path"] = Path(f"depths/depth_{index:06}.exr")
         if self.normals_path is not None:
-            paths["normals_file_path"] = Path(f"normals/normal_{index:06}").with_suffix(self.scene.render.file_extension)
+            paths["normals_file_path"] = Path(f"normals/normal_{index:06}.exr")
+        if self.flow_path is not None:
+            paths["flows_file_path"] = Path(f"flows/fwd_flow_{index:06}").with_suffix(self.scene.render.file_extension)
 
         if not dry_run:
             # Render frame(s), skip the render iff all files exist and `allow_skips`
@@ -1017,7 +1060,7 @@ class BlenderService(rpyc.Service):
     @require_initialized
     def exposed_save_file(self, path):
         """Save opened blender file. This is useful for introspecting the state of the compositor/scene/etc."""
-        bpy.ops.wm.save_as_mainfile(filepath=path)
+        bpy.ops.wm.save_as_mainfile(filepath=str(path))
 
 
 # This script has only been tested using Blender 3.3.1 (hash b292cfe5a936 built 2022-10-05 00:14:35) and above.
