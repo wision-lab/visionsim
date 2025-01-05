@@ -8,7 +8,7 @@ from .pose import pose_interp  # noqa: F401
 from .rife.inference_img import interpolate_img as rife  # noqa: F401
 
 
-def interpolate_poses(transforms, normalize = False, n=2):
+def interpolate_poses(transforms, normalize=False, n=2):
     """
     Interpolate between poses.
     Returns the interpolated poses in matrices.

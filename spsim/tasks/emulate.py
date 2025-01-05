@@ -212,24 +212,22 @@ def rgb(
         "init_bias_gyro": "initial bias/drift in gyroscope reading. Given in rad/s. default: [0,0,0]",
         "std_bias_acc": (
             "stdev for random-walk component of error (drift) in accelerometer. "
-            "Given in m/(s^3 \sqrt{Hz}). "
-            "default: 5.5e-5"
+            "Given in m/(s^3 \\sqrt{Hz}). default: 5.5e-5"
         ),
         "std_bias_gyro": (
             "stdev for random-walk component of error (drift) in gyroscope. "
-            "Given in rad/(s^2 \sqrt{Hz}). "
-            "default: 2e-5"
+            "Given in rad/(s^2 \\sqrt{Hz}). default: 2e-5"
         ),
         "std_acc": (
-            "stdev for white-noise component of error in accelerometer. " "Given in m/(s^2 \sqrt{Hz}). " "default: 8e-3"
+            "stdev for white-noise component of error in accelerometer. Given in m/(s^2 \\sqrt{Hz}). default: 8e-3"
         ),
         "std_gyro": (
-            "stdev for white-noise component of error in gyroscope. " "Given in rad/(s \sqrt{Hz}). " "default: 1.2e-3"
+            "stdev for white-noise component of error in gyroscope. Given in rad/(s \\sqrt{Hz}). default: 1.2e-3"
         ),
     }
 )
 def imu(
-    c,
+    _,
     input_dir,
     output_file="",
     seed=2147483647,
@@ -283,9 +281,17 @@ def imu(
             out.write(
                 "{},{},{},{},{},{},{},{},{},{},{},{},{}\n".format(
                     d["t"],
-                    d["acc_reading"][0], d["acc_reading"][1], d["acc_reading"][2],
-                    d["gyro_reading"][0], d["gyro_reading"][1], d["gyro_reading"][2],
-                    d["acc_bias"][0], d["acc_bias"][1], d["acc_bias"][2],
-                    d["gyro_bias"][0], d["gyro_bias"][1], d["gyro_bias"][2],
+                    d["acc_reading"][0],
+                    d["acc_reading"][1],
+                    d["acc_reading"][2],
+                    d["gyro_reading"][0],
+                    d["gyro_reading"][1],
+                    d["gyro_reading"][2],
+                    d["acc_bias"][0],
+                    d["acc_bias"][1],
+                    d["acc_bias"][2],
+                    d["gyro_bias"][0],
+                    d["gyro_bias"][1],
+                    d["gyro_bias"][2],
                 )
             )

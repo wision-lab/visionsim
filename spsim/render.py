@@ -67,7 +67,7 @@ class BlenderServer(rpyc.utils.server.Server):
         if bpy is None:
             raise RuntimeError(f"{type(self).__name__} needs to be instantiated from within blender's python runtime.")
         if service_klass and not issubclass(service_klass, BlenderService):
-            raise ValueError(f"Parameter 'service_klass' must be 'BlenderService' or subclass.")
+            raise ValueError("Parameter 'service_klass' must be 'BlenderService' or subclass.")
 
         super().__init__(
             service_klass or BlenderService,
@@ -480,7 +480,7 @@ class BlenderService(rpyc.Service):
 
     def on_connect(self, conn):
         # TODO: Proper logging
-        print(f"INFO: Successfully connected to BlenderClient instance.")
+        print("INFO: Successfully connected to BlenderClient instance.")
         self._conn = conn
 
     def on_disconnect(self, conn):
@@ -491,7 +491,7 @@ class BlenderService(rpyc.Service):
         self.clear_cached_properties()
         self.initialized = False
         self._conn = None
-        print(f"INFO: Successfully disconnected from BlenderClient instance.")
+        print("INFO: Successfully disconnected from BlenderClient instance.")
 
     def clear_cached_properties(self):
         # Based on: https://stackoverflow.com/a/71579485
