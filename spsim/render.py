@@ -514,7 +514,10 @@ class BlenderService(rpyc.Service):
         (self.root_path / "frames").mkdir(parents=True, exist_ok=True)
 
         # Init various variables to track state
-        self.depth_path, self.normals_path = None, None
+        self.depth_path = None
+        self.normal_path = None
+        self.flow_path = None
+        self.debug_flow_path = None
         self.initialized = True
         self.unbind_camera = False
         self.use_animation = True
@@ -653,16 +656,27 @@ class BlenderService(rpyc.Service):
         """Sets up Blender compositer to include normal map in rendered images."""
         self.view_layer.use_pass_normal = True
         (self.root_path / "normals").mkdir(parents=True, exist_ok=True)
-        self.normals_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
-        self.normals_path.label = "Normal Output"
-        self.normals_path.format.file_format = "OPEN_EXR"
-        self.tree.links.new(self.render_layers.outputs["Normal"], self.normals_path.inputs[0])
-        self.normals_path.base_path = str(self.root_path / "normals")
-        self.normals_path.file_slots[0].path = f"normal_{'#'*6}"
+        self.normal_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+        self.normal_path.label = "Normal Output"
+        self.normal_path.format.file_format = "OPEN_EXR"
+        self.tree.links.new(self.render_layers.outputs["Normal"], self.normal_path.inputs[0])
+        self.normal_path.base_path = str(self.root_path / "normals")
+        self.normal_path.file_slots[0].path = f"normal_{'#'*6}"
 
     @require_initialized
-    def exposed_include_flows(self, debug=True):
-        """Sets up Blender compositor to include optical flow in rendered images."""
+    def exposed_include_flows(self, direction="fwd", debug=True):
+        """Sets up Blender compositor to include optical flow in rendered images.
+
+        Args:
+            direction: One of 'forward', 'backward' or 'both'. Direction of flow, only used
+                when debug is true, otherwise both forward and backward flows are saved.
+            debug: If true, also save debug visualizations of flow.
+        """
+        if direction.lower() not in ("forward", "backward", "both"):
+            raise ValueError(f"Direction argument should be one of forward, backward or both, got {direction}.")
+        if self.scene.render.use_motion_blur:
+            raise RuntimeError("Cannot compute optical flow if motion blur is enabled.")
+
         self.view_layer.use_pass_vector = True
         (self.root_path / "flows").mkdir(parents=True, exist_ok=True)
 
@@ -673,21 +687,41 @@ class BlenderService(rpyc.Service):
             split_flow = self.tree.nodes.new(type="CompositorNodeSeparateColor")
             self.tree.links.new(self.render_layers.outputs["Vector"], split_flow.inputs["Image"])
 
-            # Instantiate and link flow debug node group
-            flow_group = self.tree.nodes.new("CompositorNodeGroup")
-            flow_group.label = "FlowDebug"
-            flow_group.node_tree = flowdebug
-            self.tree.links.new(split_flow.outputs["Red"], flow_group.inputs["x"])
-            self.tree.links.new(split_flow.outputs["Green"], flow_group.inputs["y"])
+            # Create output node
+            self.debug_flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+            self.debug_flow_path.base_path = str(self.root_path / "flows")
+            self.debug_flow_path.label = "Flow Debug Output"
+            self.debug_flow_path.file_slots.clear()
 
-            # Connect output node
-            self.flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
-            self.flow_path.label = "Flow Debug Output"
-            self.tree.links.new(flow_group.outputs["Image"], self.flow_path.inputs[0])
-            self.flow_path.base_path = str(self.root_path / "flows")
-            self.flow_path.file_slots[0].path = f"fwd_flow_{'#'*6}"
-        else:
-            raise NotImplementedError
+            # Instantiate flow debug node group(s) and connect them
+            if direction.lower() in ("forward", "both"):
+                flow_group = self.tree.nodes.new("CompositorNodeGroup")
+                flow_group.label = "Forward FlowDebug"
+                flow_group.node_tree = flowdebug
+
+                self.tree.links.new(split_flow.outputs["Red"], flow_group.inputs["x"])
+                self.tree.links.new(split_flow.outputs["Green"], flow_group.inputs["y"])
+
+                slot = self.debug_flow_path.file_slots.new(f"debug_fwd_flow_{'#'*6}")
+                self.tree.links.new(flow_group.outputs["Image"], slot)
+            if direction.lower() in ("backward", "both"):
+                flow_group = self.tree.nodes.new("CompositorNodeGroup")
+                flow_group.label = "Backward FlowDebug"
+                flow_group.node_tree = flowdebug
+
+                self.tree.links.new(split_flow.outputs["Blue"], flow_group.inputs["x"])
+                self.tree.links.new(split_flow.outputs["Alpha"], flow_group.inputs["y"])
+
+                slot = self.debug_flow_path.file_slots.new(f"debug_bwd_flow_{'#'*6}")
+                self.tree.links.new(flow_group.outputs["Image"], slot)
+
+        # Save flows as EXRs
+        self.flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+        self.flow_path.label = "Flow Debug Output"
+        self.flow_path.format.file_format = "OPEN_EXR"
+        self.tree.links.new(self.render_layers.outputs["Vector"], self.flow_path.inputs["Image"])
+        self.flow_path.base_path = str(self.root_path / "flows")
+        self.flow_path.file_slots[0].path = f"flow_{'#'*6}"
 
     @require_initialized
     def exposed_load_addons(self, *addons):
@@ -943,10 +977,10 @@ class BlenderService(rpyc.Service):
 
         if self.depth_path is not None:
             paths["depth_file_path"] = Path(f"depths/depth_{index:06}.exr")
-        if self.normals_path is not None:
+        if self.normal_path is not None:
             paths["normals_file_path"] = Path(f"normals/normal_{index:06}.exr")
         if self.flow_path is not None:
-            paths["flows_file_path"] = Path(f"flows/fwd_flow_{index:06}").with_suffix(self.scene.render.file_extension)
+            paths["flows_file_path"] = Path(f"flows/flow_{index:06}.exr")
 
         if not dry_run:
             # Render frame(s), skip the render iff all files exist and `allow_skips`

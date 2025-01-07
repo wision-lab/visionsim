@@ -107,11 +107,11 @@ def render_animation(
         )
 
         if depths:
-            clients.include_depth()
+            clients.include_depths()
         if normals:
             clients.include_normals()
         if flows:
-            clients.include_flows()
+            clients.include_flows(direction="both")
         if unbind_camera:
             clients.unbind_camera()
         if use_motion_blur is not None:
