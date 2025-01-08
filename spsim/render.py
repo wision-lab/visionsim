@@ -517,10 +517,11 @@ class BlenderService(rpyc.Service):
         self.depth_path = None
         self.normal_path = None
         self.flow_path = None
-        self.debug_flow_path = None
         self.initialized = True
         self.unbind_camera = False
         self.use_animation = True
+        self.pre_render_callbacks = []
+        self.post_render_callbacks = []
 
         # Ensure we are using the compositor, and node tree.
         self.scene.use_nodes = True
@@ -582,6 +583,19 @@ class BlenderService(rpyc.Service):
         else:
             print(f"No active camera was found. Using camera named: '{cameras[0]}'.")
             return cameras[0]
+
+    @require_initialized
+    def prerender_normal_pass_update(self, normal_group):
+        """Updates the default values corresponding to the camera pose in the normals node group.
+        This needs to be called before the render pass if normals are enabled."""
+        mat = np.linalg.inv(self.camera.matrix_world)
+
+        # Note: Blender's normals node actually returns the negative dot product (which may be a bug)
+        # so we negate that here. See: https://projects.blender.org/blender/blender/issues/132770
+        # TODO: Negation of dot product might become version specific once the bug is fixed.
+        normal_group.node_tree.nodes["RotRow1"].outputs[0].default_value = -mat[0, :-1]
+        normal_group.node_tree.nodes["RotRow2"].outputs[0].default_value = -mat[1, :-1]
+        normal_group.node_tree.nodes["RotRow3"].outputs[0].default_value = -mat[2, :-1]
 
     @require_initialized
     def exposed_empty_transforms(self):
@@ -652,16 +666,39 @@ class BlenderService(rpyc.Service):
         self.depth_path.file_slots[0].path = f"depth_{'#'*6}"
 
     @require_initialized
-    def exposed_include_normals(self):
+    def exposed_include_normals(self, debug=True):
         """Sets up Blender compositer to include normal map in rendered images."""
         self.view_layer.use_pass_normal = True
         (self.root_path / "normals").mkdir(parents=True, exist_ok=True)
+
+        # The node group `normaldebug` transforms normals from the global
+        # coordinate frame to the camera's, and also colors normals as RGB
+        from nodes import normaldebug
+
+        normal_group = self.tree.nodes.new("CompositorNodeGroup")
+        normal_group.label = "NormalDebug"
+        normal_group.node_tree = normaldebug
+        self.tree.links.new(self.render_layers.outputs["Normal"], normal_group.inputs[0])
+
+        if debug:
+            debug_normal_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+            debug_normal_path.base_path = str(self.root_path / "normals")
+            debug_normal_path.label = "Normals Debug Output"
+            debug_normal_path.file_slots[0].path = f"debug_normal_{'#'*6}"
+
+            # Important! Set the view settimgs to raw otherwise result is tonemapped
+            debug_normal_path.format.color_management = "OVERRIDE"
+            debug_normal_path.format.view_settings.view_transform = "Raw"
+
+            self.tree.links.new(normal_group.outputs["RGBA"], debug_normal_path.inputs[0])
+
         self.normal_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.normal_path.label = "Normal Output"
         self.normal_path.format.file_format = "OPEN_EXR"
-        self.tree.links.new(self.render_layers.outputs["Normal"], self.normal_path.inputs[0])
+        self.tree.links.new(normal_group.outputs["Vector"], self.normal_path.inputs[0])
         self.normal_path.base_path = str(self.root_path / "normals")
         self.normal_path.file_slots[0].path = f"normal_{'#'*6}"
+        self.pre_render_callbacks.append(functools.partial(self.prerender_normal_pass_update, normal_group))
 
     @require_initialized
     def exposed_include_flows(self, direction="fwd", debug=True):
@@ -688,10 +725,10 @@ class BlenderService(rpyc.Service):
             self.tree.links.new(self.render_layers.outputs["Vector"], split_flow.inputs["Image"])
 
             # Create output node
-            self.debug_flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
-            self.debug_flow_path.base_path = str(self.root_path / "flows")
-            self.debug_flow_path.label = "Flow Debug Output"
-            self.debug_flow_path.file_slots.clear()
+            debug_flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+            debug_flow_path.base_path = str(self.root_path / "flows")
+            debug_flow_path.label = "Flow Debug Output"
+            debug_flow_path.file_slots.clear()
 
             # Instantiate flow debug node group(s) and connect them
             if direction.lower() in ("forward", "both"):
@@ -702,7 +739,7 @@ class BlenderService(rpyc.Service):
                 self.tree.links.new(split_flow.outputs["Red"], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs["Green"], flow_group.inputs["y"])
 
-                slot = self.debug_flow_path.file_slots.new(f"debug_fwd_flow_{'#'*6}")
+                slot = debug_flow_path.file_slots.new(f"debug_fwd_flow_{'#'*6}")
                 self.tree.links.new(flow_group.outputs["Image"], slot)
             if direction.lower() in ("backward", "both"):
                 flow_group = self.tree.nodes.new("CompositorNodeGroup")
@@ -712,7 +749,7 @@ class BlenderService(rpyc.Service):
                 self.tree.links.new(split_flow.outputs["Blue"], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs["Alpha"], flow_group.inputs["y"])
 
-                slot = self.debug_flow_path.file_slots.new(f"debug_bwd_flow_{'#'*6}")
+                slot = debug_flow_path.file_slots.new(f"debug_bwd_flow_{'#'*6}")
                 self.tree.links.new(flow_group.outputs["Image"], slot)
 
         # Save flows as EXRs
@@ -982,12 +1019,18 @@ class BlenderService(rpyc.Service):
         if self.flow_path is not None:
             paths["flows_file_path"] = Path(f"flows/flow_{index:06}.exr")
 
+        for callback in self.pre_render_callbacks:
+            callback()
+
         if not dry_run:
             # Render frame(s), skip the render iff all files exist and `allow_skips`
             if not allow_skips or any(not Path(self.root_path / p).exists() for p in paths.values()):
                 # If `write_still` is false, depth & normals can be written but rgb will be skipped
                 skip_frame = Path(self.root_path / paths["file_path"]).exists() and allow_skips
                 bpy.ops.render.render(write_still=not skip_frame)
+
+        for callback in self.post_render_callbacks:
+            callback()
 
         # Returns paths that were written
         return {
