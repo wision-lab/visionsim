@@ -28,13 +28,13 @@ def normaldebug_node_group():
 
     # initialize normaldebug nodes
     # node Group Output
-    group_output_2 = normaldebug.nodes.new("NodeGroupOutput")
-    group_output_2.name = "Group Output"
-    group_output_2.is_active_output = True
+    group_output = normaldebug.nodes.new("NodeGroupOutput")
+    group_output.name = "Group Output"
+    group_output.is_active_output = True
 
     # node Group Input
-    group_input_2 = normaldebug.nodes.new("NodeGroupInput")
-    group_input_2.name = "Group Input"
+    group_input = normaldebug.nodes.new("NodeGroupInput")
+    group_input.name = "Group Input"
 
     # node RotRow1
     rotrow1 = normaldebug.nodes.new("CompositorNodeNormal")
@@ -141,16 +141,16 @@ def normaldebug_node_group():
     normaldebug.links.new(rotrow2.outputs[1], combine_xyz.inputs[1])
     # rotrow3.Dot -> combine_xyz.Z
     normaldebug.links.new(rotrow3.outputs[1], combine_xyz.inputs[2])
-    # group_input_2.Normal -> rotrow2.Normal
-    normaldebug.links.new(group_input_2.outputs[0], rotrow2.inputs[0])
-    # group_input_2.Normal -> rotrow1.Normal
-    normaldebug.links.new(group_input_2.outputs[0], rotrow1.inputs[0])
-    # group_input_2.Normal -> rotrow3.Normal
-    normaldebug.links.new(group_input_2.outputs[0], rotrow3.inputs[0])
-    # combine_color_1.Image -> group_output_2.RGBA
-    normaldebug.links.new(combine_color.outputs[0], group_output_2.inputs[0])
-    # combine_xyz.Vector -> group_output_2.Vector
-    normaldebug.links.new(combine_xyz.outputs[0], group_output_2.inputs[1])
+    # group_input.Normal -> rotrow2.Normal
+    normaldebug.links.new(group_input.outputs[0], rotrow2.inputs[0])
+    # group_input.Normal -> rotrow1.Normal
+    normaldebug.links.new(group_input.outputs[0], rotrow1.inputs[0])
+    # group_input.Normal -> rotrow3.Normal
+    normaldebug.links.new(group_input.outputs[0], rotrow3.inputs[0])
+    # combine_color.Image -> group_output.RGBA
+    normaldebug.links.new(combine_color.outputs[0], group_output.inputs[0])
+    # combine_xyz.Vector -> group_output.Vector
+    normaldebug.links.new(combine_xyz.outputs[0], group_output.inputs[1])
     return normaldebug
 
 

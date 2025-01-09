@@ -517,6 +517,7 @@ class BlenderService(rpyc.Service):
         self.depth_path = None
         self.normal_path = None
         self.flow_path = None
+        self.segmentation_path = None
         self.initialized = True
         self.unbind_camera = False
         self.use_animation = True
@@ -654,10 +655,21 @@ class BlenderService(rpyc.Service):
         return (self.scene.frame_start, self.scene.frame_end, self.scene.frame_step)
 
     @require_initialized
-    def exposed_include_depths(self):
+    def exposed_include_depths(self, debug=True):
         """Sets up Blender compositor to include depth map in rendered images."""
         self.view_layer.use_pass_z = True
         (self.root_path / "depths").mkdir(parents=True, exist_ok=True)
+
+        if debug:
+            debug_depth_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+            debug_depth_path.label = "Debug Depth Output"
+            debug_depth_path.base_path = str(self.root_path / "depths")
+            debug_depth_path.file_slots[0].path = f"debug_depth_{'#'*6}"
+
+            normalize = self.tree.nodes.new("CompositorNodeNormalize")
+            self.tree.links.new(self.render_layers.outputs["Depth"], normalize.inputs[0])
+            self.tree.links.new(normalize.outputs[0], debug_depth_path.inputs[0])
+
         self.depth_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.depth_path.label = "Depth Output"
         self.depth_path.format.file_format = "OPEN_EXR"
@@ -759,6 +771,54 @@ class BlenderService(rpyc.Service):
         self.tree.links.new(self.render_layers.outputs["Vector"], self.flow_path.inputs["Image"])
         self.flow_path.base_path = str(self.root_path / "flows")
         self.flow_path.file_slots[0].path = f"flow_{'#'*6}"
+
+    @require_initialized
+    def exposed_include_segmentations(self, shuffle=True, debug=True):
+        """Sets up Blender compositor to include segmentation maps in rendered images.
+        
+        The debug visualization simply assigns a color to each object ID by mapping the 
+        objects ID value to a hue using a HSV node with saturation=1 and value=1 (except 
+        for the background which will have a value of 0 to ensure it is black).
+        """
+        # TODO: Enable assignement of custom IDs for certain objects via a dictionary. 
+
+        if self.scene.render.engine.upper() != "CYCLES":
+            raise RuntimeError("Cannot produce segmentation maps when not using CYCLES.")
+        
+        self.view_layer.use_pass_object_index = True
+        (self.root_path / "segmentations").mkdir(parents=True, exist_ok=True)
+
+        # Assign IDs to every object (background will be 0)
+        indices = np.arange(len(bpy.data.objects))
+
+        if shuffle:
+            np.random.shuffle(indices)
+
+        for i, obj in zip(indices, bpy.data.objects): 
+            obj.pass_index = i+1
+
+        if debug:
+            from nodes import segmentationdebug
+
+            seg_group = self.tree.nodes.new("CompositorNodeGroup")
+            seg_group.label = "SegmentationDebug"
+            seg_group.node_tree = segmentationdebug
+            seg_group.node_tree.nodes["NormalizeIdx"].inputs["From Max"].default_value = len(bpy.data.objects)
+
+            debug_seg_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+            debug_seg_path.base_path = str(self.root_path / "segmentations")
+            debug_seg_path.label = "Segmentations Debug Output"
+            debug_seg_path.file_slots[0].path = f"debug_segmentation_{'#'*6}"
+
+            self.tree.links.new(self.render_layers.outputs["IndexOB"], seg_group.inputs["Value"])
+            self.tree.links.new(seg_group.outputs["Image"], debug_seg_path.inputs[0])
+        
+        self.segmentation_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+        self.segmentation_path.label = "Segmentation Output"
+        self.segmentation_path.format.file_format = "OPEN_EXR"
+        self.tree.links.new(self.render_layers.outputs["IndexOB"], self.segmentation_path.inputs[0])
+        self.segmentation_path.base_path = str(self.root_path / "segmentations")
+        self.segmentation_path.file_slots[0].path = f"segmentation_{'#'*6}"        
 
     @require_initialized
     def exposed_load_addons(self, *addons):
@@ -1015,9 +1075,11 @@ class BlenderService(rpyc.Service):
         if self.depth_path is not None:
             paths["depth_file_path"] = Path(f"depths/depth_{index:06}.exr")
         if self.normal_path is not None:
-            paths["normals_file_path"] = Path(f"normals/normal_{index:06}.exr")
+            paths["normal_file_path"] = Path(f"normals/normal_{index:06}.exr")
         if self.flow_path is not None:
-            paths["flows_file_path"] = Path(f"flows/flow_{index:06}.exr")
+            paths["flow_file_path"] = Path(f"flows/flow_{index:06}.exr")
+        if self.segmentation_path is not None:
+            paths["segmentation_file_path"] = Path(f"segmentations/segmentation_{index:06}.exr")
 
         for callback in self.pre_render_callbacks:
             callback()
