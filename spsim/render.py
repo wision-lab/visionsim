@@ -7,7 +7,7 @@ import site
 import subprocess
 import sys
 import time
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from multiprocessing import Process
 from pathlib import Path
 
@@ -299,7 +299,7 @@ class BlenderClients(tuple):
 
     @staticmethod
     @contextmanager
-    def pool(jobs=1, timeout=10, log_dir=None, autoexec=False, executable=None):
+    def pool(jobs=1, timeout=10, log_dir=None, autoexec=False, executable=None, conns=None):
         """Spawns a multiprocessing-like worker pool, each with their own `BlenderClient` instance.
         The first argument to the function supplied to pool.map/imap/starmap and their async variants will
         be automagically passed a client instance as their first argument that they can use for rendering.
@@ -319,7 +319,10 @@ class BlenderClients(tuple):
             advantage of the more advanced dill serialization (as opposed to the standard pickling).
 
         Args:
-            Same as `BlenderServer.spawn`
+            conns: List of connection tuples containing the hostnames and ports of existing servers. 
+                If specified, the pool will use these servers (and `jobs` will be ignored) insteads of spawning new ones. 
+            
+            For other arguments, see `BlenderServer.spawn`
 
         Returns:
             A `multiprocess.Pool` instance which has had it's applicator methods (map/imap/starmap/etc)
@@ -352,16 +355,18 @@ class BlenderClients(tuple):
 
             return inner
 
+        context_manager = BlenderServer.spawn(
+            jobs=jobs, timeout=timeout, log_dir=log_dir, autoexec=autoexec, executable=executable
+        ) if conns is None else nullcontext(enter_result=(None, conns))
+        
         with multiprocess.Manager() as manager:
-            with BlenderServer.spawn(
-                jobs=jobs, timeout=timeout, log_dir=log_dir, autoexec=autoexec, executable=executable
-            ) as (_, conns):
+            with context_manager as (_, conns):
                 q = manager.Queue()
 
                 for conn in conns:
                     q.put(conn)
 
-                with multiprocess.Pool(jobs) as pool:
+                with multiprocess.Pool(len(conns)) as pool:
                     for name, method in inspect.getmembers(pool, predicate=inspect.ismethod):
                         params = list(inspect.signature(method).parameters.keys())
 
