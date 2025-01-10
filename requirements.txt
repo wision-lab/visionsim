@@ -14,3 +14,4 @@ jsonschema
 torchvision
 OpenEXR
 multiprocess
+rpyc
