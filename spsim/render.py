@@ -320,7 +320,8 @@ class BlenderClients(tuple):
 
         Args:
             conns: List of connection tuples containing the hostnames and ports of existing servers. 
-                If specified, the pool will use these servers (and `jobs` will be ignored) insteads of spawning new ones. 
+                If specified, the pool will use these servers (and `jobs` and other spawn arguments will 
+                be ignored) insteads of spawning new ones. 
             
             For other arguments, see `BlenderServer.spawn`
 
@@ -339,10 +340,11 @@ class BlenderClients(tuple):
             def inner(*args, **kwargs):
                 conn = conns.get()
 
-                with BlenderClient(conn) as client:
-                    retval = func(client, *args, **kwargs)
-
-                conns.put(conn)
+                try:
+                    with BlenderClient(conn) as client:
+                        retval = func(client, *args, **kwargs)
+                finally:
+                    conns.put(conn)
                 return retval
 
             return inner
@@ -584,10 +586,10 @@ class BlenderService(rpyc.Service):
         if not cameras:
             raise RuntimeError("No camera found, please add one manually.")
         elif len(cameras) > 1 and self.scene.camera:
-            print(f"Multiple cameras found. Using active camera named: '{self.scene.camera}'.")
+            print(f"Multiple cameras found. Using active camera: '{self.scene.camera.name}'.")
             return self.scene.camera
         else:
-            print(f"No active camera was found. Using camera named: '{cameras[0]}'.")
+            print(f"No active camera was found. Using camera: '{cameras[0].name}'.")
             return cameras[0]
 
     @require_initialized
