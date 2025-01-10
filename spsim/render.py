@@ -7,7 +7,7 @@ import site
 import subprocess
 import sys
 import time
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from multiprocessing import Process
 from pathlib import Path
 
@@ -299,7 +299,7 @@ class BlenderClients(tuple):
 
     @staticmethod
     @contextmanager
-    def pool(jobs=1, timeout=10, log_dir=None, autoexec=False, executable=None):
+    def pool(jobs=1, timeout=10, log_dir=None, autoexec=False, executable=None, conns=None):
         """Spawns a multiprocessing-like worker pool, each with their own `BlenderClient` instance.
         The first argument to the function supplied to pool.map/imap/starmap and their async variants will
         be automagically passed a client instance as their first argument that they can use for rendering.
@@ -319,7 +319,11 @@ class BlenderClients(tuple):
             advantage of the more advanced dill serialization (as opposed to the standard pickling).
 
         Args:
-            Same as `BlenderServer.spawn`
+            conns: List of connection tuples containing the hostnames and ports of existing servers. 
+                If specified, the pool will use these servers (and `jobs` and other spawn arguments will 
+                be ignored) insteads of spawning new ones. 
+            
+            For other arguments, see `BlenderServer.spawn`
 
         Returns:
             A `multiprocess.Pool` instance which has had it's applicator methods (map/imap/starmap/etc)
@@ -336,10 +340,11 @@ class BlenderClients(tuple):
             def inner(*args, **kwargs):
                 conn = conns.get()
 
-                with BlenderClient(conn) as client:
-                    retval = func(client, *args, **kwargs)
-
-                conns.put(conn)
+                try:
+                    with BlenderClient(conn) as client:
+                        retval = func(client, *args, **kwargs)
+                finally:
+                    conns.put(conn)
                 return retval
 
             return inner
@@ -352,16 +357,18 @@ class BlenderClients(tuple):
 
             return inner
 
+        context_manager = BlenderServer.spawn(
+            jobs=jobs, timeout=timeout, log_dir=log_dir, autoexec=autoexec, executable=executable
+        ) if conns is None else nullcontext(enter_result=(None, conns))
+        
         with multiprocess.Manager() as manager:
-            with BlenderServer.spawn(
-                jobs=jobs, timeout=timeout, log_dir=log_dir, autoexec=autoexec, executable=executable
-            ) as (_, conns):
+            with context_manager as (_, conns):
                 q = manager.Queue()
 
                 for conn in conns:
                     q.put(conn)
 
-                with multiprocess.Pool(jobs) as pool:
+                with multiprocess.Pool(len(conns)) as pool:
                     for name, method in inspect.getmembers(pool, predicate=inspect.ismethod):
                         params = list(inspect.signature(method).parameters.keys())
 
@@ -514,10 +521,15 @@ class BlenderService(rpyc.Service):
         (self.root_path / "frames").mkdir(parents=True, exist_ok=True)
 
         # Init various variables to track state
-        self.depth_path, self.normals_path = None, None
+        self.depth_path = None
+        self.normal_path = None
+        self.flow_path = None
+        self.segmentation_path = None
         self.initialized = True
         self.unbind_camera = False
         self.use_animation = True
+        self.pre_render_callbacks = []
+        self.post_render_callbacks = []
 
         # Ensure we are using the compositor, and node tree.
         self.scene.use_nodes = True
@@ -574,11 +586,24 @@ class BlenderService(rpyc.Service):
         if not cameras:
             raise RuntimeError("No camera found, please add one manually.")
         elif len(cameras) > 1 and self.scene.camera:
-            print(f"Multiple cameras found. Using active camera named: '{self.scene.camera}'.")
+            print(f"Multiple cameras found. Using active camera: '{self.scene.camera.name}'.")
             return self.scene.camera
         else:
-            print(f"No active camera was found. Using camera named: '{cameras[0]}'.")
+            print(f"No active camera was found. Using camera: '{cameras[0].name}'.")
             return cameras[0]
+
+    @require_initialized
+    def prerender_normal_pass_update(self, normal_group):
+        """Updates the default values corresponding to the camera pose in the normals node group.
+        This needs to be called before the render pass if normals are enabled."""
+        mat = np.linalg.inv(self.camera.matrix_world)
+
+        # Note: Blender's normals node actually returns the negative dot product (which may be a bug)
+        # so we negate that here. See: https://projects.blender.org/blender/blender/issues/132770
+        # TODO: Negation of dot product might become version specific once the bug is fixed.
+        normal_group.node_tree.nodes["RotRow1"].outputs[0].default_value = -mat[0, :-1]
+        normal_group.node_tree.nodes["RotRow2"].outputs[0].default_value = -mat[1, :-1]
+        normal_group.node_tree.nodes["RotRow3"].outputs[0].default_value = -mat[2, :-1]
 
     @require_initialized
     def exposed_empty_transforms(self):
@@ -637,10 +662,21 @@ class BlenderService(rpyc.Service):
         return (self.scene.frame_start, self.scene.frame_end, self.scene.frame_step)
 
     @require_initialized
-    def exposed_include_depths(self):
+    def exposed_include_depths(self, debug=True):
         """Sets up Blender compositor to include depth map in rendered images."""
         self.view_layer.use_pass_z = True
         (self.root_path / "depths").mkdir(parents=True, exist_ok=True)
+
+        if debug:
+            debug_depth_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+            debug_depth_path.label = "Debug Depth Output"
+            debug_depth_path.base_path = str(self.root_path / "depths")
+            debug_depth_path.file_slots[0].path = f"debug_depth_{'#'*6}"
+
+            normalize = self.tree.nodes.new("CompositorNodeNormalize")
+            self.tree.links.new(self.render_layers.outputs["Depth"], normalize.inputs[0])
+            self.tree.links.new(normalize.outputs[0], debug_depth_path.inputs[0])
+
         self.depth_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.depth_path.label = "Depth Output"
         self.depth_path.format.file_format = "OPEN_EXR"
@@ -649,20 +685,54 @@ class BlenderService(rpyc.Service):
         self.depth_path.file_slots[0].path = f"depth_{'#'*6}"
 
     @require_initialized
-    def exposed_include_normals(self):
+    def exposed_include_normals(self, debug=True):
         """Sets up Blender compositer to include normal map in rendered images."""
         self.view_layer.use_pass_normal = True
         (self.root_path / "normals").mkdir(parents=True, exist_ok=True)
-        self.normals_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
-        self.normals_path.label = "Normal Output"
-        self.normals_path.format.file_format = "OPEN_EXR"
-        self.tree.links.new(self.render_layers.outputs["Normal"], self.normals_path.inputs[0])
-        self.normals_path.base_path = str(self.root_path / "normals")
-        self.normals_path.file_slots[0].path = f"normal_{'#'*6}"
+
+        # The node group `normaldebug` transforms normals from the global
+        # coordinate frame to the camera's, and also colors normals as RGB
+        from nodes import normaldebug
+
+        normal_group = self.tree.nodes.new("CompositorNodeGroup")
+        normal_group.label = "NormalDebug"
+        normal_group.node_tree = normaldebug
+        self.tree.links.new(self.render_layers.outputs["Normal"], normal_group.inputs[0])
+
+        if debug:
+            debug_normal_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+            debug_normal_path.base_path = str(self.root_path / "normals")
+            debug_normal_path.label = "Normals Debug Output"
+            debug_normal_path.file_slots[0].path = f"debug_normal_{'#'*6}"
+
+            # Important! Set the view settimgs to raw otherwise result is tonemapped
+            debug_normal_path.format.color_management = "OVERRIDE"
+            debug_normal_path.format.view_settings.view_transform = "Raw"
+
+            self.tree.links.new(normal_group.outputs["RGBA"], debug_normal_path.inputs[0])
+
+        self.normal_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+        self.normal_path.label = "Normal Output"
+        self.normal_path.format.file_format = "OPEN_EXR"
+        self.tree.links.new(normal_group.outputs["Vector"], self.normal_path.inputs[0])
+        self.normal_path.base_path = str(self.root_path / "normals")
+        self.normal_path.file_slots[0].path = f"normal_{'#'*6}"
+        self.pre_render_callbacks.append(functools.partial(self.prerender_normal_pass_update, normal_group))
 
     @require_initialized
-    def exposed_include_flows(self, debug=True):
-        """Sets up Blender compositor to include optical flow in rendered images."""
+    def exposed_include_flows(self, direction="fwd", debug=True):
+        """Sets up Blender compositor to include optical flow in rendered images.
+
+        Args:
+            direction: One of 'forward', 'backward' or 'both'. Direction of flow, only used
+                when debug is true, otherwise both forward and backward flows are saved.
+            debug: If true, also save debug visualizations of flow.
+        """
+        if direction.lower() not in ("forward", "backward", "both"):
+            raise ValueError(f"Direction argument should be one of forward, backward or both, got {direction}.")
+        if self.scene.render.use_motion_blur:
+            raise RuntimeError("Cannot compute optical flow if motion blur is enabled.")
+
         self.view_layer.use_pass_vector = True
         (self.root_path / "flows").mkdir(parents=True, exist_ok=True)
 
@@ -673,21 +743,90 @@ class BlenderService(rpyc.Service):
             split_flow = self.tree.nodes.new(type="CompositorNodeSeparateColor")
             self.tree.links.new(self.render_layers.outputs["Vector"], split_flow.inputs["Image"])
 
-            # Instantiate and link flow debug node group
-            flow_group = self.tree.nodes.new("CompositorNodeGroup")
-            flow_group.label = "FlowDebug"
-            flow_group.node_tree = flowdebug
-            self.tree.links.new(split_flow.outputs["Red"], flow_group.inputs["x"])
-            self.tree.links.new(split_flow.outputs["Green"], flow_group.inputs["y"])
+            # Create output node
+            debug_flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+            debug_flow_path.base_path = str(self.root_path / "flows")
+            debug_flow_path.label = "Flow Debug Output"
+            debug_flow_path.file_slots.clear()
 
-            # Connect output node
-            self.flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
-            self.flow_path.label = "Flow Debug Output"
-            self.tree.links.new(flow_group.outputs["Image"], self.flow_path.inputs[0])
-            self.flow_path.base_path = str(self.root_path / "flows")
-            self.flow_path.file_slots[0].path = f"fwd_flow_{'#'*6}"
-        else:
-            raise NotImplementedError
+            # Instantiate flow debug node group(s) and connect them
+            if direction.lower() in ("forward", "both"):
+                flow_group = self.tree.nodes.new("CompositorNodeGroup")
+                flow_group.label = "Forward FlowDebug"
+                flow_group.node_tree = flowdebug
+
+                self.tree.links.new(split_flow.outputs["Red"], flow_group.inputs["x"])
+                self.tree.links.new(split_flow.outputs["Green"], flow_group.inputs["y"])
+
+                slot = debug_flow_path.file_slots.new(f"debug_fwd_flow_{'#'*6}")
+                self.tree.links.new(flow_group.outputs["Image"], slot)
+            if direction.lower() in ("backward", "both"):
+                flow_group = self.tree.nodes.new("CompositorNodeGroup")
+                flow_group.label = "Backward FlowDebug"
+                flow_group.node_tree = flowdebug
+
+                self.tree.links.new(split_flow.outputs["Blue"], flow_group.inputs["x"])
+                self.tree.links.new(split_flow.outputs["Alpha"], flow_group.inputs["y"])
+
+                slot = debug_flow_path.file_slots.new(f"debug_bwd_flow_{'#'*6}")
+                self.tree.links.new(flow_group.outputs["Image"], slot)
+
+        # Save flows as EXRs
+        self.flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+        self.flow_path.label = "Flow Debug Output"
+        self.flow_path.format.file_format = "OPEN_EXR"
+        self.tree.links.new(self.render_layers.outputs["Vector"], self.flow_path.inputs["Image"])
+        self.flow_path.base_path = str(self.root_path / "flows")
+        self.flow_path.file_slots[0].path = f"flow_{'#'*6}"
+
+    @require_initialized
+    def exposed_include_segmentations(self, shuffle=True, debug=True, seed=1234):
+        """Sets up Blender compositor to include segmentation maps in rendered images.
+        
+        The debug visualization simply assigns a color to each object ID by mapping the 
+        objects ID value to a hue using a HSV node with saturation=1 and value=1 (except 
+        for the background which will have a value of 0 to ensure it is black).
+        """
+        # TODO: Enable assignement of custom IDs for certain objects via a dictionary. 
+
+        if self.scene.render.engine.upper() != "CYCLES":
+            raise RuntimeError("Cannot produce segmentation maps when not using CYCLES.")
+        
+        self.view_layer.use_pass_object_index = True
+        (self.root_path / "segmentations").mkdir(parents=True, exist_ok=True)
+
+        # Assign IDs to every object (background will be 0)
+        indices = np.arange(len(bpy.data.objects))
+
+        if shuffle:
+            np.random.seed(seed=seed)
+            np.random.shuffle(indices)
+
+        for i, obj in zip(indices, bpy.data.objects): 
+            obj.pass_index = i+1
+
+        if debug:
+            from nodes import segmentationdebug
+
+            seg_group = self.tree.nodes.new("CompositorNodeGroup")
+            seg_group.label = "SegmentationDebug"
+            seg_group.node_tree = segmentationdebug
+            seg_group.node_tree.nodes["NormalizeIdx"].inputs["From Max"].default_value = len(bpy.data.objects)
+
+            debug_seg_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+            debug_seg_path.base_path = str(self.root_path / "segmentations")
+            debug_seg_path.label = "Segmentations Debug Output"
+            debug_seg_path.file_slots[0].path = f"debug_segmentation_{'#'*6}"
+
+            self.tree.links.new(self.render_layers.outputs["IndexOB"], seg_group.inputs["Value"])
+            self.tree.links.new(seg_group.outputs["Image"], debug_seg_path.inputs[0])
+        
+        self.segmentation_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
+        self.segmentation_path.label = "Segmentation Output"
+        self.segmentation_path.format.file_format = "OPEN_EXR"
+        self.tree.links.new(self.render_layers.outputs["IndexOB"], self.segmentation_path.inputs[0])
+        self.segmentation_path.base_path = str(self.root_path / "segmentations")
+        self.segmentation_path.file_slots[0].path = f"segmentation_{'#'*6}"        
 
     @require_initialized
     def exposed_load_addons(self, *addons):
@@ -943,10 +1082,15 @@ class BlenderService(rpyc.Service):
 
         if self.depth_path is not None:
             paths["depth_file_path"] = Path(f"depths/depth_{index:06}.exr")
-        if self.normals_path is not None:
-            paths["normals_file_path"] = Path(f"normals/normal_{index:06}.exr")
+        if self.normal_path is not None:
+            paths["normal_file_path"] = Path(f"normals/normal_{index:06}.exr")
         if self.flow_path is not None:
-            paths["flows_file_path"] = Path(f"flows/fwd_flow_{index:06}").with_suffix(self.scene.render.file_extension)
+            paths["flow_file_path"] = Path(f"flows/flow_{index:06}.exr")
+        if self.segmentation_path is not None:
+            paths["segmentation_file_path"] = Path(f"segmentations/segmentation_{index:06}.exr")
+
+        for callback in self.pre_render_callbacks:
+            callback()
 
         if not dry_run:
             # Render frame(s), skip the render iff all files exist and `allow_skips`
@@ -954,6 +1098,9 @@ class BlenderService(rpyc.Service):
                 # If `write_still` is false, depth & normals can be written but rgb will be skipped
                 skip_frame = Path(self.root_path / paths["file_path"]).exists() and allow_skips
                 bpy.ops.render.render(write_still=not skip_frame)
+
+        for callback in self.post_render_callbacks:
+            callback()
 
         # Returns paths that were written
         return {

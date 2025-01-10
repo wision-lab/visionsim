@@ -34,6 +34,7 @@ from spsim.tasks.common import _run
         "depths": "whether or not to capture depth images, default: False",
         "normals": "whether or not to capture normals images, default: False",
         "flows": "whether or not to capture optical flow images, default: False",
+        "segmentations": "whether or not to capture segmentation images, default: False",
         "file_format": (
             "frame file format to use. Depth is always 'OPEN_EXR' thus is " "unaffected by this setting, default: PNG"
         ),
@@ -70,6 +71,7 @@ def render_animation(
     depths=False,
     normals=False,
     flows=False,
+    segmentations=False,
     file_format="PNG",
     log_dir=None,
     addons=None,
@@ -93,7 +95,7 @@ def render_animation(
     with BlenderClients.spawn(
         jobs=jobs, timeout=30, autoexec=autoexec, log_dir=log_dir, executable=executable
     ) as clients, Progress() as progress:
-        clients.initialize(blend_file, root_path)
+        clients.initialize(blend_file, Path(root_path).resolve())
         clients.set_resolution(width=width, height=height)
         clients.image_settings(file_format, bit_depth)
         clients.use_animations(use_animations)
@@ -107,18 +109,21 @@ def render_animation(
         )
 
         if depths:
-            clients.include_depth()
+            clients.include_depths()
         if normals:
             clients.include_normals()
         if flows:
-            clients.include_flows()
+            clients.include_flows(direction="both")
+        if segmentations:
+            clients.include_segmentations()
+
         if unbind_camera:
             clients.unbind_camera()
         if use_motion_blur is not None:
             clients.use_motion_blur(use_motion_blur)
 
         clients.move_keyframes(scale=keyframe_multiplier)
-
+        
         task = progress.add_task(f"Rendering {Path(blend_file).name}...")
         transforms = clients.render_animation(
             frame_start=frame_start if frame_start is None else int(frame_start),

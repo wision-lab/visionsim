@@ -113,22 +113,22 @@ def flowdebug_node_group():
     orientation_socket.attribute_domain = "POINT"
 
     # Socket x
-    x_socket_1 = flowdebug.interface.new_socket(name="x", in_out="INPUT", socket_type="NodeSocketFloat")
-    x_socket_1.attribute_domain = "POINT"
+    x_socket = flowdebug.interface.new_socket(name="x", in_out="INPUT", socket_type="NodeSocketFloat")
+    x_socket.attribute_domain = "POINT"
 
     # Socket y
-    y_socket_1 = flowdebug.interface.new_socket(name="y", in_out="INPUT", socket_type="NodeSocketFloat")
-    y_socket_1.attribute_domain = "POINT"
+    y_socket = flowdebug.interface.new_socket(name="y", in_out="INPUT", socket_type="NodeSocketFloat")
+    y_socket.attribute_domain = "POINT"
 
     # initialize flowdebug nodes
     # node Group Output
-    group_output_1 = flowdebug.nodes.new("NodeGroupOutput")
-    group_output_1.name = "Group Output"
-    group_output_1.is_active_output = True
+    group_output = flowdebug.nodes.new("NodeGroupOutput")
+    group_output.name = "Group Output"
+    group_output.is_active_output = True
 
     # node Group Input
-    group_input_1 = flowdebug.nodes.new("NodeGroupInput")
-    group_input_1.name = "Group Input"
+    group_input = flowdebug.nodes.new("NodeGroupInput")
+    group_input.name = "Group Input"
 
     # node Group
     group = flowdebug.nodes.new("CompositorNodeGroup")
@@ -190,14 +190,14 @@ def flowdebug_node_group():
     # initialize flowdebug links
     # group.r -> normalize.Value
     flowdebug.links.new(group.outputs[0], normalize.inputs[0])
-    # group_input_1.x -> group.x
-    flowdebug.links.new(group_input_1.outputs[1], group.inputs[0])
-    # group_input_1.y -> group.y
-    flowdebug.links.new(group_input_1.outputs[2], group.inputs[1])
+    # group_input.x -> group.x
+    flowdebug.links.new(group_input.outputs[1], group.inputs[0])
+    # group_input.y -> group.y
+    flowdebug.links.new(group_input.outputs[2], group.inputs[1])
     # normalize.Value -> combine_color.Blue
     flowdebug.links.new(normalize.outputs[0], combine_color.inputs[2])
-    # combine_color.Image -> group_output_1.Image
-    flowdebug.links.new(combine_color.outputs[0], group_output_1.inputs[0])
+    # combine_color.Image -> group_output.Image
+    flowdebug.links.new(combine_color.outputs[0], group_output.inputs[0])
     # orientation_offset.Value -> mod2pi.Value
     flowdebug.links.new(orientation_offset.outputs[0], mod2pi.inputs[0])
     # group.theta -> map_range.Value
@@ -206,8 +206,8 @@ def flowdebug_node_group():
     flowdebug.links.new(huenorm.outputs[0], combine_color.inputs[0])
     # mod2pi.Value -> huenorm.Value
     flowdebug.links.new(mod2pi.outputs[0], huenorm.inputs[0])
-    # group_input_1.Orientation -> orientation_offset.Value
-    flowdebug.links.new(group_input_1.outputs[0], orientation_offset.inputs[0])
+    # group_input.Orientation -> orientation_offset.Value
+    flowdebug.links.new(group_input.outputs[0], orientation_offset.inputs[0])
     # map_range.Value -> orientation_offset.Value
     flowdebug.links.new(map_range.outputs[0], orientation_offset.inputs[1])
     return flowdebug
