@@ -773,7 +773,7 @@ class BlenderService(rpyc.Service):
         self.flow_path.file_slots[0].path = f"flow_{'#'*6}"
 
     @require_initialized
-    def exposed_include_segmentations(self, shuffle=True, debug=True):
+    def exposed_include_segmentations(self, shuffle=True, debug=True, seed=1234):
         """Sets up Blender compositor to include segmentation maps in rendered images.
         
         The debug visualization simply assigns a color to each object ID by mapping the 
@@ -792,6 +792,7 @@ class BlenderService(rpyc.Service):
         indices = np.arange(len(bpy.data.objects))
 
         if shuffle:
+            np.random.seed(seed=seed)
             np.random.shuffle(indices)
 
         for i, obj in zip(indices, bpy.data.objects): 
