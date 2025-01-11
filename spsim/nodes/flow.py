@@ -94,9 +94,6 @@ def cartesian2polar_node_group():
     return cartesian2polar
 
 
-cartesian2polar = cartesian2polar_node_group()
-
-
 # initialize FlowDebug node group
 def flowdebug_node_group():
     flowdebug = bpy.data.node_groups.new(type="CompositorNodeTree", name="FlowDebug")
@@ -134,7 +131,7 @@ def flowdebug_node_group():
     group = flowdebug.nodes.new("CompositorNodeGroup")
     group.label = "Cartesian2Polar"
     group.name = "Group"
-    group.node_tree = cartesian2polar
+    group.node_tree = cartesian2polar_node_group()
 
     # node Normalize
     normalize = flowdebug.nodes.new("CompositorNodeNormalize")
@@ -211,6 +208,3 @@ def flowdebug_node_group():
     # map_range.Value -> orientation_offset.Value
     flowdebug.links.new(map_range.outputs[0], orientation_offset.inputs[1])
     return flowdebug
-
-
-flowdebug = flowdebug_node_group()

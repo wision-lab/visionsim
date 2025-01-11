@@ -74,5 +74,3 @@ def segmentationdebug_node_group():
     #combine_color.Image -> group_output.Image
     segmentationdebug.links.new(combine_color.outputs[0], group_output.inputs[0])
     return segmentationdebug
-
-segmentationdebug = segmentationdebug_node_group()

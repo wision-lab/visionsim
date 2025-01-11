@@ -23,6 +23,11 @@ try:
     import addon_utils
     import bpy
     import mathutils
+
+    # Allow relative imports to this file without forcing the user to 
+    # install spsim into their blender install
+    sys.path.insert(0, str(Path(__file__).parent.resolve()))
+    from nodes import normaldebug_node_group, flowdebug_node_group, segmentationdebug_node_group
 except ImportError:
     bpy = None
     mathutils = None
@@ -30,7 +35,6 @@ except ImportError:
 
 try:
     sys.path.insert(0, site.USER_SITE)
-    sys.path.insert(0, str(Path(__file__).parent.resolve()))
 
     import rpyc
     import rpyc.utils.registry
@@ -491,14 +495,17 @@ class BlenderService(rpyc.Service):
         self._conn = conn
 
     def on_disconnect(self, conn):
+        self.reset()
+        self._conn = None
+        print("INFO: Successfully disconnected from BlenderClient instance.")
+
+    def reset(self):
         # De-initialize service by restoring blender to it's startup state,
         # ensuring we clear any cached attrs (otherwise objects will be stale),
         # and resetting any instance variables we previously initialized.
         bpy.ops.wm.read_factory_settings()
         self.clear_cached_properties()
         self.initialized = False
-        self._conn = None
-        print("INFO: Successfully disconnected from BlenderClient instance.")
 
     def clear_cached_properties(self):
         # Based on: https://stackoverflow.com/a/71579485
@@ -508,7 +515,7 @@ class BlenderService(rpyc.Service):
 
     def exposed_initialize(self, blend_file, root_path):
         if self.initialized:
-            self.on_disconnect(None)
+            self.reset()
 
         # Load blendfile
         self.blend_file = blend_file
@@ -692,11 +699,9 @@ class BlenderService(rpyc.Service):
 
         # The node group `normaldebug` transforms normals from the global
         # coordinate frame to the camera's, and also colors normals as RGB
-        from nodes import normaldebug
-
         normal_group = self.tree.nodes.new("CompositorNodeGroup")
         normal_group.label = "NormalDebug"
-        normal_group.node_tree = normaldebug
+        normal_group.node_tree = normaldebug_node_group()
         self.tree.links.new(self.render_layers.outputs["Normal"], normal_group.inputs[0])
 
         if debug:
@@ -720,7 +725,7 @@ class BlenderService(rpyc.Service):
         self.pre_render_callbacks.append(functools.partial(self.prerender_normal_pass_update, normal_group))
 
     @require_initialized
-    def exposed_include_flows(self, direction="fwd", debug=True):
+    def exposed_include_flows(self, direction="forward", debug=True):
         """Sets up Blender compositor to include optical flow in rendered images.
 
         Args:
@@ -737,8 +742,6 @@ class BlenderService(rpyc.Service):
         (self.root_path / "flows").mkdir(parents=True, exist_ok=True)
 
         if debug:
-            from nodes import flowdebug
-
             # Seperate forward and backward flows (with a seperate color not vector node)
             split_flow = self.tree.nodes.new(type="CompositorNodeSeparateColor")
             self.tree.links.new(self.render_layers.outputs["Vector"], split_flow.inputs["Image"])
@@ -753,7 +756,7 @@ class BlenderService(rpyc.Service):
             if direction.lower() in ("forward", "both"):
                 flow_group = self.tree.nodes.new("CompositorNodeGroup")
                 flow_group.label = "Forward FlowDebug"
-                flow_group.node_tree = flowdebug
+                flow_group.node_tree = flowdebug_node_group()
 
                 self.tree.links.new(split_flow.outputs["Red"], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs["Green"], flow_group.inputs["y"])
@@ -763,7 +766,7 @@ class BlenderService(rpyc.Service):
             if direction.lower() in ("backward", "both"):
                 flow_group = self.tree.nodes.new("CompositorNodeGroup")
                 flow_group.label = "Backward FlowDebug"
-                flow_group.node_tree = flowdebug
+                flow_group.node_tree = flowdebug_node_group()
 
                 self.tree.links.new(split_flow.outputs["Blue"], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs["Alpha"], flow_group.inputs["y"])
@@ -806,11 +809,9 @@ class BlenderService(rpyc.Service):
             obj.pass_index = i+1
 
         if debug:
-            from nodes import segmentationdebug
-
             seg_group = self.tree.nodes.new("CompositorNodeGroup")
             seg_group.label = "SegmentationDebug"
-            seg_group.node_tree = segmentationdebug
+            seg_group.node_tree = segmentationdebug_node_group()
             seg_group.node_tree.nodes["NormalizeIdx"].inputs["From Max"].default_value = len(bpy.data.objects)
 
             debug_seg_path = self.tree.nodes.new(type="CompositorNodeOutputFile")

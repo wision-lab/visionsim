@@ -152,6 +152,3 @@ def normaldebug_node_group():
     # combine_xyz.Vector -> group_output.Vector
     normaldebug.links.new(combine_xyz.outputs[0], group_output.inputs[1])
     return normaldebug
-
-
-normaldebug = normaldebug_node_group()

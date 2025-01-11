@@ -1,3 +1,3 @@
-from .flow import flowdebug  # noqa: F401
-from .normals import normaldebug  # noqa: F401
-from .segmentation import segmentationdebug  # noqa: F401
+from .flow import flowdebug_node_group  # noqa: F401
+from .normals import normaldebug_node_group  # noqa: F401
+from .segmentation import segmentationdebug_node_group  # noqa: F401
