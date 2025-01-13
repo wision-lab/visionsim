@@ -789,7 +789,7 @@ class BlenderService(rpyc.Service):
 
         vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
         vec2rgba.label = "Vector2RGBA"
-        vec2rgba.node_tree = vec2rgba_node_group
+        vec2rgba.node_tree = vec2rgba_node_group()
         
         self.tree.links.new(self.render_layers.outputs["Vector"], vec2rgba.inputs["Image"])
         self.tree.links.new(vec2rgba.outputs["Image"], self.flow_path.inputs["Image"])
