@@ -709,6 +709,7 @@ class BlenderService(rpyc.Service):
             debug_normal_path.base_path = str(self.root_path / "normals")
             debug_normal_path.label = "Normals Debug Output"
             debug_normal_path.file_slots[0].path = f"debug_normal_{'#'*6}"
+            debug_normal_path.format.file_format = "PNG"
 
             # Important! Set the view settimgs to raw otherwise result is tonemapped
             debug_normal_path.format.color_management = "OVERRIDE"
@@ -751,6 +752,7 @@ class BlenderService(rpyc.Service):
             debug_flow_path.base_path = str(self.root_path / "flows")
             debug_flow_path.label = "Flow Debug Output"
             debug_flow_path.file_slots.clear()
+            debug_flow_path.format.file_format = "PNG"
 
             # Instantiate flow debug node group(s) and connect them
             if direction.lower() in ("forward", "both"):
@@ -778,6 +780,7 @@ class BlenderService(rpyc.Service):
         self.flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.flow_path.label = "Flow Debug Output"
         self.flow_path.format.file_format = "OPEN_EXR"
+        self.flow_path.format.color_mode = 'RGBA'
         self.tree.links.new(self.render_layers.outputs["Vector"], self.flow_path.inputs["Image"])
         self.flow_path.base_path = str(self.root_path / "flows")
         self.flow_path.file_slots[0].path = f"flow_{'#'*6}"
@@ -818,6 +821,7 @@ class BlenderService(rpyc.Service):
             debug_seg_path.base_path = str(self.root_path / "segmentations")
             debug_seg_path.label = "Segmentations Debug Output"
             debug_seg_path.file_slots[0].path = f"debug_segmentation_{'#'*6}"
+            debug_seg_path.format.file_format = "PNG"
 
             self.tree.links.new(self.render_layers.outputs["IndexOB"], seg_group.inputs["Value"])
             self.tree.links.new(seg_group.outputs["Image"], debug_seg_path.inputs[0])
@@ -1098,7 +1102,7 @@ class BlenderService(rpyc.Service):
             if not allow_skips or any(not Path(self.root_path / p).exists() for p in paths.values()):
                 # If `write_still` is false, depth & normals can be written but rgb will be skipped
                 skip_frame = Path(self.root_path / paths["file_path"]).exists() and allow_skips
-                bpy.ops.render.render(write_still=not skip_frame)
+                bpy.ops.render.render(animation=False, write_still=not skip_frame)
 
         for callback in self.post_render_callbacks:
             callback()
