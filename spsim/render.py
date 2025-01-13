@@ -27,7 +27,7 @@ try:
     # Allow relative imports to this file without forcing the user to 
     # install spsim into their blender install
     sys.path.insert(0, str(Path(__file__).parent.resolve()))
-    from nodes import normaldebug_node_group, flowdebug_node_group, segmentationdebug_node_group
+    from nodes import normaldebug_node_group, flowdebug_node_group, segmentationdebug_node_group, vec2rgba_node_group
 except ImportError:
     bpy = None
     mathutils = None
@@ -776,14 +776,23 @@ class BlenderService(rpyc.Service):
                 slot = debug_flow_path.file_slots.new(f"debug_bwd_flow_{'#'*6}")
                 self.tree.links.new(flow_group.outputs["Image"], slot)
 
-        # Save flows as EXRs
+        # Save flows as EXRs, flows are a 4-vec of forward flows x/y then backwards flows x/y
+        # before blender 4.3, saving a vector as an image saved only 3 channels even if `color_mode` 
+        # is set to RGBA. So we add a dummy vec2rgba node to trick blender into treating the 
+        # vector as an image with 4 channels. This dummy node just splits and recombines channels. 
         self.flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.flow_path.label = "Flow Debug Output"
         self.flow_path.format.file_format = "OPEN_EXR"
         self.flow_path.format.color_mode = 'RGBA'
-        self.tree.links.new(self.render_layers.outputs["Vector"], self.flow_path.inputs["Image"])
         self.flow_path.base_path = str(self.root_path / "flows")
         self.flow_path.file_slots[0].path = f"flow_{'#'*6}"
+
+        vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
+        vec2rgba.label = "Vector2RGBA"
+        vec2rgba.node_tree = vec2rgba_node_group
+        
+        self.tree.links.new(self.render_layers.outputs["Vector"], vec2rgba.inputs["Image"])
+        self.tree.links.new(vec2rgba.outputs["Image"], self.flow_path.inputs["Image"])
 
     @require_initialized
     def exposed_include_segmentations(self, shuffle=True, debug=True, seed=1234):
@@ -1212,6 +1221,7 @@ class BlenderService(rpyc.Service):
     @require_initialized
     def exposed_save_file(self, path):
         """Save opened blender file. This is useful for introspecting the state of the compositor/scene/etc."""
+        Path(path).parent.mkdir(exist_ok=True, parents=True)
         bpy.ops.wm.save_as_mainfile(filepath=str(path))
 
 
