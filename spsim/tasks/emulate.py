@@ -109,6 +109,98 @@ def spad(
 @task(
     help={
         "input_dir": "directory in which to look for frames",
+        "output_dir": "directory in which to save events",
+        "fps": "frame rate of input sequence",
+        "pos_thres": "nominal threshold of triggering positive event in log intensity, default: 0.2",
+        "neg_thres": "nominal threshold of triggering negative event in log intensity, default: 0.2",
+        "sigma_thres": "std deviation of threshold in log intensity, default: 0.03",
+        "cutoff_hz": "3dB cutoff frequency in Hz of DVS photoreceptor, default: 200",
+        "leak_rate_hz": "leak event rate per pixel in Hz, from junction leakage in reset switch, default: 1",
+        "shot_noise_rate_hz": "shot noise rate in Hz, default: 10",
+        "seed": "random seed to use while sampling, ensures reproducibility, default: 2147483647",
+        "force": "if true, overwrite output file(s) if present, default: False",
+    }
+)
+def events(
+    _,
+    input_dir,
+    output_dir,
+    fps,
+    pos_thres=0.2,
+    neg_thres=0.2,
+    sigma_thres=0.03,
+    cutoff_hz=200,
+    leak_rate_hz=1,
+    shot_noise_rate_hz=10,
+    seed=2147483647,
+    force=False,
+):
+    """Emulate an event camera using v2e and high speed input frames"""
+    import json
+
+    import imageio.v3 as iio
+    from rich.progress import Progress
+
+    from spsim.dataset import Dataset
+    from spsim.events import EventEmulator
+
+    from .common import _validate_directories
+
+    input_dir, output_dir = _validate_directories(input_dir, output_dir)
+    (output_dir / "events").mkdir(parents=True, exist_ok=True)
+    events_path = output_dir / "events.txt"
+    dataset = Dataset.from_path(input_dir)
+
+    emulator_kwargs = dict(
+        pos_thres=pos_thres,
+        neg_thres=neg_thres,
+        sigma_thres=sigma_thres,
+        cutoff_hz=cutoff_hz,
+        leak_rate_hz=leak_rate_hz,
+        shot_noise_rate_hz=shot_noise_rate_hz,
+        seed=seed,
+    )
+    emulator = EventEmulator(**emulator_kwargs)
+
+    if events_path.exists():
+        if force:
+            events_path.unlink()
+        else:
+            raise FileExistsError(f"Event file already exists in {output_dir}")
+
+    with open(output_dir / "params.json", "w") as f:
+        json.dump(emulator_kwargs | dict(fps=fps), f, indent=2)
+
+    with open(events_path, "a+") as out, Progress() as progress:
+        task = progress.add_task("Processing @ N/A KEV/s", total=len(dataset))
+
+        for idx, frame, _ in dataset:
+            # Manually grayscale as we've already converted to floating point pixel values
+            # Values from http://en.wikipedia.org/wiki/Grayscale
+            r, g, b, *_ = np.transpose(frame, (2, 0, 1))
+            luma = 0.0722 * b + 0.7152 * g + 0.2126 * r
+            events = emulator.generate_events(luma, idx / int(fps))
+
+            if events is not None:
+                events[:, 0] *= 1e6
+                np.savetxt(out, events.astype(int), fmt="%d")
+                rate = len(events) * int(fps) / 1e3
+
+                viz = np.ones_like(frame) * 255
+                _, px, py, _ = events[events[:, -1] == 1].T.astype(int)
+                _, nx, ny, _ = events[events[:, -1] == -1].T.astype(int)
+                viz[ny, nx] = [255, 0, 0]
+                viz[py, px] = [0, 0, 255]
+                iio.imwrite(output_dir / "events" / f"event_{idx:06}.png", viz)
+            else:
+                rate = 0
+
+            progress.update(task, description=f"Processing @ {rate:.1f} KEV/s", advance=1)
+
+
+@task(
+    help={
+        "input_dir": "directory in which to look for frames",
         "output_dir": "directory in which to save binary frames",
         "chunk_size": "number of consecutive frames to average together, default: 10",
         "factor": "multiply image's linear intensity by this weight, default: 1.0",
