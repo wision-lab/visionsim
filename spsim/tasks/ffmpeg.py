@@ -281,7 +281,7 @@ def grid(c, input_dir, width=-1, height=-1, outfile="combined.mp4", force=False)
     files = natsorted(Path(input_dir).glob("*.mp4"))
 
     if width <= 0 and height <= 0:
-        candidates = [(w, int(len(files) / w)) for w in range(1, len(files)) if int(len(files) / w) == (len(files) / w)]
+        candidates = [(w, int(len(files) / w)) for w in range(1, len(files)+1) if int(len(files) / w) == (len(files) / w)]
 
         print("Please select size (width x height):")
         for i, candidate in enumerate(candidates):
