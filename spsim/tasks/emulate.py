@@ -130,8 +130,8 @@ def events(
     neg_thres=0.2,
     sigma_thres=0.03,
     cutoff_hz=200,
-    leak_rate_hz=1,
-    shot_noise_rate_hz=10,
+    leak_rate_hz=1.0,
+    shot_noise_rate_hz=10.0,
     seed=2147483647,
     force=False,
 ):

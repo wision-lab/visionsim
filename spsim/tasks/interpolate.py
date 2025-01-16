@@ -65,7 +65,7 @@ def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json",
     transforms = _read_and_validate(path=input_dir / file_name, schema=IMG_SCHEMA)
 
     print("Interpolating poses")
-    interpolated_poses = interpolate_poses(transforms, n)
+    interpolated_poses = interpolate_poses(transforms, n=n)
 
     print("Interpolating frames")
     interpolate_frames(input_dir, output_dir, method, n)
