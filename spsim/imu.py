@@ -9,9 +9,7 @@ import numpy.typing as npt
 
 # Angular velocity vector to/from differential rotation matrix
 def _xMat(v: npt.NDArray[float]) -> npt.NDArray[float]:
-    return np.array([[0, -v[2], v[1]],
-                     [v[2], 0, -v[0]],
-                     [-v[1], v[0], 0]])
+    return np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
 
 
 def _xVec(M: npt.NDArray[float]) -> npt.NDArray[float]:

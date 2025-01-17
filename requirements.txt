@@ -13,3 +13,6 @@ rich
 jsonschema
 torchvision
 OpenEXR
+multiprocess
+rpyc
+tdigest

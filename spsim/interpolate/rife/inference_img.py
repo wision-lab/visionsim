@@ -2,13 +2,11 @@
 
 import argparse
 
-# robin
 import os
 from pathlib import Path
 
 os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
 
-# robin
 
 import cv2
 import torch
@@ -58,7 +56,7 @@ def interpolate_img(img_paths, output_dir, model_dir=None, exp=4, ratio=0, rthre
     model.eval()
     model.device()
 
-    for _ in track(len(img_paths) - 1):
+    for _ in track(range(len(img_paths) - 1)):
         # Skip ahead if all interpolated frames are already present
         p = Path(img_paths[0])
         if all((Path(output_dir) / f"{p.stem}_{i%2**exp:02}{p.suffix}").exists() for i in range(2**exp)):
