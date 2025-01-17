@@ -70,7 +70,7 @@ def egomotion_int_step_fwd_Euler(
     p_w_next = p_w + (vel_tr_w * Dt) + 0.5 * acc_tr_w * (Dt**2)
     p_w_next = p_w_next.reshape((3, 1))
 
-    if np.any(acc_ang_c == 0):
+    if np.any(acc_ang_c != 0):
         raise RuntimeError("Angular acceleration handling not implemented!")
     vel_ang_w = R_wc @ vel_ang_c
     vel_ang_w_next = vel_ang_w
