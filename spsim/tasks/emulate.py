@@ -305,7 +305,7 @@ def rgb(
         "output_file": "file in which to save simulated IMU data. Prints to stdout if empty. default: ''",
         "seed": "RNG seed value for reproducibility. default: 2147483647",
         "grav_w": "gravity vector in world coordinate frame. Given in m/s^2. default: [0,0,-9.8]",
-        "Dt": "time between IMU samples (assumed regularly spaced). Given in seconds. default: 0.00125",
+        "Dt": "time between consecutive transforms.json poses (assumed regularly spaced). Given in seconds. default: 0.00125",
         "init_bias_acc": "initial bias/drift in accelerometer reading. Given in m/s^2. default: [0,0,0]",
         "init_bias_gyro": "initial bias/drift in gyroscope reading. Given in rad/s. default: [0,0,0]",
         "std_bias_acc": (

@@ -5,15 +5,8 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-
-
-# Angular velocity vector to/from differential rotation matrix
-def _xMat(v: npt.NDArray[float]) -> npt.NDArray[float]:
-    return np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
-
-
-def _xVec(M: npt.NDArray[float]) -> npt.NDArray[float]:
-    return np.array([M[2, 1], M[0, 2], M[1, 0]])
+from scipy.spatial.transform import Rotation as spR
+from scipy.spatial.transform import Slerp
 
 
 # Pose derivatives
@@ -26,19 +19,16 @@ def egomotion_numdiff(
     vels_tr_w = np.gradient(locs, Dt, axis=0)
     accs_tr_w = np.gradient(vels_tr_w, Dt, axis=0)
     for n in range(len(T)):
-        # For angular velocity, we assume that the rotation is small,
-        # for which we can use the approximation
-        #   R(\omega dt) \approxeq (eye(3) + _xMat(\omega) * dt)
-        # Angular acceleration is not computed at all.
+        # Angular acceleration is not computed.
         if n == 0:
-            rot_c = T[n][:3, :3].transpose() @ T[n + 1][:3, :3]
+            rot_c = spR.from_matrix(T[n][:3, :3].transpose() @ T[n + 1][:3, :3])
         elif n == len(T) - 1:
-            rot_c = T[n - 1][:3, :3].transpose() @ T[n][:3, :3]
+            rot_c = spR.from_matrix(T[n - 1][:3, :3].transpose() @ T[n][:3, :3])
         else:
             rot_c_x2 = T[n - 1][:3, :3].transpose() @ T[n + 1][:3, :3]
-            rot_c = np.eye(3) + 0.5 * (rot_c_x2 - np.eye(3))
-        vel_ang_c_xMat = (rot_c - np.eye(3)) * (1 / Dt)
-        vel_ang_c = _xVec(vel_ang_c_xMat)
+            slerp = Slerp(np.array([0, 1]), spR.from_matrix(np.array([np.eye(3), rot_c_x2])))
+            rot_c = slerp(0.5)
+        vel_ang_c = rot_c.as_rotvec() * (1.0 / Dt)
 
         vel_tr_c = T[n][:3, :3].transpose() @ vels_tr_w[n, :]
         acc_tr_c = T[n][:3, :3].transpose() @ accs_tr_w[n, :]
@@ -67,16 +57,15 @@ def egomotion_int_step_fwd_Euler(
     acc_tr_w = R_wc @ acc_tr_c
     vel_tr_w_next = vel_tr_w + acc_tr_w * Dt
     p_w = T_wc[:3, 3]
-    p_w_next = p_w + (vel_tr_w * Dt) + 0.5 * acc_tr_w * (Dt**2)
+    p_w_next = p_w + (vel_tr_w * Dt) + (0.5 * acc_tr_w * (Dt**2))
     p_w_next = p_w_next.reshape((3, 1))
 
-    if np.any(acc_ang_c == 0):
+    if np.any(acc_ang_c != 0):
         raise RuntimeError("Angular acceleration handling not implemented!")
     vel_ang_w = R_wc @ vel_ang_c
     vel_ang_w_next = vel_ang_w
     # post-multiply rotates in camera coordinates
-    # We make the small-angle approximation for rotation matrix again
-    dR_c = np.eye(3) + _xMat(vel_ang_c * Dt)
+    dR_c = spR.from_rotvec(vel_ang_c * Dt).as_matrix()
     R_wc_next = R_wc @ dR_c
 
     T_wc_next = np.vstack((np.hstack((R_wc_next, p_w_next)), np.array([0, 0, 0, 1])))
@@ -107,7 +96,7 @@ def sim_IMU(
     std_acc: float = 8e-3,  # m/(s^2 \sqrt{Hz})
     std_bias_gyro: float = 2e-5,  # rad/(s^2 \sqrt{Hz})
     std_gyro: float = 1.2e-3,  # rad/(s \sqrt{Hz})
-    grav_w: npt.NDArray[float] = np.array([0, 0, 0]),  # m/(s^2)
+    grav_w: npt.NDArray[float] = np.array([0, 0, -9.8]),  # m/(s^2)
     init_bias_acc: npt.NDArray[float] = np.array([0, 0, 0]),
     init_bias_gyro: npt.NDArray[float] = np.array([0, 0, 0]),
     rng: Any = np.random.default_rng(),
@@ -153,7 +142,7 @@ def egomotion_int_IMUdata_fwd_Euler(
     acc_IMU: Iterable[npt.NDArray[float]],
     vel_ang_gyro: Iterable[npt.NDArray[float]],
     Dt: float = 1.0 / 800,
-    grav_w: npt.NDArray[float] = np.array([0, 0, 0]),  # m/(s^2)
+    grav_w: npt.NDArray[float] = np.array([0, 0, -9.8]),  # m/(s^2)
     T_wc_init: npt.NDArray[float] = np.eye(4),
     vel_tr_c_init: npt.NDArray[float] = np.zeros((3,)),
 ) -> Iterator[tuple[npt.NDArray[float], npt.NDArray[float]]]:
