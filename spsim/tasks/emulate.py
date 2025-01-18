@@ -191,7 +191,7 @@ def events(
                 _, nx, ny, _ = events[events[:, -1] == -1].T.astype(int)
                 viz[ny, nx] = [255, 0, 0]
                 viz[py, px] = [0, 0, 255]
-                iio.imwrite(output_dir / "events" / f"event_{idx:06}.png", viz)
+                iio.imwrite(output_dir / "frames" / f"event_{idx:06}.png", viz)
             else:
                 rate = 0
 
@@ -208,6 +208,11 @@ def events(
         "fwc": "full well capacity of sensor in arbitrary units (relative to factor & chunk_size), default: chunk_size",
         "alpha_color": "if set, blend with this background color and do not store "
         "alpha channel. default: '(1.0, 1.0, 1.0)'",
+        "duplicate": (
+            "when batch size is too small, this model is ill-suited and creates unrealistic noise. "
+            "This parameter artificially increases the batch-size by using each input image `duplicate` "
+            "number of times. default: 1"
+        ),
         "pattern": "filenames of frames should match this, default: 'frame_{:06}.png'",
         "mode": "how to save binary frames, either as 'img' or as 'npy', default: 'npy'",
         "force": "if true, overwrite output file(s) if present, default: False",
@@ -222,6 +227,7 @@ def rgb(
     readout_std=20.0,
     fwc=None,
     alpha_color="(1.0, 1.0, 1.0)",
+    duplicate=1,
     pattern="frame_{:06}.png",
     mode="img",
     force=False,
@@ -264,7 +270,7 @@ def rgb(
     ) if mode.lower() == "img" else NpyDatasetWriter(
         output_dir, np.ceil(shape).astype(int), transforms=transforms_new, force=force
     ) as writer, Progress() as progress:
-        task1 = progress.add_task("Writing SPAD frames", total=len(dataset))
+        task = progress.add_task("Writing RGB frames", total=len(dataset))
         for i, batch in enumerate(mitertools.ichunked(loader, chunk_size)):
             # Batch is an iterable of (idx, img, pose) that we need to reduce
             idxs, imgs, poses = mitertools.unzip(batch)
@@ -278,9 +284,9 @@ def rgb(
 
             rgb_img = emulate_rgb_from_merged(
                 img_to_tensor(imgs * factor),
-                burst_size=chunk_size,
+                burst_size=chunk_size * duplicate,
                 readout_std=readout_std,
-                fwc=fwc or chunk_size,
+                fwc=fwc or (chunk_size * duplicate),
                 factor=factor,
             )
             rgb_img = tensor_to_img(rgb_img * 255)
@@ -290,7 +296,7 @@ def rgb(
                 rgb_img = np.repeat(rgb_img, 3, axis=-1)
 
             writer[i] = (rgb_img.astype(np.uint8), pose)
-            progress.update(task1, advance=len(idxs))
+            progress.update(task, advance=len(idxs))
 
 
 @task(
