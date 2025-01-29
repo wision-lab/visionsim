@@ -265,10 +265,10 @@ def tonemap_exrs(c, input_dir, output_dir=None, batch_size=4, hdr_quantile=0.01,
     """Convert .exr linear intensity frames into tone-mapped sRGB images"""
     from torch.utils.data import DataLoader
 
-    from spsim.dataset import ImgDatasetWriter, dataset_dispatch
+    from spsim.dataset import ImgDatasetWriter, Dataset
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
-    dataset = dataset_dispatch(input_dir)
+    dataset = Dataset.from_path(input_dir)
 
     loader = DataLoader(
         dataset,
@@ -279,7 +279,7 @@ def tonemap_exrs(c, input_dir, output_dir=None, batch_size=4, hdr_quantile=0.01,
     hdrs = []
 
     with Progress() as progress:
-        pbar = progress.add_task(total=len(dataset))
+        pbar = progress.add_task(description="Processing Frames...", total=len(dataset))
 
         with ImgDatasetWriter(output_dir, transforms=dataset.transforms, force=force, pattern="frame_{:06}.png") as writer:
             for idxs, imgs, poses, hdr in loader:

@@ -191,6 +191,18 @@ class BlenderClient:
             return func(self, *args, **kwargs)
 
         return _decorator
+    
+    @classmethod
+    def auto_connect(cls, timeout=10):
+        start = time.time()
+
+        while True:
+            if (time.time() - start) > timeout:
+                raise TimeoutError("Unable to discover server in alloted time.")
+            if (conns := set(BlenderServer.discover())):
+                break
+            time.sleep(0.1)
+        return cls(conns.pop())
 
     @classmethod
     @contextmanager
@@ -227,7 +239,7 @@ class BlenderClient:
     def __enter__(self):
         self.conn = rpyc.connect(*self.addr, config={"sync_request_timeout": -1, "allow_pickle": True})
 
-        for method_name in dir(BlenderService):
+        for method_name in dir(self.conn.root):
             if method_name.startswith("exposed_"):
                 name = method_name.replace("exposed_", "")
                 method = getattr(self.conn.root, method_name)
@@ -325,7 +337,7 @@ class BlenderClients(tuple):
         Args:
             conns: List of connection tuples containing the hostnames and ports of existing servers. 
                 If specified, the pool will use these servers (and `jobs` and other spawn arguments will 
-                be ignored) insteads of spawning new ones. 
+                be ignored) instead of spawning new ones. 
             
             For other arguments, see `BlenderServer.spawn`
 
@@ -460,6 +472,8 @@ class BlenderClients(tuple):
 
 
 class BlenderService(rpyc.Service):
+    ALIASES = ["BLENDER"]
+
     def __init__(self):
         if bpy is None:
             raise RuntimeError(f"{type(self).__name__} needs to be instantiated from within blender's python runtime.")
@@ -522,7 +536,7 @@ class BlenderService(rpyc.Service):
         bpy.ops.wm.open_mainfile(filepath=str(blend_file))
         print(f"INFO: Successfully loaded {blend_file}")
 
-        # Ensure root paths exist, set default vars
+        # Ensure root paths exist
         self.root_path = Path(str(root_path)).resolve()
         self.root_path.mkdir(parents=True, exist_ok=True)
         (self.root_path / "frames").mkdir(parents=True, exist_ok=True)
@@ -669,10 +683,13 @@ class BlenderService(rpyc.Service):
         return (self.scene.frame_start, self.scene.frame_end, self.scene.frame_step)
 
     @require_initialized
-    def exposed_include_depths(self, debug=True):
+    def exposed_include_depths(self, debug=True, file_format="OPEN_EXR"):
         """Sets up Blender compositor to include depth map in rendered images."""
         self.view_layer.use_pass_z = True
         (self.root_path / "depths").mkdir(parents=True, exist_ok=True)
+
+        if file_format.upper() not in ("OPEN_EXR", "HDR"):
+            raise ValueError(f"Expected one of OPEN_EXR/HDR for file_format, got {file_format}.") 
 
         if debug:
             debug_depth_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
@@ -686,14 +703,14 @@ class BlenderService(rpyc.Service):
 
         self.depth_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.depth_path.label = "Depth Output"
-        self.depth_path.format.file_format = "OPEN_EXR"
+        self.depth_path.format.file_format = file_format
         self.tree.links.new(self.render_layers.outputs["Depth"], self.depth_path.inputs[0])
         self.depth_path.base_path = str(self.root_path / "depths")
         self.depth_path.file_slots[0].path = f"depth_{'#'*6}"
 
     @require_initialized
     def exposed_include_normals(self, debug=True):
-        """Sets up Blender compositer to include normal map in rendered images."""
+        """Sets up Blender compositor to include normal map in rendered images."""
         self.view_layer.use_pass_normal = True
         (self.root_path / "normals").mkdir(parents=True, exist_ok=True)
 
@@ -743,7 +760,7 @@ class BlenderService(rpyc.Service):
         (self.root_path / "flows").mkdir(parents=True, exist_ok=True)
 
         if debug:
-            # Seperate forward and backward flows (with a seperate color not vector node)
+            # Separate forward and backward flows (with a separate color not vector node)
             split_flow = self.tree.nodes.new(type="CompositorNodeSeparateColor")
             self.tree.links.new(self.render_layers.outputs["Vector"], split_flow.inputs["Image"])
 
@@ -802,7 +819,7 @@ class BlenderService(rpyc.Service):
         objects ID value to a hue using a HSV node with saturation=1 and value=1 (except 
         for the background which will have a value of 0 to ensure it is black).
         """
-        # TODO: Enable assignement of custom IDs for certain objects via a dictionary. 
+        # TODO: Enable assignment of custom IDs for certain objects via a dictionary. 
 
         if self.scene.render.engine.upper() != "CYCLES":
             raise RuntimeError("Cannot produce segmentation maps when not using CYCLES.")
@@ -890,6 +907,7 @@ class BlenderService(rpyc.Service):
         device_type=None,
         use_cpu=None,
         adaptive_threshold=None,
+        max_samples=None,
         use_denoising=None,
     ):
         """Enables/activates cycles render devices and settings.
@@ -900,6 +918,7 @@ class BlenderService(rpyc.Service):
             device_type: Name of device to use, one of "cpu", "cuda", "optix", "metal"...
             use_cpu: Boolean flag to enable CPUs alongside GPU devices.
             adaptive_threshold: Set noise threshold upon which to stop taking samples.
+            max_samples: Max number of samples per pixel to take before threshold is met.
             use_denoising: If enabled, a denoising pass will be used.
 
         :return:
@@ -914,6 +933,9 @@ class BlenderService(rpyc.Service):
 
         if use_denoising is not None:
             self.scene.cycles.use_denoising = use_denoising
+
+        if max_samples is not None:
+            self.scene.cycles.samples = max_samples 
 
         if adaptive_threshold is not None:
             self.scene.cycles.adaptive_threshold = adaptive_threshold
@@ -1221,7 +1243,7 @@ class BlenderService(rpyc.Service):
     @require_initialized
     def exposed_save_file(self, path):
         """Save opened blender file. This is useful for introspecting the state of the compositor/scene/etc."""
-        Path(path).parent.mkdir(exist_ok=True, parents=True)
+        Path(str(path)).parent.mkdir(exist_ok=True, parents=True)
         bpy.ops.wm.save_as_mainfile(filepath=str(path))
 
 

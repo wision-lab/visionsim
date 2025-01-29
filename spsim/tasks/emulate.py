@@ -147,7 +147,7 @@ def events(
     from .common import _validate_directories
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
-    (output_dir / "events").mkdir(parents=True, exist_ok=True)
+    (output_dir / "frames").mkdir(parents=True, exist_ok=True)
     events_path = output_dir / "events.txt"
     dataset = Dataset.from_path(input_dir)
 
