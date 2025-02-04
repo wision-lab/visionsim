@@ -1197,7 +1197,7 @@ class BlenderService(rpyc.Service):
 
             # Call any progress callbacks
             if update_fn is not None:
-                update_fn()
+                update_fn(advance=1)
 
         # Restore animation range to original values
         self.scene.frame_start, self.scene.frame_end = scene_original_range
