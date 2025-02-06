@@ -210,51 +210,50 @@ def flowdebug_node_group():
     return flowdebug
 
 
-#initialize Vec2RGBA node group
+# initialize Vec2RGBA node group
 def vec2rgba_node_group():
-    vec2rgba = bpy.data.node_groups.new(type = 'CompositorNodeTree', name = "Vec2RGBA")
+    vec2rgba = bpy.data.node_groups.new(type="CompositorNodeTree", name="Vec2RGBA")
 
-    #vec2rgba interface
-    #Socket Image
-    output_socket = vec2rgba.interface.new_socket(name = "Image", in_out='OUTPUT', socket_type = 'NodeSocketColor')
-    output_socket.attribute_domain = 'POINT'
+    # vec2rgba interface
+    # Socket Image
+    output_socket = vec2rgba.interface.new_socket(name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
+    output_socket.attribute_domain = "POINT"
 
-    #Socket Image
-    input_socket = vec2rgba.interface.new_socket(name = "Image", in_out='INPUT', socket_type = 'NodeSocketColor')
-    input_socket.attribute_domain = 'POINT'
+    # Socket Image
+    input_socket = vec2rgba.interface.new_socket(name="Image", in_out="INPUT", socket_type="NodeSocketColor")
+    input_socket.attribute_domain = "POINT"
 
-
-    #initialize vec2rgba nodes
-    #node Group Output
+    # initialize vec2rgba nodes
+    # node Group Output
     group_output = vec2rgba.nodes.new("NodeGroupOutput")
     group_output.name = "Group Output"
     group_output.is_active_output = True
 
-    #node Group Input
+    # node Group Input
     group_input = vec2rgba.nodes.new("NodeGroupInput")
     group_input.name = "Group Input"
 
-    #node Separate Color
+    # node Separate Color
     separate_color = vec2rgba.nodes.new("CompositorNodeSeparateColor")
     separate_color.name = "Separate Color"
-    separate_color.mode = 'RGB'
+    separate_color.mode = "RGB"
 
-    #node Combine Color
+    # node Combine Color
     combine_color = vec2rgba.nodes.new("CompositorNodeCombineColor")
     combine_color.name = "Combine Color"
-    combine_color.mode = 'RGB'
+    combine_color.mode = "RGB"
 
-    #initialize vec2rgba links
-    #separate_color.Red -> combine_color.Red
+    # initialize vec2rgba links
+    # separate_color.Red -> combine_color.Red
     vec2rgba.links.new(separate_color.outputs[0], combine_color.inputs[0])
-    #separate_color.Green -> combine_color.Green
+    # separate_color.Green -> combine_color.Green
     vec2rgba.links.new(separate_color.outputs[1], combine_color.inputs[1])
-    #separate_color.Blue -> combine_color.Blue
+    # separate_color.Blue -> combine_color.Blue
     vec2rgba.links.new(separate_color.outputs[2], combine_color.inputs[2])
-    #separate_color.Alpha -> combine_color.Alpha
+    # separate_color.Alpha -> combine_color.Alpha
     vec2rgba.links.new(separate_color.outputs[3], combine_color.inputs[3])
-    #group_input.Image -> separate_color.Image
+    # group_input.Image -> separate_color.Image
     vec2rgba.links.new(group_input.outputs[0], separate_color.inputs[0])
-    #combine_color.Image -> group_output.Image
+    # combine_color.Image -> group_output.Image
     vec2rgba.links.new(combine_color.outputs[0], group_output.inputs[0])
     return vec2rgba

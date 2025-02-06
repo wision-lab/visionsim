@@ -84,7 +84,9 @@ def colorize_depths(
     in_files = in_files[::step]
 
     if vmin is None and vmax is None:
-        digest = _estimate_distribution(in_files, percentage=percentage, transform=lambda a: np.random.choice(a.flatten(), size=int(a.size*sample)))
+        digest = _estimate_distribution(
+            in_files, percentage=percentage, transform=lambda a: np.random.choice(a.flatten(), size=int(a.size * sample))
+        )
         vmin, vmax = digest.percentile(1), digest.percentile(99)
         print(f"Using depth range [{vmin:0.2f}, {vmax:0.2f}]\n")
 
@@ -131,6 +133,7 @@ def colorize_flows(
     # TODO: Multiprocess this
     # Lazy load imports to improve CLI responsiveness
     import colorsys
+
     import imageio.v3 as iio
 
     if direction.lower() not in ("forward", "backward"):
@@ -142,9 +145,9 @@ def colorize_flows(
 
     def magnitude(flows):
         fx, fy, bx, by = flows
-        x, y = (fx, fy) if direction.lower() == "forward" else (bx, by) 
+        x, y = (fx, fy) if direction.lower() == "forward" else (bx, by)
         mag = np.sqrt(x**2 + y**2)
-        return np.random.choice(mag.flatten(), size=int(mag.size*sample))
+        return np.random.choice(mag.flatten(), size=int(mag.size * sample))
 
     if vmax is None:
         digest = _estimate_distribution(in_files, percentage=percentage, transform=magnitude)
@@ -154,10 +157,10 @@ def colorize_flows(
     for in_file in track(in_files):
         fx, fy, bx, by = _read_exr(in_file)
         x, y = (fx, fy) if direction.lower() == "forward" else (bx, by)
-        h = np.arctan2(y, x) / (2*np.pi) + 0.5
+        h = np.arctan2(y, x) / (2 * np.pi) + 0.5
         v = np.minimum(np.sqrt(x**2 + y**2) / vmax, 1.0)
         img = np.stack(convert(h, np.ones_like(h), v), axis=-1)
-        img = (img*255).astype(np.uint8)
+        img = (img * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
         iio.imwrite(str(path.with_suffix(ext)), img)
 
@@ -189,8 +192,8 @@ def colorize_normals(
     in_files = in_files[::step]
 
     for in_file in track(in_files):
-        img = np.stack(_read_exr(in_file)/2 + 0.5, axis=-1)
-        img = (img*255).astype(np.uint8)
+        img = np.stack(_read_exr(in_file) / 2 + 0.5, axis=-1)
+        img = (img * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
         iio.imwrite(str(path.with_suffix(ext)), img)
 
@@ -247,7 +250,7 @@ def colorize_segmentations(
     for in_file in track(in_files):
         idx = _read_exr(in_file).astype(int)
         img = np.stack([r[idx], g[idx], b[idx]], axis=-1)
-        img = (img*255).astype(np.uint8)
+        img = (img * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
         iio.imwrite(str(path.with_suffix(ext)), img)
 
@@ -265,7 +268,7 @@ def tonemap_exrs(c, input_dir, output_dir=None, batch_size=4, hdr_quantile=0.01,
     """Convert .exr linear intensity frames into tone-mapped sRGB images"""
     from torch.utils.data import DataLoader
 
-    from spsim.dataset import ImgDatasetWriter, Dataset
+    from spsim.dataset import Dataset, ImgDatasetWriter
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     dataset = Dataset.from_path(input_dir)
@@ -281,7 +284,9 @@ def tonemap_exrs(c, input_dir, output_dir=None, batch_size=4, hdr_quantile=0.01,
     with Progress() as progress:
         pbar = progress.add_task(description="Processing Frames...", total=len(dataset))
 
-        with ImgDatasetWriter(output_dir, transforms=dataset.transforms, force=force, pattern="frame_{:06}.png") as writer:
+        with ImgDatasetWriter(
+            output_dir, transforms=dataset.transforms, force=force, pattern="frame_{:06}.png"
+        ) as writer:
             for idxs, imgs, poses, hdr in loader:
                 writer[idxs] = (imgs, poses)
                 hdrs.append(hdr)

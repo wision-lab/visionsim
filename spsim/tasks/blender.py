@@ -123,7 +123,7 @@ def render_animation(
             clients.use_motion_blur(use_motion_blur)
 
         clients.move_keyframes(scale=keyframe_multiplier)
-        
+
         task = progress.add_task(f"Rendering {Path(blend_file).name}...")
         transforms = clients.render_animation(
             frame_start=frame_start if frame_start is None else int(frame_start),

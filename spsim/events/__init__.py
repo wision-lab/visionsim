@@ -1,1 +1,1 @@
-from .v2e.emulator import EventEmulator
+from .v2e.emulator import EventEmulator  # noqa: F401

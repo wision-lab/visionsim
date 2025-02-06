@@ -24,10 +24,10 @@ try:
     import bpy
     import mathutils
 
-    # Allow relative imports to this file without forcing the user to 
+    # Allow relative imports to this file without forcing the user to
     # install spsim into their blender install
     sys.path.insert(0, str(Path(__file__).parent.resolve()))
-    from nodes import normaldebug_node_group, flowdebug_node_group, segmentationdebug_node_group, vec2rgba_node_group
+    from nodes import flowdebug_node_group, normaldebug_node_group, segmentationdebug_node_group, vec2rgba_node_group
 except ImportError:
     bpy = None
     mathutils = None
@@ -191,7 +191,7 @@ class BlenderClient:
             return func(self, *args, **kwargs)
 
         return _decorator
-    
+
     @classmethod
     def auto_connect(cls, timeout=10):
         start = time.time()
@@ -199,7 +199,7 @@ class BlenderClient:
         while True:
             if (time.time() - start) > timeout:
                 raise TimeoutError("Unable to discover server in alloted time.")
-            if (conns := set(BlenderServer.discover())):
+            if conns := set(BlenderServer.discover()):
                 break
             time.sleep(0.1)
         return cls(conns.pop())
@@ -335,10 +335,10 @@ class BlenderClients(tuple):
             advantage of the more advanced dill serialization (as opposed to the standard pickling).
 
         Args:
-            conns: List of connection tuples containing the hostnames and ports of existing servers. 
-                If specified, the pool will use these servers (and `jobs` and other spawn arguments will 
-                be ignored) instead of spawning new ones. 
-            
+            conns: List of connection tuples containing the hostnames and ports of existing servers.
+                If specified, the pool will use these servers (and `jobs` and other spawn arguments will
+                be ignored) instead of spawning new ones.
+
             For other arguments, see `BlenderServer.spawn`
 
         Returns:
@@ -373,10 +373,12 @@ class BlenderClients(tuple):
 
             return inner
 
-        context_manager = BlenderServer.spawn(
-            jobs=jobs, timeout=timeout, log_dir=log_dir, autoexec=autoexec, executable=executable
-        ) if conns is None else nullcontext(enter_result=(None, conns))
-        
+        context_manager = (
+            BlenderServer.spawn(jobs=jobs, timeout=timeout, log_dir=log_dir, autoexec=autoexec, executable=executable)
+            if conns is None
+            else nullcontext(enter_result=(None, conns))
+        )
+
         with multiprocess.Manager() as manager:
             with context_manager as (_, conns):
                 q = manager.Queue()
@@ -689,7 +691,7 @@ class BlenderService(rpyc.Service):
         (self.root_path / "depths").mkdir(parents=True, exist_ok=True)
 
         if file_format.upper() not in ("OPEN_EXR", "HDR"):
-            raise ValueError(f"Expected one of OPEN_EXR/HDR for file_format, got {file_format}.") 
+            raise ValueError(f"Expected one of OPEN_EXR/HDR for file_format, got {file_format}.")
 
         if debug:
             debug_depth_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
@@ -794,36 +796,36 @@ class BlenderService(rpyc.Service):
                 self.tree.links.new(flow_group.outputs["Image"], slot)
 
         # Save flows as EXRs, flows are a 4-vec of forward flows x/y then backwards flows x/y
-        # before blender 4.3, saving a vector as an image saved only 3 channels even if `color_mode` 
-        # is set to RGBA. So we add a dummy vec2rgba node to trick blender into treating the 
-        # vector as an image with 4 channels. This dummy node just splits and recombines channels. 
+        # before blender 4.3, saving a vector as an image saved only 3 channels even if `color_mode`
+        # is set to RGBA. So we add a dummy vec2rgba node to trick blender into treating the
+        # vector as an image with 4 channels. This dummy node just splits and recombines channels.
         self.flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.flow_path.label = "Flow Debug Output"
         self.flow_path.format.file_format = "OPEN_EXR"
-        self.flow_path.format.color_mode = 'RGBA'
+        self.flow_path.format.color_mode = "RGBA"
         self.flow_path.base_path = str(self.root_path / "flows")
         self.flow_path.file_slots[0].path = f"flow_{'#'*6}"
 
         vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
         vec2rgba.label = "Vector2RGBA"
         vec2rgba.node_tree = vec2rgba_node_group()
-        
+
         self.tree.links.new(self.render_layers.outputs["Vector"], vec2rgba.inputs["Image"])
         self.tree.links.new(vec2rgba.outputs["Image"], self.flow_path.inputs["Image"])
 
     @require_initialized
     def exposed_include_segmentations(self, shuffle=True, debug=True, seed=1234):
         """Sets up Blender compositor to include segmentation maps in rendered images.
-        
-        The debug visualization simply assigns a color to each object ID by mapping the 
-        objects ID value to a hue using a HSV node with saturation=1 and value=1 (except 
+
+        The debug visualization simply assigns a color to each object ID by mapping the
+        objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
         for the background which will have a value of 0 to ensure it is black).
         """
-        # TODO: Enable assignment of custom IDs for certain objects via a dictionary. 
+        # TODO: Enable assignment of custom IDs for certain objects via a dictionary.
 
         if self.scene.render.engine.upper() != "CYCLES":
             raise RuntimeError("Cannot produce segmentation maps when not using CYCLES.")
-        
+
         self.view_layer.use_pass_object_index = True
         (self.root_path / "segmentations").mkdir(parents=True, exist_ok=True)
 
@@ -834,8 +836,8 @@ class BlenderService(rpyc.Service):
             np.random.seed(seed=seed)
             np.random.shuffle(indices)
 
-        for i, obj in zip(indices, bpy.data.objects): 
-            obj.pass_index = i+1
+        for i, obj in zip(indices, bpy.data.objects):
+            obj.pass_index = i + 1
 
         if debug:
             seg_group = self.tree.nodes.new("CompositorNodeGroup")
@@ -851,13 +853,13 @@ class BlenderService(rpyc.Service):
 
             self.tree.links.new(self.render_layers.outputs["IndexOB"], seg_group.inputs["Value"])
             self.tree.links.new(seg_group.outputs["Image"], debug_seg_path.inputs[0])
-        
+
         self.segmentation_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.segmentation_path.label = "Segmentation Output"
         self.segmentation_path.format.file_format = "OPEN_EXR"
         self.tree.links.new(self.render_layers.outputs["IndexOB"], self.segmentation_path.inputs[0])
         self.segmentation_path.base_path = str(self.root_path / "segmentations")
-        self.segmentation_path.file_slots[0].path = f"segmentation_{'#'*6}"        
+        self.segmentation_path.file_slots[0].path = f"segmentation_{'#'*6}"
 
     @require_initialized
     def exposed_load_addons(self, *addons):
@@ -935,7 +937,7 @@ class BlenderService(rpyc.Service):
             self.scene.cycles.use_denoising = use_denoising
 
         if max_samples is not None:
-            self.scene.cycles.samples = max_samples 
+            self.scene.cycles.samples = max_samples
 
         if adaptive_threshold is not None:
             self.scene.cycles.adaptive_threshold = adaptive_threshold
