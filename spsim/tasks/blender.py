@@ -21,7 +21,7 @@ from spsim.tasks.common import _run
         "width": "width of frame to capture, default: None",
         "bit_depth": "bit depth for frames, usually 8 for pngs, default: 8",
         "device": "which device type to use, one of none (meaning no change), cpu, cuda, optix. default: None",
-        "dry-run": "if enabled, do not render frames, default: False",
+        "dry_run": "if enabled, do not render frames, default: False",
         "jobs": "number of blender instances to spawn and render from, default: 1",
         "unbind_camera": (
             "free the camera from it's parents, any constraints and animations it may have. Ensures it "
@@ -36,13 +36,13 @@ from spsim.tasks.common import _run
         "flows": "whether or not to capture optical flow images, default: False",
         "segmentations": "whether or not to capture segmentation images, default: False",
         "file_format": (
-            "frame file format to use. Depth is always 'OPEN_EXR' thus is " "unaffected by this setting, default: PNG"
+            "frame file format to use. Depth is always 'OPEN_EXR' thus is unaffected by this setting, default: PNG"
         ),
         "log_dir": "where to save log to, default: None (no log is saved)",
         "addons": "list of extra addons to enable, default: None",
         "adaptive_threshold": (
             "noise threshold of rendered images, for higher quality frames make this threshold smaller. "
-            "The default value is intentionally a little high to speed up renders. default: 0.1",
+            "The default value is intentionally a little high to speed up renders. default: 0.1"
         ),
         "autoexec": "if enabled, allow any embedded python scripts to run, default: False",
         "executable": "use a different blender executable that the one on PATH, default: None",
