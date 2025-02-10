@@ -41,6 +41,7 @@ The single photon simulation engine today is made up of four layers and accessib
    interpolation
    autocomplete
    development
+   spsim
 
 ..
    usage/simulation

@@ -7,4 +7,5 @@ ruff
 sphinx
 sphinxcontrib-programoutput
 sphinx-copybutton
+sphinxcontrib-napoleon
 furo
