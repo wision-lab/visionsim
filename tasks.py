@@ -142,7 +142,7 @@ def build_docs(c, preview=False, full=False):
             )
             _run(
                 c,
-                f"spsim interpolate.frames cache/interpolation/lego-{n:04}/ -o cache/interpolation/lego{n:04}-interp/ -n={int(64/2**i)}",
+                f"spsim interpolate.frames cache/interpolation/lego-{n:04}/ -o cache/interpolation/lego{n:04}-interp/ -n={int(64 / 2**i)}",
             )
             _run(
                 c,

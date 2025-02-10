@@ -130,7 +130,7 @@ def run(
     if sharpness_quantile:
         print(
             f"Found sharpness_quantile={sharpness_quantile}, creating folder "
-            f"{output_dir/'registered-frames'} with symlinks to used frames."
+            f"{output_dir / 'registered-frames'} with symlinks to used frames."
         )
         print("Computing sharpness of all images...  ")
         img_sharpness = {
@@ -146,7 +146,7 @@ def run(
         )
         print(f"Found {len(indices)} images with sufficient sharpness.")
     else:
-        print(f"Found step={step}, creating folder {output_dir/'registered-frames'} with symlinks to used frames.")
+        print(f"Found step={step}, creating folder {output_dir / 'registered-frames'} with symlinks to used frames.")
 
         indices = np.arange(len(in_files))
         indices = np.concatenate([indices[:-1:step], indices[-1:]])  # Always register endpoint images!

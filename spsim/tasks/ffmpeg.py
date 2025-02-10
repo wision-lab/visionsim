@@ -343,7 +343,7 @@ def dimensions(c, input_file):
     if _run(c, "ffprobe -version", hide=True).failed:
         raise RuntimeError("No ffprobe installation found on path!")
 
-    cmd = f"ffprobe -v error -select_streams v:0 -show_entries stream=width,height " f"-of csv=s=x:p=0 {input_file}"
+    cmd = f"ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 {input_file}"
     result = _run(c, cmd, hide=True)
     print(f"Video has size {result.stdout.strip()}.")
     return tuple(int(dim) for dim in result.stdout.strip().split("x"))
