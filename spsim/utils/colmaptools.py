@@ -91,7 +91,7 @@ def _natural_sortkey(string):
 
 
 def get_camera_model(text):
-    """Parse camera paramters from a file and return in a dictionary.
+    """Parse camera parameters from a file and return in a dictionary.
 
     Args:
         text: String path to directory that contains camera.txt.

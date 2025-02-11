@@ -6,7 +6,7 @@ from invoke import task
 
 def _spad_collate(batch, *, mode, rng, factor, alpha_color, is_tonemapped=True):
     """Use default collate function on batch and then simulate SPAD, enabling compute to be done in threads"""
-    from spsim.color import apply_alpha, srgb_to_linearrgb
+    from spsim.utils.color import apply_alpha, srgb_to_linearrgb
     from spsim.dataset import default_collate
 
     idxs, imgs, poses = default_collate(batch)
@@ -240,10 +240,10 @@ def rgb(
     from rich.progress import Progress
     from torch.utils.data import DataLoader
 
-    from spsim.color import apply_alpha, emulate_rgb_from_merged, srgb_to_linearrgb
+    from spsim.utils.color import apply_alpha, emulate_rgb_from_merged, srgb_to_linearrgb
     from spsim.dataset import Dataset, ImgDatasetWriter, NpyDatasetWriter, default_collate
     from spsim.interpolate import pose_interp
-    from spsim.utils import img_to_tensor, tensor_to_img  # Lazy Load
+    from spsim.utils.utils import img_to_tensor, tensor_to_img  # Lazy Load
 
     from .common import _validate_directories
 
@@ -357,7 +357,7 @@ def imu(
     init_bias_acc = np.array(ast.literal_eval(init_bias_acc))
     init_bias_gyro = np.array(ast.literal_eval(init_bias_gyro))
 
-    from spsim.imu import sim_IMU
+    from spsim.emulate.imu import sim_IMU
 
     data_gen = sim_IMU(
         dataset.poses,
