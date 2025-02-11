@@ -466,7 +466,7 @@ class BlenderClient:
             self.awaitable.wait()
 
     def __enter__(self) -> Self:
-        self.conn = rpyc.connect(*self.addr, config={"sync_request_timeout": 60, "allow_pickle": True})
+        self.conn = rpyc.connect(*self.addr, config={"sync_request_timeout": -1, "allow_pickle": True})
 
         for method_name in dir(self.conn.root):
             if method_name.startswith("exposed_"):
@@ -852,7 +852,7 @@ class BlenderService(rpyc.Service):
         Args:
             obj: Object to find parent of.
 
-        :return:
+        Return:
             List of parent objects of obj.
         """
         if getattr(obj, "parent", None):
@@ -1353,7 +1353,7 @@ class BlenderService(rpyc.Service):
         self.scene.render.motion_blur_shutter /= scale
 
     @require_initialized_service
-    def exposed_set_current_frame(self, frame_number: int):
+    def exposed_set_current_frame(self, frame_number: int) -> None:
         """Set current frame number. This might advance any animations."""
         self.scene.frame_set(frame_number)
 
@@ -1407,7 +1407,7 @@ class BlenderService(rpyc.Service):
         Raises:
             ValueError: raised if camera orientation is over-defined.
         """
-        if not (look_at is not None) ^ (rotation is not None):
+        if look_at is not None and rotation is not None:
             raise ValueError("Only one of `look_at` or `rotation` can be set.")
 
         if location is not None:
@@ -1441,6 +1441,41 @@ class BlenderService(rpyc.Service):
         self.camera.matrix_world = rotation.to_4x4()
         self.camera.location = location
         self.view_layer.update()
+
+    @require_initialized_service
+    def exposed_set_camera_keyframe(self, frame_num: int, matrix: npt.ArrayLike | None = None) -> None:
+        """Set camera keyframe at given frame number.
+        If camera matrix is not supplied, currently set camera position/rotation/scale will be used,
+        this allows users to set camera position using `position_camera` and `rotate_camera`.
+
+        Args:
+            frame_num (int): index of frame to set keyframe for.
+            matrix (npt.ArrayLike | None, optional): 4x4 camera transform, if not supplied,
+                use current camera matrix. Defaults to None.
+        """
+        if matrix is not None:
+            self.camera.matrix_world = mathutils.Matrix(matrix)
+        self.camera.keyframe_insert(data_path="location", frame=frame_num)
+        self.camera.keyframe_insert(data_path="rotation_euler", frame=frame_num)
+        self.camera.keyframe_insert(data_path="scale", frame=frame_num)
+
+    @require_initialized_service
+    def exposed_set_animation_range(
+        self, start: int | None = None, stop: int | None = None, step: int | None = None
+    ) -> None:
+        """Set animation range for scene.
+
+        Args:
+            start (int | None, optional): frame start, inclusive. Defaults to None.
+            stop (int | None, optional): frame stop, exclusive. Defaults to None.
+            step (int | None, optional): frame interval. Defaults to None.
+        """
+        if start is not None:
+            self.scene.frame_start = start
+        if stop:
+            self.scene.frame_end = stop - 1
+        if step is not None:
+            self.scene.frame_step = step
 
     @require_initialized_service
     def exposed_render_current_frame(self, allow_skips=True, dry_run=False) -> dict[str, Any]:

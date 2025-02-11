@@ -3,8 +3,8 @@ from pathlib import Path
 import numpy as np
 from invoke import task
 
+from spsim.dataset import IMG_SCHEMA, _read_and_validate
 from spsim.interpolate import interpolate_frames, interpolate_poses, poses_and_frames_to_json
-from spsim.schema import IMG_SCHEMA, _read_and_validate
 from spsim.tasks.common import _validate_directories
 
 
@@ -46,7 +46,6 @@ def video(c, input_file, output_file, method="rife", n=2):
         animate(c, dst_dir, pattern="frames_*.png", outfile=output_file, fps=avg_fps)
 
 
-# TODO: reaname to interpolate_cli or better name
 @task(
     help={
         "input_dir": "directory in which to look for frames",
@@ -58,7 +57,7 @@ def video(c, input_file, output_file, method="rife", n=2):
     }
 )
 def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json", n=2):
-    """Interpolate poses and frames seperately, then combine into transforms.json file"""
+    """Interpolate poses and frames separately, then combine into transforms.json file"""
 
     # Extract transforms from transforms.json file
     input_dir, output_dir = _validate_directories(input_dir, output_dir)

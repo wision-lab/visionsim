@@ -95,8 +95,8 @@ def run(
 
     from tqdm.auto import tqdm
 
-    from spsim.cli import StreamWatcherTqdmPbar  # Lazy import
-    from spsim.colmaptools import compute_sharpness
+    from spsim.utils.cli import StreamWatcherTqdmPbar  # Lazy import
+    from spsim.utils.colmaptools import compute_sharpness
 
     input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern="*")
     db = Path(output_dir) / "colmap.db"
@@ -337,7 +337,7 @@ def to_nerf_format(
     """Convert transform.json from colmap format to nerf-style format"""
     import ast
 
-    from spsim.colmaptools import convert_from_colmap  # Lazy import
+    from spsim.utils.colmaptools import convert_from_colmap  # Lazy import
 
     transforms_path = (Path(text_dir).parent / file_name).resolve()
     transforms_path.unlink(missing_ok=True)
