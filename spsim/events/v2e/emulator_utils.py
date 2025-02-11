@@ -284,8 +284,8 @@ def compute_photoreceptor_noise_voltage(shot_noise_rate_hz, f3db, sample_rate_hz
         logger.info(
             f"For desired shot_noise_rate_hz={shot_noise_rate_hz} Hz, computed photoreceptor_noise_rms={vn:.3f} in ln units,"
             f" scaled by factor {scale:.3f} to {vnscaled:.3f} before 1st-order lowpass with sample rate {sample_rate_hz:.3} Hz, "
-            f"sample interval dt={dt*1000:.3f} ms,"
-            f", cutoff_hz={f3db} Hz, tau={tau*1000:.3f} ms,  Rn/f3dB={rate_per_bw:.3g} Hz, "
+            f"sample interval dt={dt * 1000:.3f} ms,"
+            f", cutoff_hz={f3db} Hz, tau={tau * 1000:.3f} ms,  Rn/f3dB={rate_per_bw:.3g} Hz, "
             f" and nominal on/off threshold={pos_thr}/{neg_thr} +/- {sigma_thr:.3f} ln units."
             # f' The sample lowpass filtered has RMS amplitude {stdout:.3f}.'
         )
@@ -317,7 +317,7 @@ def generate_shot_noise(
 
     if shot_noise_rate_hz * delta_time > 1:
         logger.warning(
-            f"shot_noise_rate_hz*delta_time={shot_noise_rate_hz:.2f}*{delta_time:.2g}={shot_noise_rate_hz*delta_time:.2f} is too large, decrease timestamp resolution or sample rate"
+            f"shot_noise_rate_hz*delta_time={shot_noise_rate_hz:.2f}*{delta_time:.2g}={shot_noise_rate_hz * delta_time:.2f} is too large, decrease timestamp resolution or sample rate"
         )
 
     # shot noise factor is the probability of generating an OFF event in this frame (which is tiny typically)

@@ -92,7 +92,7 @@ class EventEmulator(object):
 
         self.no_events_warning_count = 0
         logger.info(
-            "ON/OFF log_e temporal contrast thresholds: " "{} / {} +/- {}".format(pos_thres, neg_thres, sigma_thres)
+            "ON/OFF log_e temporal contrast thresholds: {} / {} +/- {}".format(pos_thres, neg_thres, sigma_thres)
         )
 
         self.reset()
@@ -203,7 +203,7 @@ class EventEmulator(object):
         -------
 
         """
-        logger.debug("initializing random temporal contrast thresholds " "from from base frame")
+        logger.debug("initializing random temporal contrast thresholds from from base frame")
         # base_frame are memorized lin_log pixel values
         self.diff_frame = None
 
@@ -308,7 +308,7 @@ class EventEmulator(object):
             #  logger.error(
             #      "dvs_params {} not known: "
             #      "use 'clean' or 'noisy'".format(model))
-            logger.warning("dvs_params {} not known: " "Using commandline assigned options".format(model))
+            logger.warning("dvs_params {} not known: Using commandline assigned options".format(model))
             #  sys.exit(1)
         logger.info(
             "set DVS model params with option '{}' "
@@ -378,7 +378,7 @@ class EventEmulator(object):
 
         if t_frame < self.t_previous:
             raise ValueError(
-                "this frame time={} must be later than " "previous frame time={}".format(t_frame, self.t_previous)
+                "this frame time={} must be later than previous frame time={}".format(t_frame, self.t_previous)
             )
 
         # compute time difference between this and the previous frame

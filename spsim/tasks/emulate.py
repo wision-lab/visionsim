@@ -313,8 +313,7 @@ def rgb(
             "Given in m/(s^3 \\sqrt{Hz}). default: 5.5e-5"
         ),
         "std_bias_gyro": (
-            "stdev for random-walk component of error (drift) in gyroscope. "
-            "Given in rad/(s^2 \\sqrt{Hz}). default: 2e-5"
+            "stdev for random-walk component of error (drift) in gyroscope. Given in rad/(s^2 \\sqrt{Hz}). default: 2e-5"
         ),
         "std_acc": (
             "stdev for white-noise component of error in accelerometer. Given in m/(s^2 \\sqrt{Hz}). default: 8e-3"

@@ -68,9 +68,7 @@ def poses_and_frames_to_json(transforms, new_poses, output_dir, file_name="trans
     new_paths = natsorted(output_dir.glob("frames/*.png"))
 
     if len(new_paths) != len(new_poses):
-        raise RuntimeError(
-            f"Image and pose mismatch! Found {len(new_poses)} new poses " f"and {len(new_paths)} new images."
-        )
+        raise RuntimeError(f"Image and pose mismatch! Found {len(new_poses)} new poses and {len(new_paths)} new images.")
 
     new_frames = [
         {"file_path": str(path.relative_to(output_dir)), "transform_matrix": pose.tolist()}
