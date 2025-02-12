@@ -6,10 +6,11 @@ from invoke import task
 from spsim.emulate.rgb import emulate_rgb_from_sequence
 
 
-def _spad_collate(batch, *, mode, rng, factor, alpha_color, is_tonemapped=True):
+def _spad_collate(batch, *, mode, rng, factor, is_tonemapped=True):
     """Use default collate function on batch and then simulate SPAD, enabling compute to be done in threads"""
     from spsim.dataset import default_collate
-    from spsim.utils.color import apply_alpha, srgb_to_linearrgb
+    from spsim.emulate.spc import emulate_spc
+    from spsim.utils.color import srgb_to_linearrgb
 
     idxs, imgs, poses = default_collate(batch)
 
@@ -19,10 +20,7 @@ def _spad_collate(batch, *, mode, rng, factor, alpha_color, is_tonemapped=True):
     else:
         imgs = imgs.astype(float) / 255.0
 
-    imgs, alpha = apply_alpha(imgs, alpha_color=alpha_color, ret_alpha=True)
-
-    # Perform bernoulli sampling (equivalent to binomial w/ n=1)
-    binary_img = rng.binomial(1, 1.0 - np.exp(-imgs * factor)) * 255
+    binary_img = emulate_spc(imgs, factor=factor, rng=rng) * 255
     binary_img = binary_img.astype(np.uint8)
 
     if mode.lower() == "npy":
@@ -35,8 +33,6 @@ def _spad_collate(batch, *, mode, rng, factor, alpha_color, is_tonemapped=True):
     help={
         "input_dir": "directory in which to look for frames",
         "output_dir": "directory in which to save binary frames",
-        "alpha_color": "if set, blend with this background color and do not store "
-        "alpha channel. default: '(1.0, 1.0, 1.0)'",
         "pattern": "filenames of frames should match this, default: 'frame_{:06}.png'",
         "factor": "multiplicative factor controlling dynamic range of output, default: 1.0",
         "seed": "random seed to use while sampling, ensures reproducibility. default: 2147483647",
@@ -49,7 +45,6 @@ def spad(
     c,
     input_dir,
     output_dir,
-    alpha_color="(1.0, 1.0, 1.0)",
     pattern="frame_{:06}.png",
     factor=1.0,
     seed=2147483647,
@@ -58,7 +53,6 @@ def spad(
     force=False,
 ):
     """Perform bernoulli sampling on linearized RGB frames to yield binary frames"""
-    import ast
     import copy
 
     from rich.progress import Progress
@@ -70,7 +64,6 @@ def spad(
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     dataset = Dataset.from_path(input_dir)
-    alpha_color = ast.literal_eval(alpha_color) if alpha_color else None
     transforms_new = copy.deepcopy(dataset.transforms or {})
     shape = np.array(dataset.full_shape)
     shape[-1] = transforms_new["c"] = 3
@@ -92,9 +85,7 @@ def spad(
         dataset,
         batch_size=batch_size,
         num_workers=c.get("max_threads"),
-        collate_fn=functools.partial(
-            _spad_collate, mode=mode, rng=rng, factor=factor, alpha_color=alpha_color, is_tonemapped=is_tonemapped
-        ),
+        collate_fn=functools.partial(_spad_collate, mode=mode, rng=rng, factor=factor, is_tonemapped=is_tonemapped),
     )
 
     with ImgDatasetWriter(
@@ -144,7 +135,7 @@ def events(
     from rich.progress import Progress
 
     from spsim.dataset import Dataset
-    from spsim.emulate.events import EventEmulator
+    from spsim.emulate.dvs import EventEmulator
 
     from .common import _validate_directories
 
@@ -331,6 +322,7 @@ def imu(
 ):
     """Simulate data from a co-located IMU using the poses in transforms.json."""
 
+    import ast
     import sys
     from pathlib import Path
 
@@ -341,8 +333,6 @@ def imu(
     dataset = Dataset.from_path(input_dir)
     if dataset.transforms is None:
         raise RuntimeError("dataset.transforms not found!")
-
-    import ast
 
     rng = np.random.default_rng(int(seed))
     grav_w = np.array(ast.literal_eval(grav_w))

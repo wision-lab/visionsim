@@ -111,7 +111,7 @@ def build_docs(c, preview=False, full=False):
         Path("cache/quickstart").mkdir(exist_ok=True, parents=True)
         if not Path("data/lego.blend").exists():
             print("File `data/lego.blend` not found, you can get it by running the command:")
-            print("gdown https://drive.google.com/file/d/1XPkeA0ENljAjk4D9PGHpMzzr3GF_rECa/view?usp=sharing --fuzzy")
+            print("gdown https://drive.google.com/file/d/1XPkeA0ENljAjk4D9PGHpMzzr3GF_rECa/view?usp=drive_link --fuzzy")
             return
 
         with BlenderClient.spawn(
@@ -131,7 +131,7 @@ def build_docs(c, preview=False, full=False):
 
             with open(str(Path("cache/quickstart/lego-gt/").resolve() / "transforms.json"), "w") as f:
                 json.dump(transforms, f, indent=2)
-
+        
         _run(
             c,
             f"gifski $(ls -1a cache/quickstart/lego-gt/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif",

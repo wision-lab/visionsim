@@ -28,12 +28,12 @@ def emulate_rgb_from_sequence(
         fwc (float, optional): Full well capacity, used for normalization. Defaults to 500.0.
         bitdepth (int, optional): Resolution of ADC in bits. Defaults to 12.
         factor (float, optional): Scaling factor to control intensity of output RGB image. Defaults to 1.0.
-        generator (np.random.Generator, optional): Optional random number generator. Defaults to none.
+        rng (np.random.Generator, optional): Optional random number generator. Defaults to none.
 
     Returns:
         Quantized sRGB patch is returned
     """
-    # Get sum of linear-intensity frames, will be in range [0, burst_size*factor].
+    # Get sum of linear-intensity frames.
     sequence = np.array(sequence)
     burst_size = len(sequence)
     patch = np.sum(sequence, axis=0) * factor
