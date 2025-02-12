@@ -1,4 +1,4 @@
-from .dataset import (
+from .dataset import (  # noqa: F401
     Dataset,
     ImgDataset,
     ImgDatasetWriter,
@@ -8,4 +8,4 @@ from .dataset import (
     packbits,
     unpackbits,
 )
-from .schema import IMG_SCHEMA, NPY_SCHEMA, _read_and_validate, _validate_and_write
+from .schema import IMG_SCHEMA, NPY_SCHEMA, read_and_validate, validate_and_write  # noqa: F401

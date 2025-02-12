@@ -64,7 +64,8 @@ NPY_SCHEMA["properties"]["bitpack_dim"] = {"type": ["number", "null"]}  # Bitpac
 NPY_SCHEMA["required"].append("file_path")
 
 
-def _read_and_validate(*, path, schema):
+def read_and_validate(*, path, schema):
+    """Load a json from a file and check that it complies with the provided schema."""
     with open(path, "r") as f:
         transforms = json.load(f)
 
@@ -78,7 +79,8 @@ def _read_and_validate(*, path, schema):
     return transforms
 
 
-def _validate_and_write(*, path, schema, transforms):
+def validate_and_write(*, path, schema, transforms):
+    """Dump json to a file and check that it complies with the provided schema."""
     try:
         validate(schema=schema, instance=transforms)
     except ValidationError as e:

@@ -232,7 +232,6 @@ def rgb(
     force=False,
 ):
     """Simulate real camera, adding read/poisson noise and tonemapping"""
-    import ast
     import copy
 
     import more_itertools as mitertools

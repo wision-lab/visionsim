@@ -11,7 +11,7 @@ from jsonschema.exceptions import ValidationError
 from natsort import natsorted
 from numpy.lib.format import open_memmap
 
-from .schema import IMG_SCHEMA, NPY_SCHEMA, _read_and_validate, _validate_and_write
+from .schema import IMG_SCHEMA, NPY_SCHEMA, read_and_validate, validate_and_write
 
 
 def packbits(image: np.ndarray, dim: int = 1) -> np.ndarray:
@@ -109,7 +109,7 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
     if mode.lower() == "img":
         # Extract paths and ensure they are lexicographically sorted
         if transforms_path:
-            transforms = _read_and_validate(path=transforms_path, schema=IMG_SCHEMA)
+            transforms = read_and_validate(path=transforms_path, schema=IMG_SCHEMA)
             frames = natsorted(transforms["frames"], key=lambda f: f["file_path"])
             data_paths = [transforms_path.parent / f["file_path"] for f in frames]
             poses = [f["transform_matrix"] for f in frames]
@@ -122,7 +122,7 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
             raise RuntimeError(f"All images must have same extension but found {exts}.")
     else:
         if transforms_path:
-            transforms = _read_and_validate(path=transforms_path, schema=NPY_SCHEMA)
+            transforms = read_and_validate(path=transforms_path, schema=NPY_SCHEMA)
             data_paths = [transforms_path.parent / transforms["file_path"]]
             poses = [f["transform_matrix"] for f in transforms["frames"]]
         else:
@@ -300,7 +300,7 @@ class ImgDatasetWriter:
         # TODO: Handle any errors...
         if self.transforms:
             self.transforms["frames"] = list(self.frames.values())
-            _validate_and_write(schema=IMG_SCHEMA, path=self.root / "transforms.json", transforms=self.transforms)
+            validate_and_write(schema=IMG_SCHEMA, path=self.root / "transforms.json", transforms=self.transforms)
 
 
 class NpyDataset(Dataset):
@@ -458,7 +458,7 @@ class NpyDatasetWriter:
             self.transforms["file_path"] = "frames.npy"
             self.transforms["frames"] = [{"transform_matrix": mat.tolist()} for mat in self.poses]
 
-            _validate_and_write(schema=NPY_SCHEMA, path=self.root / "transforms.json", transforms=self.transforms)
+            validate_and_write(schema=NPY_SCHEMA, path=self.root / "transforms.json", transforms=self.transforms)
 
         if self.strict and not np.all(self._setidxs):
             raise RuntimeError("Not all idxs were set, dataset is incomplete!")

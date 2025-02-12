@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 from invoke import task
 
-from spsim.dataset import IMG_SCHEMA, _read_and_validate
+from spsim.dataset import IMG_SCHEMA, read_and_validate
 from spsim.interpolate import interpolate_frames, interpolate_poses, poses_and_frames_to_json
 from spsim.tasks.common import _validate_directories
 
@@ -61,7 +61,7 @@ def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json",
 
     # Extract transforms from transforms.json file
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
-    transforms = _read_and_validate(path=input_dir / file_name, schema=IMG_SCHEMA)
+    transforms = read_and_validate(path=input_dir / file_name, schema=IMG_SCHEMA)
 
     print("Interpolating poses")
     interpolated_poses = interpolate_poses(transforms, n=n)
