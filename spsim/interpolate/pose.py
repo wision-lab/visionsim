@@ -2,8 +2,6 @@ import numpy as np
 from scipy.interpolate import interp1d
 from scipy.spatial.transform import Rotation, Slerp
 
-from spsim.utils.utils import to_numpy
-
 
 class pose_interp:
     """Linearly interpolate between 4x4 transformation matrices by interpolating it's components:
@@ -11,7 +9,7 @@ class pose_interp:
 
     def __init__(self, transforms, ts=None, kind="linear", normalize=False):
         ts = np.linspace(0, 1, len(transforms)) if ts is None else ts
-        self.ts, self.transforms = to_numpy(ts, transforms)
+        self.ts, self.transforms = np.array(ts), np.array(transforms)
         self.determinants = np.linalg.det(self.transforms[:, :3, :3])
 
         if normalize:

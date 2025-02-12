@@ -94,39 +94,3 @@ def apply_alpha(img, alpha_color=(1.0, 1.0, 1.0), ret_alpha=True):
     img = img * alpha + np.array(alpha_color) * (1 - alpha)
 
     return (img, alpha) if ret_alpha else img
-
-
-def emulate_rgb_from_merged(patch, burst_size=200, readout_std=20, fwc=500, factor=1.0, generator=None):
-    """Simulates process of creating RGB image from merged intensity frames.Quantized sRGB patch is returned
-
-    Args:
-        patch: Input patch is average of burst_size linear-intensity frames.
-        burst_size: Number of frames used for averaging. Defaults to 200.
-        readout_std: Standard deviation of zero mean Gaussian read noise. Defaults to 20.
-        fwc: Full well capacity, used for normalization. Defaults to 500.
-        factor: Scaling factor to control intesnity of output RGB image. Defaults to 1.0.
-        generator: Optional random number generator. Defaults to none.
-
-    :returns:
-        Processed path is returned as an np array.
-
-    """
-    # Input patch is average of `burst_size` linear-intensity frames, get sum by multiplying.
-    patch = patch * burst_size
-
-    # Above sum is in range [0, burst_size*factor]
-    # Perform poisson sampling and add zero-mean gaussian read noise
-    patch = torch.poisson(patch, generator=generator)
-    patch += torch.normal(torch.zeros_like(patch), readout_std, generator=generator)
-
-    # Normalize by full well capacity, clip highlights, and quantize to 12-bits
-    patch = torch.clip(patch / fwc, 0, 1.0)
-    patch = torch.round(patch * 2**12) / 2**12
-
-    # Multiply by gain to keep constant(-ish) brightness
-    patch *= fwc / (burst_size * factor)
-
-    # Convert to sRGB color space for viewing and quantize to 8-bits
-    patch = linearrgb_to_srgb(patch)
-    patch = torch.round(patch * 2**8) / 2**8
-    return patch

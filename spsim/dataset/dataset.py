@@ -80,7 +80,7 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
                 data_path = root
             else:
                 raise FileNotFoundError(f"No image files found in {root}.")
-        # if found, transforms path is none, datat path is frames.npy
+        # if found, transforms path is none, data path is frames.npy
         elif mode.lower() == "npy":
             if (root / "frames.npy").is_file():
                 transforms_path = None

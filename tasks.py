@@ -6,6 +6,7 @@ Execute 'inv[oke] --list' for a list of dev tasks.
 
 import fnmatch
 import glob
+import json
 import os
 import platform
 import shutil
@@ -126,7 +127,10 @@ def build_docs(c, preview=False, full=False):
             client.move_keyframes(scale=5.0)
             client.set_resolution((320, 320))
             task = progress.add_task("Rendering lego.blend...")
-            client.render_animation(update_fn=partial(progress.update, task))
+            transforms = client.render_animation(update_fn=partial(progress.update, task))
+
+            with open(str(Path("cache/quickstart/lego-gt/").resolve() / "transforms.json"), "w") as f:
+                json.dump(transforms, f, indent=2)
 
         _run(
             c,

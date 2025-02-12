@@ -3,6 +3,8 @@ import functools
 import numpy as np
 from invoke import task
 
+from spsim.emulate.rgb import emulate_rgb_from_sequence
+
 
 def _spad_collate(batch, *, mode, rng, factor, alpha_color, is_tonemapped=True):
     """Use default collate function on batch and then simulate SPAD, enabling compute to be done in threads"""
@@ -206,11 +208,9 @@ def events(
         "factor": "multiply image's linear intensity by this weight, default: 1.0",
         "readout_std": "standard deviation of gaussian read noise, default: 20",
         "fwc": "full well capacity of sensor in arbitrary units (relative to factor & chunk_size), default: chunk_size",
-        "alpha_color": "if set, blend with this background color and do not store "
-        "alpha channel. default: '(1.0, 1.0, 1.0)'",
         "duplicate": (
-            "when batch size is too small, this model is ill-suited and creates unrealistic noise. "
-            "This parameter artificially increases the batch-size by using each input image `duplicate` "
+            "when chunk size is too small, this model is ill-suited and creates unrealistic noise. "
+            "This parameter artificially increases the chunk size by using each input image `duplicate` "
             "number of times. default: 1"
         ),
         "pattern": "filenames of frames should match this, default: 'frame_{:06}.png'",
@@ -226,7 +226,6 @@ def rgb(
     factor=1.0,
     readout_std=20.0,
     fwc=None,
-    alpha_color="(1.0, 1.0, 1.0)",
     duplicate=1,
     pattern="frame_{:06}.png",
     mode="img",
@@ -242,14 +241,12 @@ def rgb(
 
     from spsim.dataset import Dataset, ImgDatasetWriter, NpyDatasetWriter, default_collate
     from spsim.interpolate import pose_interp
-    from spsim.utils.color import apply_alpha, emulate_rgb_from_merged, srgb_to_linearrgb
-    from spsim.utils.utils import img_to_tensor, tensor_to_img  # Lazy Load
+    from spsim.utils.color import srgb_to_linearrgb
 
     from .common import _validate_directories
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     dataset = Dataset.from_path(input_dir)
-    alpha_color = ast.literal_eval(alpha_color) if alpha_color else None
     transforms_new = copy.deepcopy(dataset.transforms or {})
     shape = np.array(dataset.full_shape)
     shape[-1] = transforms_new["c"] = 3
@@ -274,28 +271,24 @@ def rgb(
         for i, batch in enumerate(mitertools.ichunked(loader, chunk_size)):
             # Batch is an iterable of (idx, img, pose) that we need to reduce
             idxs, imgs, poses = mitertools.unzip(batch)
-            imgs = sum((i.astype(float) / 255.0).astype(float) for i in imgs)
+            imgs = [(i.astype(float) / 255.0).astype(float) for i in imgs]
             idxs, poses = np.concatenate(list(idxs)), np.concatenate(list(poses))
-            imgs = imgs.squeeze() / len(idxs)
 
-            # Assume image has been tonemapped and undo mapping
-            imgs = srgb_to_linearrgb(imgs)
-            imgs, alpha = apply_alpha(imgs, alpha_color=alpha_color, ret_alpha=True)
+            # Assume images have been tonemapped and undo mapping
+            imgs = [srgb_to_linearrgb(i) for i in imgs]
 
-            rgb_img = emulate_rgb_from_merged(
-                img_to_tensor(imgs * factor),
-                burst_size=chunk_size * duplicate,
+            rgb_img = emulate_rgb_from_sequence(
+                imgs * duplicate,
                 readout_std=readout_std,
                 fwc=fwc or (chunk_size * duplicate),
                 factor=factor,
             )
-            rgb_img = tensor_to_img(rgb_img * 255)
             pose = pose_interp(poses)(0.5) if transforms_new else None
 
             if rgb_img.shape[-1] == 1:
                 rgb_img = np.repeat(rgb_img, 3, axis=-1)
 
-            writer[i] = (rgb_img.astype(np.uint8), pose)
+            writer[i] = ((rgb_img * 255).astype(np.uint8), pose)
             progress.update(task, advance=len(idxs))
 
 

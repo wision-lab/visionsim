@@ -65,7 +65,6 @@ NPY_SCHEMA["required"].append("file_path")
 
 
 def _read_and_validate(*, path, schema):
-    """testing 123"""
     with open(path, "r") as f:
         transforms = json.load(f)
 
