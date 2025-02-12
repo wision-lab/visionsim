@@ -941,7 +941,7 @@ class BlenderService(rpyc.Service):
 
         # Note: This might be a blender bug, but when height==width,
         #   angle_x != angle_y, so here we just use angle.
-        transforms["c"] = 3
+        transforms["c"] = {"BW": 1, "RGB": 3, "RGBA": 4}.get(self.scene.render.image_settings.color_mode)
         transforms["w"] = self.scene.render.resolution_x
         transforms["h"] = self.scene.render.resolution_y
         transforms["fl_x"] = float(1 / 2 * self.scene.render.resolution_x / np.tan(1 / 2 * self.camera.data.angle))
@@ -1206,13 +1206,13 @@ class BlenderService(rpyc.Service):
         self.scene.render.resolution_percentage = 100
 
     @require_initialized_service
-    def exposed_image_settings(self, file_format="PNG", bitdepth=8) -> None:
+    def exposed_image_settings(self, file_format="PNG", bitdepth=8, color_mode="RGB") -> None:
         """Set the render's output format and bitdepth.
         Useful for linear intensity renders, using "OPEN_EXR" and 32 or 16.
         """
         self.scene.render.image_settings.file_format = file_format.upper()
         self.scene.render.image_settings.color_depth = str(bitdepth)
-        self.scene.render.image_settings.color_mode = "RGB"
+        self.scene.render.image_settings.color_mode = color_mode.upper()
 
     @require_initialized_service
     def exposed_use_motion_blur(self, enable: bool) -> None:
