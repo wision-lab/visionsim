@@ -14,12 +14,12 @@ import torch.utils.data
 from jsonschema.exceptions import ValidationError
 from natsort import natsorted
 from numpy.lib.format import open_memmap
-from typing_extensions import cast
+from typing_extensions import Any, Literal, cast
 
 from .schema import IMG_SCHEMA, NPY_SCHEMA, read_and_validate, validate_and_write
 
 
-def _resolve_root(root: str | os.PathLike, mode: str) -> tuple[list, npt.NDArray, dict | None]:
+def _resolve_root(root: str | os.PathLike, mode: Literal["img", "npy"]) -> tuple[list, npt.NDArray, dict | None]:
     """Resolve a dataset root path into:
         - The path of an npy file, or list of img paths
         - A list of poses, or list[None]
@@ -27,7 +27,7 @@ def _resolve_root(root: str | os.PathLike, mode: str) -> tuple[list, npt.NDArray
 
     Args:
         root (str | os.PathLike): Root path of the dataset.
-        mode (str): type of dataset to process. Can be either 'img' or 'npy'.
+        mode (Literal['img', 'npy']): type of dataset to process. Can be either 'img' or 'npy'.
 
     Returns:
         data_paths: list of paths to data files in dataset.
@@ -128,18 +128,22 @@ def default_collate(
 class Dataset(torch.utils.data.Dataset):
     """Base dataset implementation"""
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self) -> None:
+        # Add type hints for variables that should be defined by subclasses
+        self.poses: npt.NDArray
+        self.transforms: dict | None
+
         raise TypeError(
             "Cannot instantiate Dataset directly, use Dataset.from_path() to instantiate a concrete dataset type instead."
         )
 
     @classmethod
-    def from_path(cls, root: str | os.PathLike, mode: str | None = None, *args, **kwargs) -> NpyDataset | ImgDataset:
+    def from_path(cls, root: str | os.PathLike, mode: Literal["img", "npy"] | None = None) -> NpyDataset | ImgDataset:
         """Given a dataset root, resolve it and instantiate the correct dataset type.
 
         Args:
             root (str | os.PathLike): path to dataset, either containing folder or `transforms.json`.
-            mode (str | None, optional): if type of dataset is known, it can be provided, otherwise it
+            mode (Literal['img', 'npy'] | None, optional): if type of dataset is known, it can be provided, otherwise it
                 will try to be inferred. Expects either 'img' or 'npy'. Defaults to None (infer).
 
         Raises:
@@ -151,22 +155,24 @@ class Dataset(torch.utils.data.Dataset):
         """
         if mode is not None:
             if mode.lower() == "img":
-                return ImgDataset(root, *args, **kwargs)
+                return ImgDataset(root)
             elif mode.lower() == "npy":
-                return NpyDataset(root, *args, **kwargs)
+                return NpyDataset(root)
             else:
                 raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
-            
+
         for klass in (NpyDataset, ImgDataset):
             try:
-                return klass(root, *args, **kwargs)
+                return klass(root)
             except (FileNotFoundError, ValueError, RuntimeError, ValidationError):
                 pass
 
-        raise RuntimeError(f"Could not determine type of dataset at {root}. Try opening dataset with concrete type `NpyDataset`/`ImgDataset`.")
+        raise RuntimeError(
+            f"Could not determine type of dataset at {root}. Try opening dataset with concrete type `NpyDataset` or `ImgDataset`."
+        )
 
     @cached_property
-    def arclength(self):
+    def arclength(self) -> float:
         """Calculate the length of the trajectory"""
 
         if not self.transforms:
@@ -180,34 +186,36 @@ class Dataset(torch.utils.data.Dataset):
 
 
 class ImgDataset(Dataset):
-    """Dataset to iterate over frames (stored as image files) and optionally poses (as .json)
+    """Dataset to iterate over frames (stored as image files) and optionally poses (as .json)."""
 
-    Args:
-        root: Path of transforms.json file or parent directory, or image folder (if no pose info)
-    """
+    def __init__(self, root: str | os.PathLike) -> None:
+        """Initialize an `ImgDataset`, same as `Dataset.from_path(root, mode="img")`.
 
-    def __init__(self, root, *args, **kwargs) -> None:
+        Args:
+            root (str | os.PathLike): path to dataset, either containing folder or `transforms.json`.
+        """
         self.paths, self.poses, self.transforms = _resolve_root(root, mode="img")
         self._idxs = np.arange(len(self))
         self._idxs.setflags(write=False)
-        self._full_shape = None
+        self._full_shape: tuple | None = None
 
     @cached_property
-    def full_shape(self):
+    def full_shape(self) -> tuple[int, int, int, int]:
+        """Get shape of dataset as (N, H, W, C)."""
         if self._full_shape is None:
             if self.transforms:
                 h, w, c = self.transforms["h"], self.transforms["w"], self.transforms["c"]
             else:
                 # Peak into dataset to get H/W
                 _, im, _ = self[0]
-                h, w, c = im.shape
+                h, w, c = np.array(im).shape
             self._full_shape = (len(self), h, w, c)
         return self._full_shape
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.paths)
 
-    def __getitem__(self, idx: npt.ArrayLike) -> tuple[int | list[int], npt.ArrayLike | list[npt.NDArray], npt.NDArray]:
+    def __getitem__(self, idx: npt.ArrayLike) -> tuple[int | list[int], npt.ArrayLike, npt.NDArray]:
         if any(i is ... or i is np.newaxis for i in np.atleast_1d(idx)):
             raise NotImplementedError("Only basic indexing is currently supported.")
 
@@ -233,25 +241,40 @@ class ImgDataset(Dataset):
 
 
 class ImgDatasetWriter:
-    """ImgDataset writer implemented as a context manager
+    """ImgDataset writer implemented as a context manager.
 
-    Args:
-        root: directory in which to save dataset (both frames/*.png and optionally .json)
-        transforms: transforms of source dataset, ''frames'' are discarded and camera info is kept
-        pattern: frame filename pattern, will be formatted with frame index
-        force: if true, overwrite output file(s) if present
+    Usage:
+        .. highlight:: python
+
+        with NpyDatasetWriter(root, transforms=...) as writer:
+            for idxs, data, poses in dataset:
+                # Apply any transforms here
+                writer[idxs] = (data, poses)
     """
 
-    def __init__(self, root, transforms=None, pattern="frame_{:06}.png", force=False):
+    def __init__(
+        self, root: str | os.PathLike, transforms: dict | None = None, pattern: str = "frame_{:06}.png", force=False
+    ) -> None:
+        """Initialize `ImgDatasetWriter`.
+
+        Args:
+            root (str | os.PathLike): directory in which to save dataset (both frames/*.png and optionally .json)
+            transforms (dict | None, optional): transforms of source dataset, `frames` are discarded and camera info is kept. Defaults to None.
+            pattern (str, optional): frame filename pattern, will be formatted with frame index. Defaults to "frame_{:06}.png".
+            force (bool, optional): if true, overwrite output file(s) if present. Defaults to False.
+
+        Raises:
+            FileExistsError: raised if dataset exists at requested location and force is false.
+        """
         if ((Path(root) / "transforms.json").is_file() or (Path(root) / "frames").is_dir()) and not force:
             raise FileExistsError(f"Either 'frames/' directory or 'transforms.json' file already exists in {root}")
 
         self.root = Path(root)
-        Path(root / "frames").mkdir(exist_ok=True, parents=True)
+        Path(self.root / "frames").mkdir(exist_ok=True, parents=True)
         self.transforms = copy.deepcopy(transforms or {})
         self.transforms.pop("frames", None)
+        self.frames: dict[int, dict[str, Any]] = {}
         self.pattern = pattern
-        self.frames = {}
 
     def __enter__(self):
         return self
@@ -280,22 +303,29 @@ class ImgDatasetWriter:
     def __exit__(self, exc_type, exc_val, exc_tb):
         # TODO: Handle any errors...
         if self.transforms:
-            self.transforms["frames"] = list(self.frames.values())
+            self.transforms["frames"] = [v for _, v in sorted(self.frames.items())]
             validate_and_write(schema=IMG_SCHEMA, path=self.root / "transforms.json", transforms=self.transforms)
 
 
 class NpyDataset(Dataset):
-    def __init__(self, root, *args, **kwargs):
+    """Dataset to iterate over frames (stored as a possibly bitpacked npy file) and optionally poses (as .json)."""
+
+    def __init__(self, root: str | os.PathLike) -> None:
+        """Initialize an `NpyDataset`, same as `Dataset.from_path(root, mode="npy")`.
+
+        Args:
+            root (str | os.PathLike): path to dataset, either containing folder or `transforms.json`.
+        """
         (self.paths,), self.poses, self.transforms = _resolve_root(root, mode="npy")
         self.data = np.load(str(self.paths), mmap_mode="r")
 
         if self.transforms and self.transforms.get("bitpack"):
             self.bitpack_dim = self.transforms.get("bitpack_dim")
-            self.full_shape = (
+            self.full_shape: tuple[int, int, int, int] = (
                 len(self.transforms["frames"]),
-                self.transforms.get("h"),
-                self.transforms.get("w"),
-                self.transforms.get("c"),
+                self.transforms["h"],
+                self.transforms["w"],
+                self.transforms["c"],
             )
         else:
             self.bitpack_dim = None
@@ -307,7 +337,7 @@ class NpyDataset(Dataset):
         for array in self._idxs:
             array.setflags(write=False)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.full_shape[0]
 
     def __getitem__(self, idx: npt.ArrayLike) -> tuple[int | list[int], npt.NDArray, npt.NDArray]:
@@ -381,9 +411,11 @@ class NpyDataset(Dataset):
 
 
 class NpyDatasetWriter:
-    """NpyDataset writer implemented as a context manager
+    """NpyDataset writer implemented as a context manager.
 
     Usage:
+        .. highlight:: python
+
         src_dataset = ImgDataset(input_dir)
         loader = DataLoader(src_dataset, ...)
 
@@ -391,22 +423,32 @@ class NpyDatasetWriter:
             for idxs, data, poses in loader:
                 # Apply any transforms here
                 writer[idxs] = (data, poses)
-
-    Args:
-        root: directory in which to save dataset (both .npy and optionally .json)
-        shape: shape of resulting array, must be known ahead of time for npy file creation
-        transforms: transforms of source dataset, "frames" are discarded and camera info is kept
-        force: if true, overwrite output file(s) if present
-        strict: if true, throw error if the whole dataset has not been filled
     """
 
-    def __init__(self, root, shape, transforms=None, force=False, strict=True):
+    def __init__(
+        self, root: str | os.PathLike, shape: tuple[int, ...], transforms=None, force=False, strict=True
+    ) -> None:
+        """Initialize `NpyDatasetWriter`.
+
+        Args:
+            root (str | os.PathLike): directory in which to save dataset (both .npy and optionally .json)
+            shape (tuple[int, ...]): shape of resulting array, must be known ahead of time for npy file creation
+            transforms (dict | None, optional): transforms of source dataset, `frames` are discarded and camera info is kept. Defaults to None.
+            force (bool, optional): if true, overwrite output file(s) if present. Defaults to False.
+            strict (bool, optional): if true, throw error if the whole dataset has not been filled. Defaults to True.
+
+        Raises:
+            FileExistsError: raised if dataset exists at requested location and force is false.
+        """
         if any((Path(root) / name).is_file() for name in ("frames.npy", "transforms.json")) and not force:
             raise FileExistsError(f"Either 'frames.npy' or 'transforms.json' file already exists in {root}")
 
         self.root = Path(root)
         Path(root).mkdir(exist_ok=True)
-        self.data = open_memmap(root / "frames.npy", mode="w+", dtype=np.uint8, shape=tuple(shape))
+        # Shape needs to be cast to primitive types, see https://github.com/numpy/numpy/issues/28334
+        self.data = open_memmap(
+            self.root / "frames.npy", mode="w+", dtype=np.uint8, shape=tuple(np.atleast_1d(shape).tolist())
+        )
         self.poses = np.zeros((len(self.data), 4, 4))
         self.transforms = copy.deepcopy(transforms or {})
         self.transforms.pop("frames", None)
