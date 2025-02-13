@@ -231,5 +231,5 @@ def test_dataset_slicing_notimplemented(tmp_path_factory, ds_klass, mode, bitpac
 
 
 def test_dataset_direct_instantiation(tmp_path):
-    with pytest.raises(Warning):
+    with pytest.raises(TypeError):
         Dataset(tmp_path)

@@ -131,7 +131,7 @@ def build_docs(c, preview=False, full=False):
 
             with open(str(Path("cache/quickstart/lego-gt/").resolve() / "transforms.json"), "w") as f:
                 json.dump(transforms, f, indent=2)
-        
+
         _run(
             c,
             f"gifski $(ls -1a cache/quickstart/lego-gt/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif",

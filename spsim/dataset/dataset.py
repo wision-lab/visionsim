@@ -1,68 +1,38 @@
+from __future__ import annotations
+
 import copy
+import os
+from collections.abc import Iterable
 from functools import cached_property
 from pathlib import Path
-from typing import Collection, List, Tuple, Union
 
 import imageio
 import imageio.v3 as iio
 import numpy as np
+import numpy.typing as npt
 import torch.utils.data
 from jsonschema.exceptions import ValidationError
 from natsort import natsorted
 from numpy.lib.format import open_memmap
+from typing_extensions import cast
 
 from .schema import IMG_SCHEMA, NPY_SCHEMA, read_and_validate, validate_and_write
 
 
-def packbits(image: np.ndarray, dim: int = 1) -> np.ndarray:
-    """Pack a single binary frame of shape (H, W, C) into (ceil(H/8), W, C) or (H, ceil(W/8), C)
+def _resolve_root(root: str | os.PathLike, mode: str) -> tuple[list, npt.NDArray, dict | None]:
+    """Resolve a dataset root path into:
+        - The path of an npy file, or list of img paths
+        - A list of poses, or list[None]
+        - The contents of the transforms file or None
 
     Args:
-        image: Input binary image as np array.
-        dim: Int representing which dimension to pack, 0(height) and 1(width). Defaults to 1.
+        root (str | os.PathLike): Root path of the dataset.
+        mode (str): type of dataset to process. Can be either 'img' or 'npy'.
 
-    :returns:
-        Binary image packed in specified dimension as np array.
-    """
-    if dim not in (0, 1):
-        raise NotImplementedError(f"Bit packing can only be done along height (dim=0) or height (dim=1), got {dim}.")
-    if image.dtype != np.uint8:
-        raise TypeError(f"Can only bitpack uint8 types, got {image.dtype}.")
-    return np.packbits(image, axis=dim)
-
-
-def unpackbits(image: np.ndarray, dim: int = 1) -> np.ndarray:
-    """Unpack a single binary frame of shape (H, W, C) into (H*8, W, C) or (H, W*8, C)
-        Note: If the original frame's size long `dim` is not a multiple of 8, then unpack(pack)
-        might lead to a different image shape, which has been rounded off to a multiple of 8.
-
-    Args:
-        image: Input binary image as np array.
-        dim: Int representing which dimension to unpack in, 0(height) and 1(width). Defaults to 1.
-
-    :returns:
-        Binary images unpacked in specified dimension as np array.
-    """
-    if dim not in (0, 1):
-        raise NotImplementedError(f"Bit unpacking can only be done along height (dim=0) or height (dim=1), got {dim}.")
-    if image.dtype != np.uint8:
-        raise TypeError(f"Can only unpack uint8 types, got {image.dtype}.")
-    return np.unpackbits(image, axis=dim)
-
-
-def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, Union[dict, None]]:
-    """Given a dataset root path, resolve it into:
-    - The path of an npy file, or list of img paths
-    - A list of poses, or list[None]
-    - The contents of the transforms file or None
-
-    Args:
-        root: Root path of the dataset. Represented as a string or Path object.
-        mode: Specifies mode to process dataset. Can be either 'img' or 'npy'.
-
-    :returns:
-        Tuple consisting of data_paths - list of paths to data files in dataset,
-        poses - containing pose information for each data file, transforms - dictionary of information from json file.
+    Returns:
+        data_paths: list of paths to data files in dataset.
+        poses: array of pose information for each data file, if present, else empty array.
+        transforms: dictionary of information from json file, if present, else None.
     """
     root = Path(root)
 
@@ -72,7 +42,7 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
             data_path = None
         # if found, transforms path is none and data path to root.
         elif mode.lower() == "img":
-            img_exts = set(imageio.core.format.known_extensions.keys())
+            img_exts = set(imageio.config.extensions.known_extensions.keys())
             found_exts = set(p.suffix for p in root.glob("*"))
 
             if found_exts & img_exts:
@@ -97,11 +67,11 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
             transforms_path = None
             data_path = root
         else:
-            errmsg = "a folder" if mode.lower() == "img" else "the path of an npy file"
+            err_msg = "a folder" if mode.lower() == "img" else "the path of an npy file"
             raise ValueError(
                 f"Dataset root ({root}) not understood. "
                 f"It should be a json file, the parent directory of a 'transforms.json' file,"
-                f"or {errmsg} containing a collection of images."
+                f"or {err_msg} containing a collection of images."
             )
     else:
         raise FileNotFoundError(f"Dataset root ({root}) not found!")
@@ -113,10 +83,12 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
             frames = natsorted(transforms["frames"], key=lambda f: f["file_path"])
             data_paths = [transforms_path.parent / f["file_path"] for f in frames]
             poses = [f["transform_matrix"] for f in frames]
-        else:
+        elif data_path:
             data_paths = natsorted(data_path.glob("*"))
             poses = [None] * len(data_paths)
             transforms = None
+        else:
+            raise RuntimeError("This should be unreachable!")
 
         if len(exts := set(Path(p).suffix for p in data_paths)) != 1:
             raise RuntimeError(f"All images must have same extension but found {exts}.")
@@ -125,23 +97,26 @@ def _resolve_root(root: Union[str, Path], mode: str) -> Tuple[List, np.ndarray, 
             transforms = read_and_validate(path=transforms_path, schema=NPY_SCHEMA)
             data_paths = [transforms_path.parent / transforms["file_path"]]
             poses = [f["transform_matrix"] for f in transforms["frames"]]
-        else:
+        elif data_path:
             data_paths = [data_path]
             poses = [None] * len(np.load(str(data_path), mmap_mode="r"))
             transforms = None
+        else:
+            raise RuntimeError("This should be unreachable!")
 
     return data_paths, np.array(poses), transforms
 
 
-def default_collate(batch):
+def default_collate(
+    batch: Iterable[tuple[int, npt.NDArray, npt.NDArray]],
+) -> tuple[npt.NDArray, npt.NDArray, npt.NDArray]:
     """Collate function that takes in a batch of [(img_idx, img, pose), ...] and returns (img_idxs, imgs, poses)
 
     Args:
-        batch: List of tuples (img_idx, img, pose).
+        batch (Iterable[tuple[int, npt.NDArray, npt.NDArray]]): Iterable of tuples (img_idx, img, pose).
 
-    :returns:
-        Tuple (img_idx, img, pose). Collated np array of img_idx, img, pose.
-
+    Returns
+        Collated numpy arrays of img_idxs, imgs, poses.
     """
     img_idxs, imgs, poses = zip(*batch)
     img_idxs = np.concatenate([np.atleast_1d(idx) for idx in img_idxs])
@@ -151,39 +126,48 @@ def default_collate(batch):
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, *args, **kwargs):
-        raise Warning(
-            "Do not instantiate Dataset directly, no value will be defined. "
-            "Use Dataset.from_path() to instantiate a dataset instead."
+    """Base dataset implementation"""
+
+    def __init__(self, *args, **kwargs) -> None:
+        raise TypeError(
+            "Cannot instantiate Dataset directly, use Dataset.from_path() to instantiate a concrete dataset type instead."
         )
 
     @classmethod
-    def from_path(cls, root, mode=None, *args, **kwargs):
-        """Given a dataset root, resolve it and instantiate the correct dataset type"""
-        dataset = None
+    def from_path(cls, root: str | os.PathLike, mode: str | None = None, *args, **kwargs) -> NpyDataset | ImgDataset:
+        """Given a dataset root, resolve it and instantiate the correct dataset type.
 
+        Args:
+            root (str | os.PathLike): path to dataset, either containing folder or `transforms.json`.
+            mode (str | None, optional): if type of dataset is known, it can be provided, otherwise it
+                will try to be inferred. Expects either 'img' or 'npy'. Defaults to None (infer).
+
+        Raises:
+            ValueError: raise if `mode` is not understood.
+            RuntimeError: raised if dataset type can not be determined.
+
+        Returns:
+            dataset instance, either a `NpyDataset` or `ImgDataset`.
+        """
         if mode is not None:
             if mode.lower() == "img":
-                dataset = ImgDataset(root, *args, **kwargs)
+                return ImgDataset(root, *args, **kwargs)
             elif mode.lower() == "npy":
-                dataset = NpyDataset(root, *args, **kwargs)
+                return NpyDataset(root, *args, **kwargs)
             else:
                 raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
-
+            
         for klass in (NpyDataset, ImgDataset):
             try:
-                dataset = klass(root, *args, **kwargs)
+                return klass(root, *args, **kwargs)
             except (FileNotFoundError, ValueError, RuntimeError, ValidationError):
                 pass
 
-        if dataset is None:
-            raise RuntimeError(f"Could not determine type of dataset at {root}")
-
-        return dataset
+        raise RuntimeError(f"Could not determine type of dataset at {root}. Try opening dataset with concrete type `NpyDataset`/`ImgDataset`.")
 
     @cached_property
     def arclength(self):
-        """Print the length of the trajectory"""
+        """Calculate the length of the trajectory"""
 
         if not self.transforms:
             return np.nan
@@ -202,7 +186,7 @@ class ImgDataset(Dataset):
         root: Path of transforms.json file or parent directory, or image folder (if no pose info)
     """
 
-    def __init__(self, root, *args, **kwargs):
+    def __init__(self, root, *args, **kwargs) -> None:
         self.paths, self.poses, self.transforms = _resolve_root(root, mode="img")
         self._idxs = np.arange(len(self))
         self._idxs.setflags(write=False)
@@ -223,26 +207,23 @@ class ImgDataset(Dataset):
     def __len__(self):
         return len(self.paths)
 
-    def __getitem__(
-        self, idx: Union[int, Collection[Union[int, slice]]]
-    ) -> Tuple[Union[int, List[int]], Union[np.ndarray, List[np.ndarray]], np.ndarray]:
+    def __getitem__(self, idx: npt.ArrayLike) -> tuple[int | list[int], npt.ArrayLike | list[npt.NDArray], npt.NDArray]:
         if any(i is ... or i is np.newaxis for i in np.atleast_1d(idx)):
             raise NotImplementedError("Only basic indexing is currently supported.")
 
         if any(isinstance(i, (list, np.ndarray, tuple)) for i in np.atleast_1d(idx)):
             raise NotImplementedError("Integer array indexing is not yet supported.")
 
-        # Split index into the idx of the imag path and the img slice
-        idx = np.atleast_1d(idx)
-        img_idx, *img_slice = idx
+        # Split index into the idx of the image path and the img slice
+        img_idx, *img_slice = np.atleast_1d(idx)
         img_idx = self._idxs[img_idx]
 
         if isinstance(img_idx, (int, np.integer)):
             # We must read and decode the whole image even if we are only indexing a pixel...
             im = iio.imread(self.paths[img_idx])
             pose = self.poses[img_idx]
-            im = im[tuple(img_slice)] if img_slice else im
-            return img_idx, im, pose
+            pixels = im[tuple(img_slice)] if img_slice else im
+            return cast(int, img_idx), pixels, pose
 
         if img_idx.size:
             img_idxs, imgs, poses = zip(*(self[tuple(np.atleast_1d(i).tolist() + img_slice)] for i in img_idx))
@@ -275,7 +256,7 @@ class ImgDatasetWriter:
     def __enter__(self):
         return self
 
-    def __setitem__(self, idx: Union[int, List[int]], value: Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]):
+    def __setitem__(self, idx: int | list[int], value: np.ndarray | tuple[npt.NDArray, npt.NDArray]):
         if isinstance(idx, (int, np.integer)):
             path = self.root / "frames" / self.pattern.format(idx)
             self.frames[idx] = {"file_path": str(path.relative_to(self.root))}
@@ -329,9 +310,7 @@ class NpyDataset(Dataset):
     def __len__(self):
         return self.full_shape[0]
 
-    def __getitem__(
-        self, idx: Union[int, Collection[Union[int, slice]]]
-    ) -> Tuple[Union[int, List[int]], np.ndarray, np.ndarray]:
+    def __getitem__(self, idx: npt.ArrayLike) -> tuple[int | list[int], npt.NDArray, npt.NDArray]:
         if any(i is ... or i is np.newaxis for i in np.atleast_1d(idx)):
             raise NotImplementedError("Only basic indexing is currently supported.")
 
@@ -349,24 +328,24 @@ class NpyDataset(Dataset):
 
         if self.bitpack_dim is not None:
             # Expand index over all dimensions
-            idx = np.atleast_1d(idx).tolist()
-            idx += [slice(None)] * (self.data.ndim - len(idx))
-            img_idx, *_ = idx
+            idx_list = np.atleast_1d(idx).tolist()
+            idx_list += [slice(None)] * (self.data.ndim - len(idx_list))
+            img_idx, *_ = idx_list
 
             # If the index of a given dimension is an integer, that dimension gets collapsed.
             # We keep track of which dims need to be squeezed and only squeeze them at the end.
-            collapsed_dims = [isinstance(dim_idx, (int, np.integer)) for dim_idx in idx]
+            collapsed_dims = [isinstance(dim_idx, (int, np.integer)) for dim_idx in idx_list]
 
             # Replace all idxs that would collapse a dimension with a slice of size 1.
             # Note: The "i+1 or None" is important here, if i=-1 and we let the slice end be zero,
             #   then the resulting slice (-1:0) will always be empty!
-            idx = [slice(i, i + 1 or None) if isinstance(i, (int, np.integer)) else i for i in idx]
+            idx_list = [slice(i, i + 1 or None) if isinstance(i, (int, np.integer)) else i for i in idx_list]
 
             # The index along the packed dimension might be a slice so we get all indices the slice
             # would correspond to by using a proxy array.
             # Note: If we don't copy here, numpy might return a view which will be modified below
             #   leading to bizarre and inconsistent _silent_ errors.
-            idx[self.bitpack_dim] = np.copy(self._idxs[self.bitpack_dim][idx[self.bitpack_dim]]).flatten()
+            idx_list[self.bitpack_dim] = np.copy(self._idxs[self.bitpack_dim][idx_list[self.bitpack_dim]]).flatten()
 
             # Compute the packed index and a secondary bit idx.
             # If we were unpacking into a new dimension then the bit index would simply be %8 of
@@ -380,12 +359,12 @@ class NpyDataset(Dataset):
             #   Bit indices (shifted correct amount):   [ 0,  8, 17]
             # Note: The `bit_idx` is made into at least a 1d idx as to preserve dimensionality,
             #   otherwise it would mess up the `collapsed_dims` above.
-            bit_idx = idx[self.bitpack_dim] % 8
-            idx[self.bitpack_dim] //= 8
+            bit_idx = idx_list[self.bitpack_dim] % 8
+            idx_list[self.bitpack_dim] //= 8
             bit_idx += np.arange(bit_idx.size) * 8
 
             # Perform the indexing, unpacking, bit indexing and dimensionality reduction.
-            data = np.unpackbits(self.data[tuple(idx)], axis=self.bitpack_dim)
+            data = np.unpackbits(self.data[tuple(idx_list)], axis=self.bitpack_dim)
             data = np.take(data, bit_idx, axis=self.bitpack_dim)
             squeeze_dims = tuple(
                 i for i, (size, collapsed) in enumerate(zip(collapsed_dims, data.shape)) if collapsed and size == 1
@@ -438,7 +417,7 @@ class NpyDatasetWriter:
     def __enter__(self):
         return self
 
-    def __setitem__(self, idx: Union[int, List[int]], value: Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]):
+    def __setitem__(self, idx: int | list[int], value: np.ndarray | tuple[npt.NDArray, npt.NDArray]):
         if isinstance(value, tuple):
             data, poses = value
             if self.transforms:

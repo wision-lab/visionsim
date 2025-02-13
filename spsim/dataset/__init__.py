@@ -5,7 +5,5 @@ from .dataset import (  # noqa: F401
     NpyDataset,
     NpyDatasetWriter,
     default_collate,
-    packbits,
-    unpackbits,
 )
 from .schema import IMG_SCHEMA, NPY_SCHEMA, read_and_validate, validate_and_write  # noqa: F401
