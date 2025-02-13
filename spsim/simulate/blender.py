@@ -886,6 +886,7 @@ class BlenderService(rpyc.Service):
         self.normal_path: bpy.types.CompositorNodeOutputFile | None = None
         self.flow_path: bpy.types.CompositorNodeOutputFile | None = None
         self.segmentation_path: bpy.types.CompositorNodeOutputFile | None = None
+        self.depth_extension = ".exr"
         self.unbind_camera: bool = False
         self.use_animation: bool = True
         self.pre_render_callbacks: list[Callable] = []
@@ -1002,6 +1003,7 @@ class BlenderService(rpyc.Service):
         self.tree.links.new(self.render_layers.outputs["Depth"], self.depth_path.inputs[0])
         self.depth_path.base_path = str(self.root_path / "depths")
         self.depth_path.file_slots[0].path = f"depth_{'#' * 6}"
+        self.depth_extension = ".exr" if file_format.upper() == "OPEN_EXR" else ".hdr"
 
     @require_initialized_service
     def exposed_include_normals(self, debug=True) -> None:
@@ -1498,7 +1500,7 @@ class BlenderService(rpyc.Service):
         paths = {"file_path": Path(f"frames/frame_{index:06}").with_suffix(self.scene.render.file_extension)}
 
         if self.depth_path is not None:
-            paths["depth_file_path"] = Path(f"depths/depth_{index:06}.exr")
+            paths["depth_file_path"] = Path(f"depths/depth_{index:06}{self.depth_extension}")
         if self.normal_path is not None:
             paths["normal_file_path"] = Path(f"normals/normal_{index:06}.exr")
         if self.flow_path is not None:
