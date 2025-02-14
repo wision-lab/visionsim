@@ -1,6 +1,6 @@
 import numpy as np
 
-from spsim.color import linearrgb_to_srgb, srgb_to_linearrgb
+from spsim.utils.color import linearrgb_to_srgb, srgb_to_linearrgb
 
 
 def test_linearrgb_to_srgb_and_back():

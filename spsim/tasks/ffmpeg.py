@@ -17,7 +17,7 @@ from spsim.tasks.common import _run, _validate_directories
         "multiple": "some codecs require size to be a multiple of n, default: 2",
         "force": "if true, overwrite output file if present, default: False",
         "bg_color": "for images with transparencies, namely PNGs, use this color as a background, default: 'black'",
-        "png_filter": "if false, do not pre-process PNGs to remove transparencies, default: True",
+        "strip_alpha": "if true, do not pre-process PNGs to remove transparencies, default: True",
         "auto_tonemap": "if true and images are .exr (linear intensity), apply tonemapping first, default: True",
         "hide": "if true, hide ffmpeg output, default: False",
     }
@@ -34,7 +34,7 @@ def animate(
     multiple=2,
     force=False,
     bg_color="black",
-    png_filter=True,
+    strip_alpha=False,
     auto_tonemap=True,
     hide=False,
 ):
@@ -49,15 +49,15 @@ def animate(
     if _run(c, "ffmpeg -version", hide=True).failed:
         raise RuntimeError("No ffmpeg installation found on path!")
 
-    input_dir, output_dir, in_files = _validate_directories(input_dir, Path(outfile).parent, pattern=pattern)
+    input_dir, _, in_files = _validate_directories(input_dir, Path(outfile).parent, pattern=pattern)
 
     # See: https://stackoverflow.com/questions/52804749
-    png_filter = (
+    strip_alpha = (
         (
             f'-filter_complex "color={bg_color},format=rgb24[c];[c][0]scale2ref[c][i];'
             f'[c][i]overlay=format=auto:shortest=1,setsar=1" '
         )
-        if (pattern.endswith(".png") or (pattern.endswith(".exr") and auto_tonemap)) and png_filter
+        if (pattern.endswith(".png") or (pattern.endswith(".exr") and auto_tonemap)) and strip_alpha
         else ""
     )
 
@@ -86,7 +86,7 @@ def animate(
                 (tmpdirname / f"{i:09}{ext}").symlink_to(p, target_is_directory=False)
 
         cmd = (
-            f"ffmpeg -framerate {fps} -f image2 -i {tmpdirname / ('%09d' + ext)} {png_filter}"
+            f"ffmpeg -framerate {fps} -f image2 -i {tmpdirname / ('%09d' + ext)} {strip_alpha}"
             f"{'-y' if force else ''} -vcodec {vcodec} -crf {crf} -pix_fmt yuv420p "
         )
         if multiple:

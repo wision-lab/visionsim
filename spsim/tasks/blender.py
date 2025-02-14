@@ -6,7 +6,7 @@ from pathlib import Path
 from invoke import task
 from rich.progress import Progress
 
-from spsim.render import BlenderClients
+from spsim.simulate.blender import BlenderClients
 from spsim.tasks.common import _run
 
 

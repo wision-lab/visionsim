@@ -9,3 +9,4 @@ sphinxcontrib-programoutput
 sphinx-copybutton
 sphinxcontrib-napoleon
 furo
+types-jsonschema

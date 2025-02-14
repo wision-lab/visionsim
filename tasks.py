@@ -6,21 +6,28 @@ Execute 'inv[oke] --list' for a list of dev tasks.
 
 import fnmatch
 import glob
+import json
 import os
 import platform
 import shutil
 import webbrowser
+from functools import partial
 from pathlib import Path
 
+import numpy as np
 from invoke import task
+from rich.progress import Progress
+
+from spsim.simulate.blender import BlenderClient
 
 ROOT_DIR = Path(__file__).parent
 TEST_DIR = ROOT_DIR / "tests"
 SOURCE_DIR = ROOT_DIR / "spsim"
+EXAMPLE_DIR = ROOT_DIR / "examples"
 COVERAGE_FILE = ROOT_DIR / ".coverage"
 COVERAGE_DIR = ROOT_DIR / "htmlcov"
 COVERAGE_REPORT = COVERAGE_DIR / "index.html"
-PYTHON_DIRS = [str(d) for d in [SOURCE_DIR, TEST_DIR]]
+PYTHON_DIRS = [str(d) for d in [SOURCE_DIR, TEST_DIR, EXAMPLE_DIR]]
 DOCS_DIR = ROOT_DIR / "docs"
 DOCS_INDEX = DOCS_DIR / "build" / "html" / "index.html"
 DOCS_STATIC = DOCS_DIR / "source" / "_static"
@@ -102,16 +109,30 @@ def build_docs(c, preview=False, full=False):
     """Confirm docs can be built"""
     if full:
         # Create examples from the quick start guide
+        Path("cache/quickstart").mkdir(exist_ok=True, parents=True)
         if not Path("data/lego.blend").exists():
             print("File `data/lego.blend` not found, you can get it by running the command:")
-            print("gdown https://drive.google.com/file/d/1ZRViAN1iaO9ySJmgiasdA61Wo37WkPQy/view?usp=drive_link --fuzzy")
+            print("gdown https://drive.google.com/file/d/1XPkeA0ENljAjk4D9PGHpMzzr3GF_rECa/view?usp=drive_link --fuzzy")
             return
 
-        Path("cache/quickstart").mkdir(exist_ok=True, parents=True)
-        _run(
-            c,
-            "spsim blender.render data/lego.blend cache/quickstart/lego-gt/ --num-frames=500 --width=320 --height=320",
-        )
+        with BlenderClient.spawn(
+            timeout=30, executable="flatpak run --die-with-parent org.blender.Blender"
+        ) as client, Progress() as progress:
+            client.initialize(Path("data/lego.blend").resolve(), Path("cache/quickstart/lego-gt/").resolve())
+            client.unbind_camera()
+
+            for frame, theta in enumerate(np.linspace(0, 2 * np.pi, 100, endpoint=False)):
+                client.position_camera(location=[5 * np.cos(theta), 5 * np.sin(theta), 1], look_at=[0, 0, 0])
+                client.set_camera_keyframe(frame)
+            client.set_animation_range(start=0, stop=100)
+            client.move_keyframes(scale=5.0)
+            client.set_resolution((320, 320))
+            task = progress.add_task("Rendering lego.blend...")
+            transforms = client.render_animation(update_fn=partial(progress.update, task))
+
+            with open(str(Path("cache/quickstart/lego-gt/").resolve() / "transforms.json"), "w") as f:
+                json.dump(transforms, f, indent=2)
+
         _run(
             c,
             f"gifski $(ls -1a cache/quickstart/lego-gt/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif",

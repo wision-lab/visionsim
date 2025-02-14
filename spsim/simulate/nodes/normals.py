@@ -4,7 +4,7 @@
 
 # NOTE: This needs to be imported by blender to work properly.
 
-import bpy
+import bpy  # type: ignore
 
 
 # initialize NormalDebug node group

@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import copy
 import json
 
 from jsonschema import ValidationError, validate
+from typing_extensions import Any
 
 # Schema for nerfstudio-style transforms.json file, which uses a folder of imgs.
 # Note: The command `spsim blender.render` will output a compatible transform file,
@@ -50,12 +53,12 @@ IMG_SCHEMA = {
 # The main difference is that "*file_path", which was per-frame before, has been
 # extracted and is now the top level path to the npy file containing all frames.
 # Indexing into this npy file is done based on the frame's index in the `frames` list.
-NPY_FRAME_SCHEMA = copy.deepcopy(IMG_FRAME_SCHEMA)
+NPY_FRAME_SCHEMA: dict[str, Any] = copy.deepcopy(IMG_FRAME_SCHEMA)
 NPY_FRAME_SCHEMA["properties"]["file_path"] = False  # Cannot be present!
 NPY_FRAME_SCHEMA["properties"]["depth_file_path"] = False
 NPY_FRAME_SCHEMA["required"] = ["transform_matrix"]
 
-NPY_SCHEMA = copy.deepcopy(IMG_SCHEMA)
+NPY_SCHEMA: dict[str, Any] = copy.deepcopy(IMG_SCHEMA)
 NPY_SCHEMA["properties"]["frames"] = {"type": "array", "items": NPY_FRAME_SCHEMA}
 NPY_SCHEMA["properties"]["file_path"] = {"type": "string"}  # Path to npy file containing color images
 NPY_SCHEMA["properties"]["depth_file_path"] = {"type": "string"}  # Path to npy file containing depth images
@@ -64,8 +67,8 @@ NPY_SCHEMA["properties"]["bitpack_dim"] = {"type": ["number", "null"]}  # Bitpac
 NPY_SCHEMA["required"].append("file_path")
 
 
-def _read_and_validate(*, path, schema):
-    """testing 123"""
+def read_and_validate(*, path, schema):
+    """Load a json from a file and check that it complies with the provided schema."""
     with open(path, "r") as f:
         transforms = json.load(f)
 
@@ -79,7 +82,8 @@ def _read_and_validate(*, path, schema):
     return transforms
 
 
-def _validate_and_write(*, path, schema, transforms):
+def validate_and_write(*, path, schema, transforms):
+    """Dump json to a file and check that it complies with the provided schema."""
     try:
         validate(schema=schema, instance=transforms)
     except ValidationError as e:

@@ -20,8 +20,8 @@ def _read_exr(path):
 
 def _tonemap_collate(batch, *, hdr_quantile=0.01):
     """Use default collate function on batch and then tonemap, enabling compute to be done in threads"""
-    from spsim.color import linearrgb_to_srgb
     from spsim.dataset import default_collate
+    from spsim.utils.color import linearrgb_to_srgb
 
     idxs, imgs, poses = default_collate(batch)
     high, low = np.quantile(imgs, [1 - hdr_quantile, hdr_quantile])

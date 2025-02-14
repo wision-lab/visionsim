@@ -26,10 +26,9 @@ if TYPE_CHECKING:
     import multiprocess  # type: ignore
     import multiprocess.pool  # type: ignore
     import numpy.typing as npt
-    from typing_extensions import Any, Concatenate, ParamSpec, Protocol, Self, TypeVar
+    from typing_extensions import Any, Concatenate, ParamSpec, Self, TypeVar
 
-    class UpdateFn(Protocol):
-        def __call__(self, total: int | None = None, advance: int | None = None) -> None: ...
+    from spsim.types import UpdateFn
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -466,7 +465,7 @@ class BlenderClient:
             self.awaitable.wait()
 
     def __enter__(self) -> Self:
-        self.conn = rpyc.connect(*self.addr, config={"sync_request_timeout": 60, "allow_pickle": True})
+        self.conn = rpyc.connect(*self.addr, config={"sync_request_timeout": -1, "allow_pickle": True})
 
         for method_name in dir(self.conn.root):
             if method_name.startswith("exposed_"):
@@ -852,7 +851,7 @@ class BlenderService(rpyc.Service):
         Args:
             obj: Object to find parent of.
 
-        :return:
+        Return:
             List of parent objects of obj.
         """
         if getattr(obj, "parent", None):
@@ -886,6 +885,7 @@ class BlenderService(rpyc.Service):
         self.normal_path: bpy.types.CompositorNodeOutputFile | None = None
         self.flow_path: bpy.types.CompositorNodeOutputFile | None = None
         self.segmentation_path: bpy.types.CompositorNodeOutputFile | None = None
+        self.depth_extension = ".exr"
         self.unbind_camera: bool = False
         self.use_animation: bool = True
         self.pre_render_callbacks: list[Callable] = []
@@ -941,7 +941,7 @@ class BlenderService(rpyc.Service):
 
         # Note: This might be a blender bug, but when height==width,
         #   angle_x != angle_y, so here we just use angle.
-        transforms["c"] = 3
+        transforms["c"] = {"BW": 1, "RGB": 3, "RGBA": 4}.get(self.scene.render.image_settings.color_mode)
         transforms["w"] = self.scene.render.resolution_x
         transforms["h"] = self.scene.render.resolution_y
         transforms["fl_x"] = float(1 / 2 * self.scene.render.resolution_x / np.tan(1 / 2 * self.camera.data.angle))
@@ -1002,6 +1002,7 @@ class BlenderService(rpyc.Service):
         self.tree.links.new(self.render_layers.outputs["Depth"], self.depth_path.inputs[0])
         self.depth_path.base_path = str(self.root_path / "depths")
         self.depth_path.file_slots[0].path = f"depth_{'#' * 6}"
+        self.depth_extension = ".exr" if file_format.upper() == "OPEN_EXR" else ".hdr"
 
     @require_initialized_service
     def exposed_include_normals(self, debug=True) -> None:
@@ -1206,13 +1207,13 @@ class BlenderService(rpyc.Service):
         self.scene.render.resolution_percentage = 100
 
     @require_initialized_service
-    def exposed_image_settings(self, file_format="PNG", bitdepth=8) -> None:
+    def exposed_image_settings(self, file_format="PNG", bitdepth=8, color_mode="RGB") -> None:
         """Set the render's output format and bitdepth.
         Useful for linear intensity renders, using "OPEN_EXR" and 32 or 16.
         """
         self.scene.render.image_settings.file_format = file_format.upper()
         self.scene.render.image_settings.color_depth = str(bitdepth)
-        self.scene.render.image_settings.color_mode = "RGB"
+        self.scene.render.image_settings.color_mode = color_mode.upper()
 
     @require_initialized_service
     def exposed_use_motion_blur(self, enable: bool) -> None:
@@ -1331,8 +1332,12 @@ class BlenderService(rpyc.Service):
 
         # No idea why, but if we don't break this out into separate
         # variables the value we store is incorrect, often off by one.
+        # We add, then remove one because frame_start and frame_end are inclusive,
+        # consider [0, 99], which has length of 100, if scaled by 5, we'd get
+        # [0, 495] which has length of 496 instead of 500. So we make end exclusive,
+        # shift and scale it, then make it inclusive again.
         start = round(self.scene.frame_start * scale + shift)
-        end = round(self.scene.frame_end * scale + shift)
+        end = round((self.scene.frame_end + 1) * scale + shift) - 1
 
         if start < 0 or start >= 1_048_574 or end < 0 or end >= 1_048_574:
             raise RuntimeError(
@@ -1353,7 +1358,7 @@ class BlenderService(rpyc.Service):
         self.scene.render.motion_blur_shutter /= scale
 
     @require_initialized_service
-    def exposed_set_current_frame(self, frame_number: int):
+    def exposed_set_current_frame(self, frame_number: int) -> None:
         """Set current frame number. This might advance any animations."""
         self.scene.frame_set(frame_number)
 
@@ -1407,7 +1412,7 @@ class BlenderService(rpyc.Service):
         Raises:
             ValueError: raised if camera orientation is over-defined.
         """
-        if not (look_at is not None) ^ (rotation is not None):
+        if look_at is not None and rotation is not None:
             raise ValueError("Only one of `look_at` or `rotation` can be set.")
 
         if location is not None:
@@ -1443,6 +1448,41 @@ class BlenderService(rpyc.Service):
         self.view_layer.update()
 
     @require_initialized_service
+    def exposed_set_camera_keyframe(self, frame_num: int, matrix: npt.ArrayLike | None = None) -> None:
+        """Set camera keyframe at given frame number.
+        If camera matrix is not supplied, currently set camera position/rotation/scale will be used,
+        this allows users to set camera position using `position_camera` and `rotate_camera`.
+
+        Args:
+            frame_num (int): index of frame to set keyframe for.
+            matrix (npt.ArrayLike | None, optional): 4x4 camera transform, if not supplied,
+                use current camera matrix. Defaults to None.
+        """
+        if matrix is not None:
+            self.camera.matrix_world = mathutils.Matrix(matrix)
+        self.camera.keyframe_insert(data_path="location", frame=frame_num)
+        self.camera.keyframe_insert(data_path="rotation_euler", frame=frame_num)
+        self.camera.keyframe_insert(data_path="scale", frame=frame_num)
+
+    @require_initialized_service
+    def exposed_set_animation_range(
+        self, start: int | None = None, stop: int | None = None, step: int | None = None
+    ) -> None:
+        """Set animation range for scene.
+
+        Args:
+            start (int | None, optional): frame start, inclusive. Defaults to None.
+            stop (int | None, optional): frame stop, exclusive. Defaults to None.
+            step (int | None, optional): frame interval. Defaults to None.
+        """
+        if start is not None:
+            self.scene.frame_start = start
+        if stop:
+            self.scene.frame_end = stop - 1
+        if step is not None:
+            self.scene.frame_step = step
+
+    @require_initialized_service
     def exposed_render_current_frame(self, allow_skips=True, dry_run=False) -> dict[str, Any]:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
@@ -1463,7 +1503,7 @@ class BlenderService(rpyc.Service):
         paths = {"file_path": Path(f"frames/frame_{index:06}").with_suffix(self.scene.render.file_extension)}
 
         if self.depth_path is not None:
-            paths["depth_file_path"] = Path(f"depths/depth_{index:06}.exr")
+            paths["depth_file_path"] = Path(f"depths/depth_{index:06}{self.depth_extension}")
         if self.normal_path is not None:
             paths["normal_file_path"] = Path(f"normals/normal_{index:06}.exr")
         if self.flow_path is not None:

@@ -112,3 +112,8 @@ TODO.md
 *.pkl
 *.DS_store
 scenes/
+data/
+cache/
+examples/logs/
+examples/renders/
+examples/*.blend*
