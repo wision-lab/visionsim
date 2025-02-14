@@ -26,10 +26,9 @@ if TYPE_CHECKING:
     import multiprocess  # type: ignore
     import multiprocess.pool  # type: ignore
     import numpy.typing as npt
-    from typing_extensions import Any, Concatenate, ParamSpec, Protocol, Self, TypeVar
+    from typing_extensions import Any, Concatenate, ParamSpec, Self, TypeVar
 
-    class UpdateFn(Protocol):
-        def __call__(self, total: int | None = None, advance: int | None = None) -> None: ...
+    from ..types import UpdateFn
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -1334,11 +1333,11 @@ class BlenderService(rpyc.Service):
         # No idea why, but if we don't break this out into separate
         # variables the value we store is incorrect, often off by one.
         # We add, then remove one because frame_start and frame_end are inclusive,
-        # consider [0, 99], which has length of 100, if scaled by 5, we'd get 
-        # [0, 495] which has length of 496 instead of 500. So we make end exclusive, 
-        # shift and scale it, then make it inclusive again. 
+        # consider [0, 99], which has length of 100, if scaled by 5, we'd get
+        # [0, 495] which has length of 496 instead of 500. So we make end exclusive,
+        # shift and scale it, then make it inclusive again.
         start = round(self.scene.frame_start * scale + shift)
-        end = round((self.scene.frame_end + 1)* scale + shift) - 1
+        end = round((self.scene.frame_end + 1) * scale + shift) - 1
 
         if start < 0 or start >= 1_048_574 or end < 0 or end >= 1_048_574:
             raise RuntimeError(
