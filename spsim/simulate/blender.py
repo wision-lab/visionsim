@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     import numpy.typing as npt
     from typing_extensions import Any, Concatenate, ParamSpec, Self, TypeVar
 
-    from ..types import UpdateFn
+    from spsim.types import UpdateFn
 
     T = TypeVar("T")
     P = ParamSpec("P")
