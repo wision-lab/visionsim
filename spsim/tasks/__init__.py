@@ -3,7 +3,7 @@ from importlib import metadata
 
 from invoke import Collection, Config, Program
 
-from . import blender, colmap, dataset, emulate, ffmpeg, interpolate, transforms
+from . import blender, dataset, emulate, ffmpeg, interpolate, transforms
 
 
 class SPSIMConfig(Config):
@@ -22,7 +22,6 @@ class SPSIMConfig(Config):
 
 
 ns = Collection()
-ns.add_collection(Collection.from_module(colmap))
 ns.add_collection(Collection.from_module(dataset))
 ns.add_collection(Collection.from_module(emulate))
 ns.add_collection(Collection.from_module(ffmpeg))
