@@ -1,4 +1,3 @@
-from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import AdamW
 
 from .IFNet_HDv3 import *
