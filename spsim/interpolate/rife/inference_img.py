@@ -51,7 +51,7 @@ def interpolate_img(img_paths, output_dir, model_dir=None, exp=4, ratio=0, rthre
     print(f"Found {len(img_paths)} images.")
 
     model = Model()
-    model.load_model(model_dir, -1)
+    model.load_model(model_dir)
     print("Loaded v3.x HD model.")
 
     model.eval()

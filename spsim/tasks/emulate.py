@@ -88,11 +88,12 @@ def spad(
         collate_fn=functools.partial(_spad_collate, mode=mode, rng=rng, factor=factor, is_tonemapped=is_tonemapped),
     )
 
-    with ImgDatasetWriter(
-        output_dir, transforms=transforms_new, force=force, pattern=pattern
-    ) if mode.lower() == "img" else NpyDatasetWriter(
-        output_dir, np.ceil(shape).astype(int), transforms=transforms_new, force=force
-    ) as writer, Progress() as progress:
+    with (
+        ImgDatasetWriter(output_dir, transforms=transforms_new, force=force, pattern=pattern)
+        if mode.lower() == "img"
+        else NpyDatasetWriter(output_dir, np.ceil(shape).astype(int), transforms=transforms_new, force=force) as writer,
+        Progress() as progress,
+    ):
         task1 = progress.add_task("Writing SPAD frames", total=len(dataset))
         for idxs, imgs, poses in loader:
             writer[idxs] = (imgs, poses)
@@ -252,11 +253,12 @@ def rgb(
 
     loader = DataLoader(dataset, batch_size=1, num_workers=c.get("max_threads"), collate_fn=default_collate)
 
-    with ImgDatasetWriter(
-        output_dir, transforms=transforms_new, force=force, pattern=pattern
-    ) if mode.lower() == "img" else NpyDatasetWriter(
-        output_dir, np.ceil(shape).astype(int), transforms=transforms_new, force=force
-    ) as writer, Progress() as progress:
+    with (
+        ImgDatasetWriter(output_dir, transforms=transforms_new, force=force, pattern=pattern)
+        if mode.lower() == "img"
+        else NpyDatasetWriter(output_dir, np.ceil(shape).astype(int), transforms=transforms_new, force=force) as writer,
+        Progress() as progress,
+    ):
         task = progress.add_task("Writing RGB frames", total=len(dataset))
         for i, batch in enumerate(mitertools.ichunked(loader, chunk_size)):
             # Batch is an iterable of (idx, img, pose) that we need to reduce

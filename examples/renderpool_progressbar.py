@@ -14,9 +14,10 @@ def render(client, blend_file, tick):
 
 
 if __name__ == "__main__":
-    with BlenderClients.pool(
-        2, log_dir="logs", timeout=30, executable="flatpak run --die-with-parent org.blender.Blender"
-    ) as pool, PoolProgress() as progress:
+    with (
+        BlenderClients.pool(2, log_dir="logs", timeout=30) as pool,
+        PoolProgress() as progress,
+    ):
         for blend_file in ["monkey.blend", "cube.blend", "metaballs.blend"]:
             tick = progress.add_task(f"Rendering {blend_file}...")
             pool.apply_async(render, (Path(blend_file).resolve(), tick))
