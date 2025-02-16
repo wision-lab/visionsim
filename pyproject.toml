@@ -2,21 +2,48 @@
 name = "spsim"
 description = "Single Photon Simulator and Tools"
 version = "0.0.1"
-dynamic = ["readme", "dependencies", "optional-dependencies"]
-requires-python = ">=3.8"
+requires-python = ">=3.9"
+readme = "README.md"
+dependencies = [
+    "opencv-python",
+    "imageio",
+    "more_itertools",
+    "numpy",
+    "torch",
+    "matplotlib",
+    "scipy",
+    "invoke",
+    "tqdm",
+    "natsort",
+    "rich",
+    "jsonschema",
+    "torchvision",
+    "OpenEXR",
+    "multiprocess",
+    "rpyc",
+    "tdigest"
+]
 
 [project.scripts]
 spsim = "spsim.tasks:program.run"
 
 [tool.setuptools.packages.find]
-include = ["spsim*"]
+include = ["spsim"]
 
-[tool.setuptools.dynamic]
-readme = {file = ["README.md"], content-type = "text/markdown"}
-dependencies = {file = "requirements.txt"}
-
-[tool.setuptools.dynamic.optional-dependencies]
-dev = {file = "requirements-dev.txt"}
+[project.optional-dependencies]
+dev = [
+    "mypy",
+    "coverage",
+    "hypothesis",
+    "pre-commit",
+    "pytest",
+    "ruff",
+    "sphinx",
+    "sphinxcontrib-programoutput",
+    "sphinx-copybutton",
+    "types-jsonschema",
+    'scipy-stubs; python_version >= "3.10"'
+]
 
 [tool.ruff]
 line-length = 121
