@@ -28,14 +28,6 @@ spsim.interpolate.rife.inference\_img module
    :undoc-members:
    :show-inheritance:
 
-spsim.interpolate.rife.loss module
-----------------------------------
-
-.. automodule:: spsim.interpolate.rife.loss
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 spsim.interpolate.rife.warplayer module
 ---------------------------------------
 

@@ -12,14 +12,6 @@ spsim.tasks.blender module
    :undoc-members:
    :show-inheritance:
 
-spsim.tasks.colmap module
--------------------------
-
-.. automodule:: spsim.tasks.colmap
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 spsim.tasks.common module
 -------------------------
 

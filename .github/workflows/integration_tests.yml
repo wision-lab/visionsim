@@ -42,8 +42,8 @@ jobs:
       #    $BLENDER_PY -m pip install scipy rich
       - name: Build Docs
         run : |
+          sphinx-apidoc -f -o docs/source/apidocs spsim
           inv build-docs
-          sphinx-apidoc -f -o docs/source spsim
       - name: Run Tests
         run: |
           pytest --durations=0
