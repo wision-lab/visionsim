@@ -28,7 +28,7 @@ dependencies = [
 spsim = "spsim.tasks:program.run"
 
 [tool.setuptools.packages.find]
-include = ["spsim"]
+include = ["spsim*"]
 
 [project.optional-dependencies]
 dev = [
