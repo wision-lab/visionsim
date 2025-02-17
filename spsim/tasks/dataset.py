@@ -77,9 +77,10 @@ def imgs_to_npy(
 
     loader = DataLoader(dataset, batch_size=batch_size, num_workers=c.get("max_threads"), collate_fn=default_collate)
 
-    with NpyDatasetWriter(
-        output_dir, shape=np.ceil(shape).astype(int), transforms=transforms_new, force=force
-    ) as writer, Progress() as progress:
+    with (
+        NpyDatasetWriter(output_dir, shape=np.ceil(shape).astype(int), transforms=transforms_new, force=force) as writer,
+        Progress() as progress,
+    ):
         task1 = progress.add_task("Writing frames...", total=len(dataset))
 
         for i, (idxs, imgs, poses) in enumerate(loader):
@@ -137,9 +138,10 @@ def npy_to_imgs(
         dataset, sampler=sampler, batch_size=batch_size, num_workers=c.get("max_threads"), collate_fn=default_collate
     )
 
-    with ImgDatasetWriter(
-        output_dir, transforms=transforms_new, force=force, pattern=pattern
-    ) as writer, Progress() as progress:
+    with (
+        ImgDatasetWriter(output_dir, transforms=transforms_new, force=force, pattern=pattern) as writer,
+        Progress() as progress,
+    ):
         task1 = progress.add_task("Writing frames...", total=len(sampler))
 
         for i, (idxs, imgs, poses) in enumerate(loader):

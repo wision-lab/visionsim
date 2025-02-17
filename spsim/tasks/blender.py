@@ -92,9 +92,12 @@ def render_animation(
     if "blender.render" not in sys.argv[1]:
         raise RuntimeError("Task `blender.render-animation` must run first if running multiple tasks simultaneously.")
 
-    with BlenderClients.spawn(
-        jobs=jobs, timeout=30, autoexec=autoexec, log_dir=log_dir, executable=executable
-    ) as clients, Progress() as progress:
+    with (
+        BlenderClients.spawn(
+            jobs=jobs, timeout=30, autoexec=autoexec, log_dir=log_dir, executable=executable
+        ) as clients,
+        Progress() as progress,
+    ):
         clients.initialize(blend_file, Path(root_path).resolve())
         clients.set_resolution(width=width, height=height)
         clients.image_settings(file_format, bit_depth)

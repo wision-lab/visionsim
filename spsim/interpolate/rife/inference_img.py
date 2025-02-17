@@ -39,6 +39,7 @@ def interpolate_img(img_paths, output_dir, model_dir=None, exp=4, ratio=0, rthre
             # "https://github.com/WISION-Lab/spsim/releases/download/v0.1/flownet.pkl",
             #  This currently does not work as the repo is private...
             print(f"Downloading weights to {str(Path(torch.hub.get_dir()) / 'flownet.pkl')}")
+            Path(torch.hub.get_dir()).mkdir(exist_ok=True, parents=True)
             torch.hub.download_url_to_file(
                 "https://gist.github.com/jungerm2/1a32b3dc343c77f31d1efed224a59b5f/raw/2efe1013a34134611f2a776ccb03609446e889f9/flownet.pkl",
                 str(Path(torch.hub.get_dir()) / "flownet.pkl"),
@@ -50,7 +51,7 @@ def interpolate_img(img_paths, output_dir, model_dir=None, exp=4, ratio=0, rthre
     print(f"Found {len(img_paths)} images.")
 
     model = Model()
-    model.load_model(model_dir, -1)
+    model.load_model(model_dir)
     print("Loaded v3.x HD model.")
 
     model.eval()

@@ -115,9 +115,10 @@ def build_docs(c, preview=False, full=False):
             print("gdown https://drive.google.com/file/d/1XPkeA0ENljAjk4D9PGHpMzzr3GF_rECa/view?usp=drive_link --fuzzy")
             return
 
-        with BlenderClient.spawn(
-            timeout=30, executable="flatpak run --die-with-parent org.blender.Blender"
-        ) as client, Progress() as progress:
+        with (
+            BlenderClient.spawn(timeout=30, executable="flatpak run --die-with-parent org.blender.Blender") as client,
+            Progress() as progress,
+        ):
             client.initialize(Path("data/lego.blend").resolve(), Path("cache/quickstart/lego-gt/").resolve())
             client.unbind_camera()
 

@@ -8,7 +8,7 @@ from scipy.spatial.transform import Rotation as R
 from spsim.interpolate import interpolate_frames, interpolate_poses
 
 
-def test_interplate_rotation_matrix():
+def test_interpolate_rotation_matrix():
     # Pose at origin with no rotation
     start_pose = np.eye(4, dtype=float64)
     # Pose at (1,1,1) with 45 degree rotation around x axis
@@ -53,7 +53,7 @@ def test_interpolate_frames(tmp_path):
     interpolate_frames(tmp_path, tmp_path, n=8)
 
     # Check to make sure each image is getting darker
-    # In greyscale white=255, black=0
+    # In grayscale white=255, black=0
     prev_mean_color = 255  # Start at white
     img_paths = sorted(tmp_path.glob("frames/*.png"))
     for img_path in img_paths:
@@ -65,7 +65,7 @@ def test_interpolate_frames(tmp_path):
 
 
 def calculate_mean_color(img_path):
-    # Get Greyscale of image
+    # Get Grayscale of image
     img = Image.open(img_path).convert("L")
     # Convert to numpy array for easier processing
     img_array = np.array(img)

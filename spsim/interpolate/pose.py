@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import numpy as np
-from scipy.interpolate import interp1d
+import numpy.typing as npt
+from scipy.interpolate import make_interp_spline
 from scipy.spatial.transform import Rotation, Slerp
 
 
@@ -7,9 +10,9 @@ class pose_interp:
     """Linearly interpolate between 4x4 transformation matrices by interpolating it's components:
     Slerp the rotations and lerp the translations. This cannot do extrapolation (yet)."""
 
-    def __init__(self, transforms, ts=None, kind="linear", normalize=False):
-        ts = np.linspace(0, 1, len(transforms)) if ts is None else ts
-        self.ts, self.transforms = np.array(ts), np.array(transforms)
+    def __init__(self, transforms: npt.ArrayLike, ts: npt.ArrayLike | None = None, k=1, normalize=False) -> None:
+        self.transforms = np.array(transforms)
+        self.ts = np.linspace(0, 1, len(self.transforms)) if ts is None else np.array(ts)
         self.determinants = np.linalg.det(self.transforms[:, :3, :3])
 
         if normalize:
@@ -19,10 +22,10 @@ class pose_interp:
                 "Rotation matrices in poses must have determinant of 1. You may also try setting normalize to True."
             )
 
-        self._rotation_interp = Slerp(ts, Rotation.from_matrix(self.transforms[:, :3, :3]))
-        self._translation_interp = interp1d(ts, self.transforms[:, :3, -1], kind=kind, axis=0)
+        self._rotation_interp = Slerp(self.ts, Rotation.from_matrix(self.transforms[:, :3, :3]))
+        self._translation_interp = make_interp_spline(self.ts, self.transforms[:, :3, -1], k=k, axis=0)
 
-    def __call__(self, t):
+    def __call__(self, t: npt.ArrayLike) -> npt.NDArray:
         t_shape = np.shape(t)
         t = np.atleast_1d(t)
 
