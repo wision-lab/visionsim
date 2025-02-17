@@ -25,15 +25,6 @@ html_static_path = ["_static"]
 html_css_files = [
     "css/custom.css",
 ]
-html_sidebars = {
-    "**": [
-        "sidebar/scroll-start.html",
-        "sidebar/brand.html",
-        "sidebar/search.html",
-        "sidebar/navigation.html",
-        "sidebar/scroll-end.html",
-    ]
-}
 html_theme_options = {
     "description": "Single Photon Simulator",
     "github_user": "WISION-Lab",

@@ -1,14 +1,6 @@
 spsim.interpolate package
 =========================
 
-Subpackages
------------
-
-.. toctree::
-   :maxdepth: 4
-
-   spsim.interpolate.rife
-
 Submodules
 ----------
 

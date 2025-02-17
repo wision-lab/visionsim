@@ -43,7 +43,6 @@ jobs:
       - name: Build Docs
         run : |
           inv build-docs
-          sphinx-apidoc -f -o docs/source spsim
       - name: Run Tests
         run: |
           pytest --durations=0
