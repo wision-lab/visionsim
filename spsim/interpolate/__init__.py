@@ -40,8 +40,8 @@ def interpolate_frames(input_dir: str | os.PathLike, output_dir: str | os.PathLi
         Note: Currently only RIFE is supported for frame interpolation but we intend to add more
         
         Args:
-            input_dir (pathlib.Path): Path to directory containing images to interpolate
-            output_dir (pathlib.Path): Path to directory to output interpolated frames
+            input_dir (str): Path to directory containing images to interpolate
+            output_dir (str): Path to directory to output interpolated frames
             interpolation_method (str): The image interpolation method used
             n (int): Number of frames to interpolate between existing frames
     """
@@ -69,7 +69,7 @@ def poses_and_frames_to_json(transforms, new_poses, output_dir: str | os.PathLik
         Args:
             transforms: Original transforms JSON file
             new_poses: List of interpolated pose matrices
-            output_dir (pathlib.Path): Path to directory containing interpolated frames
+            output_dir (str): Path to directory containing interpolated frames
             file_name: Name of new transforms JSON file
     """
 
