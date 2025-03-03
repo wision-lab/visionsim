@@ -1,5 +1,7 @@
 import json
+import os
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from natsort import natsorted
@@ -32,7 +34,7 @@ def interpolate_poses(transforms, normalize:bool=False, n:int=2):
     return new_poses
 
 
-def interpolate_frames(input_dir: Path, output_dir: Path, interpolation_method:str="rife", n:int=2):
+def interpolate_frames(input_dir: str | os.PathLike, output_dir: str | os.PathLike, interpolation_method:Literal["rife"]="rife", n:int=2):
     """Interpolate between image frames
 
         Note: Currently only RIFE is supported for frame interpolation but we intend to add more
@@ -61,7 +63,7 @@ def interpolate_frames(input_dir: Path, output_dir: Path, interpolation_method:s
         raise NotImplementedError("Requested interpolation method is not supported at this time.")
 
 
-def poses_and_frames_to_json(transforms, new_poses, output_dir:Path, file_name:str="transforms.json"):
+def poses_and_frames_to_json(transforms, new_poses, output_dir: str | os.PathLike, file_name:str="transforms.json"):
     """Combines interpolated poses (matrices) and frames into a new transforms.json file
         
         Args:
