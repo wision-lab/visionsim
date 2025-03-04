@@ -41,7 +41,8 @@ jobs:
       #    $BLENDER_PY -m ensurepip
       #    $BLENDER_PY -m pip install scipy rich
       - name: Build Docs
-        run : inv build-docs
+        run : |
+          inv build-docs
       - name: Run Tests
         run: |
           pytest --durations=0

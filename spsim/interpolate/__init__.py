@@ -1,5 +1,7 @@
 import json
+import os
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from natsort import natsorted
@@ -8,10 +10,16 @@ from .pose import pose_interp  # noqa: F401
 from .rife.inference_img import interpolate_img as rife  # noqa: F401
 
 
-def interpolate_poses(transforms, normalize=False, n=2):
-    """
-    Interpolate between poses.
-    Returns the interpolated poses in matrices.
+def interpolate_poses(transforms, normalize:bool=False, n:int=2):
+    """Interpolate between pose matrices
+
+        Args:
+            transforms: List of pose matrices to interpolate between
+            normalize (bool): Whether the interpolation should be normalized or not
+            n (int): Number of poses to interpolate between existing poses
+
+        :return:
+            List of interpolated poses
     """
     # Process from frames folder
     frames = natsorted(transforms["frames"], key=lambda f: f["file_path"])
@@ -26,15 +34,18 @@ def interpolate_poses(transforms, normalize=False, n=2):
     return new_poses
 
 
-def interpolate_frames(input_dir, output_dir, interpolation_method="rife", n=2):
-    """
-    Interpolate between image frames.
-    Returns the file extension of the images
+def interpolate_frames(input_dir: str | os.PathLike, output_dir: str | os.PathLike, interpolation_method:Literal["rife"]="rife", n:int=2):
+    """Interpolate between image frames
 
-    Currently only RIFE is supported for frame interpolation but we intend
-    to add more. This method is future proofing the addition of more image interpolation
-    methods
+        Note: Currently only RIFE is supported for frame interpolation but we intend to add more
+        
+        Args:
+            input_dir (pathlib.Path): Path to directory containing images to interpolate
+            output_dir (pathlib.Path): Path to directory to output interpolated frames
+            interpolation_method (str): The image interpolation method used
+            n (int): Number of frames to interpolate between existing frames
     """
+    
     if n < 2 or not n & (n - 1) == 0:
         raise ValueError(f"Can only interpolate by a power of 2, greater or equal to 2, not {n}.")
 
@@ -52,13 +63,14 @@ def interpolate_frames(input_dir, output_dir, interpolation_method="rife", n=2):
         raise NotImplementedError("Requested interpolation method is not supported at this time.")
 
 
-def poses_and_frames_to_json(transforms, new_poses, output_dir, file_name="transforms.json"):
-    """
-    Combine interpolated poses (matrices) and frames into a
-    new transforms.json file
-
-    Interpolated IMG frames are found in the output_dir and the interpolated poses
-    are passed to this method
+def poses_and_frames_to_json(transforms, new_poses, output_dir: str | os.PathLike, file_name:str="transforms.json"):
+    """Combines interpolated poses (matrices) and frames into a new transforms.json file
+        
+        Args:
+            transforms: Original transforms JSON file
+            new_poses: List of interpolated pose matrices
+            output_dir (pathlib.Path): Path to directory containing interpolated frames
+            file_name: Name of new transforms JSON file
     """
 
     output_dir = Path(output_dir).resolve()

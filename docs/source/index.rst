@@ -34,13 +34,17 @@ The single photon simulation engine today is made up of four layers and accessib
 
 
 .. toctree::
-   :hidden:
-
    quick-start
    simulation
    interpolation
    autocomplete
    development
+
+.. toctree::
+   :caption: Documentation
+
+   API Documentation <apidocs/spsim>
+   CLI Usage <clidocs/tasks>
 
 ..
    usage/simulation
