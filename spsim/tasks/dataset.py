@@ -145,7 +145,7 @@ def npy_to_imgs(
         task1 = progress.add_task("Writing frames...", total=len(sampler))
 
         for idxs, imgs, poses in loader:
-            if isinstance(imgs.dtype, np.uint8):
+            if np.issubdtype(imgs.dtype, np.uint8):
                 writer[idxs] = (imgs, poses)
             else:
                 writer[idxs] = (np.repeat((imgs * 255).astype(np.uint8), 3, -1), poses)
