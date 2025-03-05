@@ -144,9 +144,11 @@ def npy_to_imgs(
     ):
         task1 = progress.add_task("Writing frames...", total=len(sampler))
 
-        for i, (idxs, imgs, poses) in enumerate(loader):
-            print(imgs.shape)
-            writer[idxs] = (np.repeat((imgs * 255).astype(np.uint8), 3, -1), poses)
+        for idxs, imgs, poses in loader:
+            if isinstance(imgs.dtype, np.uint8):
+                writer[idxs] = (imgs, poses)
+            else:
+                writer[idxs] = (np.repeat((imgs * 255).astype(np.uint8), 3, -1), poses)
             progress.update(task1, advance=len(idxs))
 
 
