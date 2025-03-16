@@ -5,6 +5,8 @@ import argparse
 import os
 from pathlib import Path
 
+from spsim.types import UpdateFn
+
 os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
 
 
@@ -12,14 +14,13 @@ import cv2
 import torch
 from natsort import natsorted
 from torch.nn import functional as F
-from rich.progress import track
 
 from .RIFE_HDv3 import Model
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def interpolate_img(img_paths, output_dir, model_dir=None, exp=4, ratio=0, rthreshold=0.02, rmaxcycles=8, **kwargs):
+def interpolate_img(img_paths, output_dir, model_dir=None, exp=4, ratio=0, rthreshold=0.02, rmaxcycles=8, update_fn: UpdateFn = None, **kwargs):
     torch.set_grad_enabled(False)
     if torch.cuda.is_available():
         torch.backends.cudnn.enabled = True
@@ -57,7 +58,11 @@ def interpolate_img(img_paths, output_dir, model_dir=None, exp=4, ratio=0, rthre
     model.eval()
     model.device()
 
-    for _ in track(range(len(img_paths) - 1)):
+    # Set total number of steps
+    if update_fn is not None:
+        update_fn(total=len(img_paths) - 1)
+
+    for _ in range(len(img_paths) - 1):
         # Skip ahead if all interpolated frames are already present
         p = Path(img_paths[0])
         if all((Path(output_dir) / f"{p.stem}_{i%2**exp:02}{p.suffix}").exists() for i in range(2**exp)):
@@ -140,6 +145,10 @@ def interpolate_img(img_paths, output_dir, model_dir=None, exp=4, ratio=0, rthre
             else:
                 cv2.imwrite(out, (img_list[i][0] * 255).byte().cpu().numpy().transpose(1, 2, 0)[:h, :w])
         img_paths.pop(0)
+
+        # Call any progress callbacks
+        if update_fn is not None:
+            update_fn(advance=1)
 
 
 if __name__ == "__main__":
