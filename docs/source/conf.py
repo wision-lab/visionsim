@@ -30,3 +30,4 @@ html_theme_options = {
     "github_user": "WISION-Lab",
     "github_repo": "spsim",
 }
+root_doc = "contents"
