@@ -42,6 +42,7 @@ dev = [
     "sphinxcontrib-programoutput >= 0.18",
     "click_extra[sphinx,pygments]",
     "sphinx-copybutton",
+    "sphinxcontrib-video",
     "sphinxcontrib-napoleon",
     "furo",
     "types-jsonschema",

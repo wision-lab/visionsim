@@ -1,2 +1,22 @@
 Extending the Simulator 
 =======================
+
+While the :class:`BlenderService <spsim.simulate.blender.BlenderService>` API, as typically accessed through a :class:`BlenderClient <spsim.simulate.blender.BlenderClient>` instance, provides a streamlined way to interact with Blender and facilitates most common operations, sometimes more fine-grained control is needed. For this, you can subclass ``BlenderService`` to access Blender's internal ``bpy`` API. 
+
+Here we create a custom ``ExtendedService`` which allows for axis-aligned bounding box (AABB) calculations, and listing out any missing textures: 
+
+.. literalinclude:: ../../../examples/extended_service.py 
+
+Currently, in order to use this new rendering service, the user must spin it up manually (as opposed to using :meth:`BlenderClient.spawn <spsim.simulate.blender.BlenderClient.spawn>`):
+
+.. code-block:: console 
+    
+    $ blender --background --python examples/extended_service.py
+
+And then connect to that render service, either directly using the appropriate connection settings, or using the :meth:`BlenderClient.auto_connect <spsim.simulate.blender.BlenderClient.auto_connect>`: 
+
+.. code-block:: python 
+
+    with BlenderClient.auto_connect(timeout=30) as client:
+        ... 
+

@@ -5,6 +5,13 @@ Welcome to SpSim!
 Spsim is a python library and CLI that provide tools to simulate high speed sensor data as captured by single photon cameras or conventional RGB cameras.  
 
 
+.. .. video:: https://pages.cs.wisc.edu/~sjungerman/showcase-loop.mp4
+..    :autoplay:
+..    :nocontrols:
+..    :loop:
+..    :width: 95%
+
+
 What's a single photon camera?
 ------------------------------
 

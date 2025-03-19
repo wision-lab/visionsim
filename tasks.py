@@ -173,7 +173,7 @@ def build_docs(c, preview=False, full=False):
     # Run autodocs
     with c.cd(ROOT_DIR):
         # TODO: Make this a project configuration
-        api_exclude = ["spsim/tasks","spsim/interpolate/rife"]
+        api_exclude = ["spsim/tasks", "spsim/interpolate/rife"]
         # Generate API docs
         _run(c, "sphinx-apidoc -f --remove-old -o docs/source/apidocs spsim " + " ".join(api_exclude))
         # Generate CLI docs
