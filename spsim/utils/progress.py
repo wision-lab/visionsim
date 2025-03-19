@@ -22,28 +22,29 @@ class PoolProgress(Progress):
     process, and worker processes communicate their state via a callback obtained
     when a task gets added.
 
-    Usage:
-        .. highlight:: python
-
-        import multiprocessing
-
-        def long_task(tick, min_len=50, max_len=200):
-            import random, time
-
-            length = random.randint(min_len, max_len)
-            tick(total=length)
-
-            for _ in range(length):
-                time.sleep(0.01)
-                tick(advance=1)
+    Example:
+        .. code-block:: python
 
 
-        if __name__ == "__main__":
-            with multiprocessing.Pool(4) as pool, PoolProgress() as progress:
-                for i in range(25):
-                    tick = progress.add_task(f"Task: {i}")
-                    pool.apply_async(long_task, (tick, ))
-                progress.wait()
+            import multiprocessing
+
+            def long_task(tick, min_len=50, max_len=200):
+                import random, time
+
+                length = random.randint(min_len, max_len)
+                tick(total=length)
+
+                for _ in range(length):
+                    time.sleep(0.01)
+                    tick(advance=1)
+
+
+            if __name__ == "__main__":
+                with multiprocessing.Pool(4) as pool, PoolProgress() as progress:
+                    for i in range(25):
+                        tick = progress.add_task(f"Task: {i}")
+                        pool.apply_async(long_task, (tick, ))
+                    progress.wait()
     """
 
     def __init__(self, *args, auto_visible=True, description="[green]Total progress:", **kwargs) -> None:

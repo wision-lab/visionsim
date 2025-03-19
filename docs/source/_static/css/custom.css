@@ -6,3 +6,14 @@ table.borderless th {
     padding-right: 0.5em;
     box-shadow: none
 }
+
+/* For ANSI Colors, assume green is new diff so add underline, strikethrough for red */
+.-C-Green {
+    color: #589819;
+    text-decoration: underline;
+}
+
+.-C-Red {
+    color: #ff3a3a;
+    text-decoration: line-through;
+}

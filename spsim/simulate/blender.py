@@ -149,7 +149,8 @@ class BlenderServer(rpyc.utils.server.Server):
 
     Example:
         Once created, it can be started, which will block and await for an external connection from a `BlenderClient`:
-        .. highlight:: python
+
+        .. code-block:: python
 
             server = BlenderServer()
             server.start()
@@ -581,18 +582,18 @@ class BlenderClients(tuple):
         passed a client instance as their first argument that they can use for rendering.
 
         Example:
-            .. highlight:: python
+            .. code-block:: python
 
-            def render(client, blend_file):
-                root = Path("renders") / Path(blend_file).stem
-                client.initialize(blend_file, root)
-                client.render_animation()
+                def render(client, blend_file):
+                    root = Path("renders") / Path(blend_file).stem
+                    client.initialize(blend_file, root)
+                    client.render_animation()
 
-            if __name__ == "__main__":
-                with BlenderClients.pool(2) as pool:
-                    pool.map(render, ["monkey.blend", "cube.blend", "metaballs.blend"])
+                if __name__ == "__main__":
+                    with BlenderClients.pool(2) as pool:
+                        pool.map(render, ["monkey.blend", "cube.blend", "metaballs.blend"])
 
-        Note: Here we use `multiprocess` instead of the builtin multiprocessing library to take
+        .. note:: Note: Here we use `multiprocess` instead of the builtin multiprocessing library to take
             advantage of the more advanced dill serialization (as opposed to the standard pickling).
 
         Args:

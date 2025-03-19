@@ -1,9 +1,8 @@
-===========
 Quick Start
 ===========
 
 Installation & Dependencies 
-===========================
+---------------------------
 
 .. TODO: 
     Remove following warning for v0.1.0 release.
@@ -33,7 +32,7 @@ The first time you use the renderer, it may ask you to install additional packag
 
 
 Generating a dataset
-====================
+--------------------
 
 To give you a taste of how spsim works, we will create a small scale dataset of a toy lego truck as if it was captured by a realistic 25fps conventional RGB camera and a 4kHz single photon camera for 4 seconds. To achieve this, we will:  
 
@@ -89,7 +88,7 @@ You can preview this new dataset like above, just use a step of `5x32=160` to en
 There's a few things of note here:
 
 * The new dataset actually contains `15,969` frames and not `16,000`, which might be a little surprising at first as one might expect `32x500=16,000` frames. But consider the case where you interpolate `2` frames by a factor of `2x`. You'll create a new frame between every existing frame pairs, which will give you 3 frames total, the first original frame, the interpolated frame, and the second original frame. In general, for `M` original frames interpolated `N`-times you'll get `NM-N+1` frames after interpolation.  
-* Interpolation can introduce artifacts adjacent frames in the original dataset are too different from one another. This effect and it's implications are further discussed in the :doc:`interpolation` section. In general, interpolation is useful for higher frame rates, it can help bridge the gap between `1,000` fps to `10,000` fps, not from `10` fps to `100` fps. 
+* Interpolation can introduce artifacts adjacent frames in the original dataset are too different from one another. This effect and it's implications are further discussed in the :doc:`sections/interpolation` section. In general, interpolation is useful for higher frame rates, it can help bridge the gap between `1,000` fps to `10,000` fps, not from `10` fps to `100` fps. 
 
 
 Emulating Sensor Data

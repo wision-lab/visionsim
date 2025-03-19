@@ -1,6 +1,6 @@
 
 Welcome to SpSim!
-=================================
+=================
 
 Spsim is a python library and CLI that provide tools to simulate high speed sensor data as captured by single photon cameras or conventional RGB cameras.  
 
@@ -30,3 +30,6 @@ The single photon simulation engine today is made up of four layers and accessib
   - Potentially others to come!
 
 - Data Storage Layer: Finally, all this data must be stored alongside all applicable metadata in a way that enables easy iteration and random access which is crucial for any deep learning applications. This data format is further detailed below.
+
+
+.. include:: contents.rst

@@ -1,11 +1,10 @@
-==========
-Simulation
-==========
+World Simulation
+================
 
 We use `Blender <https://www.blender.org/>`_ to generate ground truth intensity frames at any arbitrary frame rate. 
 
 Keyframe Stretching
-===================
+-------------------
 
 An artist designing a 3D animation, does so by defining a set of *keyframes*. Each one holds a timestamp and set of attributes that need to be set to particular values at the timestamp. Upon rendering, Blender will interpolate attribute values between these different keyframes. For instance, we could say that at frame #1 the camera's focal length is `50` mm and then at frame #20 it will be `100` mm, then, if we render frame #10 we should expect a focal length of `75` mm.   
 
@@ -15,11 +14,11 @@ This is where keyframe stretching comes in, it allows for a decoupling between r
  
 
 Setup a Trajectory
-==================
+------------------
 
 
 Programmatically
-----------------
+^^^^^^^^^^^^^^^^
 
 You can use the location/viewing-points or tnb settings to explicitly pass in a path for the camera to follow. Using something like ``--location-points=trajectory.json`` or  ``--location-points=[[0,0,0], [1,1,1], [2,2,2]]`` will load the points saved in the json file (or read the string as json) and move the camera along a spline connecting them all. The ``location-points`` argument defines the spline the camera will follow, while the ``viewing-points`` argument defines the spline the camera should look at. No roll along the optical axis is permitted in this mode. If ``--tnb`` is set, the camera will use the trajectory's `Frenet-Serret frame <https://en.wikipedia.org/wiki/Frenet%E2%80%93Serret_formulas>`_ to orient itself. Otherwise, the camera will point towards the spline defined by the ``--viewing-locations`` argument.   
 
@@ -30,7 +29,7 @@ You can use the location/viewing-points or tnb settings to explicitly pass in a 
 
 
 Using Blender
--------------
+^^^^^^^^^^^^^
 
 You can use a blender-defined camera animation too. To do this, first animate the camera in blender, there's a few ways to do this, namely:
 

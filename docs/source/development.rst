@@ -1,9 +1,8 @@
-===========
 Development
 ===========
 
 Editable Install
-================
+----------------
 
 To install spsim locally in an editable state with all required development dependencies, clone the repository, navigate to it and run::
     
@@ -11,7 +10,7 @@ To install spsim locally in an editable state with all required development depe
 
 
 Dev tools
-=========
+---------
 
 We're using `invoke <https://docs.pyinvoke.org/en/stable/>`_ to manage common development and housekeeping tasks.
 

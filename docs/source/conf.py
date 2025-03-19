@@ -13,7 +13,7 @@ author = "Sacha Jungerman"
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ["sphinxcontrib.programoutput", "sphinx_copybutton", "sphinx.ext.napoleon", "sphinx.ext.viewcode"]
+extensions = ["sphinxcontrib.programoutput", "sphinx_copybutton", "sphinx.ext.napoleon", "sphinx.ext.viewcode", "click_extra.sphinx"]
 templates_path = ["_templates"]
 exclude_patterns = []
 
@@ -25,9 +25,5 @@ html_static_path = ["_static"]
 html_css_files = [
     "css/custom.css",
 ]
-html_theme_options = {
-    "description": "Single Photon Simulator",
-    "github_user": "WISION-Lab",
-    "github_repo": "spsim",
-}
-root_doc = "contents"
+
+autodoc_mock_imports = ["bpy"]

@@ -243,13 +243,13 @@ class ImgDataset(Dataset):
 class ImgDatasetWriter:
     """ImgDataset writer implemented as a context manager.
 
-    Usage:
-        .. highlight:: python
+    Example:
+        .. code-block:: python
 
-        with NpyDatasetWriter(root, transforms=...) as writer:
-            for idxs, data, poses in dataset:
-                # Apply any transforms here
-                writer[idxs] = (data, poses)
+            with NpyDatasetWriter(root, transforms=...) as writer:
+                for idxs, data, poses in dataset:
+                    # Apply any transforms here
+                    writer[idxs] = (data, poses)
     """
 
     def __init__(
@@ -413,16 +413,16 @@ class NpyDataset(Dataset):
 class NpyDatasetWriter:
     """NpyDataset writer implemented as a context manager.
 
-    Usage:
-        .. highlight:: python
+    Example:
+        .. code-block:: python
 
-        src_dataset = ImgDataset(input_dir)
-        loader = DataLoader(src_dataset, ...)
+            src_dataset = ImgDataset(input_dir)
+            loader = DataLoader(src_dataset, ...)
 
-        with NpyDatasetWriter(root, shape, transforms=...) as writer:
-            for idxs, data, poses in loader:
-                # Apply any transforms here
-                writer[idxs] = (data, poses)
+            with NpyDatasetWriter(root, shape, transforms=...) as writer:
+                for idxs, data, poses in loader:
+                    # Apply any transforms here
+                    writer[idxs] = (data, poses)
     """
 
     def __init__(
