@@ -9,11 +9,11 @@ table.borderless th {
 
 /* For ANSI Colors, assume green is new diff so add underline, strikethrough for red */
 .-C-Green {
-    color: #589819;
+    color: #00A000 !important; 
     text-decoration: underline;
 }
 
 .-C-Red {
-    color: #ff3a3a;
+    color: #A40000 !important;
     text-decoration: line-through;
 }

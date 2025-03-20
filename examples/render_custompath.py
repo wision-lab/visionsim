@@ -9,10 +9,10 @@ from spsim.simulate.blender import BlenderClient
 with BlenderClient.spawn(timeout=30) as client, Progress() as progress:
     client.initialize(Path("lego.blend").resolve(), Path("renders/lego").resolve())
 
-    # Define camera trajectory as keyframes
-    # Unbind camera from any parents, otherwise position will be relative
+    # Unbind camera from any parents, otherwise position will be relative to parent
     client.unbind_camera()
 
+    # Define camera trajectory as keyframes
     for frame, theta in enumerate(np.linspace(0, 2 * np.pi, 100, endpoint=False)):
         client.position_camera(location=[5 * np.cos(theta), 5 * np.sin(theta), 1], look_at=[0, 0, 0])
         client.set_camera_keyframe(frame)

@@ -12,3 +12,4 @@ Making it use multiple instances is as easy as using :class:`BlenderClients <sps
    :language: ansi-python-console
    :shell:
 
+.. warning:: In practice, the number of rendering jobs will be limited by the user's system resources, most likely GPU VRAM. Start small, and increase accordingly.
