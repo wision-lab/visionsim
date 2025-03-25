@@ -26,4 +26,7 @@ html_css_files = [
     "css/custom.css",
 ]
 
+# -- Options for autodocs ----------------------------------------------------
+# https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html
+autodoc_type_aliases = {"npt.ArrayLike": "npt.ArrayLike"}
 autodoc_mock_imports = ["bpy"]
