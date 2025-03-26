@@ -8,33 +8,7 @@ import numpy.typing as npt
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
 
-
-# Pose derivatives
-# (translational and angular velocity, and translational acceleration)
-def egomotion_numdiff(
-    T: list[npt.NDArray],
-    Dt: float = 1,
-) -> Iterator[tuple[npt.NDArray, npt.NDArray, npt.NDArray]]:
-    locs = np.array([Tn[:3, 3] for Tn in T])
-    vels_tr_w = np.gradient(locs, Dt, axis=0)
-    accs_tr_w = np.gradient(vels_tr_w, Dt, axis=0)
-    for n in range(len(T)):
-        # Angular acceleration is not computed.
-        if n == 0:
-            rot_c = R.from_matrix(T[n][:3, :3].transpose() @ T[n + 1][:3, :3])
-        elif n == len(T) - 1:
-            rot_c = R.from_matrix(T[n - 1][:3, :3].transpose() @ T[n][:3, :3])
-        else:
-            rot_c_x2 = T[n - 1][:3, :3].transpose() @ T[n + 1][:3, :3]
-            slerp = Slerp(np.array([0.0, 1.0]), R.from_matrix(np.array([np.eye(3), rot_c_x2])))
-            rot_c = slerp(0.5)
-        vel_ang_c = rot_c.as_rotvec() * (1.0 / Dt)
-
-        vel_tr_c = T[n][:3, :3].transpose() @ vels_tr_w[n, :]
-        acc_tr_c = T[n][:3, :3].transpose() @ accs_tr_w[n, :]
-
-        yield (vel_tr_c, acc_tr_c, vel_ang_c)
-
+from spsim.interpolate.pose import pose_interp
 
 """ Forster et al., "IMU Preintegration on Manifold for Efficient Visual-Inertial
                     Maximum-a-Posteriori Estimation", 2015.
@@ -76,6 +50,24 @@ def egomotion_int_step_fwd_Euler(
     return (T_wc_next, vel_tr_w_next, vel_ang_w_next, vel_tr_c_next, vel_ang_c_next)
 
 
+def egomotion_int_IMUdata_fwd_Euler(
+    acc_IMU: Iterable[npt.NDArray],
+    vel_ang_gyro: Iterable[npt.NDArray],
+    Dt: float = 1.0 / 800,
+    grav_w: npt.NDArray = np.array([0, 0, -9.8]),  # m/(s^2)
+    T_wc_init: npt.NDArray = np.eye(4),
+    vel_tr_c_init: npt.NDArray = np.zeros((3,)),
+) -> Iterator[tuple[npt.NDArray, npt.NDArray, npt.NDArray]]:
+    T_wc = T_wc_init
+    vel_tr_c = vel_tr_c_init
+    for a, vel_ang_c in zip(acc_IMU, vel_ang_gyro):
+        yield T_wc, vel_tr_c, vel_ang_c
+
+        acc_tr_c = a + (T_wc[:3, :3].transpose() @ grav_w)
+        r = egomotion_int_step_fwd_Euler(T_wc=T_wc, vel_tr_c=vel_tr_c, vel_ang_c=vel_ang_c, acc_tr_c=acc_tr_c, Dt=Dt)
+        T_wc, vel_tr_c = r[0], r[3]
+
+
 """
 Follows the Appendix in Crassidis (2006), "Sigma-Point Kalman Filtering for Integrated GPS and
 Inertial Navigation".
@@ -106,11 +98,20 @@ def sim_IMU(
     std_gyro_discrete = std_gyro / (Dt**0.5)
     std_bias_acc_discrete = std_bias_acc * (Dt**0.5)
     std_bias_gyro_discrete = std_bias_gyro * (Dt**0.5)
+
+    # get angular velocity (in world coords) and positional acceleration (in camera space)
+    t = np.arange(len(T_wc_seq)) * Dt
+    pose_spline = pose_interp(T_wc_seq, t)
+    vel_ang_w, _ = pose_spline(t, order=1)
+    _, acc_tr_w = pose_spline(t, order=2)
+    acc_tr_c = np.array([T_wc[:3, :3].T @ a for T_wc, a in zip(T_wc_seq, acc_tr_w)])
+
+    # loop initialization
     bias_acc = init_bias_acc
     bias_gyro = init_bias_gyro
-
     t = 0.0
-    for T_wc, (v_tr_c, a_tr_c, v_ang_c) in zip(T_wc_seq, egomotion_numdiff(T_wc_seq, Dt)):
+
+    for T_wc, a_tr_c, v_ang_w in zip(T_wc_seq, acc_tr_c, vel_ang_w):
         a_tr_w = (T_wc[:3, :3] @ a_tr_c).flatten()
         # IMU is assumed collocated with the camera
         a_tr_IMU = T_wc[:3, :3].transpose() @ (a_tr_w - grav_w)
@@ -125,7 +126,7 @@ def sim_IMU(
 
         bias_gyro_next = bias_gyro + std_bias_gyro_discrete * rng.standard_normal((3,))
         sim_v_ang = (
-            v_ang_c
+            v_ang_w
             + 0.5 * (bias_gyro + bias_gyro_next)
             + ((((std_gyro_discrete**2) + (1 / 12) * (std_bias_gyro_discrete**2)) ** 0.5) * rng.standard_normal((3,)))
         )
@@ -136,21 +137,3 @@ def sim_IMU(
         bias_acc = bias_acc_next
         bias_gyro = bias_gyro_next
         t = t + Dt
-
-
-def egomotion_int_IMUdata_fwd_Euler(
-    acc_IMU: Iterable[npt.NDArray],
-    vel_ang_gyro: Iterable[npt.NDArray],
-    Dt: float = 1.0 / 800,
-    grav_w: npt.NDArray = np.array([0, 0, -9.8]),  # m/(s^2)
-    T_wc_init: npt.NDArray = np.eye(4),
-    vel_tr_c_init: npt.NDArray = np.zeros((3,)),
-) -> Iterator[tuple[npt.NDArray, npt.NDArray, npt.NDArray]]:
-    T_wc = T_wc_init
-    vel_tr_c = vel_tr_c_init
-    for a, vel_ang_c in zip(acc_IMU, vel_ang_gyro):
-        yield T_wc, vel_tr_c, vel_ang_c
-
-        acc_tr_c = a + (T_wc[:3, :3].transpose() @ grav_w)
-        r = egomotion_int_step_fwd_Euler(T_wc=T_wc, vel_tr_c=vel_tr_c, vel_ang_c=vel_ang_c, acc_tr_c=acc_tr_c, Dt=Dt)
-        T_wc, vel_tr_c = r[0], r[3]
