@@ -45,14 +45,14 @@ class pose_interp:
             order (Literal[0, 1, 2], optional): Order of differentiation:
 
                 * 0 (default): return pose as 4x4 matrices
-                * 1: return velocities as 2x3 matrices, where the first row is the angular rates
+                * 1: return velocities, where the first row is the angular rates
                     in rad/sec and second row are positional velocities.
-                * 2: return the accelerations as 2x3 matrices, packaged as angular acceleration
-                    (in rad/sec/sec) the positional.
+                * 2: return the accelerations, packaged as angular acceleration
+                    (in rad/sec/sec) then positional.
             Defaults to 0.
 
         Returns:
-            npt.NDArray: Interpolated poses (Tx4x4) or their derivatives (Tx2x3)
+            npt.NDArray: Interpolated poses (Tx4x4) or their derivatives (2xTx3)
 
         :meta public:
         """
@@ -73,4 +73,4 @@ class pose_interp:
             Rt = np.concatenate([cast(Rotation, R).as_matrix(), t[..., None]], axis=2)
             transforms = np.concatenate([Rt, bottom], axis=1)
             return transforms.reshape(*t_shape, 4, 4)
-        return np.concatenate([R, t], axis=0)
+        return np.stack([cast(np.ndarray, R), t], axis=0)
