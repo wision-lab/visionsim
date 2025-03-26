@@ -21,7 +21,7 @@ def test_interpolate_rotation_matrix():
         "frames": [{"file_path": "0", "transform_matrix": start_pose}, {"file_path": "1", "transform_matrix": end_pose}]
     }
     # Interpolate the poses
-    new_poses = interpolate_poses(transforms, normalize=True)
+    new_poses = interpolate_poses(transforms, normalize=True, k=1)
     interpolated_start, interpolated_pose, interpolated_end = new_poses
 
     # Make sure first and last pose haven't changed

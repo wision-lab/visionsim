@@ -10,14 +10,14 @@ from typing_extensions import Literal, cast
 class pose_interp:
     """Linearly interpolate between 4x4 (or 3x4) transformation matrices by interpolating it's components"""
 
-    def __init__(self, transforms: npt.ArrayLike, ts: npt.ArrayLike | None = None, k=1, normalize=False) -> None:
+    def __init__(self, transforms: npt.ArrayLike, ts: npt.ArrayLike | None = None, k=3, normalize=False) -> None:
         """Create a spline from the rotational and translational components of each pose.
         Specifically, we use scipy's RotationSpline and BSpline respectively.
 
         Args:
             transforms (npt.ArrayLike): Poses to interpolate as matrices.
             ts (npt.ArrayLike | None, optional): Time of each pose. Defaults to None, meaning linspace between [0, 1].
-            k (int, optional): B-spline degree for translation. Default is linear (i.e: 1).
+            k (int, optional): B-spline degree for translation. Default is cubic (i.e: 3).
             normalize (bool, optional): If true, normalize rotations by their determinants. Defaults to False.
 
         Raises:
@@ -26,6 +26,7 @@ class pose_interp:
         self.transforms = np.array(transforms)
         self.ts = np.linspace(0, 1, len(self.transforms)) if ts is None else np.array(ts)
         self.determinants = np.linalg.det(self.transforms[:, :3, :3])
+        self.k = k
 
         if normalize:
             self.transforms[:, :3, :3] /= self.determinants[:, None, None]
@@ -57,7 +58,9 @@ class pose_interp:
         :meta public:
         """
         if order not in [0, 1, 2]:
-            raise ValueError("`order` must be 0, 1 or 2.")
+            raise ValueError(f"Order of derivative (order = {order}) must be 0, 1 or 2.")
+        if order > self.k:
+            raise ValueError(f"Order of derivative (order = {order}) must be <= order of spline (k = {self.k}).")
 
         t_shape = np.shape(ts)
         ts = np.atleast_1d(ts)
