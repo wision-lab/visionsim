@@ -593,7 +593,8 @@ class BlenderClients(tuple):
                     with BlenderClients.pool(2) as pool:
                         pool.map(render, ["monkey.blend", "cube.blend", "metaballs.blend"])
 
-        .. note:: Note: Here we use `multiprocess` instead of the builtin multiprocessing library to take
+        Note:
+            Here we use `multiprocess` instead of the builtin multiprocessing library to take
             advantage of the more advanced dill serialization (as opposed to the standard pickling).
 
         Args:
@@ -863,7 +864,7 @@ class BlenderService(rpyc.Service):
         """Initialize BlenderService and load blendfile.
 
         Args:
-            blend_file (str | os.PathLike): path if scene file to load.
+            blend_file (str | os.PathLike): path of scene file to load.
             root_path (str | os.PathLike): path at which to save rendered results.
         """
         # TODO: This should perhaps be `exposed_load_file`, and the root_path logic should be moved

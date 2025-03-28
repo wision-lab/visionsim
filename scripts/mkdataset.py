@@ -282,7 +282,7 @@ def purge_corrupted(datasets: str | os.PathLike, /, jobs: int | None = None, dry
     def validate_single(frame):
         try:
             iio.imread(frame)
-        except:
+        except Exception:
             log.warning("Corrupted: %s", frame)
 
             if not dry_run:
@@ -291,7 +291,7 @@ def purge_corrupted(datasets: str | os.PathLike, /, jobs: int | None = None, dry
 
     with multiprocess.Pool(jobs) as pool:
         frames = list(Path(datasets).glob("**/*.png"))
-        results = track(pool.imap(validate_single, frames), description=f"Purging...", total=len(frames))
+        results = track(pool.imap(validate_single, frames), description="Purging...", total=len(frames))
         corrupted = [f for f in results if f]
 
     log.info(f"Found {'and removed' if not dry_run else ''} {len(corrupted)} corrupted files out of {len(frames)}.")
