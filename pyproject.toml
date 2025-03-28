@@ -42,6 +42,8 @@ dev = [
     "sphinxcontrib-programoutput",
     "sphinx-copybutton",
     "sphinxcontrib-napoleon",
+    "nbsphinx",
+    "ipykernel",
     "furo",
     "types-jsonschema",
     'scipy-stubs; python_version >= "3.10"'

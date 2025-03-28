@@ -45,6 +45,8 @@ The single photon simulation engine today is made up of four layers and accessib
 
    API Documentation <apidocs/spsim>
    CLI Usage <clidocs/tasks>
+   docs_examples_templates
+   Jupyter Notebook Example <example.ipynb>
 
 ..
    usage/simulation

@@ -13,7 +13,7 @@ author = "Sacha Jungerman"
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ["sphinxcontrib.programoutput", "sphinx_copybutton", "sphinx.ext.napoleon", "sphinx.ext.viewcode"]
+extensions = ["sphinxcontrib.programoutput", "sphinx_copybutton", "sphinx.ext.napoleon", "sphinx.ext.viewcode", "nbsphinx"]
 templates_path = ["_templates"]
 exclude_patterns = []
 
