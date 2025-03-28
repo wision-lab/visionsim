@@ -26,7 +26,7 @@ from spsim.types import UpdateFn
 from spsim.utils.progress import PoolProgress
 
 logging.basicConfig(
-    level="NOTSET",
+    level=logging.INFO,
     format="%(message)s",
     datefmt="[%X]",
     handlers=[RichHandler(rich_tracebacks=True)],
@@ -197,6 +197,7 @@ def create_datasets(
     sequences_per_scene: int = 1,
     num_frames: int | None = None,
     allow_skips: bool = False,
+    dry_run: bool = False,
 ):
     """Create datasets by rendering out sequences from many blend-files.
 
@@ -211,6 +212,7 @@ def create_datasets(
             uniformly from the animation range [1, 600].
         num_frames (int | None, optional): Number of frames to render per sequence. If None, render everything.
         allow_skips (bool, optional): If true, allow skipping over whole sequences if their corresponding root directory exists.
+        dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
     """
     # Sample sequences and validate args.
     frame_starts, num_frames = sample_scenes(render_config, sequences_per_scene, num_frames)
@@ -255,6 +257,7 @@ def create_datasets(
                         frame_start=frame_start,
                         frame_end=frame_start + num_frames,
                         config=render_config,
+                        dry_run=dry_run,
                         tick=tick,
                     ),
                 )
