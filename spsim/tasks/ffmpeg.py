@@ -269,16 +269,17 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
         "input_dir": "directory containing all video files (mp4's expected)",
         "width": "width of video grid to produce, default: -1 (infer)",
         "height": "height of video grid to produce, default: -1 (infer)",
+        "pattern": "use files that match this pattern as inputs, default: '*.mp4'",
         "outfile": "where to save generated mp4, default: 'combined.mp4'",
         "force": "if true, overwrite output file if present, default: False",
     },
 )
-def grid(c, input_dir, width=-1, height=-1, outfile="combined.mp4", force=False):
+def grid(c, input_dir, width=-1, height=-1, pattern="*.mp4", outfile="combined.mp4", force=False):
     """Make a mosaic from videos in a folder, organizing them in a grid"""
     import numpy as np
     from natsort import natsorted
 
-    files = natsorted(Path(input_dir).glob("*.mp4"))
+    files = natsorted(Path(input_dir).glob(pattern))
 
     if width <= 0 and height <= 0:
         candidates = [
