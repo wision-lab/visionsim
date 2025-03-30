@@ -5,6 +5,8 @@ import json
 import logging
 import os
 import random
+import shlex
+import subprocess
 import sys
 from dataclasses import dataclass
 from functools import partial
@@ -185,7 +187,7 @@ def render(
         frame_start=frame_start, frame_end=frame_end, allow_skips=True, dry_run=dry_run, update_fn=tick
     )
 
-    with open(config.root / "transforms.json", "w") as f:
+    with open(root / "transforms.json", "w") as f:
         json.dump(transforms, f, indent=2)
 
 
@@ -264,12 +266,82 @@ def create_datasets(
             else:
                 log.info(f"Skipping: {sequence_dir}")
         progress.wait()
+        pool.close()
+        pool.join()
 
     # Gather some metadata about every sequence and save it to a "info.json" file.
     with multiprocess.Pool(render_config.jobs) as pool:
         info_fn = partial(sequence_info, config=render_config)
         sequence_dirs = [get_sequence_dir(blend_file.stem, frame_start) for blend_file, frame_start in sequences]
-        pool.imap(info_fn, track(sequence_dirs, description="Gathering Metadata..."))
+        list(pool.imap(info_fn, track(sequence_dirs, description="Gathering Metadata...")))
+
+
+@app.command
+def preview_datasets(
+    datasets_dir: str | os.PathLike,
+    previews_dir: str | os.PathLike,
+    allow_skips: bool = False,
+    grids: bool = True,
+    jobs: int = 1,
+):
+    """Generate preview videos of the datasets
+
+    Args:
+        datasets_dir (str | os.PathLike): Datasets folder, will search for all `transforms.json` recursively.
+        previews_dir (str | os.PathLike): Directory in which to save previews, files will be saved
+            as eg: "previews-dir/scene-name/sequence-id/frames.mp4"
+        allow_skips (bool, optional): If true, and outputs exist, skip over them. Defaults to False.
+        grids (bool, optional): If true, assemble all previews into a grid-video saved in
+            previews-dir/grids. Defaults to True.
+        jobs (int, optional): Allow multiple previews to be built in parallel. Defaults to 1.
+    """
+    previews_dir = Path(previews_dir)
+    previews_dir.mkdir(exist_ok=True, parents=True)
+    (previews_dir / "grids").mkdir(exist_ok=True, parents=True)
+    sequence_dirs = [p.parent for p in Path(datasets_dir).glob("**/transforms.json")]
+    run = partial(subprocess.run, check=True, capture_output=True)
+    frame_types = set()
+    commands = []
+
+    for sequence_dir in sequence_dirs:
+        for frame_type in sequence_dir.glob("*"):
+            if frame_type.is_dir() and any(frame_type.glob("*.png")):
+                preview_path = previews_dir / sequence_dir.parent.stem / sequence_dir.stem / f"{frame_type.stem}.mp4"
+                if not preview_path.exists() or not allow_skips:
+                    cmd = f"spsim ffmpeg.animate {frame_type} " f'-o {preview_path} --pattern="*.png" --force'
+                    commands.append(shlex.split(cmd))
+                frame_types.add(frame_type.stem)
+
+    if commands:
+        with multiprocess.Pool(jobs) as pool:
+            list(track(pool.imap(run, commands), description=f"Making Previews...", total=len(commands)))
+
+    if grids:
+        # Note: This is effectively taken from ffmpeg.grid and combine tasks
+        for frame_type in track(frame_types, description="Making Preview Grids..."):
+            outfile = previews_dir / "grids" / f"grid-{frame_type}.mp4"
+            files = natsorted(Path(previews_dir).glob(f"**/{frame_type}.mp4"))
+            candidates = [
+                (w, int(len(files) / w)) for w in range(1, len(files) + 1) if int(len(files) / w) == (len(files) / w)
+            ]
+            w, h = min(reversed(candidates), key=lambda c: sum(c))
+            matrix = np.array([str(p) for p in files]).reshape((h, w)).tolist()
+            in_paths = [p for row in matrix for p in row]
+            in_paths_str = "".join(f"-i {p} " for p in in_paths)
+            filter_inputs_str = "".join(
+                f"[{i}:v] setpts=PTS-STARTPTS, scale=qvga [a{i}]; " for i, _ in enumerate(in_paths)
+            )
+            W, H = np.meshgrid(
+                ["+".join(f"w{i}" for i in range(j)) or "0" for j in range(w)],
+                ["+".join(f"h{i}" for i in range(j)) or "0" for j in range(h)],
+            )
+            layout_spec = "|".join(f"{i}_{j}" for i, j in zip(W.flatten(), H.flatten()))
+            placement = (
+                "".join(f"[a{i}]" for i, _ in enumerate(in_paths))
+                + f"xstack=inputs={len(in_paths)}:layout={layout_spec}[out]"
+            )
+            cmd = f'ffmpeg {in_paths_str} -filter_complex "{filter_inputs_str} {placement}" -map "[out]" -c:v libx264 {outfile}'
+            subprocess.run(shlex.split(cmd), check=True, stdout=subprocess.DEVNULL)
 
 
 @app.command
@@ -294,7 +366,7 @@ def purge_corrupted(datasets: str | os.PathLike, /, jobs: int | None = None, dry
 
     with multiprocess.Pool(jobs) as pool:
         frames = list(Path(datasets).glob("**/*.png"))
-        results = track(pool.imap(validate_single, frames), description="Purging...", total=len(frames))
+        results = pool.imap(validate_single, track(frames, description="Purging..."))
         corrupted = [f for f in results if f]
 
     log.info(f"Found {'and removed' if not dry_run else ''} {len(corrupted)} corrupted files out of {len(frames)}.")

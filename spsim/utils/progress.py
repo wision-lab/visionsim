@@ -45,6 +45,8 @@ class PoolProgress(Progress):
                         tick = progress.add_task(f"Task: {i}")
                         pool.apply_async(long_task, (tick, ))
                     progress.wait()
+                    pool.close()
+                    pool.join()
     """
 
     def __init__(self, *args, auto_visible=True, description="[green]Total progress:", **kwargs) -> None:

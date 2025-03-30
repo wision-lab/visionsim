@@ -23,3 +23,5 @@ if __name__ == "__main__":
             # Note: The client will be automagically passed to `render` here.
             pool.apply_async(render, args=(blend_file, tick))
         progress.wait()
+        pool.close()
+        pool.join()

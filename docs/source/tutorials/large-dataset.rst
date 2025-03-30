@@ -50,4 +50,13 @@ Finally, putting it all together:
 .. literalinclude:: ../../../scripts/mkdataset.py
    :pyobject: create_datasets
 
+This CLI can be used, for instance, like so::
+
+   CUDA_VISIBLE_DEVICES=0 python scripts/mkdataset.py create-datasets \
+      --scenes-dir=scenes/ --datasets-dir=datasets/ --sequences-per-scene=1 \ 
+      --render-config.width=800 --render-config.height=800 \
+      --render-config.depths --render-config.normals \
+      --render-config.flows --render-config.segmentations \ 
+      --render-config.keyframe-multiplier=2.0 --render-config.jobs=5 
+
 For brevity, there's a few things that have been omitted in this tutorial, for the full source, see ``scripts/mkdataset.py``.
