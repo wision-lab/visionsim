@@ -33,3 +33,4 @@ autodoc_mock_imports = ["bpy"]
 autodoc_default_options = {
     'special-members': '__init__,__call__',
 }
+autodoc_member_order = "bysource"

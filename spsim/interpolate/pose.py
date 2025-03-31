@@ -51,12 +51,10 @@ class pose_interp:
                 * 2: return the accelerations, packaged as angular acceleration
                     (in rad/sec/sec) then positional.
             
-            Defaults to 0.
+                Defaults to 0.
 
         Returns:
             npt.NDArray: Interpolated poses (Tx4x4) or their derivatives (2xTx3)
-
-        :meta public:
         """
         if order not in [0, 1, 2]:
             raise ValueError(f"Order of derivative (order = {order}) must be 0, 1 or 2.")
