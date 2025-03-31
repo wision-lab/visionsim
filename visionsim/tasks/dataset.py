@@ -42,7 +42,7 @@ def imgs_to_npy(
     from rich.progress import Progress
     from torch.utils.data import DataLoader
 
-    from spsim.dataset import ImgDataset, NpyDatasetWriter, default_collate
+    from visionsim.dataset import ImgDataset, NpyDatasetWriter, default_collate
 
     from .common import _validate_directories
 
@@ -121,7 +121,7 @@ def npy_to_imgs(
     from rich.progress import Progress
     from torch.utils.data import DataLoader
 
-    from spsim.dataset import ImgDatasetWriter, NpyDataset, default_collate
+    from visionsim.dataset import ImgDatasetWriter, NpyDataset, default_collate
 
     from .common import _validate_directories
 
@@ -162,7 +162,7 @@ def info(_, input_dir, json=False):
     """Print information about the dataset"""
     import json
 
-    from spsim.dataset import Dataset
+    from visionsim.dataset import Dataset
 
     from .common import _validate_directories
 

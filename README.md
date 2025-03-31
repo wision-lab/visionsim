@@ -9,7 +9,7 @@ You'll need:
 - [Blender](https://www.blender.org/download/) >= 3.3.1, to render new views. 
 - [ffmpeg](https://ffmpeg.org/download.html), for visualizations. 
 - python dependencies listed in `requirements.txt`. 
-- install `spsim` locally using `pip install .` or using `pip install -e ".[dev]"` if developing.
+- install `visionsim` locally using `pip install .` or using `pip install -e ".[dev]"` if developing.
 
 Make sure Blender and ffmpeg are on your PATH.
 The first time you use the renderer, it may ask you to install additional packages into blender's runtime. 

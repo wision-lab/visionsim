@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from spsim.simulate.blender import BlenderClients
+from visionsim.simulate.blender import BlenderClients
 
 
 def render(client, blend_file):

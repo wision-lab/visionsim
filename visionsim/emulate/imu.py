@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 from scipy.spatial.transform import Rotation as R
 
-from spsim.interpolate.pose import pose_interp
+from visionsim.interpolate.pose import pose_interp
 
 
 def imu_integration(

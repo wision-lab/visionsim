@@ -17,15 +17,16 @@ import multiprocess
 import multiprocess.pool
 import numpy as np
 import numpy.typing as npt
+import tyro
 from natsort import natsorted
 from rich.logging import RichHandler
 from rich.progress import track
-from tyro.extras import SubcommandApp
+from rich.traceback import install
 
-from spsim.dataset import Dataset
-from spsim.simulate.blender import BlenderClient, BlenderClients
-from spsim.types import UpdateFn
-from spsim.utils.progress import PoolProgress
+from visionsim.dataset import Dataset
+from visionsim.simulate.blender import BlenderClient, BlenderClients
+from visionsim.types import UpdateFn
+from visionsim.utils.progress import PoolProgress
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,7 +36,8 @@ logging.basicConfig(
 )
 logging.getLogger("PIL").setLevel(logging.WARNING)
 log = logging.getLogger("rich")
-app = SubcommandApp()
+install(suppress=[tyro])
+app = tyro.extras.SubcommandApp()
 
 
 def find_blends(root: str | os.PathLike) -> list[Path]:
@@ -308,7 +310,7 @@ def preview_datasets(
             if frame_type.is_dir() and any(frame_type.glob("*.png")):
                 preview_path = previews_dir / sequence_dir.parent.stem / sequence_dir.stem / f"{frame_type.stem}.mp4"
                 if not preview_path.exists() or not allow_skips:
-                    cmd = f"spsim ffmpeg.animate {frame_type} " f'-o {preview_path} --pattern="*.png" --force'
+                    cmd = f"visionsim ffmpeg.animate {frame_type} " f'-o {preview_path} --pattern="*.png" --force'
                     commands.append(shlex.split(cmd))
                 frame_types.add(frame_type.stem)
 

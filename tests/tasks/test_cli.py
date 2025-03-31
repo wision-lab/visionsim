@@ -3,17 +3,17 @@ import inspect
 import pytest
 from invoke.context import Context
 
-from spsim.tasks import ns
-from spsim.tasks.common import _run
+from visionsim.tasks import ns
+from visionsim.tasks.common import _run
 
 
 def test_list_has_all_tasks():
-    # Note: We cannot mock the context or runner here as we are if spsim cli
+    # Note: We cannot mock the context or runner here as we are if visionsim cli
     #   was properly installed and is on PATH. Also, we need to set `in_stream`
     #   to False otherwise invoke reads from stdin and interferes with pytest.
     c = Context()
     tasks = ns.task_names.keys()
-    result = _run(c, "spsim --list", hide=True, in_stream=False)
+    result = _run(c, "visionsim --list", hide=True, in_stream=False)
     assert all(t in result.stdout.strip() for t in tasks)
 
 

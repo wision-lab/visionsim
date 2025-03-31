@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from spsim.simulate.blender import BlenderClients
-from spsim.utils.progress import PoolProgress
+from visionsim.simulate.blender import BlenderClients
+from visionsim.utils.progress import PoolProgress
 
 
 def render(client, blend_file, tick):

@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 from rich.progress import Progress
 
-from spsim.simulate.blender import BlenderClient
+from visionsim.simulate.blender import BlenderClient
 
 with BlenderClient.spawn(timeout=30) as client, Progress() as progress:
     client.initialize(Path("lego.blend").resolve(), Path("renders/lego").resolve())

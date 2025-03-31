@@ -6,8 +6,8 @@ from pathlib import Path
 from invoke import task
 from rich.progress import Progress
 
-from spsim.simulate.blender import BlenderClients
-from spsim.tasks.common import _run
+from visionsim.simulate.blender import BlenderClients
+from visionsim.tasks.common import _run
 
 
 @task(
@@ -81,7 +81,7 @@ def render_animation(
 ):
     """Render views of a .blend file while moving camera along an animated trajectory
     Example:
-        spsim blender.render-animation <blend-file> <output-path>
+        visionsim blender.render-animation <blend-file> <output-path>
     """
 
     # Runtime checks and gard rails

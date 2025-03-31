@@ -3,9 +3,9 @@ from pathlib import Path
 import numpy as np
 from invoke import task
 
-from spsim.dataset import IMG_SCHEMA, read_and_validate
-from spsim.interpolate import interpolate_frames, interpolate_poses, poses_and_frames_to_json
-from spsim.tasks.common import _validate_directories
+from visionsim.dataset import IMG_SCHEMA, read_and_validate
+from visionsim.interpolate import interpolate_frames, interpolate_poses, poses_and_frames_to_json
+from visionsim.tasks.common import _validate_directories
 
 
 @task(
@@ -22,7 +22,7 @@ def video(c, input_file, output_file, method="rife", n=2):
 
     from natsort import natsorted
 
-    from spsim.interpolate import rife
+    from visionsim.interpolate import rife
 
     from .ffmpeg import animate, count_frames, duration, extract
 

@@ -105,12 +105,12 @@ A *full* dataset refers to a folder containing a train/test/val folder, it is un
 Data Loading
 ------------
 
-Utilities for easily creating, and efficiently iterating over datasets can be found in :mod:`spsim.dataset`. Here's how to use pytorch's dataloader:
+Utilities for easily creating, and efficiently iterating over datasets can be found in :mod:`visionsim.dataset`. Here's how to use pytorch's dataloader:
 
 .. code-block:: python
 
     from torch.utils.data import DataLoader
-    from spsim.dataset import Dataset, default_collate 
+    from visionsim.dataset import Dataset, default_collate 
 
     src_dataset = Dataset.from_path(input_dir)
     loader = DataLoader(src_dataset, batch_size=256, num_workers=8, collate_fn=default_collate)

@@ -3,14 +3,14 @@ import functools
 import numpy as np
 from invoke import task
 
-from spsim.emulate.rgb import emulate_rgb_from_sequence
+from visionsim.emulate.rgb import emulate_rgb_from_sequence
 
 
 def _spad_collate(batch, *, mode, rng, factor, is_tonemapped=True):
     """Use default collate function on batch and then simulate SPAD, enabling compute to be done in threads"""
-    from spsim.dataset import default_collate
-    from spsim.emulate.spc import emulate_spc
-    from spsim.utils.color import srgb_to_linearrgb
+    from visionsim.dataset import default_collate
+    from visionsim.emulate.spc import emulate_spc
+    from visionsim.utils.color import srgb_to_linearrgb
 
     idxs, imgs, poses = default_collate(batch)
 
@@ -58,7 +58,7 @@ def spad(
     from rich.progress import Progress
     from torch.utils.data import DataLoader
 
-    from spsim.dataset import Dataset, ImgDatasetWriter, NpyDatasetWriter
+    from visionsim.dataset import Dataset, ImgDatasetWriter, NpyDatasetWriter
 
     from .common import _validate_directories
 
@@ -135,8 +135,8 @@ def events(
     import imageio.v3 as iio
     from rich.progress import Progress
 
-    from spsim.dataset import Dataset
-    from spsim.emulate.dvs import EventEmulator
+    from visionsim.dataset import Dataset
+    from visionsim.emulate.dvs import EventEmulator
 
     from .common import _validate_directories
 
@@ -230,9 +230,9 @@ def rgb(
     from rich.progress import Progress
     from torch.utils.data import DataLoader
 
-    from spsim.dataset import Dataset, ImgDatasetWriter, NpyDatasetWriter, default_collate
-    from spsim.interpolate import pose_interp
-    from spsim.utils.color import srgb_to_linearrgb
+    from visionsim.dataset import Dataset, ImgDatasetWriter, NpyDatasetWriter, default_collate
+    from visionsim.interpolate import pose_interp
+    from visionsim.utils.color import srgb_to_linearrgb
 
     from .common import _validate_directories
 
@@ -328,7 +328,7 @@ def imu(
     import sys
     from pathlib import Path
 
-    from spsim.dataset import Dataset
+    from visionsim.dataset import Dataset
 
     if not Path(input_dir).resolve().exists():
         raise RuntimeError("Input directory path doesn't exist!")
@@ -341,7 +341,7 @@ def imu(
     init_bias_acc = np.array(ast.literal_eval(init_bias_acc))
     init_bias_gyro = np.array(ast.literal_eval(init_bias_gyro))
 
-    from spsim.emulate.imu import emulate_imu
+    from visionsim.emulate.imu import emulate_imu
 
     data_gen = emulate_imu(
         dataset.poses,

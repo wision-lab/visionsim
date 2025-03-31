@@ -38,7 +38,7 @@ To enable easy configuration and CLI parsing, we create a render configuration c
 
 | 
 
-We can then define a render function which will be called for each sequence. This function is very similar to the :func:`render-animation <spsim.tasks.blender.render_animation>` CLI, except it can be used with :meth:`BlenderClients.pool <spsim.simulate.blender.BlenderClients.pool>` which enables us to render many sequences at the same time:
+We can then define a render function which will be called for each sequence. This function is very similar to the :func:`render-animation <visionsim.tasks.blender.render_animation>` CLI, except it can be used with :meth:`BlenderClients.pool <visionsim.simulate.blender.BlenderClients.pool>` which enables us to render many sequences at the same time:
 
 .. literalinclude:: ../../../scripts/mkdataset.py
    :pyobject: render

@@ -5,10 +5,10 @@ import bpy
 import numpy as np
 from mathutils import Vector
 
-# Add spsim on path such that we don't have to install it within blender
+# Add visionsim on path such that we don't have to install it within blender
 # This is subject to change once packaging improves.
 sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
-from spsim.simulate.blender import BlenderServer, BlenderService
+from visionsim.simulate.blender import BlenderServer, BlenderService
 
 
 class ExtendedService(BlenderService):

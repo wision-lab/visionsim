@@ -8,7 +8,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import basic_indices, integer_array_indices
 
-from spsim.dataset import Dataset, ImgDataset, NpyDataset
+from visionsim.dataset import Dataset, ImgDataset, NpyDataset
 
 
 def setup_dataset(tmp_path, mode="img", w=100, h=100, c=3, n=1, bitpack_dim=None):

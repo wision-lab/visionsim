@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
-from spsim.utils.color import linearrgb_to_srgb
+from visionsim.utils.color import linearrgb_to_srgb
 
 
 def emulate_rgb_from_sequence(

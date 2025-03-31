@@ -2,7 +2,7 @@ from pathlib import Path
 
 from invoke import task
 
-from spsim.tasks.common import _run, _validate_directories
+from visionsim.tasks.common import _run, _validate_directories
 
 
 @task(
@@ -44,7 +44,7 @@ def animate(
 
     from natsort import natsorted
 
-    from spsim.tasks.transforms import tonemap_exrs
+    from visionsim.tasks.transforms import tonemap_exrs
 
     if _run(c, "ffmpeg -version", hide=True).failed:
         raise RuntimeError("No ffmpeg installation found on path!")
@@ -120,13 +120,13 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
 
     Examples:
         To combine two videos in a row:
-        $ spsim ffmpeg.combine -i "a.mp4" -i "b.mp4" -o "output.mp4"
+        $ visionsim ffmpeg.combine -i "a.mp4" -i "b.mp4" -o "output.mp4"
 
         To combine two videos in a column:
-        $ spsim ffmpeg.combine -i "a.mp4" -i="\n" -i "b.mp4" -o "output.mp4"
+        $ visionsim ffmpeg.combine -i "a.mp4" -i="\n" -i "b.mp4" -o "output.mp4"
 
         The input videos can also be specified in a 2D array using the `--matrix` argument like so:
-        $ spsim ffmpeg.combine --matrix='[["a.mp4", "b.mp4"]]' -o "output.mp4"
+        $ visionsim ffmpeg.combine --matrix='[["a.mp4", "b.mp4"]]' -o "output.mp4"
     """
     # TODO: Allow borders and use xstack for better performance
     #   See: https://stackoverflow.com/questions/11552565/vertically-or-horizontally-stack-mosaic-several-videos-using-ffmpeg/33764934#33764934

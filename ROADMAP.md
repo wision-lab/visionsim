@@ -27,7 +27,7 @@ The single photon simulation engine today is made up of four layers and accessib
 
 # Roadmap
 
-## Phase 1: Polish passive SpSIM, release v0.1.0 publicly
+## Phase 1: Polish passive VisionSim, release v0.1.0 publicly
 
 This release, with target release date of late 2024, will focus solely on passive SPC simulation using blender. The goal is to release a minimum-viable-simulator, that is reliable and slimmed down in scope, as soon as possible. For this to happen we need to do the following:
 
@@ -53,7 +53,7 @@ This release, with target release date of late 2024, will focus solely on passiv
   
   - [ ] If background color is set in blender render, output RGB instead of RGBA?
 
-- [ ] Consolidate checks (ffmpeg -V, etc) to only run once per spsim invocation.
+- [ ] Consolidate checks (ffmpeg -V, etc) to only run once per visionsim invocation.
 
 - [ ] Add debug parameter globally, maybe as environment variable which would dry run/echo commands. There's already a max threads environment variable, which also needs to be documented. 
 
@@ -79,13 +79,13 @@ Deliverables:
   
   - [ ] Describe the transient emulation process, what is simulated and what is explicitly skipped and add this to the documentation. 
 
-- [ ] Integrate CARLA into SpSIM, i.e: cannibalize flamingo's CLI and create a `carla.render` task.
+- [ ] Integrate CARLA into VisionSim, i.e: cannibalize flamingo's CLI and create a `carla.render` task.
   
   - [ ] Focus on minimum CARLA release first,  and add in customization slowly afterwards. 
   
   - [ ] Newer versions of CARLA have been released since flamingo used it, including a jump to Unreal Engine 5, so there's likely to be API changes we need to conform to.   
   
-  - [ ] Look at streamlining the inter-op between CARLA and SpSIM and update any post install scripts accordingly.
+  - [ ] Look at streamlining the inter-op between CARLA and VisionSim and update any post install scripts accordingly.
 
 ## Phase 4: Create datasets, challenges, and benchmarks.
 
@@ -103,4 +103,4 @@ A simulator will enable the creation of a standardized simulated dataset as well
 
 ## Phase 5: Propose baseline methods. Write and publish paper.
 
-Finally, we'll propose baseline approaches top solve these tasks given the proposed datasets and benchmarks, perform a few ablation studies explaining and characterizing the design decisions of the simulator (the impact of frame interpolation, lack of multi-bounce in transients, etc), and publish a manuscript detailing SpSIM. 
+Finally, we'll propose baseline approaches top solve these tasks given the proposed datasets and benchmarks, perform a few ablation studies explaining and characterizing the design decisions of the simulator (the impact of frame interpolation, lack of multi-bounce in transients, etc), and publish a manuscript detailing VisionSim. 

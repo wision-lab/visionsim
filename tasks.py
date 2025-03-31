@@ -18,11 +18,11 @@ import numpy as np
 from invoke import task
 from rich.progress import Progress
 
-from spsim.simulate.blender import BlenderClient
+from visionsim.simulate.blender import BlenderClient
 
 ROOT_DIR = Path(__file__).parent
 TEST_DIR = ROOT_DIR / "tests"
-SOURCE_DIR = ROOT_DIR / "spsim"
+SOURCE_DIR = ROOT_DIR / "visionsim"
 EXAMPLE_DIR = ROOT_DIR / "examples"
 SCRIPTS_DIR = ROOT_DIR / "scripts"
 COVERAGE_FILE = ROOT_DIR / ".coverage"
@@ -140,17 +140,20 @@ def build_docs(c, preview=False, full=False):
             f"gifski $(ls -1a cache/quickstart/lego-gt/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif",
         )
 
-        _run(c, "spsim interpolate.frames cache/quickstart/lego-gt/ -o cache/quickstart/lego-interp/ -n=32")
+        _run(c, "visionsim interpolate.frames cache/quickstart/lego-gt/ -o cache/quickstart/lego-interp/ -n=32")
 
         _run(
             c,
-            "spsim emulate.rgb cache/quickstart/lego-interp/ -o cache/quickstart/lego-rgb25fps/ --chunk-size=160 --readout-std=0 --force",
+            "visionsim emulate.rgb cache/quickstart/lego-interp/ -o cache/quickstart/lego-rgb25fps/ --chunk-size=160 --readout-std=0 --force",
         )
         _run(
             c, f"gifski cache/quickstart/lego-rgb25fps/frames/*.png --fps 25 -o {DOCS_STATIC}/lego-rgb25fps-preview.gif"
         )
 
-        _run(c, "spsim emulate.spad cache/quickstart/lego-interp/ -o cache/quickstart/lego-spc4kHz/ --mode=img --force")
+        _run(
+            c,
+            "visionsim emulate.spad cache/quickstart/lego-interp/ -o cache/quickstart/lego-spc4kHz/ --mode=img --force",
+        )
         _run(
             c,
             f"gifski $(ls -1a cache/quickstart/lego-spc4kHz/frames/*.png | sed -n '1~160p') --fps 25 -o {DOCS_STATIC}/lego-spc4kHz-preview.gif",
@@ -161,11 +164,11 @@ def build_docs(c, preview=False, full=False):
         for i, n in enumerate((25, 50, 100, 200)):
             _run(
                 c,
-                f"spsim blender.render data/lego.blend cache/interpolation/lego-{n:04}/ --num-frames={n} --width=320 --height=320",
+                f"visionsim blender.render data/lego.blend cache/interpolation/lego-{n:04}/ --num-frames={n} --width=320 --height=320",
             )
             _run(
                 c,
-                f"spsim interpolate.frames cache/interpolation/lego-{n:04}/ -o cache/interpolation/lego{n:04}-interp/ -n={int(64 / 2**i)}",
+                f"visionsim interpolate.frames cache/interpolation/lego-{n:04}/ -o cache/interpolation/lego{n:04}-interp/ -n={int(64 / 2**i)}",
             )
             _run(
                 c,
@@ -174,13 +177,13 @@ def build_docs(c, preview=False, full=False):
     # Run autodocs
     with c.cd(ROOT_DIR):
         # TODO: Make this a project configuration
-        api_exclude = ["spsim/tasks", "spsim/interpolate/rife"]
+        api_exclude = ["visionsim/tasks", "visionsim/interpolate/rife"]
         # We have to do this for all the new changes in the docs to be reflected
         _run(c, "pip install -e .")
         # Generate API docs
-        _run(c, "sphinx-apidoc -f --remove-old -o docs/source/apidocs spsim " + " ".join(api_exclude))
+        _run(c, "sphinx-apidoc -f --remove-old -o docs/source/apidocs visionsim " + " ".join(api_exclude))
         # Generate CLI docs
-        _run(c, "sphinx-apidoc -f --remove-old -o docs/source/clidocs spsim/tasks")
+        _run(c, "sphinx-apidoc -f --remove-old -o docs/source/clidocs visionsim/tasks")
     with c.cd(DOCS_DIR):
         _run(c, "make html")
 

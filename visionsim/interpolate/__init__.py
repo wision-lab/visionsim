@@ -19,7 +19,7 @@ def interpolate_poses(transforms, normalize: bool = False, n: int = 2, k: int = 
         transforms: List of pose matrices to interpolate between
         normalize (bool): Whether the interpolation should be normalized or not
         n (int): Number of poses to interpolate between existing poses
-        k (int): Order of spline interpolation, see :class:`pose_interp <spsim.interpolate.pose.pose_interp>`
+        k (int): Order of spline interpolation, see :class:`pose_interp <visionsim.interpolate.pose.pose_interp>`
 
     :return:
         List of interpolated poses

@@ -1,5 +1,5 @@
 [project]
-name = "spsim"
+name = "visionsim"
 description = "Single Photon Simulator and Tools"
 version = "0.0.1"
 requires-python = ">=3.9"
@@ -25,10 +25,10 @@ dependencies = [
 ]
 
 [project.scripts]
-spsim = "spsim.tasks:program.run"
+visionsim = "visionsim.tasks:program.run"
 
 [tool.setuptools.packages.find]
-include = ["spsim*"]
+include = ["visionsim*"]
 
 [project.optional-dependencies]
 dev = [
@@ -51,7 +51,7 @@ dev = [
 
 [tool.ruff]
 line-length = 121
-exclude = ["spsim/interpolate/rife/*"]
+exclude = ["visionsim/interpolate/rife/*"]
 
 [tool.mypy]
 plugins = "numpy.typing.mypy_plugin"

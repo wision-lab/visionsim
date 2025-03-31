@@ -2,7 +2,7 @@ from functools import partial
 
 from rich.progress import Progress
 
-from spsim.simulate.blender import BlenderClients
+from visionsim.simulate.blender import BlenderClients
 
 with BlenderClients.spawn(jobs=2, timeout=30) as clients, Progress() as progress:
     clients.initialize("monkey.blend", "renders/monkey")

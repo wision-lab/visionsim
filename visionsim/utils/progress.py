@@ -13,7 +13,7 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-from spsim.types import UpdateFn
+from visionsim.types import UpdateFn
 
 
 class PoolProgress(Progress):

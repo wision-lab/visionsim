@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     import numpy.typing as npt
     from typing_extensions import Any, Concatenate, ParamSpec, Self, TypeVar
 
-    from spsim.types import UpdateFn
+    from visionsim.types import UpdateFn
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -41,7 +41,7 @@ try:
     import mathutils  # type: ignore
 
     # Allow relative imports to this file without forcing the user to
-    # install spsim into their blender install
+    # install visionsim into their blender install
     sys.path.insert(0, str(Path(__file__).parent.resolve()))
     from nodes import (  # type: ignore
         flowdebug_node_group,

@@ -8,11 +8,11 @@ Installation & Dependencies
     Remove following warning for v0.1.0 release.
 
 .. warning::
-    Until spsim goes public, it will not be accessible on PyPI. Please use the :doc:`development instructions for installation <../development>` in the meantime.  
+    Until visionsim goes public, it will not be accessible on PyPI. Please use the :doc:`development instructions for installation <../development>` in the meantime.  
 
-The recommended way to get spsim is to **install the latest stable release** via `pip <https://pip.pypa.io>`_::
+The recommended way to get visionsim is to **install the latest stable release** via `pip <https://pip.pypa.io>`_::
     
-    $ pip install spsim
+    $ pip install visionsim
 
 
 We currently support **Python 3.9+**. Users still on Python 3.8 or older are
@@ -34,7 +34,7 @@ The first time you use the renderer, it may ask you to install additional packag
 Generating a dataset
 --------------------
 
-To give you a taste of how spsim works, we will create a small scale dataset of a toy lego truck as if it was captured by a realistic 25fps conventional RGB camera and a 4kHz single photon camera for 4 seconds. To achieve this, we will:  
+To give you a taste of how visionsim works, we will create a small scale dataset of a toy lego truck as if it was captured by a realistic 25fps conventional RGB camera and a 4kHz single photon camera for 4 seconds. To achieve this, we will:  
 
 - Render a small dataset of 500 ground truth frames using the ``blender.render`` CLI,
 - Interpolate this dataset 32-fold using the ``interpolate.frames`` CLI,
@@ -49,7 +49,7 @@ First, download the test scene, here we will be using the lego truck (of the `Ne
 
 To create the lego dataset, we'll first render 500 frames sampled on a circular obit at Z=1 with radius=5 that points towards the origin::
     
-    $ spsim blender.render lego.blend lego-gt/ --num-frames=500
+    $ visionsim blender.render lego.blend lego-gt/ --num-frames=500
 
 This might take a while, with blender 4.2 on a RTX 3080 it takes about 18 minutes.  
 
@@ -57,14 +57,14 @@ This might take a while, with blender 4.2 on a RTX 3080 it takes about 18 minute
 .. note::
     The ``blender.render`` CLI has a lot of options, you can look at them all by running the following::
 
-        $ spsim --help blender.render
+        $ visionsim --help blender.render
 
 
 All the rendered frames will be in ``lego-gt/frames``, and alongside this directory you should see a ``transforms.json`` file which contains information about the camera trajectory used to render the data. 
 
 Let's create a quick preview of this dataset by animating every 5th frame into a video, this allows for realtime play back without creating a video with a very fast framerate::
 
-    $ spsim ffmpeg.animate lego-gt/frames -o=preview.mp4 --step=5 --fps=25
+    $ visionsim ffmpeg.animate lego-gt/frames -o=preview.mp4 --step=5 --fps=25
 
 
 The file ``preview.mp4`` should show a nice turntable-style animation of a lego truck (shown here as a GIF made with `gifski <https://gif.ski/>`_, yours should look better):
@@ -79,7 +79,7 @@ Interpolating Frames
 
 You can optionally interpolate an existing dataset in order to get intermediate frames that have not been rendered. This enables us to quickly increase the effective framerate of the data at the cost of potentially introducing artifacts if frames are too "far" apart. The following will interpolate a dataset by a factor of `32x`::
 
-    $ spsim interpolate.frames lego-gt/ -o lego-interp/ -n=32
+    $ visionsim interpolate.frames lego-gt/ -o lego-interp/ -n=32
 
 This is much faster than rendering new frames, but can still be a bit slow. The above takes about 10 minutes on an RTX 3080.  
 
@@ -98,7 +98,7 @@ To simulate a real camera, we must convert these "perfect" RGB frames into reali
 
 To create the RGB data with motion blur, we use `emulate.rgb`. The `chunk-size` argument determines how many frames to average together. Below we are averaging frames from the interpolated dataset in groups of `160`, so since the interpolated dataset corresponds to a frame rate of `4,000` fps, this means these frames will simulate a 25fps RGB camera::
 
-    $ spsim emulate.rgb lego-interp/ -o lego-rgb25fps/ --chunk-size=160 --readout-std=0
+    $ visionsim emulate.rgb lego-interp/ -o lego-rgb25fps/ --chunk-size=160 --readout-std=0
 
 .. .. note::
 ..     The `fwc` or full-well-capacity argument is not in units of electrons, since we have no physical camera model which matches an rgb linear intensity to a number of electrons, but rather is relative to the `chunk-size`. A FWC equal to the chunk size means that, if each image has a normalized intensity of 1.0, the well will fill up.
@@ -106,7 +106,7 @@ To create the RGB data with motion blur, we use `emulate.rgb`. The `chunk-size` 
 
 Finally, we can emulate a single-photon camera, at the same framerate as the interpolated dataset like so::
 
-    $ spsim emulate.spad lego-interp/ -o lego-spc4kHz/ --mode=img
+    $ visionsim emulate.spad lego-interp/ -o lego-spc4kHz/ --mode=img
 
 
 and look at the results:

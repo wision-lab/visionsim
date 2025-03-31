@@ -6,7 +6,7 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = "SpSim"
+project = "VisionSim"
 copyright = "2024, Sacha Jungerman"
 author = "Sacha Jungerman"
 

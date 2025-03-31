@@ -6,7 +6,7 @@ import OpenEXR
 from invoke import task
 from rich.progress import Progress, track
 
-from spsim.tasks.common import _validate_directories
+from visionsim.tasks.common import _validate_directories
 
 
 def _read_exr(path):
@@ -20,8 +20,8 @@ def _read_exr(path):
 
 def _tonemap_collate(batch, *, hdr_quantile=0.01):
     """Use default collate function on batch and then tonemap, enabling compute to be done in threads"""
-    from spsim.dataset import default_collate
-    from spsim.utils.color import linearrgb_to_srgb
+    from visionsim.dataset import default_collate
+    from visionsim.utils.color import linearrgb_to_srgb
 
     idxs, imgs, poses = default_collate(batch)
     high, low = np.quantile(imgs, [1 - hdr_quantile, hdr_quantile])
@@ -268,7 +268,7 @@ def tonemap_exrs(c, input_dir, output_dir=None, batch_size=4, hdr_quantile=0.01,
     """Convert .exr linear intensity frames into tone-mapped sRGB images"""
     from torch.utils.data import DataLoader
 
-    from spsim.dataset import Dataset, ImgDatasetWriter
+    from visionsim.dataset import Dataset, ImgDatasetWriter
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     dataset = Dataset.from_path(input_dir)

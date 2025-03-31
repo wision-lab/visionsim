@@ -30,18 +30,6 @@
    :hidden:
    :caption: For Developers
 
-   API Documentation <apidocs/spsim>
+   API Documentation <apidocs/visionsim>
    CLI Usage <clidocs/tasks>
    development
-
-..
-   usage/simulation
-   usage/emulation 
-   usage/datasets
-   concepts/architecture
-   concepts/imaging-model
-      FAQs <faq>
-      prior-art
-      changelog
-
-    

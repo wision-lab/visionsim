@@ -5,7 +5,7 @@ from numpy import float64
 from PIL import Image
 from scipy.spatial.transform import Rotation as R
 
-from spsim.interpolate import interpolate_frames, interpolate_poses
+from visionsim.interpolate import interpolate_frames, interpolate_poses
 
 
 def test_interpolate_rotation_matrix():
