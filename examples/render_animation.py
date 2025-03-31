@@ -5,17 +5,7 @@ from rich.progress import Progress
 
 from visionsim.simulate.blender import BlenderClient
 
-with (
-    BlenderClient.spawn(
-        timeout=30,
-        # executable="flatpak run --die-with-parent org.blender.Blender"
-        executable="/home/sjung/Downloads/blenders/blender-3.6.0/blender",
-    ) as client,
-    Progress() as progress,
-):
-    # client.initialize("monkey.blend", "renders/monkey")
-    client.initialize(
-        "/home/sjung/Downloads/scenes/scaled/verified/kitchenpack.blend", Path("renders/kitchenpack").resolve()
-    )
-    task = progress.add_task("Rendering monkey.blend...", total=len(client.animation_range()))
-    client.render_animation(update_fn=partial(progress.update, task, advance=1))
+with BlenderClient.spawn(timeout=30) as client, Progress() as progress:
+    client.initialize(Path("monkey.blend").resolve(), Path("renders/monkey").resolve())
+    task = progress.add_task("Rendering monkey.blend...")
+    client.render_animation(update_fn=partial(progress.update, task))

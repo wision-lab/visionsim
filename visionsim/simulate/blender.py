@@ -660,17 +660,24 @@ class BlenderClients(tuple):
 
     @require_connected_clients
     def common_animation_range(self) -> range:
-        """Return the animation range shared by all clients.
+        """Get animation range shared by all clients as range(start, end+1, step).
 
         Raises:
             RuntimeError: animation ranges for all clients are expected to be the same.
+        """
+        start, end, step = self.common_animation_range_tuple()
+        return range(start, end + 1, step)
 
-        Returns:
-            range: shared animation range
+    @require_connected_clients
+    def common_animation_range_tuple(self) -> tuple[int]:
+        """Get animation range shared by all clients as a tuple of (start, end, step).
+
+        Raises:
+            RuntimeError: animation ranges for all clients are expected to be the same.
         """
         if len(ranges := set(self.animation_range_tuple())) != 1:  # type: ignore
             raise RuntimeError("Found different animation ranges. All connected servers should be in the same state.")
-        return range(*ranges.pop())
+        return ranges.pop()
 
     @require_connected_clients
     def render_frames(self, frame_numbers, allow_skips=True, dry_run=False, update_fn=None):
@@ -709,7 +716,7 @@ class BlenderClients(tuple):
     def render_animation(
         self, frame_start=None, frame_end=None, frame_step=None, allow_skips=True, dry_run=False, update_fn=None
     ):
-        start, end, step = self.common_animation_range()
+        start, end, step = self.common_animation_range_tuple()
         frame_start = start if frame_start is None else frame_start
         frame_end = end if frame_end is None else frame_end
         frame_step = step if frame_step is None else frame_step

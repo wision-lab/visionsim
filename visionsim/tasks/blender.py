@@ -80,6 +80,7 @@ def render_animation(
     executable=None,
 ):
     """Render views of a .blend file while moving camera along an animated trajectory
+
     Example:
         visionsim blender.render-animation <blend-file> <output-path>
     """
@@ -89,7 +90,7 @@ def render_animation(
         raise RuntimeError("No blender installation found on path!")
     if not (blend_file := Path(blend_file).resolve()).exists():
         raise FileNotFoundError(f"Blender file {blend_file} not found.")
-    if "blender.render" not in sys.argv[1]:
+    if "blender.render-animation" not in sys.argv[1]:
         raise RuntimeError("Task `blender.render-animation` must run first if running multiple tasks simultaneously.")
 
     with (
