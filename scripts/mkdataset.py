@@ -314,7 +314,7 @@ def preview_datasets(
 
     if commands:
         with multiprocess.Pool(jobs) as pool:
-            list(track(pool.imap(run, commands), description=f"Making Previews...", total=len(commands)))
+            list(track(pool.imap(run, commands), description="Making Previews...", total=len(commands)))
 
     if grids:
         # Note: This is effectively taken from ffmpeg.grid and combine tasks

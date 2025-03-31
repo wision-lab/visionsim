@@ -30,3 +30,6 @@ html_css_files = [
 # https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html
 autodoc_type_aliases = {"npt.ArrayLike": "npt.ArrayLike"}
 autodoc_mock_imports = ["bpy"]
+autodoc_default_options = {
+    'special-members': '__init__,__call__',
+}

@@ -50,6 +50,7 @@ class pose_interp:
                     in rad/sec and second row are positional velocities.
                 * 2: return the accelerations, packaged as angular acceleration
                     (in rad/sec/sec) then positional.
+            
             Defaults to 0.
 
         Returns:
