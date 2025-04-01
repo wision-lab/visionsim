@@ -179,7 +179,7 @@ def build_docs(c, preview=False, full=False):
         # TODO: Make this a project configuration
         api_exclude = ["visionsim/tasks", "visionsim/interpolate/rife"]
         # We have to do this for all the new changes in the docs to be reflected
-        _run(c, "pip install -e .")
+        print('\033[93m' + "Make sure to run pip install -e . or equivalent to make sure docstring changes are reflected" + '\033[0m')
         # Generate API docs
         _run(c, "sphinx-apidoc -f --remove-old -o docs/source/apidocs visionsim " + " ".join(api_exclude))
         # Generate CLI docs
