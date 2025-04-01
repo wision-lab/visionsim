@@ -6,20 +6,16 @@ Execute 'inv[oke] --list' for a list of dev tasks.
 
 import fnmatch
 import glob
-import json
 import os
 import platform
 import shutil
 import webbrowser
-from functools import partial
 from pathlib import Path
 
-import numpy as np
 from invoke import task
-from rich.progress import Progress
+from rich.console import Console
 
-from visionsim.simulate.blender import BlenderClient
-
+console = Console()
 ROOT_DIR = Path(__file__).parent.resolve()
 TEST_DIR = ROOT_DIR / "tests"
 SOURCE_DIR = ROOT_DIR / "visionsim"
@@ -36,26 +32,26 @@ DOCS_STATIC = DOCS_DIR / "source" / "_static"
 
 def _delete_file(file, except_patterns=None):
     if os.path.isfile(file):
-        print(f"Removing file {file}...")
+        console.print(f"Removing file {file}.")
         os.remove(file)
     elif os.path.isdir(file):
         if except_patterns is None:
-            print(f"Removing directory {file}...")
+            console.print(f"Removing directory {file}.")
             shutil.rmtree(file, ignore_errors=True)
         else:
-            print(f"Purging directory {file}...")
+            console.print(f"Purging directory {file}.")
             for dirpath, dirnames, filenames in os.walk(file):
                 # Remove regular files, ignore directories
                 for filename in filenames:
                     file = os.path.join(dirpath, filename)
                     if any(fnmatch.fnmatch(file, pattern) for pattern in except_patterns):
-                        print(f"\tKeeping file {file}...")
+                        console.print(f"\tKeeping file {file}.")
                     else:
-                        print(f"\tRemoving file {file}...")
+                        console.print(f"\tRemoving file {file}.")
                         os.remove(file)
                 # Remove empty directories
                 if not dirnames and not filenames:
-                    print(f"\tRemoving directory {file}...")
+                    console.print(f"\tRemoving directory {file}.")
                     shutil.rmtree(dirpath, ignore_errors=True)
 
 
@@ -72,14 +68,14 @@ def _run(c, command):
 def format(c):
     """Format code (and sort imports)"""
     python_dirs_string = " ".join(PYTHON_DIRS + glob.glob(os.path.join(ROOT_DIR, "*.py")))
-    _run(c, f"ruff check --select I --fix {python_dirs_string}")
+    _run(c, f"ruff check --select I --fix {python_dirs_string} {__file__}")
     _run(c, f"ruff format {python_dirs_string}")
 
 
 @task
 def lint(c):
     """Lint code with ruff"""
-    _run(c, f"ruff check --extend-select I {' '.join(PYTHON_DIRS)}")
+    _run(c, f"ruff check --extend-select I {' '.join(PYTHON_DIRS)} {__file__}")
 
 
 @task
@@ -110,10 +106,12 @@ def build_docs(c, preview=False, full=False):
     """Confirm docs can be built"""
     if full:
         if not (ROOT_DIR / "cache" / "lego.blend").exists():
-            print("File `cache/lego.blend` not found, you can get it by running the command:")
-            print("gdown https://drive.google.com/file/d/1mDK-32AIJuIKVYmGfYkL48nJ7hfIclh5/view?usp=sharing --fuzzy")
+            console.print("File `cache/lego.blend` not found, you can get it by running the command:")
+            console.print(
+                "gdown https://drive.google.com/file/d/1mDK-32AIJuIKVYmGfYkL48nJ7hfIclh5/view?usp=sharing --fuzzy"
+            )
             return
-        print(os.getcwd())
+        console.print(os.getcwd())
 
         with c.cd(ROOT_DIR / "cache"):
             # Create examples from the quick start guide
@@ -142,7 +140,9 @@ def build_docs(c, preview=False, full=False):
         # TODO: Make this a project configuration
         api_exclude = ["visionsim/tasks", "visionsim/interpolate/rife"]
         # We have to do this for all the new changes in the docs to be reflected
-        print('\033[93m' + "Make sure to run pip install -e . or equivalent to make sure docstring changes are reflected" + '\033[0m')
+        console.print(
+            '[yellow]Make sure to run "pip install -e .[dev]" or equivalent to make sure docstring changes are reflected!'
+        )
         # Generate API docs
         _run(c, "sphinx-apidoc -f --remove-old -o docs/source/apidocs visionsim " + " ".join(api_exclude))
         # Generate CLI docs
