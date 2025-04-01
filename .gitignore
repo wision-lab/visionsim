@@ -117,3 +117,5 @@ cache/
 examples/logs/
 examples/renders/
 examples/*.blend*
+docs/source/apidocs/
+docs/source/clidocs/
