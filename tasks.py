@@ -20,7 +20,7 @@ from rich.progress import Progress
 
 from visionsim.simulate.blender import BlenderClient
 
-ROOT_DIR = Path(__file__).parent
+ROOT_DIR = Path(__file__).parent.resolve()
 TEST_DIR = ROOT_DIR / "tests"
 SOURCE_DIR = ROOT_DIR / "visionsim"
 EXAMPLE_DIR = ROOT_DIR / "examples"
@@ -109,71 +109,34 @@ def coverage(c):
 def build_docs(c, preview=False, full=False):
     """Confirm docs can be built"""
     if full:
-        # Create examples from the quick start guide
-        Path("cache/quickstart").mkdir(exist_ok=True, parents=True)
-        if not Path("data/lego.blend").exists():
-            print("File `data/lego.blend` not found, you can get it by running the command:")
-            print("gdown https://drive.google.com/file/d/1XPkeA0ENljAjk4D9PGHpMzzr3GF_rECa/view?usp=drive_link --fuzzy")
+        if not (ROOT_DIR / "cache" / "lego.blend").exists():
+            print("File `cache/lego.blend` not found, you can get it by running the command:")
+            print("gdown https://drive.google.com/file/d/1mDK-32AIJuIKVYmGfYkL48nJ7hfIclh5/view?usp=sharing --fuzzy")
             return
+        print(os.getcwd())
 
-        with (
-            BlenderClient.spawn(timeout=30, executable="flatpak run --die-with-parent org.blender.Blender") as client,
-            Progress() as progress,
-        ):
-            client.initialize(Path("data/lego.blend").resolve(), Path("cache/quickstart/lego-gt/").resolve())
-            client.unbind_camera()
-
-            for frame, theta in enumerate(np.linspace(0, 2 * np.pi, 100, endpoint=False)):
-                client.position_camera(location=[5 * np.cos(theta), 5 * np.sin(theta), 1], look_at=[0, 0, 0])
-                client.set_camera_keyframe(frame)
-            client.set_animation_range(start=0, stop=100)
-            client.move_keyframes(scale=5.0)
-            client.set_resolution((320, 320))
-            task = progress.add_task("Rendering lego.blend...")
-            transforms = client.render_animation(update_fn=partial(progress.update, task))
-
-            with open(str(Path("cache/quickstart/lego-gt/").resolve() / "transforms.json"), "w") as f:
-                json.dump(transforms, f, indent=2)
-
-        _run(
-            c,
-            f"gifski $(ls -1a cache/quickstart/lego-gt/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif",
-        )
-
-        _run(c, "visionsim interpolate.frames cache/quickstart/lego-gt/ -o cache/quickstart/lego-interp/ -n=32")
-
-        _run(
-            c,
-            "visionsim emulate.rgb cache/quickstart/lego-interp/ -o cache/quickstart/lego-rgb25fps/ --chunk-size=160 --readout-std=0 --force",
-        )
-        _run(
-            c, f"gifski cache/quickstart/lego-rgb25fps/frames/*.png --fps 25 -o {DOCS_STATIC}/lego-rgb25fps-preview.gif"
-        )
-
-        _run(
-            c,
-            "visionsim emulate.spad cache/quickstart/lego-interp/ -o cache/quickstart/lego-spc4kHz/ --mode=img --force",
-        )
-        _run(
-            c,
-            f"gifski $(ls -1a cache/quickstart/lego-spc4kHz/frames/*.png | sed -n '1~160p') --fps 25 -o {DOCS_STATIC}/lego-spc4kHz-preview.gif",
-        )
-
-        # Create interpolation examples
-        Path("cache/interpolation").mkdir(exist_ok=True, parents=True)
-        for i, n in enumerate((25, 50, 100, 200)):
-            _run(
-                c,
-                f"visionsim blender.render data/lego.blend cache/interpolation/lego-{n:04}/ --num-frames={n} --width=320 --height=320",
+        with c.cd(ROOT_DIR / "cache"):
+            # Create examples from the quick start guide
+            shutil.copy("examples/quickstart.sh", "cache/quickstart.sh")
+            cmds = (
+                "chmod +x ./quickstart.sh",
+                "./quickstart.sh",
+                f"gifski $(ls -1a quickstart/lego-gt/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif",
+                f"gifski quickstart/lego-rgb25fps/frames/*.png --fps 25 -o {DOCS_STATIC}/lego-rgb25fps-preview.gif",
+                f"gifski $(ls -1a quickstart/lego-spc4kHz/frames/*.png | sed -n '1~160p') --fps 25 -o {DOCS_STATIC}/lego-spc4kHz-preview.gif",
             )
-            _run(
-                c,
-                f"visionsim interpolate.frames cache/interpolation/lego-{n:04}/ -o cache/interpolation/lego{n:04}-interp/ -n={int(64 / 2**i)}",
-            )
-            _run(
-                c,
-                f"gifski $(ls -1a cache/interpolation/lego{n:04}-interp/frames/*.png | sed -n '1~8p') --fps 25 -o {DOCS_STATIC}/lego{n:04}-interp.gif",
-            )
+            for cmd in cmds:
+                _run(c, cmd)
+
+            # Create interpolation examples
+            for i, n in enumerate((25, 50, 100, 200)):
+                for cmd in (
+                    f"visionsim blender.render-animation lego.blend interpolation/lego-{n:04}/ --keyframe-multiplier={n/100} --width=320 --height=320",
+                    f"visionsim interpolate.frames interpolation/lego-{n:04}/ -o interpolation/lego{n:04}-interp/ -n={int(64 / 2**i)}",
+                    f"gifski $(ls -1a interpolation/lego{n:04}-interp/frames/*.png | sed -n '1~8p') --fps 25 -o {DOCS_STATIC}/lego{n:04}-interp.gif",
+                ):
+                    _run(c, cmd)
+
     # Run autodocs
     with c.cd(ROOT_DIR):
         # TODO: Make this a project configuration
@@ -184,6 +147,7 @@ def build_docs(c, preview=False, full=False):
         _run(c, "sphinx-apidoc -f --remove-old -o docs/source/apidocs visionsim " + " ".join(api_exclude))
         # Generate CLI docs
         _run(c, "sphinx-apidoc -f --remove-old -o docs/source/clidocs visionsim/tasks")
+
     with c.cd(DOCS_DIR):
         _run(c, "make html")
 
