@@ -6,6 +6,7 @@ import logging
 import os
 import random
 import shlex
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -284,6 +285,8 @@ def preview_datasets(
     previews_dir: str | os.PathLike,
     allow_skips: bool = False,
     grids: bool = True,
+    colorize: bool = True,
+    clean: bool = False,
     jobs: int = 1,
 ):
     """Generate preview videos of the datasets
@@ -295,6 +298,8 @@ def preview_datasets(
         allow_skips (bool, optional): If true, and outputs exist, skip over them. Defaults to False.
         grids (bool, optional): If true, assemble all previews into a grid-video saved in
             previews-dir/grids. Defaults to True.
+        colorize (bool, optional): If true, colorize depths and flows using transforms.colorize-depths/flows. Defaults to False.
+        clean (bool, optional): If true, clean all colorized depth and flow frames. Ignored if `colorize` is False. Defaults to False.
         jobs (int, optional): Allow multiple previews to be built in parallel. Defaults to 1.
     """
     previews_dir = Path(previews_dir)
@@ -303,20 +308,47 @@ def preview_datasets(
     sequence_dirs = [p.parent for p in Path(datasets_dir).glob("**/transforms.json")]
     run = partial(subprocess.run, check=True, capture_output=True)
     frame_types = set()
-    commands = []
+    colorized_dirs = []
+    colorize_commands = []
+    animate_commands = []
 
     for sequence_dir in sequence_dirs:
         for frame_type in sequence_dir.glob("*"):
-            if frame_type.is_dir() and any(frame_type.glob("*.png")):
+            if frame_type.is_dir():
                 preview_path = previews_dir / sequence_dir.parent.stem / sequence_dir.stem / f"{frame_type.stem}.mp4"
-                if not preview_path.exists() or not allow_skips:
-                    cmd = f"visionsim ffmpeg.animate {frame_type} " f'-o {preview_path} --pattern="*.png" --force'
-                    commands.append(shlex.split(cmd))
                 frame_types.add(frame_type.stem)
 
-    if commands:
+                if colorize and frame_type.stem in ("depths", "flows"):
+                    input_frames = frame_type / "colorized"
+                    colorized_dirs.append(input_frames)
+
+                    if not any(input_frames.glob("*.png")) or not allow_skips:
+                        cmd = f"visionsim transforms.colorize-{frame_type.stem} {frame_type} {input_frames}"
+                        colorize_commands.append(shlex.split(cmd))
+                elif any(frame_type.glob("*.png")):
+                    input_frames = frame_type
+
+                if not preview_path.exists() or not allow_skips:
+                    cmd = f'visionsim ffmpeg.animate {input_frames} -o {preview_path} --pattern="*.png" --force'
+                    animate_commands.append(shlex.split(cmd))
+
+    if colorize_commands:
         with multiprocess.Pool(jobs) as pool:
-            list(track(pool.imap(run, commands), description="Making Previews...", total=len(commands)))
+            list(
+                track(
+                    pool.imap(partial(subprocess.run, stdout=subprocess.DEVNULL), colorize_commands),
+                    description="Colorizing...",
+                    total=len(colorize_commands),
+                )
+            )
+
+    if animate_commands:
+        with multiprocess.Pool(jobs) as pool:
+            list(track(pool.imap(run, animate_commands), description="Making Previews...", total=len(animate_commands)))
+
+    if clean:
+        for d in colorized_dirs:
+            shutil.rmtree(d, ignore_errors=True)
 
     if grids:
         # Note: This is effectively taken from ffmpeg.grid and combine tasks

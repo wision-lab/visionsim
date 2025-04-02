@@ -115,7 +115,7 @@ def build_docs(c, preview=False, full=False):
         with c.cd(ROOT_DIR / "cache"):
             # Create examples from the quick start guide
             with open(ROOT_DIR / "examples/quickstart.sh", "r") as f:
-                cmds = [l for l in f.readlines() if l.strip() and not l.startswith("#")]
+                cmds = [line for line in f.readlines() if line.strip() and not line.startswith("#")]
 
             cmds += [
                 f"gifski $(ls -1a quickstart/lego-gt/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif",

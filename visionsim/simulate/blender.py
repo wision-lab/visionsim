@@ -1677,7 +1677,7 @@ class BlenderService(rpyc.Service):
     def exposed_save_file(self, path: str | os.PathLike) -> None:
         """Save opened blender file. This is useful for introspecting the state of the compositor/scene/etc."""
         if (path := Path(str(path)).resolve()) == Path(str(self.blend_file)).resolve():
-            raise ValueError(f"Cannot overwrite currently loaded blend-file!")
+            raise ValueError("Cannot overwrite currently loaded blend-file!")
 
         path.parent.mkdir(exist_ok=True, parents=True)
         bpy.ops.wm.save_as_mainfile(filepath=str(path))

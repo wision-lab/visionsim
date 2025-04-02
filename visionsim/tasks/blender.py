@@ -104,7 +104,7 @@ def render_animation(
         Progress() as progress,
     ):
         clients.initialize(blend_file, Path(root_path).resolve())
-        clients.set_resolution(width=width, height=height)
+        clients.set_resolution(width=int(width), height=int(height))
         clients.image_settings(file_format, bit_depth)
         clients.use_animations(use_animations)
         clients.load_addons(*(addons or []))
