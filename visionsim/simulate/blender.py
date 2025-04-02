@@ -138,7 +138,7 @@ def validate_camera_moved(
         post_matrix = np.array(self.camera.matrix_world.copy())
 
         if np.allclose(prev_matrix, post_matrix):
-            raise RuntimeError("Camera has not moved as intended, perhaps it is still bound by parent or animation?")
+            print("WARNING: Camera has not moved as intended, perhaps it is still bound by parent or animation?")
         return retval
 
     return _decorator
@@ -1007,7 +1007,7 @@ class BlenderService(rpyc.Service):
 
         self.depth_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.depth_path.label = "Depth Output"
-        self.depth_path.format.color_mode = 'BW'
+        self.depth_path.format.color_mode = "BW"
         self.depth_path.format.file_format = file_format
         self.tree.links.new(self.render_layers.outputs["Depth"], self.depth_path.inputs[0])
         self.depth_path.base_path = str(self.root_path / "depths")
@@ -1409,6 +1409,7 @@ class BlenderService(rpyc.Service):
         location: npt.ArrayLike | None = None,
         rotation: npt.ArrayLike | None = None,
         look_at: npt.ArrayLike | None = None,
+        in_order: bool = True,
     ) -> None:
         """Positions and orients camera in Blender scene according to specified parameters.
 
@@ -1418,6 +1419,10 @@ class BlenderService(rpyc.Service):
             location (npt.ArrayLike, optional): Location to place camera in 3D space. Defaults to none.
             rotation (npt.ArrayLike, optional): Rotation matrix for camera. Defaults to none.
             look_at (npt.ArrayLike, optional): Location to point camera. Defaults to none.
+            in_order (bool, optional): If set, assume current camera pose is from previous/next
+                frame and ensure new rotation set by `look_at` is compatible with current position.
+                Without this, a rotations will stay in the [-pi, pi] range and this wrapping will
+                mess up interpolations. Only used when `look_at` is set. Defaults to True.
 
         Raises:
             ValueError: raised if camera orientation is over-defined.
@@ -1431,8 +1436,11 @@ class BlenderService(rpyc.Service):
         if look_at is not None:
             # point the camera's '-Z' towards `look_at` and use its 'Y' as up
             direction = mathutils.Vector(look_at) - self.camera.location
-            rot_quat = direction.to_track_quat("-Z", "Y")
-            rotation = rot_quat.to_matrix()
+            rot_euler = direction.to_track_quat("-Z", "Y").to_euler()
+
+            if in_order:
+                rot_euler.make_compatible(self.camera.rotation_euler)
+            self.camera.rotation_euler = rot_euler
 
         if rotation is not None:
             location = self.camera.location.copy()
@@ -1443,18 +1451,17 @@ class BlenderService(rpyc.Service):
     @require_initialized_service
     @validate_camera_moved
     def exposed_rotate_camera(self, angle: float) -> None:
-        """Rotate camera around it's optical axis.
+        """Rotate camera around it's optical axis, relative to current orientation.
 
         Args:
-            angle: Amount to rotate by (in radians).
+            angle: Relative amount to rotate by (clockwise, in radians).
         """
-        location = self.camera.location.copy()
-        right, up, _ = self.camera.matrix_world.to_3x3().transposed()
-        look_at_direction = mathutils.Vector(np.cross(up, right))
-        rotation = mathutils.Matrix.Rotation(angle, 3, look_at_direction)
-        rotation = rotation @ self.camera.matrix_world.to_3x3()
-        self.camera.matrix_world = rotation.to_4x4()
-        self.camera.location = location
+        # Camera's '-Z' point outwards, so we negate angle such that
+        # camera turns clockwise for a positive angle
+        rot_euler = self.camera.rotation_euler.copy()
+        rot_euler.rotate_axis("Z", -angle)
+        rot_euler.make_compatible(self.camera.rotation_euler)
+        self.camera.rotation_euler = rot_euler
         self.view_layer.update()
 
     @require_initialized_service
@@ -1669,7 +1676,10 @@ class BlenderService(rpyc.Service):
     @require_initialized_service
     def exposed_save_file(self, path: str | os.PathLike) -> None:
         """Save opened blender file. This is useful for introspecting the state of the compositor/scene/etc."""
-        Path(str(path)).parent.mkdir(exist_ok=True, parents=True)
+        if (path := Path(str(path)).resolve()) == Path(str(self.blend_file)).resolve():
+            raise ValueError(f"Cannot overwrite currently loaded blend-file!")
+
+        path.parent.mkdir(exist_ok=True, parents=True)
         bpy.ops.wm.save_as_mainfile(filepath=str(path))
 
 

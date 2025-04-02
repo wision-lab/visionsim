@@ -47,6 +47,7 @@ from visionsim.tasks.common import _run
             "The default value is intentionally a little high to speed up renders. default: 0.1"
         ),
         "autoexec": "if enabled, allow any embedded python scripts to run, default: False",
+        "output_blend_file": "if set, write the modified blend file to this path. Helpful for troubleshooting. default: None",
         "executable": "use a different blender executable that the one on PATH, default: None",
     },
     auto_shortflags=False,
@@ -79,6 +80,7 @@ def render_animation(
     addons=None,
     adaptive_threshold=None,
     autoexec=False,
+    output_blend_file=None,
     executable=None,
 ):
     """Render views of a .blend file while moving camera along an animated trajectory
@@ -110,7 +112,7 @@ def render_animation(
         clients.cycles_settings(
             device_type=device,
             use_cpu=True,
-            adaptive_threshold=adaptive_threshold,
+            adaptive_threshold=adaptive_threshold if adaptive_threshold is None else float(adaptive_threshold),
             use_denoising=True,
         )
 
@@ -129,6 +131,11 @@ def render_animation(
             clients.use_motion_blur(use_motion_blur)
 
         clients.move_keyframes(scale=keyframe_multiplier)
+
+        if output_blend_file is not None:
+            output_blend_file = Path(output_blend_file).resolve()
+            print(f"Saving to {output_blend_file}...")
+            clients[0].save_file(output_blend_file)
 
         task = progress.add_task(f"Rendering {Path(blend_file).name}...")
         transforms = clients.render_animation(

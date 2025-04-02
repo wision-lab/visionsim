@@ -5,3 +5,4 @@ visionsim ffmpeg.animate quickstart/lego-gt/frames -o=quickstart/preview.mp4 --s
 visionsim interpolate.frames quickstart/lego-gt/ -o quickstart/lego-interp/ -n=32
 visionsim emulate.rgb quickstart/lego-interp/ -o quickstart/lego-rgb25fps/ --chunk-size=160 --readout-std=0
 visionsim emulate.spad quickstart/lego-interp/ -o quickstart/lego-spc4kHz/ --mode=img
+visionsim emulate.events quickstart/lego-gt/ quickstart/lego-dvs125fps/ --fps=125

@@ -60,8 +60,8 @@ def _delete_pattern(pattern):
         _delete_file(file)
 
 
-def _run(c, command):
-    return c.run(command, pty=platform.system() != "Windows")
+def _run(c, command, **kwargs):
+    return c.run(command, pty=platform.system() != "Windows", **kwargs)
 
 
 @task
@@ -108,23 +108,23 @@ def build_docs(c, preview=False, full=False):
         if not (ROOT_DIR / "cache" / "lego.blend").exists():
             console.print("File `cache/lego.blend` not found, you can get it by running the command:")
             console.print(
-                "gdown https://drive.google.com/file/d/1mDK-32AIJuIKVYmGfYkL48nJ7hfIclh5/view?usp=sharing --fuzzy"
+                "gdown https://drive.google.com/file/d/1CQVxGvPLLUYUpkBpATgSd63wgJIzfc6m/view?usp=sharing --fuzzy"
             )
             return
-        console.print(os.getcwd())
 
         with c.cd(ROOT_DIR / "cache"):
             # Create examples from the quick start guide
-            shutil.copy("examples/quickstart.sh", "cache/quickstart.sh")
-            cmds = (
-                "chmod +x ./quickstart.sh",
-                "./quickstart.sh",
+            with open(ROOT_DIR / "examples/quickstart.sh", "r") as f:
+                cmds = [l for l in f.readlines() if l.strip() and not l.startswith("#")]
+
+            cmds += [
                 f"gifski $(ls -1a quickstart/lego-gt/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif",
                 f"gifski quickstart/lego-rgb25fps/frames/*.png --fps 25 -o {DOCS_STATIC}/lego-rgb25fps-preview.gif",
                 f"gifski $(ls -1a quickstart/lego-spc4kHz/frames/*.png | sed -n '1~160p') --fps 25 -o {DOCS_STATIC}/lego-spc4kHz-preview.gif",
-            )
+                f"gifski $(ls -1a quickstart/lego-dvs125fps/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-dvs125fps-preview.gif",
+            ]
             for cmd in cmds:
-                _run(c, cmd)
+                _run(c, cmd, echo=True, warn=True)
 
             # Create interpolation examples
             for i, n in enumerate((25, 50, 100, 200)):
@@ -133,7 +133,7 @@ def build_docs(c, preview=False, full=False):
                     f"visionsim interpolate.frames interpolation/lego-{n:04}/ -o interpolation/lego{n:04}-interp/ -n={int(64 / 2**i)}",
                     f"gifski $(ls -1a interpolation/lego{n:04}-interp/frames/*.png | sed -n '1~8p') --fps 25 -o {DOCS_STATIC}/lego{n:04}-interp.gif",
                 ):
-                    _run(c, cmd)
+                    _run(c, cmd, echo=True, warn=True)
 
     # Run autodocs
     with c.cd(ROOT_DIR):
