@@ -1211,9 +1211,9 @@ class BlenderService(rpyc.Service):
             height, width = height  # type: ignore
 
         if height:
-            self.scene.render.resolution_y = height
+            self.scene.render.resolution_y = int(height)
         if width:
-            self.scene.render.resolution_x = width
+            self.scene.render.resolution_x = int(width)
         self.scene.render.resolution_percentage = 100
 
     @require_initialized_service
