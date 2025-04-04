@@ -15,7 +15,6 @@ from pathlib import Path
 
 import imageio.v3 as iio
 import multiprocess
-import multiprocess.pool
 import numpy as np
 import numpy.typing as npt
 import tyro
@@ -283,6 +282,7 @@ def create_datasets(
 def preview_datasets(
     datasets_dir: str | os.PathLike,
     previews_dir: str | os.PathLike,
+    fps: int = 50,
     allow_skips: bool = False,
     grids: bool = True,
     colorize: bool = True,
@@ -295,6 +295,7 @@ def preview_datasets(
         datasets_dir (str | os.PathLike): Datasets folder, will search for all `transforms.json` recursively.
         previews_dir (str | os.PathLike): Directory in which to save previews, files will be saved
             as eg: "previews-dir/scene-name/sequence-id/frames.mp4"
+        fps (int, optional): Framerate of preview videos. Defaults to 50fps.
         allow_skips (bool, optional): If true, and outputs exist, skip over them. Defaults to False.
         grids (bool, optional): If true, assemble all previews into a grid-video saved in
             previews-dir/grids. Defaults to True.
@@ -329,7 +330,7 @@ def preview_datasets(
                     input_frames = frame_type
 
                 if not preview_path.exists() or not allow_skips:
-                    cmd = f'visionsim ffmpeg.animate {input_frames} -o {preview_path} --pattern="*.png" --force'
+                    cmd = f'visionsim ffmpeg.animate {input_frames} -o {preview_path} --fps={fps} --pattern="*.png" --force'
                     animate_commands.append(shlex.split(cmd))
 
     if colorize_commands:
@@ -374,7 +375,7 @@ def preview_datasets(
                 "".join(f"[a{i}]" for i, _ in enumerate(in_paths))
                 + f"xstack=inputs={len(in_paths)}:layout={layout_spec}[out]"
             )
-            cmd = f'ffmpeg {in_paths_str} -filter_complex "{filter_inputs_str} {placement}" -map "[out]" -c:v libx264 {outfile}'
+            cmd = f'ffmpeg {in_paths_str} -filter_complex "{filter_inputs_str} {placement}" -map "[out]" -c:v libx264 {outfile} -y'
             subprocess.run(shlex.split(cmd), check=True, stdout=subprocess.DEVNULL)
 
 
