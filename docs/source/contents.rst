@@ -2,8 +2,9 @@
    :hidden:
    :caption: Getting Started
 
-   installation 
    quick-start
+   overview
+   installation 
    autocomplete
 
 .. toctree::

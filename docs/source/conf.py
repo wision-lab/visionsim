@@ -13,7 +13,15 @@ author = "Sacha Jungerman"
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ["sphinxcontrib.programoutput", "sphinx_copybutton", "sphinx.ext.napoleon", "sphinx.ext.viewcode", "click_extra.sphinx", "sphinxcontrib.video"]
+extensions = [
+    "sphinxcontrib.programoutput",
+    "sphinx_copybutton",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.viewcode",
+    "click_extra.sphinx",
+    "sphinxcontrib.video",
+    "sphinx.ext.autosectionlabel",
+]
 templates_path = ["_templates"]
 exclude_patterns = []
 
@@ -31,6 +39,10 @@ html_css_files = [
 autodoc_type_aliases = {"npt.ArrayLike": "npt.ArrayLike"}
 autodoc_mock_imports = ["bpy"]
 autodoc_default_options = {
-    'special-members': '__init__,__call__',
+    "special-members": "__init__,__call__",
 }
 autodoc_member_order = "bysource"
+
+# -- Options for autosectionlabel---------------------------------------------
+# https://www.sphinx-doc.org/en/master/usage/extensions/autosectionlabel.html
+autosectionlabel_prefix_document = True

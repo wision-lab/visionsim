@@ -24,10 +24,10 @@ SCRIPTS_DIR = ROOT_DIR / "scripts"
 COVERAGE_FILE = ROOT_DIR / ".coverage"
 COVERAGE_DIR = ROOT_DIR / "htmlcov"
 COVERAGE_REPORT = COVERAGE_DIR / "index.html"
-PYTHON_DIRS = [str(d) for d in [SOURCE_DIR, TEST_DIR, EXAMPLE_DIR, SCRIPTS_DIR]]
 DOCS_DIR = ROOT_DIR / "docs"
 DOCS_INDEX = DOCS_DIR / "build" / "html" / "index.html"
 DOCS_STATIC = DOCS_DIR / "source" / "_static"
+PYTHON_DIRS = [str(d) for d in [SOURCE_DIR, TEST_DIR, EXAMPLE_DIR, SCRIPTS_DIR, DOCS_DIR]]
 
 
 def _delete_file(file, except_patterns=None):

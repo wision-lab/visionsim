@@ -31,6 +31,9 @@ This format can be see in `the example below <Folder Structure_>`_ in the ``rgb`
 
 |
 
+
+.. _the-npy-format:
+
 The ``NPY`` Format
 ^^^^^^^^^^^^^^^^^^
 
