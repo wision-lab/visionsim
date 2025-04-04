@@ -213,7 +213,7 @@ class BlenderServer(rpyc.utils.server.Server):
         where `render.py` initializes and `start`s a server instance. Proper logging and termination of
         these processes is also taken care of.
 
-        Note: The returned processes and connection settings are not garanteed to be in the same order.
+        Note: The returned processes and connection settings are not guaranteed to be in the same order.
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
@@ -669,7 +669,7 @@ class BlenderClients(tuple):
         return range(start, end + 1, step)
 
     @require_connected_clients
-    def common_animation_range_tuple(self) -> tuple[int]:
+    def common_animation_range_tuple(self) -> tuple[int, int, int]:
         """Get animation range shared by all clients as a tuple of (start, end, step).
 
         Raises:
@@ -763,19 +763,6 @@ class BlenderService(rpyc.Service):
         for name in dir(type(self)):
             if isinstance(getattr(type(self), name), functools.cached_property):
                 vars(self).pop(name, None)  # type: ignore
-
-    @require_initialized_service
-    def _prerender_normal_pass_update(self, normal_group: bpy.types.CompositorNodeGroup) -> None:
-        """Updates the default values corresponding to the camera pose in the normals node group.
-        This needs to be called before the render pass if normals are enabled."""
-        mat = np.linalg.inv(self.camera.matrix_world)
-
-        # Note: Blender's normals node actually returns the negative dot product (which may be a bug)
-        # so we negate that here. See: https://projects.blender.org/blender/blender/issues/132770
-        # TODO: Negation of dot product might become version specific once the bug is fixed.
-        normal_group.node_tree.nodes["RotRow1"].outputs[0].default_value = -mat[0, :-1]
-        normal_group.node_tree.nodes["RotRow2"].outputs[0].default_value = -mat[1, :-1]
-        normal_group.node_tree.nodes["RotRow3"].outputs[0].default_value = -mat[2, :-1]
 
     def on_connect(self, conn: rpyc.Connection) -> None:
         """Called when the connection is established
@@ -897,8 +884,6 @@ class BlenderService(rpyc.Service):
         self.depth_extension = ".exr"
         self.unbind_camera: bool = False
         self.use_animation: bool = True
-        self.pre_render_callbacks: list[Callable] = []
-        self.post_render_callbacks: list[Callable] = []
         self.initialized = True
 
         # Ensure we are using the compositor, and node tree.
@@ -966,7 +951,7 @@ class BlenderService(rpyc.Service):
         return range(self.scene.frame_start, self.scene.frame_end + 1, self.scene.frame_step)
 
     @require_initialized_service
-    def exposed_animation_range_tuple(self) -> tuple[int]:
+    def exposed_animation_range_tuple(self) -> tuple[int, int, int]:
         """Get animation range of current scene as a tuple of (start, end, step)."""
         return (self.scene.frame_start, self.scene.frame_end, self.scene.frame_step)  # type: ignore
 
@@ -1039,10 +1024,10 @@ class BlenderService(rpyc.Service):
             debug_normal_path.file_slots[0].path = f"debug_normal_{'#' * 6}"
             debug_normal_path.format.file_format = "PNG"
 
-            # Important! Set the view settimgs to raw otherwise result is tonemapped
+            # Important! Set the view settings to raw otherwise result is tonemapped
             debug_normal_path.format.color_management = "OVERRIDE"
             debug_normal_path.format.view_settings.view_transform = "Raw"
-
+            debug_normal_path.format.view_settings.look = "None"
             self.tree.links.new(normal_group.outputs["RGBA"], debug_normal_path.inputs[0])
 
         self.normal_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
@@ -1051,7 +1036,6 @@ class BlenderService(rpyc.Service):
         self.tree.links.new(normal_group.outputs["Vector"], self.normal_path.inputs[0])
         self.normal_path.base_path = str(self.root_path / "normals")
         self.normal_path.file_slots[0].path = f"normal_{'#' * 6}"
-        self.pre_render_callbacks.append(functools.partial(self._prerender_normal_pass_update, normal_group))
 
     @require_initialized_service
     def exposed_include_flows(self, direction="forward", debug=True) -> None:
@@ -1528,18 +1512,12 @@ class BlenderService(rpyc.Service):
         if self.segmentation_path is not None:
             paths["segmentation_file_path"] = Path(f"segmentations/segmentation_{index:06}.exr")
 
-        for callback in self.pre_render_callbacks:
-            callback()
-
         if not dry_run:
             # Render frame(s), skip the render iff all files exist and `allow_skips`
             if not allow_skips or any(not Path(self.root_path / p).exists() for p in paths.values()):
                 # If `write_still` is false, depth & normals can be written but rgb will be skipped
                 skip_frame = Path(self.root_path / paths["file_path"]).exists() and allow_skips
                 bpy.ops.render.render(animation=False, write_still=not skip_frame)
-
-        for callback in self.post_render_callbacks:
-            callback()
 
         # Returns paths that were written
         return {
