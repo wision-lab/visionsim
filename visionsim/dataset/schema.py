@@ -7,7 +7,7 @@ from jsonschema import ValidationError, validate
 from typing_extensions import Any
 
 # Schema for nerfstudio-style transforms.json file, which uses a folder of imgs.
-# Note: The command `visionsim blender.render` will output a compatible transform file,
+# Note: The command `visionsim blender.render-animation` will output a compatible transform file,
 #   but with added information such as:
 #   "angle": {"type": "number"},  #  FoV in x axis in radians, same as `camera_angle_x` or `angle_x`.
 #   "shift_x": {"type": "number"},  #  Offset from center, in x axis, of sensor where optical axis lies
