@@ -119,12 +119,12 @@ def normaldebug_node_group():
     separate_xyz.name = "Separate XYZ"
 
     # node Reroute.004
-    reroute_004 = normaldebug.nodes.new("NodeReroute")
-    reroute_004.name = "Reroute.004"
-    reroute_004.socket_idname = "NodeSocketVector"
+    reroute = normaldebug.nodes.new("NodeReroute")
+    reroute.name = "Reroute.004"
+    reroute.socket_idname = "NodeSocketVector"
     # node Combine XYZ.002
-    combine_xyz_002 = normaldebug.nodes.new("CompositorNodeCombineXYZ")
-    combine_xyz_002.name = "Combine XYZ.002"
+    combine_xyz = normaldebug.nodes.new("CompositorNodeCombineXYZ")
+    combine_xyz.name = "Combine XYZ.002"
 
     # Set parents
     rotrow1.parent = rotation
@@ -135,7 +135,7 @@ def normaldebug_node_group():
     remapz.parent = debugnormal
     combine_color.parent = debugnormal
     separate_xyz.parent = debugnormal
-    combine_xyz_002.parent = rotation
+    combine_xyz.parent = rotation
 
     # Set locations
     group_output.location = (1266.0460205078125, 1144.85546875)
@@ -150,8 +150,8 @@ def normaldebug_node_group():
     combine_color.location = (430.9986267089844, -194.6773681640625)
     debugnormal.location = (487.6000061035156, 1371.199951171875)
     separate_xyz.location = (30.207672119140625, -179.9708251953125)
-    reroute_004.location = (800.0, 740.0)
-    combine_xyz_002.location = (200.4000244140625, -239.8974609375)
+    reroute.location = (800.0, 740.0)
+    combine_xyz.location = (200.4000244140625, -239.8974609375)
 
     # Set dimensions
     group_output.width, group_output.height = 140.0, 100.0
@@ -166,8 +166,8 @@ def normaldebug_node_group():
     combine_color.width, combine_color.height = 140.0, 100.0
     debugnormal.width, debugnormal.height = 600.800048828125, 605.199951171875
     separate_xyz.width, separate_xyz.height = 140.0, 100.0
-    reroute_004.width, reroute_004.height = 12.5, 100.0
-    combine_xyz_002.width, combine_xyz_002.height = 140.0, 100.0
+    reroute.width, reroute.height = 12.5, 100.0
+    combine_xyz.width, combine_xyz.height = 140.0, 100.0
 
     # initialize normaldebug links
     # remapx.Value -> combine_color.Red
@@ -190,18 +190,18 @@ def normaldebug_node_group():
     normaldebug.links.new(separate_xyz.outputs[2], remapz.inputs[0])
     # separate_xyz.Y -> remapy.Value
     normaldebug.links.new(separate_xyz.outputs[1], remapy.inputs[0])
-    # combine_xyz_002.Vector -> reroute_004.Input
-    normaldebug.links.new(combine_xyz_002.outputs[0], reroute_004.inputs[0])
-    # rotrow1.Dot -> combine_xyz_002.X
-    normaldebug.links.new(rotrow1.outputs[1], combine_xyz_002.inputs[0])
-    # rotrow2.Dot -> combine_xyz_002.Y
-    normaldebug.links.new(rotrow2.outputs[1], combine_xyz_002.inputs[1])
-    # rotrow3.Dot -> combine_xyz_002.Z
-    normaldebug.links.new(rotrow3.outputs[1], combine_xyz_002.inputs[2])
-    # reroute_004.Output -> group_output.Vector
-    normaldebug.links.new(reroute_004.outputs[0], group_output.inputs[1])
-    # combine_xyz_002.Vector -> separate_xyz.Vector
-    normaldebug.links.new(combine_xyz_002.outputs[0], separate_xyz.inputs[0])
+    # combine_xyz.Vector -> reroute.Input
+    normaldebug.links.new(combine_xyz.outputs[0], reroute.inputs[0])
+    # rotrow1.Dot -> combine_xyz.X
+    normaldebug.links.new(rotrow1.outputs[1], combine_xyz.inputs[0])
+    # rotrow2.Dot -> combine_xyz.Y
+    normaldebug.links.new(rotrow2.outputs[1], combine_xyz.inputs[1])
+    # rotrow3.Dot -> combine_xyz.Z
+    normaldebug.links.new(rotrow3.outputs[1], combine_xyz.inputs[2])
+    # reroute.Output -> group_output.Vector
+    normaldebug.links.new(reroute.outputs[0], group_output.inputs[1])
+    # combine_xyz.Vector -> separate_xyz.Vector
+    normaldebug.links.new(combine_xyz.outputs[0], separate_xyz.inputs[0])
 
     # Register drivers to auto-update camera matrix inverse.
     # For each element in each RotRows, we create a new driver input variable

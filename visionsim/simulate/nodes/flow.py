@@ -11,21 +11,29 @@ import bpy  # type: ignore
 def cartesian2polar_node_group():
     cartesian2polar = bpy.data.node_groups.new(type="CompositorNodeTree", name="Cartesian2Polar")
 
+    cartesian2polar.color_tag = "NONE"
+    cartesian2polar.description = ""
+    cartesian2polar.default_group_node_width = 140
+
     # cartesian2polar interface
     # Socket r
     r_socket = cartesian2polar.interface.new_socket(name="r", in_out="OUTPUT", socket_type="NodeSocketFloat")
+    r_socket.subtype = "NONE"
     r_socket.attribute_domain = "POINT"
 
     # Socket theta
     theta_socket = cartesian2polar.interface.new_socket(name="theta", in_out="OUTPUT", socket_type="NodeSocketFloat")
+    theta_socket.subtype = "NONE"
     theta_socket.attribute_domain = "POINT"
 
     # Socket x
     x_socket = cartesian2polar.interface.new_socket(name="x", in_out="INPUT", socket_type="NodeSocketFloat")
+    x_socket.subtype = "NONE"
     x_socket.attribute_domain = "POINT"
 
     # Socket y
     y_socket = cartesian2polar.interface.new_socket(name="y", in_out="INPUT", socket_type="NodeSocketFloat")
+    y_socket.subtype = "NONE"
     y_socket.attribute_domain = "POINT"
 
     # initialize cartesian2polar nodes
@@ -72,6 +80,15 @@ def cartesian2polar_node_group():
     # Value_001
     squarey.inputs[1].default_value = 2.0
 
+    # Set locations
+    group_output.location = (265.1455993652344, -8.908363342285156)
+    group_input.location = (-489.42120361328125, -36.969505310058594)
+    arctan2.location = (-74.99752044677734, -49.00311279296875)
+    sqrt.location = (90.75543212890625, 104.71868896484375)
+    sum.location = (-78.58831787109375, 115.163330078125)
+    squarex.location = (-256.676513671875, 223.12020874023438)
+    squarey.location = (-260.33575439453125, 60.74333572387695)
+
     # initialize cartesian2polar links
     # sum.Value -> sqrt.Value
     cartesian2polar.links.new(sum.outputs[0], sqrt.inputs[0])
@@ -98,6 +115,10 @@ def cartesian2polar_node_group():
 def flowdebug_node_group():
     flowdebug = bpy.data.node_groups.new(type="CompositorNodeTree", name="FlowDebug")
 
+    flowdebug.color_tag = "NONE"
+    flowdebug.description = ""
+    flowdebug.default_group_node_width = 140
+
     # flowdebug interface
     # Socket Image
     image_socket = flowdebug.interface.new_socket(name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
@@ -107,14 +128,17 @@ def flowdebug_node_group():
     orientation_socket = flowdebug.interface.new_socket(
         name="Orientation", in_out="INPUT", socket_type="NodeSocketFloat"
     )
+    orientation_socket.subtype = "NONE"
     orientation_socket.attribute_domain = "POINT"
 
     # Socket x
     x_socket = flowdebug.interface.new_socket(name="x", in_out="INPUT", socket_type="NodeSocketFloat")
+    x_socket.subtype = "NONE"
     x_socket.attribute_domain = "POINT"
 
     # Socket y
     y_socket = flowdebug.interface.new_socket(name="y", in_out="INPUT", socket_type="NodeSocketFloat")
+    y_socket.subtype = "NONE"
     y_socket.attribute_domain = "POINT"
 
     # initialize flowdebug nodes
@@ -154,7 +178,10 @@ def flowdebug_node_group():
     combine_color = flowdebug.nodes.new("CompositorNodeCombineColor")
     combine_color.name = "Combine Color"
     combine_color.mode = "HSV"
+    combine_color.ycc_mode = "ITUBT709"
+    # Saturation
     combine_color.inputs[1].default_value = 1.0
+    # Alpha
     combine_color.inputs[3].default_value = 1.0
 
     # node Orientation offset
@@ -183,6 +210,17 @@ def flowdebug_node_group():
     huenorm.inputs[3].default_value = 0.0
     # To Max
     huenorm.inputs[4].default_value = 1.0
+
+    # Set locations
+    group_output.location = (923.6994018554688, -206.8037872314453)
+    group_input.location = (-376.9529724121094, -134.94549560546875)
+    group.location = (-179.69717407226562, -88.65217590332031)
+    normalize.location = (337.347900390625, -236.9689483642578)
+    map_range.location = (18.62582778930664, -72.21456146240234)
+    combine_color.location = (744.4407348632812, -150.51651000976562)
+    orientation_offset.location = (225.88455200195312, -65.74089813232422)
+    mod2pi.location = (390.1499328613281, -67.56871032714844)
+    huenorm.location = (552.42919921875, -54.257347106933594)
 
     # initialize flowdebug links
     # group.r -> normalize.Value
@@ -214,6 +252,10 @@ def flowdebug_node_group():
 def vec2rgba_node_group():
     vec2rgba = bpy.data.node_groups.new(type="CompositorNodeTree", name="Vec2RGBA")
 
+    vec2rgba.color_tag = "NONE"
+    vec2rgba.description = ""
+    vec2rgba.default_group_node_width = 140
+
     # vec2rgba interface
     # Socket Image
     output_socket = vec2rgba.interface.new_socket(name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
@@ -233,25 +275,33 @@ def vec2rgba_node_group():
     group_input = vec2rgba.nodes.new("NodeGroupInput")
     group_input.name = "Group Input"
 
-    # node Separate Color
+    # node Separate Color.001
     separate_color = vec2rgba.nodes.new("CompositorNodeSeparateColor")
     separate_color.name = "Separate Color"
     separate_color.mode = "RGB"
+    separate_color.ycc_mode = "ITUBT709"
 
     # node Combine Color
     combine_color = vec2rgba.nodes.new("CompositorNodeCombineColor")
     combine_color.name = "Combine Color"
     combine_color.mode = "RGB"
+    combine_color.ycc_mode = "ITUBT709"
+
+    # Set locations
+    group_output.location = (285.7762756347656, 0.0)
+    group_input.location = (-295.7762756347656, 0.0)
+    separate_color.location = (-95.77627563476562, -0.670013427734375)
+    combine_color.location = (95.77627563476562, 0.66998291015625)
 
     # initialize vec2rgba links
-    # separate_color.Red -> combine_color.Red
-    vec2rgba.links.new(separate_color.outputs[0], combine_color.inputs[0])
     # separate_color.Green -> combine_color.Green
     vec2rgba.links.new(separate_color.outputs[1], combine_color.inputs[1])
-    # separate_color.Blue -> combine_color.Blue
-    vec2rgba.links.new(separate_color.outputs[2], combine_color.inputs[2])
     # separate_color.Alpha -> combine_color.Alpha
     vec2rgba.links.new(separate_color.outputs[3], combine_color.inputs[3])
+    # separate_color.Red -> combine_color.Red
+    vec2rgba.links.new(separate_color.outputs[0], combine_color.inputs[0])
+    # separate_color.Blue -> combine_color.Blue
+    vec2rgba.links.new(separate_color.outputs[2], combine_color.inputs[2])
     # group_input.Image -> separate_color.Image
     vec2rgba.links.new(group_input.outputs[0], separate_color.inputs[0])
     # combine_color.Image -> group_output.Image

@@ -11,6 +11,10 @@ import bpy  # type: ignore
 def segmentationdebug_node_group():
     segmentationdebug = bpy.data.node_groups.new(type="CompositorNodeTree", name="SegmentationDebug")
 
+    segmentationdebug.color_tag = "NONE"
+    segmentationdebug.description = ""
+    segmentationdebug.default_group_node_width = 140
+
     # segmentationdebug interface
     # Socket Image
     image_socket = segmentationdebug.interface.new_socket(name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
@@ -35,6 +39,7 @@ def segmentationdebug_node_group():
     combine_color = segmentationdebug.nodes.new("CompositorNodeCombineColor")
     combine_color.name = "Combine Color"
     combine_color.mode = "HSV"
+    combine_color.ycc_mode = "ITUBT709"
     # Saturation
     combine_color.inputs[1].default_value = 1.0
     # Alpha
@@ -61,6 +66,13 @@ def segmentationdebug_node_group():
     # Value_001
     math.inputs[1].default_value = 0.0
 
+    # Set locations
+    group_output.location = (214.5904083251953, 0.0)
+    group_input.location = (-381.46478271484375, 0.0)
+    combine_color.location = (10.13623046875, -0.20062255859375)
+    normalizeidx.location = (-180.60400390625, 97.82029724121094)
+    math.location = (-181.46478271484375, -97.8203125)
+
     # initialize segmentationdebug links
     # normalizeidx.Value -> combine_color.Red
     segmentationdebug.links.new(normalizeidx.outputs[0], combine_color.inputs[0])
@@ -68,7 +80,7 @@ def segmentationdebug_node_group():
     segmentationdebug.links.new(math.outputs[0], combine_color.inputs[2])
     # group_input.Value -> normalizeidx.Value
     segmentationdebug.links.new(group_input.outputs[0], normalizeidx.inputs[0])
-    # group_input.Value -> math_1.Value
+    # group_input.Value -> math.Value
     segmentationdebug.links.new(group_input.outputs[0], math.inputs[0])
     # combine_color.Image -> group_output.Image
     segmentationdebug.links.new(combine_color.outputs[0], group_output.inputs[0])
