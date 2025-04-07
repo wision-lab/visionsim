@@ -82,12 +82,20 @@ def colorize_depths(
     import matplotlib as mpl
     import matplotlib.cm as cm
 
+    DEPTH_CUTOFF = 10000000000
+
     input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
     in_files = in_files[::step]
 
+    def transform_depth(d):
+        # Filter out large depths, this is a render bug in CYCLES
+        # See: https://blender.stackexchange.com/questions/325007
+        d = d[d < DEPTH_CUTOFF]
+        return np.random.choice(d.flatten(), size=int(d.size * sample))
+
     if vmin is None and vmax is None:
         digest = _estimate_distribution(
-            in_files, percentage=percentage, transform=lambda a: np.random.choice(a.flatten(), size=int(a.size * sample))
+            in_files, percentage=percentage, transform=transform_depth
         )
         vmin, vmax = digest.percentile(1), digest.percentile(99)
         print(f"Using depth range [{vmin:0.2f}, {vmax:0.2f}]\n")
@@ -98,7 +106,7 @@ def colorize_depths(
     for in_file in track(in_files):
         # Open with imageio, convert to color using matplotlib's cmaps and save as png.
         depth = _read_exr(in_file)
-        depth[depth == 10000000000] = np.nan
+        depth[depth >= DEPTH_CUTOFF] = np.nan
         img = (cmap(norm(depth)) * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
         iio.imwrite(str(path.with_suffix(ext)), img)

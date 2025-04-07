@@ -992,8 +992,8 @@ class BlenderService(rpyc.Service):
 
         self.depth_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.depth_path.label = "Depth Output"
-        self.depth_path.format.color_mode = "BW"
         self.depth_path.format.file_format = file_format
+        self.depth_path.format.color_mode = "BW"
         self.tree.links.new(self.render_layers.outputs["Depth"], self.depth_path.inputs[0])
         self.depth_path.base_path = str(self.root_path / "depths")
         self.depth_path.file_slots[0].path = f"depth_{'#' * 6}"
