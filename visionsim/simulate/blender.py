@@ -1023,11 +1023,17 @@ class BlenderService(rpyc.Service):
             debug_normal_path.label = "Normals Debug Output"
             debug_normal_path.file_slots[0].path = f"debug_normal_{'#' * 6}"
             debug_normal_path.format.file_format = "PNG"
+            debug_normal_path.format.color_depth = "8"
 
             # Important! Set the view settings to raw otherwise result is tonemapped
             debug_normal_path.format.color_management = "OVERRIDE"
             debug_normal_path.format.view_settings.view_transform = "Raw"
             debug_normal_path.format.view_settings.look = "None"
+            debug_normal_path.format.view_settings.gamma = 0
+            debug_normal_path.format.view_settings.exposure = 1
+            debug_normal_path.format.view_settings.use_curve_mapping = False
+            debug_normal_path.format.view_settings.use_white_balance = False
+
             self.tree.links.new(normal_group.outputs["RGBA"], debug_normal_path.inputs[0])
 
         self.normal_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
