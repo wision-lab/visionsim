@@ -94,9 +94,7 @@ def colorize_depths(
         return np.random.choice(d.flatten(), size=int(d.size * sample))
 
     if vmin is None and vmax is None:
-        digest = _estimate_distribution(
-            in_files, percentage=percentage, transform=transform_depth
-        )
+        digest = _estimate_distribution(in_files, percentage=percentage, transform=transform_depth)
         vmin, vmax = digest.percentile(1), digest.percentile(99)
         print(f"Using depth range [{vmin:0.2f}, {vmax:0.2f}]\n")
 

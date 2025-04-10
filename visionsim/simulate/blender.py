@@ -982,9 +982,22 @@ class BlenderService(rpyc.Service):
 
         if debug:
             debug_depth_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
-            debug_depth_path.label = "Debug Depth Output"
             debug_depth_path.base_path = str(self.root_path / "depths")
+            debug_depth_path.label = "Debug Depth Output"
             debug_depth_path.file_slots[0].path = f"debug_depth_{'#' * 6}"
+            debug_depth_path.format.file_format = "PNG"
+            debug_depth_path.format.compression = 90
+            debug_depth_path.format.color_depth = "8"
+            debug_depth_path.format.color_mode = "BW"
+
+            # Important! Set the view settings to raw otherwise result is tonemapped
+            debug_depth_path.format.color_management = "OVERRIDE"
+            debug_depth_path.format.view_settings.view_transform = "Raw"
+            debug_depth_path.format.view_settings.look = "None"
+            debug_depth_path.format.view_settings.gamma = 0
+            debug_depth_path.format.view_settings.exposure = 1
+            debug_depth_path.format.view_settings.use_curve_mapping = False
+            debug_depth_path.format.view_settings.use_white_balance = False
 
             normalize = self.tree.nodes.new("CompositorNodeNormalize")
             self.tree.links.new(self.render_layers.outputs["Depth"], normalize.inputs[0])
@@ -992,12 +1005,21 @@ class BlenderService(rpyc.Service):
 
         self.depth_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.depth_path.label = "Depth Output"
+        self.depth_path.file_slots[0].path = f"depth_{'#' * 6}"
         self.depth_path.format.file_format = file_format
-        self.depth_path.format.color_mode = "BW"
+
+        if file_format.upper():
+            self.depth_path.format.exr_codec = "ZIP"
+            self.depth_path.format.color_mode = "BW"
+            self.depth_extension = ".exr"
+        else:
+            self.depth_path.format.color_mode = "RGB"
+            self.depth_extension = ".hdr"
+
+        self.depth_path.format.color_management = "OVERRIDE"
+        self.depth_path.format.linear_colorspace_settings.name = "Non-Color"
         self.tree.links.new(self.render_layers.outputs["Depth"], self.depth_path.inputs[0])
         self.depth_path.base_path = str(self.root_path / "depths")
-        self.depth_path.file_slots[0].path = f"depth_{'#' * 6}"
-        self.depth_extension = ".exr" if file_format.upper() == "OPEN_EXR" else ".hdr"
 
     @require_initialized_service
     def exposed_include_normals(self, debug=True) -> None:
@@ -1023,7 +1045,9 @@ class BlenderService(rpyc.Service):
             debug_normal_path.label = "Normals Debug Output"
             debug_normal_path.file_slots[0].path = f"debug_normal_{'#' * 6}"
             debug_normal_path.format.file_format = "PNG"
+            debug_normal_path.format.compression = 90
             debug_normal_path.format.color_depth = "8"
+            debug_normal_path.format.color_mode = "RGB"
 
             # Important! Set the view settings to raw otherwise result is tonemapped
             debug_normal_path.format.color_management = "OVERRIDE"
@@ -1039,6 +1063,9 @@ class BlenderService(rpyc.Service):
         self.normal_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.normal_path.label = "Normal Output"
         self.normal_path.format.file_format = "OPEN_EXR"
+        self.normal_path.format.exr_codec = "ZIP"
+        self.normal_path.format.color_management = "OVERRIDE"
+        self.normal_path.format.linear_colorspace_settings.name = "Non-Color"
         self.tree.links.new(normal_group.outputs["Vector"], self.normal_path.inputs[0])
         self.normal_path.base_path = str(self.root_path / "normals")
         self.normal_path.file_slots[0].path = f"normal_{'#' * 6}"
@@ -1080,6 +1107,18 @@ class BlenderService(rpyc.Service):
             debug_flow_path.label = "Flow Debug Output"
             debug_flow_path.file_slots.clear()
             debug_flow_path.format.file_format = "PNG"
+            debug_flow_path.format.compression = 90
+            debug_flow_path.format.color_depth = "8"
+            debug_flow_path.format.color_mode = "RGB"
+
+            # Important! Set the view settings to raw otherwise result is tonemapped
+            debug_flow_path.format.color_management = "OVERRIDE"
+            debug_flow_path.format.view_settings.view_transform = "Raw"
+            debug_flow_path.format.view_settings.look = "None"
+            debug_flow_path.format.view_settings.gamma = 0
+            debug_flow_path.format.view_settings.exposure = 1
+            debug_flow_path.format.view_settings.use_curve_mapping = False
+            debug_flow_path.format.view_settings.use_white_balance = False
 
             # Instantiate flow debug node group(s) and connect them
             if direction.lower() in ("forward", "both"):
@@ -1110,7 +1149,10 @@ class BlenderService(rpyc.Service):
         self.flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.flow_path.label = "Flow Debug Output"
         self.flow_path.format.file_format = "OPEN_EXR"
+        self.flow_path.format.exr_codec = "ZIP"
         self.flow_path.format.color_mode = "RGBA"
+        self.flow_path.format.color_management = "OVERRIDE"
+        self.flow_path.format.linear_colorspace_settings.name = "Non-Color"
         self.flow_path.base_path = str(self.root_path / "flows")
         self.flow_path.file_slots[0].path = f"flow_{'#' * 6}"
 
@@ -1166,6 +1208,18 @@ class BlenderService(rpyc.Service):
             debug_seg_path.label = "Segmentations Debug Output"
             debug_seg_path.file_slots[0].path = f"debug_segmentation_{'#' * 6}"
             debug_seg_path.format.file_format = "PNG"
+            debug_seg_path.format.compression = 90
+            debug_seg_path.format.color_depth = "8"
+            debug_seg_path.format.color_mode = "RGB"
+
+            # Important! Set the view settings to raw otherwise result is tonemapped
+            debug_seg_path.format.color_management = "OVERRIDE"
+            debug_seg_path.format.view_settings.view_transform = "Raw"
+            debug_seg_path.format.view_settings.look = "None"
+            debug_seg_path.format.view_settings.gamma = 0
+            debug_seg_path.format.view_settings.exposure = 1
+            debug_seg_path.format.view_settings.use_curve_mapping = False
+            debug_seg_path.format.view_settings.use_white_balance = False
 
             self.tree.links.new(self.render_layers.outputs["IndexOB"], seg_group.inputs["Value"])
             self.tree.links.new(seg_group.outputs["Image"], debug_seg_path.inputs[0])
@@ -1173,6 +1227,10 @@ class BlenderService(rpyc.Service):
         self.segmentation_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.segmentation_path.label = "Segmentation Output"
         self.segmentation_path.format.file_format = "OPEN_EXR"
+        self.segmentation_path.format.exr_codec = "ZIP"
+        self.segmentation_path.format.color_mode = "BW"
+        self.segmentation_path.format.color_management = "OVERRIDE"
+        self.segmentation_path.format.linear_colorspace_settings.name = "Non-Color"
         self.tree.links.new(self.render_layers.outputs["IndexOB"], self.segmentation_path.inputs[0])
         self.segmentation_path.base_path = str(self.root_path / "segmentations")
         self.segmentation_path.file_slots[0].path = f"segmentation_{'#' * 6}"
@@ -1207,13 +1265,18 @@ class BlenderService(rpyc.Service):
         self.scene.render.resolution_percentage = 100
 
     @require_initialized_service
-    def exposed_image_settings(self, file_format="PNG", bitdepth=8, color_mode="RGB") -> None:
+    def exposed_image_settings(
+        self, file_format: str | None = None, bitdepth: int | None = None, color_mode: str | None = None
+    ) -> None:
         """Set the render's output format and bitdepth.
-        Useful for linear intensity renders, using "OPEN_EXR" and 32 or 16.
+        Useful for linear intensity renders, using "OPEN_EXR" and 32 or 16 bits.
         """
-        self.scene.render.image_settings.file_format = file_format.upper()
-        self.scene.render.image_settings.color_depth = str(bitdepth)
-        self.scene.render.image_settings.color_mode = color_mode.upper()
+        if file_format is not None:
+            self.scene.render.image_settings.file_format = file_format.upper()
+        if bitdepth is not None:
+            self.scene.render.image_settings.color_depth = str(bitdepth)
+        if color_mode is not None:
+            self.scene.render.image_settings.color_mode = color_mode.upper()
 
     @require_initialized_service
     def exposed_use_motion_blur(self, enable: bool) -> None:
