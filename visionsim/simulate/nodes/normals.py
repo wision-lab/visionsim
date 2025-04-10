@@ -18,22 +18,15 @@ def normaldebug_node_group():
     # normaldebug interface
     # Socket RGBA
     rgba_socket = normaldebug.interface.new_socket(name="RGBA", in_out="OUTPUT", socket_type="NodeSocketColor")
-    rgba_socket.default_value = (0.0, 0.0, 0.0, 1.0)
     rgba_socket.attribute_domain = "POINT"
 
     # Socket Vector
     vector_socket = normaldebug.interface.new_socket(name="Vector", in_out="OUTPUT", socket_type="NodeSocketVector")
-    vector_socket.default_value = (0.0, 0.0, 0.0)
-    vector_socket.min_value = -3.4028234663852886e38
-    vector_socket.max_value = 3.4028234663852886e38
     vector_socket.subtype = "NONE"
     vector_socket.attribute_domain = "POINT"
 
     # Socket Normal
     normal_socket = normaldebug.interface.new_socket(name="Normal", in_out="INPUT", socket_type="NodeSocketVector")
-    normal_socket.default_value = (0.0, 0.0, 0.0)
-    normal_socket.min_value = -3.4028234663852886e38
-    normal_socket.max_value = 3.4028234663852886e38
     normal_socket.subtype = "DIRECTION"
     normal_socket.attribute_domain = "POINT"
 
@@ -51,17 +44,14 @@ def normaldebug_node_group():
     rotrow1 = normaldebug.nodes.new("CompositorNodeNormal")
     rotrow1.name = "RotRow1"
 
-    rotrow1.outputs[0].default_value = (-0.31883853673934937, 0.23669059574604034, 0.0002839671797119081)
     # node RotRow2
     rotrow2 = normaldebug.nodes.new("CompositorNodeNormal")
     rotrow2.name = "RotRow2"
 
-    rotrow2.outputs[0].default_value = (-0.0801093578338623, -0.10746438056230545, -0.3737839460372925)
     # node RotRow3
     rotrow3 = normaldebug.nodes.new("CompositorNodeNormal")
     rotrow3.name = "RotRow3"
 
-    rotrow3.outputs[0].default_value = (0.22272183001041412, 0.30018243193626404, -0.13403739035129547)
     # node Rotation
     rotation = normaldebug.nodes.new("NodeFrame")
     rotation.label = "Rows of Inverse Camera Rotation"
@@ -118,14 +108,18 @@ def normaldebug_node_group():
     separate_xyz = normaldebug.nodes.new("CompositorNodeSeparateXYZ")
     separate_xyz.name = "Separate XYZ"
 
-    # node Reroute.004
-    reroute = normaldebug.nodes.new("NodeReroute")
-    reroute.name = "Reroute.004"
-    reroute.socket_idname = "NodeSocketVector"
     # node Combine XYZ.002
     combine_xyz = normaldebug.nodes.new("CompositorNodeCombineXYZ")
     combine_xyz.name = "Combine XYZ.002"
 
+    # node Reroute
+    reroute_1 = normaldebug.nodes.new("NodeReroute")
+    reroute_1.name = "Reroute"
+    reroute_1.socket_idname = "NodeSocketVector"
+    # node Reroute.001
+    reroute_2 = normaldebug.nodes.new("NodeReroute")
+    reroute_2.name = "Reroute.001"
+    reroute_2.socket_idname = "NodeSocketVector"
     # Set parents
     rotrow1.parent = rotation
     rotrow2.parent = rotation
@@ -138,36 +132,21 @@ def normaldebug_node_group():
     combine_xyz.parent = rotation
 
     # Set locations
-    group_output.location = (1266.0460205078125, 1144.85546875)
-    group_input.location = (-300.0, 1080.0)
-    rotrow1.location = (30.3599853515625, -32.5997314453125)
-    rotrow2.location = (30.3599853515625, -212.5997314453125)
-    rotrow3.location = (30.3599853515625, -392.5997314453125)
-    rotation.location = (39.599998474121094, 1359.699951171875)
-    remapx.location = (232.80599975585938, -39.957275390625)
-    remapy.location = (230.58395385742188, -226.56103515625)
-    remapz.location = (230.58395385742188, -406.56103515625)
-    combine_color.location = (430.9986267089844, -194.6773681640625)
-    debugnormal.location = (487.6000061035156, 1371.199951171875)
-    separate_xyz.location = (30.207672119140625, -179.9708251953125)
-    reroute.location = (800.0, 740.0)
-    combine_xyz.location = (200.4000244140625, -239.8974609375)
-
-    # Set dimensions
-    group_output.width, group_output.height = 140.0, 100.0
-    group_input.width, group_input.height = 140.0, 100.0
-    rotrow1.width, rotrow1.height = 140.0, 100.0
-    rotrow2.width, rotrow2.height = 140.0, 100.0
-    rotrow3.width, rotrow3.height = 140.0, 100.0
-    rotation.width, rotation.height = 370.3999938964844, 584.0999755859375
-    remapx.width, remapx.height = 140.0, 100.0
-    remapy.width, remapy.height = 140.0, 100.0
-    remapz.width, remapz.height = 140.0, 100.0
-    combine_color.width, combine_color.height = 140.0, 100.0
-    debugnormal.width, debugnormal.height = 600.800048828125, 605.199951171875
-    separate_xyz.width, separate_xyz.height = 140.0, 100.0
-    reroute.width, reroute.height = 12.5, 100.0
-    combine_xyz.width, combine_xyz.height = 140.0, 100.0
+    group_output.location = (667.72314453125, -93.61640930175781)
+    group_input.location = (-691.4769287109375, -27.496484756469727)
+    rotrow1.location = (30.023101806640625, -32.533050537109375)
+    rotrow2.location = (30.023101806640625, -244.13314819335938)
+    rotrow3.location = (30.023101806640625, -455.7331237792969)
+    rotation.location = (-489.20001220703125, 246.89999389648438)
+    remapx.location = (244.82305908203125, -39.7083740234375)
+    remapy.location = (244.82305908203125, -258.50830078125)
+    remapz.location = (244.82305908203125, -477.308349609375)
+    combine_color.location = (447.32305908203125, -333.3519287109375)
+    debugnormal.location = (-24.399999618530273, 444.0)
+    separate_xyz.location = (29.82306480407715, -353.8504638671875)
+    combine_xyz.location = (232.52313232421875, -287.1443786621094)
+    reroute_1.location = (5.423047065734863, -302.10833740234375)
+    reroute_2.location = (562.9230346679688, -302.10833740234375)
 
     # initialize normaldebug links
     # remapx.Value -> combine_color.Red
@@ -190,18 +169,20 @@ def normaldebug_node_group():
     normaldebug.links.new(separate_xyz.outputs[2], remapz.inputs[0])
     # separate_xyz.Y -> remapy.Value
     normaldebug.links.new(separate_xyz.outputs[1], remapy.inputs[0])
-    # combine_xyz.Vector -> reroute.Input
-    normaldebug.links.new(combine_xyz.outputs[0], reroute.inputs[0])
     # rotrow1.Dot -> combine_xyz.X
     normaldebug.links.new(rotrow1.outputs[1], combine_xyz.inputs[0])
     # rotrow2.Dot -> combine_xyz.Y
     normaldebug.links.new(rotrow2.outputs[1], combine_xyz.inputs[1])
     # rotrow3.Dot -> combine_xyz.Z
     normaldebug.links.new(rotrow3.outputs[1], combine_xyz.inputs[2])
-    # reroute.Output -> group_output.Vector
-    normaldebug.links.new(reroute.outputs[0], group_output.inputs[1])
     # combine_xyz.Vector -> separate_xyz.Vector
     normaldebug.links.new(combine_xyz.outputs[0], separate_xyz.inputs[0])
+    # combine_xyz.Vector -> reroute_1.Input
+    normaldebug.links.new(combine_xyz.outputs[0], reroute_1.inputs[0])
+    # reroute_1.Output -> reroute_2.Input
+    normaldebug.links.new(reroute_1.outputs[0], reroute_2.inputs[0])
+    # reroute_2.Output -> group_output.Vector
+    normaldebug.links.new(reroute_2.outputs[0], group_output.inputs[1])
 
     # Register drivers to auto-update camera matrix inverse.
     # For each element in each RotRows, we create a new driver input variable

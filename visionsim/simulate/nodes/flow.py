@@ -80,14 +80,20 @@ def cartesian2polar_node_group():
     # Value_001
     squarey.inputs[1].default_value = 2.0
 
+    # node Reroute
+    reroute = cartesian2polar.nodes.new("NodeReroute")
+    reroute.name = "Reroute"
+    reroute.socket_idname = "NodeSocketFloat"
+
     # Set locations
-    group_output.location = (265.1455993652344, -8.908363342285156)
-    group_input.location = (-489.42120361328125, -36.969505310058594)
-    arctan2.location = (-74.99752044677734, -49.00311279296875)
-    sqrt.location = (90.75543212890625, 104.71868896484375)
-    sum.location = (-78.58831787109375, 115.163330078125)
-    squarex.location = (-256.676513671875, 223.12020874023438)
-    squarey.location = (-260.33575439453125, 60.74333572387695)
+    group_output.location = (395.625, -57.550392150878906)
+    group_input.location = (-401.875, 41.049617767333984)
+    arctan2.location = (-186.875, -156.150390625)
+    sqrt.location = (205.625, 41.04961013793945)
+    sum.location = (15.625, 41.04961013793945)
+    squarex.location = (-186.875, 239.849609375)
+    squarey.location = (-186.875, 41.04961013793945)
+    reroute.location = (345.625, -190.34727478027344)
 
     # initialize cartesian2polar links
     # sum.Value -> sqrt.Value
@@ -106,8 +112,10 @@ def cartesian2polar_node_group():
     cartesian2polar.links.new(sqrt.outputs[0], group_output.inputs[0])
     # group_input.y -> arctan2.Value
     cartesian2polar.links.new(group_input.outputs[1], arctan2.inputs[0])
-    # arctan2.Value -> group_output.theta
-    cartesian2polar.links.new(arctan2.outputs[0], group_output.inputs[1])
+    # arctan2.Value -> reroute.Input
+    cartesian2polar.links.new(arctan2.outputs[0], reroute.inputs[0])
+    # reroute.Output -> group_output.theta
+    cartesian2polar.links.new(reroute.outputs[0], group_output.inputs[1])
     return cartesian2polar
 
 
@@ -211,20 +219,34 @@ def flowdebug_node_group():
     # To Max
     huenorm.inputs[4].default_value = 1.0
 
+    # node Reroute
+    reroute_1 = flowdebug.nodes.new("NodeReroute")
+    reroute_1.name = "Reroute"
+    reroute_1.socket_idname = "NodeSocketFloat"
+    # node Reroute.001
+    reroute_2 = flowdebug.nodes.new("NodeReroute")
+    reroute_2.name = "Reroute.001"
+    reroute_2.socket_idname = "NodeSocketFloat"
+    # node Reroute.002
+    reroute_3 = flowdebug.nodes.new("NodeReroute")
+    reroute_3.name = "Reroute.002"
+    reroute_3.socket_idname = "NodeSocketFloat"
+
     # Set locations
-    group_output.location = (923.6994018554688, -206.8037872314453)
-    group_input.location = (-376.9529724121094, -134.94549560546875)
-    group.location = (-179.69717407226562, -88.65217590332031)
-    normalize.location = (337.347900390625, -236.9689483642578)
-    map_range.location = (18.62582778930664, -72.21456146240234)
-    combine_color.location = (744.4407348632812, -150.51651000976562)
-    orientation_offset.location = (225.88455200195312, -65.74089813232422)
-    mod2pi.location = (390.1499328613281, -67.56871032714844)
-    huenorm.location = (552.42919921875, -54.257347106933594)
+    group_output.location = (734.375, -46.430747985839844)
+    group_input.location = (-633.125, -17.430749893188477)
+    group.location = (-430.625, -46.430747985839844)
+    normalize.location = (341.8750305175781, -164.23074340820312)
+    map_range.location = (-240.625, 71.36925506591797)
+    combine_color.location = (544.375, -46.430747985839844)
+    orientation_offset.location = (-38.12500762939453, 71.36925506591797)
+    mod2pi.location = (151.87496948242188, 71.36925506591797)
+    huenorm.location = (341.8750305175781, 71.36925506591797)
+    reroute_1.location = (-430.625, 129.3692626953125)
+    reroute_2.location = (-100.625, 129.3692626953125)
+    reroute_3.location = (-240.625, -223.26181030273438)
 
     # initialize flowdebug links
-    # group.r -> normalize.Value
-    flowdebug.links.new(group.outputs[0], normalize.inputs[0])
     # group_input.x -> group.x
     flowdebug.links.new(group_input.outputs[1], group.inputs[0])
     # group_input.y -> group.y
@@ -241,10 +263,18 @@ def flowdebug_node_group():
     flowdebug.links.new(huenorm.outputs[0], combine_color.inputs[0])
     # mod2pi.Value -> huenorm.Value
     flowdebug.links.new(mod2pi.outputs[0], huenorm.inputs[0])
-    # group_input.Orientation -> orientation_offset.Value
-    flowdebug.links.new(group_input.outputs[0], orientation_offset.inputs[0])
     # map_range.Value -> orientation_offset.Value
     flowdebug.links.new(map_range.outputs[0], orientation_offset.inputs[1])
+    # group_input.Orientation -> reroute_1.Input
+    flowdebug.links.new(group_input.outputs[0], reroute_1.inputs[0])
+    # reroute_1.Output -> reroute_2.Input
+    flowdebug.links.new(reroute_1.outputs[0], reroute_2.inputs[0])
+    # reroute_2.Output -> orientation_offset.Value
+    flowdebug.links.new(reroute_2.outputs[0], orientation_offset.inputs[0])
+    # group.r -> reroute_3.Input
+    flowdebug.links.new(group.outputs[0], reroute_3.inputs[0])
+    # reroute_3.Output -> normalize.Value
+    flowdebug.links.new(reroute_3.outputs[0], normalize.inputs[0])
     return flowdebug
 
 
@@ -275,7 +305,7 @@ def vec2rgba_node_group():
     group_input = vec2rgba.nodes.new("NodeGroupInput")
     group_input.name = "Group Input"
 
-    # node Separate Color.001
+    # node Separate Color
     separate_color = vec2rgba.nodes.new("CompositorNodeSeparateColor")
     separate_color.name = "Separate Color"
     separate_color.mode = "RGB"
@@ -288,10 +318,10 @@ def vec2rgba_node_group():
     combine_color.ycc_mode = "ITUBT709"
 
     # Set locations
-    group_output.location = (285.7762756347656, 0.0)
-    group_input.location = (-295.7762756347656, 0.0)
-    separate_color.location = (-95.77627563476562, -0.670013427734375)
-    combine_color.location = (95.77627563476562, 0.66998291015625)
+    group_output.location = (285.0, 0.0)
+    group_input.location = (-285.0, 0.0)
+    separate_color.location = (-95.0, 0.0)
+    combine_color.location = (95.0, 0.0)
 
     # initialize vec2rgba links
     # separate_color.Green -> combine_color.Green
