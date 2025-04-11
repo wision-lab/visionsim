@@ -1,38 +1,20 @@
-import os
-from importlib import metadata
+import inspect
+import sys
 
-from invoke import Collection, Config, Program
+import tyro
 
 from . import blender, dataset, emulate, ffmpeg, interpolate, transforms
 
 
-class VisionSimConfig(Config):
-    """Override `prefix` attribute enabling config options like:
+def main():
+    cli_dict = {}
+    cli_modules = [blender, dataset, emulate, ffmpeg, interpolate, transforms]
 
-    Environment variables:
-        VISIONSIM_MAX_THREADS instead of INVOKE_MAX_THREADS
-
-    Configuration files:
-        visionsim.(yaml, yml, json or py) instead of invoke.xxx
-
-    For more see: https://docs.pyinvoke.org/en/latest/concepts/configuration.html
-    """
-
-    prefix = "visionsim"
-
-
-ns = Collection()
-ns.add_collection(Collection.from_module(dataset))
-ns.add_collection(Collection.from_module(emulate))
-ns.add_collection(Collection.from_module(ffmpeg))
-ns.add_collection(Collection.from_module(interpolate))
-ns.add_collection(Collection.from_module(blender))
-ns.add_collection(Collection.from_module(transforms))
-
-ns.configure({"max_threads": os.cpu_count()})
-
-
-# Note: This is the version of the installed pkg, not the imported one.
-#   They can only differ if pkg is installed with -e option.
-version = metadata.version("visionsim")
-program = Program(name="visionsim", version=str(version), namespace=ns, config_class=VisionSimConfig)
+    for module in cli_modules:
+        current_module = sys.modules[module.__name__]
+        module_name = current_module.__name__.split('.')[-1]
+        cli_dict.update({f"{module_name}.{func_name}": func for func_name, func in inspect.getmembers(current_module, inspect.isfunction)
+                        if func.__module__ == module.__name__ and not func_name.startswith('_')})
+    
+    
+    tyro.extras.subcommand_cli_from_dict(cli_dict)

@@ -2,45 +2,41 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from invoke import task
-
 from visionsim.tasks.common import _run, _validate_directories
 
 
-@task(
-    help={
-        "input_dir": "directory in which to look for frames",
-        "pattern": "filenames of frames should match this, default: 'frame_*.png'",
-        "outfile": "where to save generated mp4, default: 'out.mp4'",
-        "fps": "frames per second in video, default: 25",
-        "crf": "constant rate factor for video encoding (0-51), lower is better quality but more memory, default: 22",
-        "vcodec": "video codec to use (either libx264 or libx265), default: libx264",
-        "step": "drop some frames when making video, use frames 0+step*n, default: 1",
-        "multiple": "some codecs require size to be a multiple of n, default: 2",
-        "force": "if true, overwrite output file if present, default: False",
-        "bg_color": "for images with transparencies, namely PNGs, use this color as a background, default: 'black'",
-        "strip_alpha": "if true, do not pre-process PNGs to remove transparencies, default: True",
-        "auto_tonemap": "if true and images are .exr (linear intensity), apply tonemapping first, default: True",
-        "hide": "if true, hide ffmpeg output, default: False",
-    }
-)
 def animate(
-    c,
-    input_dir,
-    pattern="frame_*.png",
-    outfile="out.mp4",
-    fps=25,
-    crf=22,
-    vcodec="libx264",
-    step=1,
-    multiple=2,
-    force=False,
-    bg_color="black",
-    strip_alpha=False,
-    auto_tonemap=True,
-    hide=False,
+    input_dir: str,
+    pattern: str="frame_*.png",
+    outfile: str="out.mp4",
+    fps: int=25,
+    crf: int=22,
+    vcodec: str="libx264",
+    step: int=1,
+    multiple: int=2,
+    force: bool=False,
+    bg_color: str="black",
+    strip_alpha: bool=False,
+    auto_tonemap: bool=True,
+    hide: bool=False,
 ):
-    """Combine generated frames into an MP4 using ffmpeg wizardry"""
+    """Combine generated frames into an MP4 using ffmpeg wizardry
+    
+    Args:
+        input_dir: directory in which to look for frames,
+        pattern: filenames of frames should match this, default: 'frame_*.png',
+        outfile: where to save generated mp4, default: 'out.mp4',
+        fps: frames per second in video, default: 25,
+        crf: constant rate factor for video encoding (0-51), lower is better quality but more memory, default: 22,
+        vcodec: video codec to use (either libx264 or libx265), default: libx264,
+        step: drop some frames when making video, use frames 0+step*n, default: 1,
+        multiple: some codecs require size to be a multiple of n, default: 2,
+        force: if true, overwrite output file if present, default: False,
+        bg_color: for images with transparencies, namely PNGs, use this color as a background, default: 'black',
+        strip_alpha: if true, do not pre-process PNGs to remove transparencies, default: True,
+        auto_tonemap: if true and images are .exr (linear intensity), apply tonemapping first, default: True,
+        hide: if true, hide ffmpeg output, default: False,
+    """
     # TODO: Auto-tonemap for depth colorization
     import tempfile  # Lazy import
 
@@ -48,7 +44,7 @@ def animate(
 
     from visionsim.tasks.transforms import tonemap_exrs
 
-    if _run(c, "ffmpeg -version", hide=True).failed:
+    if _run("ffmpeg -version").failed:
         raise RuntimeError("No ffmpeg installation found on path!")
 
     input_dir, _, in_files = _validate_directories(input_dir, Path(outfile).parent, pattern=pattern)
@@ -78,7 +74,7 @@ def animate(
             # Apply tone mapping (linear -> sRGB) to all files
             # Note: `tonemap_exrs` does not rename files, so we have to do it here...
             print("Applying tonemapping to images...")
-            tonemap_exrs(c, input_dir, str(tmpdirname), pattern=pattern, ext=".png", step=step)
+            tonemap_exrs(input_dir, str(tmpdirname), pattern=pattern, ext=".png", step=step)
             for i, p in enumerate(natsorted(tmpdirname.glob("*.png"))):
                 p.rename(tmpdirname / f"{i:09}.png")
             ext = ".png"
@@ -95,38 +91,28 @@ def animate(
             cmd += f"-vf scale=-{multiple}:2048 "
 
         cmd += f"{outfile} "
-        _run(c, cmd, hide=hide)
+        _run(cmd)
 
 
-@task(
-    iterable=["inputfiles"],
-    help={
-        "inputfiles": "video file to combine together or newline separator ('\\n', '\\r', 'newline' or 'enter'), "
-        "this argument should be used once per video file.",
-        "outfile": "where to save generated mp4, default: 'combined.mp4'",
-        "matrix": "alternate way to specify videos to combine as a 2D matrix of file paths, default: None",
-        "mode": "if 'shortest' combined video will last as long s shortest input video. If 'static', the last frame of "
-        "videos that are shorter than the longest input video will be repeated. If 'pad', all videos as padded "
-        "with frames of `color` to last the same duration. default: 'shortest'",
-        "color": "color to pad videos with, only used if mode is 'pad'. default: 'white'",
-        "multiple": "some codecs require size to be a multiple of n, default: 2",
-        "force": "if true, overwrite output file if present, default: False",
-    },
-)
-def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest", color="white", multiple=2, force=False):
+def combine(matrix: str, outfile: str="combined.mp4", mode: str="shortest", color: str="white", multiple: int=2, force: bool=False):
     """Combine multiple videos into one by stacking, padding and resizing them using ffmpeg.
 
     Internally this task will first optionally pad all videos to length using ffmpeg's `tpad` filter,
     then `scale` all videos in a row to have the same height, combine rows together using the `hstack`
     filter before finally `scale`ing row-videos to have same width and `vstack`ing them together.
 
+    Args:
+        matrix: Way to specify videos to combine as a 2D matrix of file paths
+        outfile: where to save generated mp4, default: 'combined.mp4',
+        mode: if 'shortest' combined video will last as long s shortest input video. If 'static', the last frame of 
+        videos that are shorter than the longest input video will be repeated. If 'pad', all videos as padded 
+        with frames of `color` to last the same duration. default: 'shortest',
+        color: color to pad videos with, only used if mode is 'pad'. default: 'white',
+        multiple: some codecs require size to be a multiple of n, default: 2,
+        force: if true, overwrite output file if present, default: False,
+
+
     Examples:
-        To combine two videos in a row:
-        $ visionsim ffmpeg.combine -i "a.mp4" -i "b.mp4" -o "output.mp4"
-
-        To combine two videos in a column:
-        $ visionsim ffmpeg.combine -i "a.mp4" -i="\n" -i "b.mp4" -o "output.mp4"
-
         The input videos can also be specified in a 2D array using the `--matrix` argument like so:
         $ visionsim ffmpeg.combine --matrix='[["a.mp4", "b.mp4"]]' -o "output.mp4"
     """
@@ -137,24 +123,15 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
     import shutil
     import tempfile
 
-    import more_itertools as mitertools
     import numpy as np
 
     if Path(outfile).is_file() and not force:
         raise RuntimeError("Output file already exists, either specify different output path or `--force` to override.")
 
-    if not (len(inputfiles) != 0) ^ (matrix is not None):
-        raise ValueError("Use either `matrix` or `inputfile` argument, not both.")
-
-    if _run(c, "ffmpeg -version", hide=True).failed:
+    if _run("ffmpeg -version", hide=True).failed:
         raise RuntimeError("No ffmpeg installation found on path!")
 
-    if inputfiles:
-        matrix = list(
-            mitertools.split_at(inputfiles, lambda i: i.lower() in ("n", "r", "\\n", "\\r", "enter", "newline"))
-        )
-    else:
-        matrix = ast.literal_eval(matrix) if isinstance(matrix, str) else matrix
+    matrix = ast.literal_eval(matrix) if isinstance(matrix, str) else matrix
     flat_mat = [path for row in matrix for path in row]
 
     try:
@@ -175,18 +152,18 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
         row_paths = []
 
         # Keep track of all original dimensions
-        sizes = {path: dimensions(c, path) for path in flat_mat}
+        sizes = {path: dimensions(path) for path in flat_mat}
 
         # Find longest video and pad all to this length
         if mode.lower() == "pad":
-            max_duration = max(duration(c, path) for path in flat_mat)
+            max_duration = max(duration(path) for path in flat_mat)
 
             for path in flat_mat:
                 print(f"\n\nPadding {path}...")
                 out_path = Path(tmpdir) / Path(path).name
                 out_path = out_path.with_name(f"{out_path.stem}_padded{out_path.suffix}")
                 cmd = f"ffmpeg -i {path} -vf tpad=stop=-1=color={color},trim=end={max_duration} {out_path} -y"
-                _run(c, cmd)
+                _run(cmd)
                 mapping[path] = out_path
 
         # If the matrix is not jagged, we can use ffmpeg's xstack instead
@@ -206,7 +183,8 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
                 + f"xstack=inputs={len(in_paths)}:layout={layout_spec}[out]"
             )
             cmd = f'ffmpeg {in_paths_str} -filter_complex "{filter_inputs_str} {placement}" -map "[out]" -c:v libx264 {outfile}'
-            _run(c, cmd, echo=True)
+            # _run(cmd, echo=True)
+            _run(cmd)
             return
 
         for i, row in enumerate(matrix):
@@ -218,7 +196,7 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
                     in_path = mapping.get(path, path)
                     out_path = Path(tmpdir) / Path(path).name
                     out_path = out_path.with_name(f"{out_path.stem}_height_resize{out_path.suffix}")
-                    _run(c, f"ffmpeg -i {in_path} -vf scale=-{multiple}:{max_height} {out_path} -y")
+                    _run(f"ffmpeg -i {in_path} -vf scale=-{multiple}:{max_height} {out_path} -y")
                     mapping[path] = out_path
 
             # Combine all videos in the row
@@ -232,14 +210,14 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
                     f"hstack=inputs={len(row)}:shortest={int(mode.lower() == 'shortest')} "
                     f"{out_file} -vsync vfr -y"
                 )
-                _run(c, cmd)
+                _run(cmd)
             else:
                 row_paths.append(mapping.get(row[0], row[0]))
 
         # Combine all rows
         if len(matrix) >= 2:
             # Resize row videos if needed
-            row_sizes = {path: dimensions(c, path) for path in row_paths}
+            row_sizes = {path: dimensions(path) for path in row_paths}
             max_width = max(row_sizes[path][0] for path in row_paths)
             new_row_paths = []
 
@@ -248,7 +226,7 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
                     print(f"\n\nResizing {path}...")
                     out_path = Path(tmpdir) / Path(path).name
                     out_path = out_path.with_name(f"{out_path.stem}_width_resize{out_path.suffix}")
-                    _run(c, f"ffmpeg -i {path} -vf scale={max_width}:-{multiple} {out_path} -y")
+                    _run(f"ffmpeg -i {path} -vf scale={max_width}:-{multiple} {out_path} -y")
                     new_row_paths.append(out_path)
                 else:
                     new_row_paths.append(path)
@@ -260,24 +238,24 @@ def combine(c, inputfiles, outfile="combined.mp4", matrix=None, mode="shortest",
                 f"vstack=inputs={len(matrix)}:shortest={int(mode.lower() == 'shortest')} "
                 f"{outfile} -vsync vfr -y"
             )
-            _run(c, cmd)
+            _run(cmd)
         else:
             # We already created the video, simply move/rename it to output file
             shutil.move(row_paths[0], outfile)
 
 
-@task(
-    help={
-        "input_dir": "directory containing all video files (mp4's expected)",
-        "width": "width of video grid to produce, default: -1 (infer)",
-        "height": "height of video grid to produce, default: -1 (infer)",
-        "pattern": "use files that match this pattern as inputs, default: '*.mp4'",
-        "outfile": "where to save generated mp4, default: 'combined.mp4'",
-        "force": "if true, overwrite output file if present, default: False",
-    },
-)
-def grid(c, input_dir, width=-1, height=-1, pattern="*.mp4", outfile="combined.mp4", force=False):
-    """Make a mosaic from videos in a folder, organizing them in a grid"""
+def grid(input_dir: str, width: int=-1, height: int=-1, pattern: str="*.mp4", outfile: str="combined.mp4", force: bool=False):
+    """Make a mosaic from videos in a folder, organizing them in a grid
+    
+
+    Args:
+        input_dir: directory containing all video files (mp4's expected),
+        width: width of video grid to produce, default: -1 (infer),
+        height: height of video grid to produce, default: -1 (infer),
+        pattern: use files that match this pattern as inputs, default: '*.mp4',
+        outfile: where to save generated mp4, default: 'combined.mp4',
+        force: if true, overwrite output file if present, default: False,
+    """
     import numpy as np
     from natsort import natsorted
 
@@ -304,67 +282,76 @@ def grid(c, input_dir, width=-1, height=-1, pattern="*.mp4", outfile="combined.m
         width, height = int(width), int(height)
 
     matrix = np.array([str(p) for p in files]).reshape((height, width)).tolist()
-    combine(c, [], outfile, matrix=str(matrix), force=force)
+    combine([], outfile, matrix=str(matrix), force=force)
 
 
-@task(help={"input_file": "video file input"})
-def count_frames(c, input_file):
-    """Count the number of frames a video file contains using ffprobe"""
+def count_frames(input_file: str):
+    """Count the number of frames a video file contains using ffprobe
+    
+    Args:
+        input_file: video file input
+    """
     # See: https://stackoverflow.com/questions/2017843
-    if _run(c, "ffprobe -version", hide=True).failed:
+    if _run("ffprobe -version").failed:
         raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = (
         f"ffprobe -v error -select_streams v:0 -count_packets -show_entries "
         f"stream=nb_read_packets -of csv=p=0 {input_file}"
     )
-    result = _run(c, cmd, hide=True)
+    result = _run(cmd)
     print(f"Video contains {int(result.stdout.strip())} frames.")
     return int(result.stdout.strip())
 
 
-@task(help={"input_file": "video file input"})
-def duration(c, input_file):
-    """Return duration (in seconds) of first video stream in file using ffprobe"""
+def duration(input_file: str):
+    """Return duration (in seconds) of first video stream in file using ffprobe
+
+    
+    Args:
+        input_file: video file input
+    """
     # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
-    if _run(c, "ffprobe -version", hide=True).failed:
+    if _run("ffprobe -version").failed:
         raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = (
         f"ffprobe -v error -select_streams v:0 -show_entries stream=duration "
         f"-of default=noprint_wrappers=1:nokey=1 {input_file}"
     )
-    result = _run(c, cmd, hide=True)
+    result = _run(cmd)
     print(f"Video lasts {float(result.stdout.strip())} seconds.")
     return float(result.stdout.strip())
 
 
-@task(help={"input_file": "video file input"})
-def dimensions(c, input_file):
-    """Return size (WxH in pixels) of first video stream in file using ffprobe"""
+def dimensions(input_file: str):
+    """Return size (WxH in pixels) of first video stream in file using ffprobe
+    
+    Args:
+        input_file: video file input
+    """
     # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
-    if _run(c, "ffprobe -version", hide=True).failed:
+    if _run("ffprobe -version").failed:
         raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = f"ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 {input_file}"
-    result = _run(c, cmd, hide=True)
+    result = _run(cmd)
     print(f"Video has size {result.stdout.strip()}.")
     return tuple(int(dim) for dim in result.stdout.strip().split("x"))
 
 
-@task(
-    help={
-        "input_file": "path to video file from which to extract frames",
-        "output_dir": "directory in which to save extracted frames",
-        "pattern": "filenames of frames will match this pattern, default: 'frame_%06d.png'",
-    }
-)
-def extract(c, input_file, output_dir, pattern="frames_%06d.png"):
-    """Extract frames from video file"""
-    if _run(c, "ffmpeg -version", hide=True).failed:
+def extract(input_file: str, output_dir: str, pattern: str="frames_%06d.png"):
+    """Extract frames from video file
+    
+    Args:
+        input_file: path to video file from which to extract frames,
+        output_dir: directory in which to save extracted frames,
+        pattern: filenames of frames will match this pattern, default: 'frame_%06d.png',
+    """
+    if _run("ffmpeg -version").failed:
         raise RuntimeError("No ffmpeg installation found on path!")
     if not Path(input_file).is_file():
         raise FileNotFoundError(f"File {input_file} not found.")
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
-    _run(c, f"ffmpeg -i {input_file} {Path(output_dir) / pattern}")
+    _run(f"ffmpeg -i {input_file} {Path(output_dir) / pattern}")

@@ -1,25 +1,25 @@
 from __future__ import annotations
 
+import inspect
+import sys
 from pathlib import Path
 
 import numpy as np
-from invoke import task
 
 from visionsim.dataset import IMG_SCHEMA, read_and_validate
 from visionsim.interpolate import interpolate_frames, interpolate_poses, poses_and_frames_to_json
 from visionsim.tasks.common import _validate_directories
 
 
-@task(
-    help={
-        "input_file": "path to video file from which to extract frames",
-        "output_file": "path in which to save interpolated video",
-        "method": "interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife'",
-        "n": "interpolation factor, must be a multiple of 2, default: 2",
-    }
-)
-def video(c, input_file, output_file, method="rife", n=2):
-    """Interpolate video by extracting all frames, performing frame-wise interpolation and re-assembling video"""
+def video(input_file: str, output_file: str, method: str="rife", n: int=2):
+    """Interpolate video by extracting all frames, performing frame-wise interpolation and re-assembling video
+    
+    Args:
+        input_file: path to video file from which to extract frames
+        output_file: path in which to save interpolated video
+        method: interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife'
+        n: interpolation factor, must be a multiple of 2, default: 2
+    """
     import tempfile
 
     from natsort import natsorted
@@ -33,33 +33,41 @@ def video(c, input_file, output_file, method="rife", n=2):
     if n < 2 or not n & (n - 1) == 0:
         raise ValueError(f"Can only interpolate by a power of 2, greater or equal to 2, not {n}.")
 
-    avg_fps = count_frames(c, input_file) / duration(c, input_file)
+    avg_fps = count_frames(input_file) / duration(input_file)
     print(f"Video has average frame rate of {avg_fps}")
 
     with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as dst_dir:
         # Extract all frames
-        extract(c, input_file, src_dir, pattern="frames_%06d.png")
+        extract(input_file, src_dir, pattern="frames_%06d.png")
 
         # Interpolate them
         img_paths = [str(p) for p in natsorted(Path(src_dir).glob("frames_*.png"))]
         rife(img_paths, dst_dir, exp=np.log2(n).astype(int))
 
         # Assemble final video at correct frame-rate
-        animate(c, dst_dir, pattern="frames_*.png", outfile=output_file, fps=avg_fps)
+        animate(dst_dir, pattern="frames_*.png", outfile=output_file, fps=avg_fps)
 
 
-@task(
-    help={
-        "input_dir": "directory in which to look for frames",
-        "output_dir": "directory in which to save interpolated frames",
-        # added file type for frames normals depths
-        "method": "interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife'",
-        "file_name": "name of file containing transforms, default: 'transforms.json'",
-        "n": "interpolation factor, must be a multiple of 2, default: 2",
-    }
-)
-def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json", n=2):
-    """Interpolate poses and frames separately, then combine into transforms.json file"""
+# @task(
+#     help={
+#         "input_dir": "directory in which to look for frames",
+#         "output_dir": "directory in which to save interpolated frames",
+#         # added file type for frames normals depths
+#         "method": "interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife'",
+#         "file_name": "name of file containing transforms, default: 'transforms.json'",
+#         "n": "interpolation factor, must be a multiple of 2, default: 2",
+#     }
+# )
+def frames(input_dir: str, output_dir: str, method: str="rife", file_name: str="transforms.json", n:int =2):
+    """Interpolate poses and frames separately, then combine into transforms.json file
+    
+    Args:
+        input_dir: directory in which to look for frames,
+        output_dir: directory in which to save interpolated frames,
+        method: interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife',
+        file_name: name of file containing transforms, default: 'transforms.json',
+        n: interpolation factor, must be a multiple of 2, default: 2,
+    """
 
     # Extract transforms from transforms.json file
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
@@ -73,3 +81,13 @@ def frames(_, input_dir, output_dir, method="rife", file_name="transforms.json",
 
     print(f"Generating {file_name}")
     poses_and_frames_to_json(transforms, interpolated_poses, output_dir, file_name="transforms.json")
+
+
+def setup_cli():
+    # Create a dictionary as follows {"modulename.function": function} for tyro subcommands
+    current_module = sys.modules[__name__]
+    module_name = current_module.__name__.split('.')[-1]
+    function_dict = {f"{module_name}.{func_name}": func for func_name, func in inspect.getmembers(current_module, inspect.isfunction)
+                    if func.__module__ == __name__ and func_name != 'setup_cli' and not func_name.startswith('_')}
+    
+    return function_dict

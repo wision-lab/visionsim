@@ -25,7 +25,7 @@ dependencies = [
 ]
 
 [project.scripts]
-visionsim = "visionsim.tasks:program.run"
+visionsim = "visionsim.tasks:main"
 
 [tool.setuptools.packages.find]
 include = ["visionsim*"]

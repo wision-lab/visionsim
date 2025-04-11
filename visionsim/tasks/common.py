@@ -2,18 +2,43 @@ from __future__ import annotations
 
 import platform
 import re
+import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 
-def _run(c, command, watchers=None, **kwargs):
-    watchers = (
-        [
-            watchers,
-        ]
-        if watchers is not None and not isinstance(watchers, list)
-        else watchers
-    )
-    return c.run(command, pty=platform.system() != "Windows", watchers=watchers, **kwargs)
+@dataclass
+class RunOutput:
+    """Class for storing command execution results."""
+    stdout: str
+    stderr: str
+    failed: bool
+
+def _run(command):
+    """
+    Execute a command and return an object with the result and failure status.
+    """
+    
+    try:
+        # Run the command and capture output
+        result = subprocess.run(
+            command,
+            shell=True,
+            check=False,  # Don't raise exception on non-zero exit
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True  # Return strings instead of bytes
+        )
+        
+        # Check if command was successful based on exit code
+        failed = result.returncode != 0
+        
+        # Return stdout if successful, stderr if failed
+        return RunOutput(stdout=result.stdout, stderr=result.stderr, failed=failed)
+            
+    except Exception:
+        # Handle any exceptions that might occur
+        return None
 
 
 def _log_run(c, command, log_path, echo=True, **kwargs):

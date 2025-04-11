@@ -4,79 +4,36 @@ import json
 import sys
 from functools import partial
 from pathlib import Path
+from typing import Literal, Optional
 
-from invoke import task
 from rich.progress import Progress
 
 from visionsim.simulate.blender import BlenderClients
-from visionsim.tasks.common import _run
 
 
-@task(
-    help={
-        "blend_file": "path to blender file to use",
-        "root_path": "location at which to save dataset",
-        "frame_start": "frame number to start capture at (inclusive), default: None",
-        "frame_end": "frame number to stop capture at (exclusive), default: None",
-        "frame_step": "step with which to capture frames, default: 1",
-        "height": "height of frame to capture, default: None",
-        "width": "width of frame to capture, default: None",
-        "bit_depth": "bit depth for frames, usually 8 for pngs, default: 8",
-        "device": "which device type to use, one of none (meaning no change), cpu, cuda, optix. default: None",
-        "dry_run": "if enabled, do not render frames, default: False",
-        "jobs": "number of blender instances to spawn and render from, default: 1",
-        "unbind_camera": (
-            "free the camera from it's parents, any constraints and animations it may have. Ensures it "
-            "uses the world's coordinate frame and the provided camera trajectory. default: False"
-        ),
-        "use_animations": "allow any animations to play out, if false, scene will be static. default: True",
-        "use_motion_blur": "enable realistic motion blur, default: None",
-        "keyframe_multiplier": "slow down animations by this factor, default: 1.0 (no slowdown)",
-        "allow_skips": "whether or not to skip rendering a frame if it already exists, default: True",
-        "depths": "whether or not to capture depth images, default: False",
-        "normals": "whether or not to capture normals images, default: False",
-        "flows": "whether or not to capture optical flow images, default: False",
-        "segmentations": "whether or not to capture segmentation images, default: False",
-        "file_format": (
-            "frame file format to use. Depth is always 'OPEN_EXR' thus is unaffected by this setting, default: PNG"
-        ),
-        "log_dir": "where to save log to, default: None (no log is saved)",
-        "addons": "list of extra addons to enable, default: None",
-        "adaptive_threshold": (
-            "noise threshold of rendered images, for higher quality frames make this threshold smaller. "
-            "The default value is intentionally a little high to speed up renders. default: 0.1"
-        ),
-        "autoexec": "if enabled, allow any embedded python scripts to run, default: False",
-        "output_blend_file": "if set, write the modified blend file to this path. Helpful for troubleshooting. default: None",
-        "executable": "use a different blender executable that the one on PATH, default: None",
-    },
-    auto_shortflags=False,
-    iterable=["addons"],
-)
 def render_animation(
-    c,
-    blend_file,
-    root_path,
-    frame_start=None,
-    frame_end=None,
-    frame_step=1,
-    height=None,
-    width=None,
-    bit_depth=8,
-    device=None,
-    dry_run=False,
-    jobs=1,
-    unbind_camera=False,
-    use_animations=True,
+    blend_file:str,
+    root_path:str,
+    frame_start:Optional[int]=None,
+    frame_end:Optional[int]=None,
+    frame_step:int=1,
+    height:Optional[int]=None,
+    width:Optional[int]=None,
+    bit_depth:int=8,
+    device:Optional[Literal["cpu","cuda","optix", "metal"]]=None,
+    dry_run:bool=False,
+    jobs:int=1,
+    unbind_camera:bool=False,
+    use_animations:bool=True,
     use_motion_blur=None,
-    keyframe_multiplier=1.0,
-    allow_skips=True,
-    depths=False,
-    normals=False,
-    flows=False,
-    segmentations=False,
-    file_format="PNG",
-    log_dir=None,
+    keyframe_multiplier: float=1.0,
+    allow_skips:bool=True,
+    depths:bool=False,
+    normals:bool=False,
+    flows:bool=False,
+    segmentations:bool=False,
+    file_format:str="PNG",
+    log_dir:Optional[str]=None,
     addons=None,
     adaptive_threshold=None,
     autoexec=False,
@@ -85,13 +42,42 @@ def render_animation(
 ):
     """Render views of a .blend file while moving camera along an animated trajectory
 
+    Args:
+        blend_file: path to blender file to use
+        root_path: location at which to save dataset
+        frame_start: frame number to start capture at (inclusive)
+        frame_end: frame number to stop capture at (exclusive)
+        frame_step: step with which to capture frames
+        height: height of frame to capture
+        width: width of frame to capture
+        bit_depth: bit depth for frames, usually 8 for pngs
+        device: which device type to use, one of none (meaning no change), cpu, cuda, optix
+        dry_run: if enabled, do not render frames
+        jobs: number of blender instances to spawn and render from
+        unbind_camera: free the camera from it's parents, any constraints and animations it may have. Ensures it uses the world's coordinate frame and the provided camera trajectory
+        use_animations: allow any animations to play out, if false, scene will be static
+        use_motion_blur: enable realistic motion blur
+        keyframe_multiplier: slow down animations by this factor
+        allow_skips: whether or not to skip rendering a frame if it already exists
+        depths: whether or not to capture depth images
+        normals: whether or not to capture normals images
+        flows: whether or not to capture optical flow images
+        segmentations: whether or not to capture segmentation images
+        file_format: frame file format to use. Depth is always 'OPEN_EXR' thus is unaffected by this setting
+        log_dir: where to save log to
+        addons: list of extra addons to enable
+        adaptive_threshold: noise threshold of rendered images, for higher quality frames make this threshold smaller. The default value is intentionally a little high to speed up renders
+        autoexec: if enabled, allow any embedded python scripts to run
+        output_blend_file: if set, write the modified blend file to this path. Helpful for troubleshooting
+        executable: use a different blender executable that the one on PATH
+
     Example:
         visionsim blender.render-animation <blend-file> <output-path>
     """
 
     # Runtime checks and gard rails
-    if _run(c, f"{executable or 'blender'} --version", hide=True).failed:
-        raise RuntimeError("No blender installation found on path!")
+    # if _run(c, f"{executable or 'blender'} --version", hide=True).failed:
+    #     raise RuntimeError("No blender installation found on path!")
     if not (blend_file := Path(blend_file).resolve()).exists():
         raise FileNotFoundError(f"Blender file {blend_file} not found.")
     if "blender.render-animation" not in sys.argv[1]:
