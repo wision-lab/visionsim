@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import inspect
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -81,13 +79,3 @@ def frames(input_dir: str, output_dir: str, method: str="rife", file_name: str="
 
     print(f"Generating {file_name}")
     poses_and_frames_to_json(transforms, interpolated_poses, output_dir, file_name="transforms.json")
-
-
-def setup_cli():
-    # Create a dictionary as follows {"modulename.function": function} for tyro subcommands
-    current_module = sys.modules[__name__]
-    module_name = current_module.__name__.split('.')[-1]
-    function_dict = {f"{module_name}.{func_name}": func for func_name, func in inspect.getmembers(current_module, inspect.isfunction)
-                    if func.__module__ == __name__ and func_name != 'setup_cli' and not func_name.startswith('_')}
-    
-    return function_dict
