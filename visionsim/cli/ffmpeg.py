@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from visionsim.tasks.common import _run, _validate_directories
+from visionsim.cli.common import _run, _validate_directories
 
 
 def animate(
@@ -42,7 +42,7 @@ def animate(
 
     from natsort import natsorted
 
-    from visionsim.tasks.transforms import tonemap_exrs
+    from visionsim.cli.transforms import tonemap_exrs
 
     if _run("ffmpeg -version").failed:
         raise RuntimeError("No ffmpeg installation found on path!")

@@ -146,7 +146,7 @@ def build_docs(c, preview=False, full=False):
         # Generate API docs
         _run(c, "sphinx-apidoc -f --remove-old -o docs/source/apidocs visionsim " + " ".join(api_exclude))
         # Generate CLI docs
-        _run(c, "sphinx-apidoc -f --remove-old -o docs/source/clidocs visionsim/tasks")
+        _run(c, "sphinx-apidoc -f --remove-old -o docs/source/clidocs visionsim/cli")
 
     with c.cd(DOCS_DIR):
         _run(c, "make html")

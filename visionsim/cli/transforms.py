@@ -9,7 +9,7 @@ import numpy as np
 import OpenEXR
 from rich.progress import Progress, track
 
-from visionsim.tasks.common import _validate_directories
+from visionsim.cli.common import _validate_directories
 
 
 def _read_exr(path):

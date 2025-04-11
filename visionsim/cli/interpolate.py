@@ -6,9 +6,9 @@ from pathlib import Path
 
 import numpy as np
 
+from visionsim.cli.common import _validate_directories
 from visionsim.dataset import IMG_SCHEMA, read_and_validate
 from visionsim.interpolate import interpolate_frames, interpolate_poses, poses_and_frames_to_json
-from visionsim.tasks.common import _validate_directories
 
 
 def video(input_file: str, output_file: str, method: str="rife", n: int=2):
