@@ -33,8 +33,8 @@ def _spad_collate(batch, *, mode, rng, factor, is_tonemapped=True):
 
 
 def spad(
-    input_dir: str,
-    output_dir: str,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
     pattern: str="frame_{:06}.png",
     factor: float=1.0,
     seed: int=2147483647,
@@ -102,8 +102,8 @@ def spad(
 
 
 def events(
-    input_dir: str,
-    output_dir: str,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
     fps: int,
     pos_thres: float=0.2,
     neg_thres: float=0.2,
@@ -192,8 +192,8 @@ def events(
 
 
 def rgb(
-    input_dir: str,
-    output_dir: str,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
     chunk_size: int=10,
     factor: float=1.0,
     readout_std: float=20.0,
@@ -278,8 +278,8 @@ def rgb(
 
 
 def imu(
-    input_dir: str,
-    output_file: str="",
+    input_dir: str | os.PathLike,
+    output_file: str | os.PathLike="",
     seed: int=2147483647,
     gravity: str="(0.0, 0.0, -9.8)",
     dt: float=0.00125,

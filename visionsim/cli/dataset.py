@@ -7,8 +7,8 @@ import numpy as np
 
 
 def imgs_to_npy(
-    input_dir: str,
-    output_dir: str,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
     bitpack: bool=False,
     bitpack_dim=None,
     batch_size: int=4,
@@ -95,8 +95,8 @@ def imgs_to_npy(
 
 
 def npy_to_imgs(
-    input_dir:str,
-    output_dir:str,
+    input_dir:str | os.PathLike,
+    output_dir:str | os.PathLike,
     batch_size:int=4,
     pattern:str="frame_{:06}.png",
     step:int=1,
@@ -149,7 +149,7 @@ def npy_to_imgs(
             progress.update(task1, advance=len(idxs))
 
 
-def info(input_dir: str, json: bool=False):
+def info(input_dir: str | os.PathLike, json: bool=False):
     """Print information about the dataset
     
     Args:

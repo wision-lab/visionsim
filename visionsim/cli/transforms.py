@@ -3,7 +3,7 @@ from __future__ import annotations
 import functools
 import os
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 import numpy as np
 import OpenEXR
@@ -48,8 +48,8 @@ def _estimate_distribution(in_files, percentage=0.2, transform=None):
 
 
 def colorize_depths(
-    input_dir: str,
-    output_dir: str,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
     pattern: str="depth_*.exr",
     cmap: str="turbo",
     ext: str=".png",
@@ -108,8 +108,8 @@ def colorize_depths(
 
 
 def colorize_flows(
-    input_dir: str,
-    output_dir: str,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
     direction: Literal["forward", "backward"]="forward",
     pattern: str="flow_*.exr",
     ext: str=".png",
@@ -168,8 +168,8 @@ def colorize_flows(
 
 
 def colorize_normals(
-    input_dir: str,
-    output_dir: str,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
     pattern: str="normal_*.exr",
     ext: str=".png",
     step: int=1,
@@ -198,11 +198,11 @@ def colorize_normals(
 
 
 def colorize_segmentations(
-    input_dir: str,
-    output_dir: str,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
     pattern: str="segmentation_*.exr",
     ext: str=".png",
-    num_objects: Optional[int]=None,
+    num_objects:int | None=None,
     shuffle: bool=True,
     seed: int=1234,
     step: int=1,
@@ -251,7 +251,7 @@ def colorize_segmentations(
         iio.imwrite(str(path.with_suffix(ext)), img)
 
 
-def tonemap_exrs(input_dir: str, output_dir: Optional[str]=None, batch_size: int=4, hdr_quantile: float=0.01, force: bool=False):
+def tonemap_exrs(input_dir: str | os.PathLike, output_dir:str | os.PathLike | None=None, batch_size: int=4, hdr_quantile: float=0.01, force: bool=False):
     """Convert .exr linear intensity frames into tone-mapped sRGB images
     
     Args:

@@ -1,26 +1,28 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from functools import partial
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from rich.progress import Progress
 
+from visionsim.cli.common import _run
 from visionsim.simulate.blender import BlenderClients
 
 
 def render_animation(
-    blend_file:str,
-    root_path:str,
-    frame_start:Optional[int]=None,
-    frame_end:Optional[int]=None,
+    blend_file:str | os.PathLike,
+    root_path:str | os.PathLike,
+    frame_start:int | None=None,
+    frame_end:int | None=None,
     frame_step:int=1,
-    height:Optional[int]=None,
-    width:Optional[int]=None,
+    height:int | None=None,
+    width:int | None=None,
     bit_depth:int=8,
-    device:Optional[Literal["cpu","cuda","optix", "metal"]]=None,
+    device:Literal["cpu","cuda","optix", "metal"] | None=None,
     dry_run:bool=False,
     jobs:int=1,
     unbind_camera:bool=False,
@@ -33,7 +35,7 @@ def render_animation(
     flows:bool=False,
     segmentations:bool=False,
     file_format:str="PNG",
-    log_dir:Optional[str]=None,
+    log_dir:str | None=None,
     addons=None,
     adaptive_threshold=None,
     autoexec=False,
@@ -76,8 +78,8 @@ def render_animation(
     """
 
     # Runtime checks and gard rails
-    # if _run(c, f"{executable or 'blender'} --version", hide=True).failed:
-    #     raise RuntimeError("No blender installation found on path!")
+    if _run(f"{executable or 'blender'} --version").failed:
+        raise RuntimeError("No blender installation found on path!")
     if not (blend_file := Path(blend_file).resolve()).exists():
         raise FileNotFoundError(f"Blender file {blend_file} not found.")
     if "blender.render-animation" not in sys.argv[1]:

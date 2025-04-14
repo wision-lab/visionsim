@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from visionsim.cli.common import _run, _validate_directories
 
 
 def animate(
-    input_dir: str,
+    input_dir: str | os.PathLike,
     pattern: str="frame_*.png",
     outfile: str="out.mp4",
     fps: int=25,
@@ -244,7 +245,7 @@ def combine(matrix: str, outfile: str="combined.mp4", mode: str="shortest", colo
             shutil.move(row_paths[0], outfile)
 
 
-def grid(input_dir: str, width: int=-1, height: int=-1, pattern: str="*.mp4", outfile: str="combined.mp4", force: bool=False):
+def grid(input_dir: str | os.PathLike, width: int=-1, height: int=-1, pattern: str="*.mp4", outfile: str="combined.mp4", force: bool=False):
     """Make a mosaic from videos in a folder, organizing them in a grid
     
 
@@ -285,7 +286,7 @@ def grid(input_dir: str, width: int=-1, height: int=-1, pattern: str="*.mp4", ou
     combine([], outfile, matrix=str(matrix), force=force)
 
 
-def count_frames(input_file: str):
+def count_frames(input_file: str | os.PathLike):
     """Count the number of frames a video file contains using ffprobe
     
     Args:
@@ -304,7 +305,7 @@ def count_frames(input_file: str):
     return int(result.stdout.strip())
 
 
-def duration(input_file: str):
+def duration(input_file: str | os.PathLike):
     """Return duration (in seconds) of first video stream in file using ffprobe
 
     
@@ -324,7 +325,7 @@ def duration(input_file: str):
     return float(result.stdout.strip())
 
 
-def dimensions(input_file: str):
+def dimensions(input_file: str | os.PathLike):
     """Return size (WxH in pixels) of first video stream in file using ffprobe
     
     Args:
@@ -340,7 +341,7 @@ def dimensions(input_file: str):
     return tuple(int(dim) for dim in result.stdout.strip().split("x"))
 
 
-def extract(input_file: str, output_dir: str, pattern: str="frames_%06d.png"):
+def extract(input_file: str | os.PathLike, output_dir: str | os.PathLike, pattern: str="frames_%06d.png"):
     """Extract frames from video file
     
     Args:

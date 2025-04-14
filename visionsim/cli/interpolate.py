@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -9,7 +10,7 @@ from visionsim.dataset import IMG_SCHEMA, read_and_validate
 from visionsim.interpolate import interpolate_frames, interpolate_poses, poses_and_frames_to_json
 
 
-def video(input_file: str, output_file: str, method: str="rife", n: int=2):
+def video(input_file: str | os.PathLike, output_file: str | os.PathLike, method: str="rife", n: int=2):
     """Interpolate video by extracting all frames, performing frame-wise interpolation and re-assembling video
     
     Args:
@@ -56,7 +57,7 @@ def video(input_file: str, output_file: str, method: str="rife", n: int=2):
 #         "n": "interpolation factor, must be a multiple of 2, default: 2",
 #     }
 # )
-def frames(input_dir: str, output_dir: str, method: str="rife", file_name: str="transforms.json", n:int =2):
+def frames(input_dir: str | os.PathLike, output_dir: str | os.PathLike, method: str="rife", file_name: str="transforms.json", n:int =2):
     """Interpolate poses and frames separately, then combine into transforms.json file
     
     Args:
