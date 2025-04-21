@@ -4,7 +4,7 @@ Data Format and Loading
 Data Schemas
 ------------
 
-Every dataset, or subset thereof, needs to contain a valid ``transforms.json`` file which contains camera parameters, extrinsics, and among other things, the paths to the data. This format is meant to be a superset of older NERF-like datasets and should be familiar to a lot of users. Currently they come in two formats, the ``NPY`` format and the ``IMG`` format. CLI tools are provided to convert between the two.
+Every dataset, or subset thereof, needs to contain a valid ``transforms.json`` file which contains camera parameters, extrinsics, and among other things, the paths to the data. This format is meant to be a superset of `NERF-like datasets <https://docs.nerf.studio/quickstart/data_conventions.html>`_ and should be familiar to a lot of users. Currently they come in two formats, the ``NPY`` format and the ``IMG`` format. CLI tools are provided to convert between the two (where applicable).
 
 |
 
