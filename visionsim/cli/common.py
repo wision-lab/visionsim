@@ -2,26 +2,41 @@ from __future__ import annotations
 
 import platform
 import re
+import shlex
 import subprocess
-from dataclasses import dataclass
 from pathlib import Path
 
 
-@dataclass
-class RunOutput:
-    """Class for storing command execution results."""
-    stdout: str
-    stderr: str
-    failed: bool
-
-def _run(command):
+def _run(command, shell=False, echo=False, log_path=None):
     """
     Execute a command and return an object with the result and failure status.
     """
-    
-    try:
-        # Run the command and capture output
-        result = subprocess.run(
+
+    if echo:
+        print(command)
+
+    # shlex the command if we don't want to run in shell
+    if not shell:
+        command = shlex.split(command)
+
+    # Either Pipe output or save to a file
+    if log_path:
+        Path(log_path).mkdir(parents=True, exist_ok=True)
+        log_out = Path(log_path).resolve() / "out.log"
+        log_err = Path(log_path).resolve() / "err.log"
+
+        with open(str(log_out), "w") as f_out:
+            with open(str(log_err), "w") as f_err:
+                return subprocess.run(
+                    command,
+                    shell=True,
+                    check=False,  # Don't raise exception on non-zero exit
+                    stdout=f_out,
+                    stderr=f_err,
+                    text=True  # Return strings instead of bytes
+                )
+    else:
+        return subprocess.run(
             command,
             shell=True,
             check=False,  # Don't raise exception on non-zero exit
@@ -29,16 +44,6 @@ def _run(command):
             stderr=subprocess.PIPE,
             text=True  # Return strings instead of bytes
         )
-        
-        # Check if command was successful based on exit code
-        failed = result.returncode != 0
-        
-        # Return stdout if successful, stderr if failed
-        return RunOutput(stdout=result.stdout, stderr=result.stderr, failed=failed)
-            
-    except Exception:
-        # Handle any exceptions that might occur
-        return None
 
 
 def _log_run(c, command, log_path, echo=True, **kwargs):

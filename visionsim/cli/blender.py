@@ -78,7 +78,7 @@ def render_animation(
     """
 
     # Runtime checks and gard rails
-    if _run(f"{executable or 'blender'} --version").failed:
+    if _run(f"{executable or 'blender'} --version").returncode != 0:
         raise RuntimeError("No blender installation found on path!")
     if not (blend_file := Path(blend_file).resolve()).exists():
         raise FileNotFoundError(f"Blender file {blend_file} not found.")

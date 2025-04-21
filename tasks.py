@@ -138,7 +138,7 @@ def build_docs(c, preview=False, full=False):
     # Run autodocs
     with c.cd(ROOT_DIR):
         # TODO: Make this a project configuration
-        api_exclude = ["visionsim/tasks", "visionsim/interpolate/rife"]
+        api_exclude = ["visionsim/cli", "visionsim/interpolate/rife"]
         # We have to do this for all the new changes in the docs to be reflected
         console.print(
             '[yellow]Make sure to run "pip install -e .[dev]" or equivalent to make sure docstring changes are reflected!'

@@ -25,18 +25,18 @@ def animate(
     
     Args:
         input_dir: directory in which to look for frames,
-        pattern: filenames of frames should match this, default: 'frame_*.png',
-        outfile: where to save generated mp4, default: 'out.mp4',
-        fps: frames per second in video, default: 25,
-        crf: constant rate factor for video encoding (0-51), lower is better quality but more memory, default: 22,
-        vcodec: video codec to use (either libx264 or libx265), default: libx264,
-        step: drop some frames when making video, use frames 0+step*n, default: 1,
-        multiple: some codecs require size to be a multiple of n, default: 2,
-        force: if true, overwrite output file if present, default: False,
-        bg_color: for images with transparencies, namely PNGs, use this color as a background, default: 'black',
-        strip_alpha: if true, do not pre-process PNGs to remove transparencies, default: True,
-        auto_tonemap: if true and images are .exr (linear intensity), apply tonemapping first, default: True,
-        hide: if true, hide ffmpeg output, default: False,
+        pattern: filenames of frames should match this
+        outfile: where to save generated mp4
+        fps: frames per second in video
+        crf: constant rate factor for video encoding (0-51), lower is better quality but more memory
+        vcodec: video codec to use (either libx264 or libx265)
+        step: drop some frames when making video, use frames 0+step*n
+        multiple: some codecs require size to be a multiple of n
+        force: if true, overwrite output file if present
+        bg_color: for images with transparencies, namely PNGs, use this color as a background
+        strip_alpha: if true, do not pre-process PNGs to remove transparencies
+        auto_tonemap: if true and images are .exr (linear intensity), apply tonemapping first
+        hide: if true, hide ffmpeg output
     """
     # TODO: Auto-tonemap for depth colorization
     import tempfile  # Lazy import
@@ -45,7 +45,7 @@ def animate(
 
     from visionsim.cli.transforms import tonemap_exrs
 
-    if _run("ffmpeg -version").failed:
+    if _run("ffmpeg -version").returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
 
     input_dir, _, in_files = _validate_directories(input_dir, Path(outfile).parent, pattern=pattern)
@@ -104,13 +104,11 @@ def combine(matrix: str, outfile: str="combined.mp4", mode: str="shortest", colo
 
     Args:
         matrix: Way to specify videos to combine as a 2D matrix of file paths
-        outfile: where to save generated mp4, default: 'combined.mp4',
-        mode: if 'shortest' combined video will last as long s shortest input video. If 'static', the last frame of 
-        videos that are shorter than the longest input video will be repeated. If 'pad', all videos as padded 
-        with frames of `color` to last the same duration. default: 'shortest',
-        color: color to pad videos with, only used if mode is 'pad'. default: 'white',
-        multiple: some codecs require size to be a multiple of n, default: 2,
-        force: if true, overwrite output file if present, default: False,
+        outfile: where to save generated mp4
+        mode: if 'shortest' combined video will last as long s shortest input video. If 'static', the last frame of videos that are shorter than the longest input video will be repeated. If 'pad', all videos as padded with frames of `color` to last the same duration.
+        color: color to pad videos with, only used if mode is 'pad'
+        multiple: some codecs require size to be a multiple of n
+        force: if true, overwrite output file if present
 
 
     Examples:
@@ -129,7 +127,7 @@ def combine(matrix: str, outfile: str="combined.mp4", mode: str="shortest", colo
     if Path(outfile).is_file() and not force:
         raise RuntimeError("Output file already exists, either specify different output path or `--force` to override.")
 
-    if _run("ffmpeg -version", hide=True).failed:
+    if _run("ffmpeg -version", hide=True).returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
 
     matrix = ast.literal_eval(matrix) if isinstance(matrix, str) else matrix
@@ -184,8 +182,7 @@ def combine(matrix: str, outfile: str="combined.mp4", mode: str="shortest", colo
                 + f"xstack=inputs={len(in_paths)}:layout={layout_spec}[out]"
             )
             cmd = f'ffmpeg {in_paths_str} -filter_complex "{filter_inputs_str} {placement}" -map "[out]" -c:v libx264 {outfile}'
-            # _run(cmd, echo=True)
-            _run(cmd)
+            _run(cmd, echo=True)
             return
 
         for i, row in enumerate(matrix):
@@ -251,11 +248,11 @@ def grid(input_dir: str | os.PathLike, width: int=-1, height: int=-1, pattern: s
 
     Args:
         input_dir: directory containing all video files (mp4's expected),
-        width: width of video grid to produce, default: -1 (infer),
-        height: height of video grid to produce, default: -1 (infer),
-        pattern: use files that match this pattern as inputs, default: '*.mp4',
-        outfile: where to save generated mp4, default: 'combined.mp4',
-        force: if true, overwrite output file if present, default: False,
+        width: width of video grid to produce
+        height: height of video grid to produce
+        pattern: use files that match this pattern as inputs
+        outfile: where to save generated mp4
+        force: if true, overwrite output file if present
     """
     import numpy as np
     from natsort import natsorted
@@ -293,7 +290,7 @@ def count_frames(input_file: str | os.PathLike):
         input_file: video file input
     """
     # See: https://stackoverflow.com/questions/2017843
-    if _run("ffprobe -version").failed:
+    if _run("ffprobe -version").returncode != 0:
         raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = (
@@ -332,7 +329,7 @@ def dimensions(input_file: str | os.PathLike):
         input_file: video file input
     """
     # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
-    if _run("ffprobe -version").failed:
+    if _run("ffprobe -version").returncode != 0:
         raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = f"ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 {input_file}"
@@ -347,9 +344,9 @@ def extract(input_file: str | os.PathLike, output_dir: str | os.PathLike, patter
     Args:
         input_file: path to video file from which to extract frames,
         output_dir: directory in which to save extracted frames,
-        pattern: filenames of frames will match this pattern, default: 'frame_%06d.png',
+        pattern: filenames of frames will match this pattern
     """
-    if _run("ffmpeg -version").failed:
+    if _run("ffmpeg -version").returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
     if not Path(input_file).is_file():
         raise FileNotFoundError(f"File {input_file} not found.")
