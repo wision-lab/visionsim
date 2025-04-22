@@ -1,3 +1,4 @@
+.. _worldsimulation:
 World Simulation
 ================
 

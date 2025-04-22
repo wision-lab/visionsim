@@ -12,7 +12,7 @@ from SPCSim.sensors import BaseEDHSPC
 from SPCSim.postproc.edh_postproc import PostProcEDH
 
 
-root = Path("/home/kaustubh/spsim-main_old/examples/renders/scene1/")
+root = Path("../renders/scene1/")
 frames = Dataset.from_path(root / 'frames')
 depths = Dataset.from_path(root / 'depths')
 assert len(depths) == len(frames), "Different number of depth and RGB frames"
@@ -60,7 +60,7 @@ phi_bar = tr_gen.get_transient(
 
 N_bins = 16         # Number of EDH SPC bins
 
-# Simulating 8-Bin EDH SPC output
+# Simulating 16-Bin EDH SPC output
 spc = BaseEDHSPC(Nr, Nc, N_pulses, device, N_tbins, int(N_bins))
 captured_data = spc.capture(phi_bar)
 oedh_data = captured_data["oedh"]
