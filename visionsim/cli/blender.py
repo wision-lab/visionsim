@@ -74,16 +74,16 @@ def render_animation(
         executable: use a different blender executable that the one on PATH
 
     Example:
-        visionsim blender.render-animation <blend-file> <output-path>
+        visionsim blender.render_animation --blend-file=<blend-file> --root-path=<output-path>
     """
 
     # Runtime checks and gard rails
-    if _run(f"{executable or 'blender'} --version").returncode != 0:
+    if _run(f"{executable or 'blender'} --version", shell=True).returncode != 0:
         raise RuntimeError("No blender installation found on path!")
     if not (blend_file := Path(blend_file).resolve()).exists():
         raise FileNotFoundError(f"Blender file {blend_file} not found.")
-    if "blender.render-animation" not in sys.argv[1]:
-        raise RuntimeError("Task `blender.render-animation` must run first if running multiple tasks simultaneously.")
+    if "blender.render_animation" not in sys.argv[1]:
+        raise RuntimeError("Task `blender.render_animation` must run first if running multiple tasks simultaneously.")
 
     with (
         BlenderClients.spawn(

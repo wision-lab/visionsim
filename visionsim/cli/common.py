@@ -29,7 +29,7 @@ def _run(command, shell=False, echo=False, log_path=None):
             with open(str(log_err), "w") as f_err:
                 return subprocess.run(
                     command,
-                    shell=True,
+                    shell=shell,
                     check=False,  # Don't raise exception on non-zero exit
                     stdout=f_out,
                     stderr=f_err,
@@ -38,7 +38,7 @@ def _run(command, shell=False, echo=False, log_path=None):
     else:
         return subprocess.run(
             command,
-            shell=True,
+            shell=shell,
             check=False,  # Don't raise exception on non-zero exit
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

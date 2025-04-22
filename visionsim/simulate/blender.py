@@ -302,7 +302,16 @@ class BlenderServer(rpyc.utils.server.Server):
         """
         global REGISTRY
 
-        def launch_registry():
+        if not REGISTRY or not REGISTRY[0].is_alive():
+            registry = Process(target=BlenderServer._launch_registry, daemon=True)
+            client = rpyc.utils.registry.UDPRegistryClient()
+            registry.start()
+            REGISTRY = (registry, client)
+        return REGISTRY
+    
+
+    @staticmethod
+    def _launch_registry():
             try:
                 registry = rpyc.utils.registry.UDPRegistryServer()
                 registry.start()
@@ -311,13 +320,6 @@ class BlenderServer(rpyc.utils.server.Server):
                 #   already a spawned registry in another thread/process which
                 #   we should be able to use. No need to re-spawn one then.
                 pass
-
-        if not REGISTRY or not REGISTRY[0].is_alive():
-            registry = Process(target=launch_registry, daemon=True)
-            client = rpyc.utils.registry.UDPRegistryClient()
-            registry.start()
-            REGISTRY = (registry, client)
-        return REGISTRY
 
     @staticmethod
     def discover() -> list[tuple[str, int]]:

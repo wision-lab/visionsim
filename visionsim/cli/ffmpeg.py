@@ -19,7 +19,6 @@ def animate(
     bg_color: str="black",
     strip_alpha: bool=False,
     auto_tonemap: bool=True,
-    hide: bool=False,
 ):
     """Combine generated frames into an MP4 using ffmpeg wizardry
     
@@ -36,7 +35,6 @@ def animate(
         bg_color: for images with transparencies, namely PNGs, use this color as a background
         strip_alpha: if true, do not pre-process PNGs to remove transparencies
         auto_tonemap: if true and images are .exr (linear intensity), apply tonemapping first
-        hide: if true, hide ffmpeg output
     """
     # TODO: Auto-tonemap for depth colorization
     import tempfile  # Lazy import
@@ -113,7 +111,7 @@ def combine(matrix: str, outfile: str="combined.mp4", mode: str="shortest", colo
 
     Examples:
         The input videos can also be specified in a 2D array using the `--matrix` argument like so:
-        $ visionsim ffmpeg.combine --matrix='[["a.mp4", "b.mp4"]]' -o "output.mp4"
+        $ visionsim ffmpeg.combine --matrix='[["a.mp4", "b.mp4"]]' --outfile="output.mp4"
     """
     # TODO: Allow borders and use xstack for better performance
     #   See: https://stackoverflow.com/questions/11552565/vertically-or-horizontally-stack-mosaic-several-videos-using-ffmpeg/33764934#33764934
@@ -127,7 +125,7 @@ def combine(matrix: str, outfile: str="combined.mp4", mode: str="shortest", colo
     if Path(outfile).is_file() and not force:
         raise RuntimeError("Output file already exists, either specify different output path or `--force` to override.")
 
-    if _run("ffmpeg -version", hide=True).returncode != 0:
+    if _run("ffmpeg -version").returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
 
     matrix = ast.literal_eval(matrix) if isinstance(matrix, str) else matrix
