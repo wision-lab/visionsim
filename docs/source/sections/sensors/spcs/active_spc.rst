@@ -58,7 +58,12 @@ We can do the same with equi-depth histograms like so:
 Plotting the results, we can see that equi-depth histograms can estimate more accurate scene distances with lower number of histogram bins than EWH SPCs.
 
 .. image:: ../../../_static/sensors/Emulate_active_spcs.svg
-   :align: centersssssssssssssssssssssssssss
+   :align: center
+   :class: only-light
+
+.. image:: ../../../_static/sensors/Emulate_active_spcs-dark.svg
+   :align: center
+   :class: only-dark
 
 .. seealso:: Refer to `this tutorial <https://kaustubh-sadekar.github.io/SPCSimLib/notebooks/TutorialCreateCustomEDH.html>`_  to design SPCs with custom histogrammers. 
 
