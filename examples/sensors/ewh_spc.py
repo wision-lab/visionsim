@@ -1,31 +1,32 @@
 from pathlib import Path
-import cv2
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-from scipy.constants import c
-from visionsim.dataset import Dataset
-from SPCSim.data_loaders.transient_loaders import TransientGenerator
-from SPCSim.utils.plot_utils import plot_transient, plot_ewh
-from SPCSim.sensors import BaseEWHSPC
-from SPCSim.postproc.ewh_postproc import PostProcEWH
 
+import cv2
+import matplotlib.gridspec as gridspec
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from scipy.constants import c
+from SPCSim.data_loaders.transient_loaders import TransientGenerator
+from SPCSim.postproc.ewh_postproc import PostProcEWH
+from SPCSim.sensors import BaseEWHSPC
+from SPCSim.utils.plot_utils import plot_ewh, plot_transient
+
+from visionsim.dataset import Dataset
 
 root = Path("/home/kaustubh/spsim-main_old/examples/renders/scene1/")
-frames = Dataset.from_path(root / 'frames')
-depths = Dataset.from_path(root / 'depths')
+frames = Dataset.from_path(root / "frames")
+depths = Dataset.from_path(root / "depths")
 assert len(depths) == len(frames), "Different number of depth and RGB frames"
 
 Nr, Nc = [128, 128]  # SPC sensor resolution
-N_tbins = 1024       # Number of discrete time bins for "ideal" transient
-tmax = 100           # Laser period in nano seconds
-FWHM = 1             # Laser full wave half maximum in terms of bin-width
-N_pulses = 1000      # Number of laser cycles to use
-alpha_sig = 1.0      # Average signal photons per laser cycle
-alpha_bkg = 4.0      # Average background photons per laser cycle
-device = "cpu"       # Torch device
-idx = 0              # Set frame index
+N_tbins = 1024  # Number of discrete time bins for "ideal" transient
+tmax = 100  # Laser period in nano seconds
+FWHM = 1  # Laser full wave half maximum in terms of bin-width
+N_pulses = 1000  # Number of laser cycles to use
+alpha_sig = 1.0  # Average signal photons per laser cycle
+alpha_bkg = 4.0  # Average background photons per laser cycle
+device = "cpu"  # Torch device
+idx = 0  # Set frame index
 
 # Load RGB frame and depth map
 _, rgb_img, _ = frames[idx]
@@ -47,7 +48,7 @@ albedo = intensity = rgb[..., 0]
 
 tr_gen = TransientGenerator(Nr=Nr, Nc=Nc, N_tbins=N_tbins, tmax=tmax, FWHM=FWHM)
 
-# Generate the ground-truth transient for each pixel 
+# Generate the ground-truth transient for each pixel
 # given distance, albedo, intensity, and illumination condition
 # NOTE: The true distance is in meters and depends on tmax
 phi_bar = tr_gen.get_transient(
@@ -58,7 +59,7 @@ phi_bar = tr_gen.get_transient(
     torch.tensor(alpha_bkg),
 )
 
-N_bins = 64         # Number of EWH SPC bins
+N_bins = 64  # Number of EWH SPC bins
 
 # Simulating 64-bin EWH SPC output
 spc = BaseEWHSPC(Nr, Nc, N_pulses, device, N_tbins, int(N_bins))
@@ -83,7 +84,7 @@ plt.style.use("seaborn-v0_8-poster")
 # Subplot for the RGB image (first column)
 ax1 = fig.add_subplot(gs[0, 0])
 ax1.imshow(rgb_img)
-ax1.scatter(col, row, c='r', marker='x')
+ax1.scatter(col, row, c="r", marker="x")
 ax1.set_title("Scene Image")
 ax1.axis("off")
 
@@ -122,4 +123,4 @@ ax_line.legend(frameon=False, fontsize="12", loc="upper right")
 ax_line.set_xlabel("Discretized time (a.u.)")
 ax_line.set_ylabel("Photon counts")
 plt.tight_layout()
-fig.savefig("ewh_spc_output.svg",dpi=350)
+fig.savefig("ewh_spc_output.svg", dpi=350)
