@@ -1,16 +1,31 @@
 Autocompletion
 ==============
 
-The auto-complete functionality is provided by `pyinvoke <https://docs.pyinvoke.org/en/stable/invoke.html#shell-tab-completion>`_, and can be activated per terminal like so::
+The auto-complete functionality is provided by `Tyro <https://brentyi.github.io/tyro/tab_completion/>`_, and can be activated per terminal as follows.
 
-$ source <(visionsim --print-completion-script bash)
+ZSH Support
+-----------
+First, make directory for local completions::
+
+$ mkdir -p ~/.zfunc
+
+Next, write completion script::
+
+$ visionsim --tyro-write-completion zsh ~/.zfunc/_visionsim
+
+Finally, add the following lines to `.zshrc` file to add `.zfunc` to the function search path::
+
+    $ fpath+=~/.zfunc
+    $ autoload -Uz compinit && compinit
 
 
-or by creating a file that can be sourced from your `~/.bashrc`::
+Bash Support (untested)
+------------
+First, find and make directory for local completions::
 
-    $ visionsim --print-completion-script bash > ~/.visionsim-completion.sh
+    $ completion_dir=${BASH_COMPLETION_USER_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion}/completions/
+    $ mkdir -p $completion_dir
 
-    # Place in ~/.bashrc:
-    $ source ~/.visionsim-completion.sh
+Next, write completion script::
 
-The same can be done in other shells such as `zsh`, `fish`. 
+$ visionsim --tyro-write-completion bash ${completion_dir}/visionsim
