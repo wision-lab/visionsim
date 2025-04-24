@@ -138,15 +138,15 @@ def build_docs(c, preview=False, full=False):
     # Run autodocs
     with c.cd(ROOT_DIR):
         # TODO: Make this a project configuration
-        api_exclude = ["visionsim/cli", "visionsim/interpolate/rife"]
+        api_exclude = ["visionsim/interpolate/rife"]
         # We have to do this for all the new changes in the docs to be reflected
         console.print(
             '[yellow]Make sure to run "pip install -e .[dev]" or equivalent to make sure docstring changes are reflected!'
         )
-        # Generate API docs
+        # Generate API and CLI docs
         _run(c, "sphinx-apidoc -f --remove-old -o docs/source/apidocs visionsim " + " ".join(api_exclude))
-        # Generate CLI docs
-        _run(c, "sphinx-apidoc -f --remove-old -o docs/source/clidocs visionsim/cli")
+        # Move CLI docs to its own folder
+        _run(c, "mv docs/source/apidocs/visionsim.cli.rst docs/source/clidocs")
 
     with c.cd(DOCS_DIR):
         _run(c, "make html")
