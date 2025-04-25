@@ -12,6 +12,11 @@ In a typical setup, the scene is illuminated using short-duration laser pulses, 
 
 .. image:: ../../../_static/sensors/ToF_Imaging_Model.svg
    :align: center
+   :class: only-light
+
+.. image:: ../../../_static/sensors/ToF_Imaging_Model_dark.svg
+   :align: center
+   :class: only-dark
 
 The figure illustrates how SPCs sample the transient distribution :math:`\Phi(t)` by digitizing and recording the returning photon timestamps. :math:`\Phi_{sig}` represents the average signal photons incident on the sensor per laser cycle, :math:`\Phi_{bkg}` represents the average background photons which includes photons due to ambient light sources and photons detected due to sensor dark counts, and :math:`A` is a scaling factor that encapsulates the effect of scene reflectance, photon detection efficiency and distance square fall-off.
 
