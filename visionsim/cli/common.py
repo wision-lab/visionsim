@@ -7,16 +7,14 @@ import subprocess
 from pathlib import Path
 
 
-def _run(command, shell=False, echo=False, log_path=None):
-    """
-    Execute a command and return an object with the result and failure status.
-    """
+def _run(command, shell=False, echo=False, log_path=None, text=True, check=False):
+    """Execute a command and return an object with the result and failure status."""
 
     if echo:
         print(command)
 
     # shlex the command if we don't want to run in shell
-    if not shell:
+    if not shell and isinstance(command, str):
         command = shlex.split(command)
 
     # Either Pipe output or save to a file
@@ -30,19 +28,19 @@ def _run(command, shell=False, echo=False, log_path=None):
                 return subprocess.run(
                     command,
                     shell=shell,
-                    check=False,  # Don't raise exception on non-zero exit
+                    check=check,
                     stdout=f_out,
                     stderr=f_err,
-                    text=True,  # Return strings instead of bytes
+                    text=text,
                 )
     else:
         return subprocess.run(
             command,
             shell=shell,
-            check=False,  # Don't raise exception on non-zero exit
+            check=check,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,  # Return strings instead of bytes
+            text=text,
         )
 
 

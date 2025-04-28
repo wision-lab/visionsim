@@ -1,10 +1,21 @@
-# import inspect
+import sys
+from pathlib import Path
 
-# import pytest
-# from invoke.context import Context
+import pytest
+
+from visionsim.cli.common import _run
 
 
-# from visionsim.tasks.common import _run
+@pytest.mark.skipif(sys.platform.contains("win"), reason="No autocomplete on windows")
+def test_completions(tmpdir):
+    # Note: If this test fails, it most likely means one of the arguments of a CLI method is
+    #   not annotated properly. Logs will be saved to the temp dir, and should show what's going on.
+    shell_name = Path(_run("echo $SHELL", shell=True, check=True).stdout.strip()).stem
+
+    if shell_name not in ("bash", "zsh", "tcsh"):
+        pytest.skip(f"Unsupported shell, got {shell_name}, expected on of 'bash', 'zsh', 'tcsh'.")
+
+    _run(rf"visionsim --tyro-write-completion {shell_name} {tmpdir}/visionsim", check=True, shell=True, log_path=tmpdir)
 
 
 # def test_list_has_all_tasks():
