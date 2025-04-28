@@ -245,6 +245,10 @@ def colorize_segmentations(
 
     for in_file in track(in_files):
         idx = _read_exr(in_file).astype(int)
+
+        if idx.shape[-1] != 1:
+            idx = idx[..., 0]
+            
         img = np.stack([r[idx], g[idx], b[idx]], axis=-1)
         img = (img * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem

@@ -21,8 +21,6 @@
    :caption: Tutorials & Use Cases
 
    tutorials/preexisting-ds
-   tutorials/parallel-sim
-   tutorials/distributed-sim
    tutorials/stereo
    tutorials/extending 
    tutorials/large-dataset

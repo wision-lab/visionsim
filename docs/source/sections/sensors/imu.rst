@@ -14,6 +14,7 @@ From `Wikipedia <https://en.wikipedia.org/wiki/Inertial_measurement_unit>`_:
     A very wide variety of IMUs exists, depending on application types, with performance ranging:
         - From 0.1°/s to 0.001°/h for gyroscope
         - From 100 mg to 10 μg for accelerometers.
+        
     To get a rough idea, this means that, for a single, uncorrected accelerometer, the cheapest (at 100 mg) loses its ability to give 50-meter accuracy after around 10 seconds, while the best accelerometer (at 10 μg) loses its 50-meter accuracy after around 17 minutes.
 
 |
@@ -67,12 +68,13 @@ While many methods exist, one of the simplest and most ubiquitous is to simply i
 .. literalinclude:: ../../../../examples/sensors/imu.py 
 
 .. TODO: add link to `examples/sensors/render-camera-geonodes.png` when repo is public 
+
 Using a bit of Blender's geometry [2]_ nodes we can composite a few estimated trajectories back into the scene:
 
 .. image:: ../../_static/sensors/imu-preview.gif 
    :align: center 
 
-Here, the bright ble camera follows the ground truth trajectory, and all others are estimated from IMU measurements. Notice how they all start grouped together and slowly drift apart. 
+Here, the bright blue camera follows the ground truth trajectory, and all others are estimated from IMU measurements. Notice how they all start grouped together and slowly drift apart. 
 
 | 
 

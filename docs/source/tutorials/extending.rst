@@ -5,7 +5,7 @@ While the :class:`BlenderService <visionsim.simulate.blender.BlenderService>` AP
 
 Here we create a custom ``ExtendedService`` which allows for axis-aligned bounding box (AABB) calculations, and listing out any missing textures: 
 
-.. literalinclude:: ../../../examples/extended_service.py 
+.. literalinclude:: ../../../examples/blender/extended_service.py 
 
 Currently, in order to use this new rendering service, the user must spin it up manually (as opposed to using :meth:`BlenderClient.spawn <visionsim.simulate.blender.BlenderClient.spawn>`):
 

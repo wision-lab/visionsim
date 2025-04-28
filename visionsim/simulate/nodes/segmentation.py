@@ -67,11 +67,11 @@ def segmentationdebug_node_group():
     math.inputs[1].default_value = 0.0
 
     # Set locations
-    group_output.location = (214.5904083251953, 0.0)
-    group_input.location = (-381.46478271484375, 0.0)
-    combine_color.location = (10.13623046875, -0.20062255859375)
-    normalizeidx.location = (-180.60400390625, 97.82029724121094)
-    math.location = (-181.46478271484375, -97.8203125)
+    group_output.location = (314.0, 0.0)
+    group_input.location = (-281.0, 0.0)
+    combine_color.location = (124.0, 0.0)
+    normalizeidx.location = (-78.5, 118.19999694824219)
+    math.location = (-78.5, -118.19999694824219)
 
     # initialize segmentationdebug links
     # normalizeidx.Value -> combine_color.Red
