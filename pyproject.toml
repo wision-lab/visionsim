@@ -21,7 +21,8 @@ dependencies = [
     "OpenEXR",
     "multiprocess",
     "rpyc",
-    "tdigest"
+    "tdigest",
+    "tyro"
 ]
 
 [project.scripts]
