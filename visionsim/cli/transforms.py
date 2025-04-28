@@ -50,14 +50,14 @@ def _estimate_distribution(in_files, percentage=0.2, transform=None):
 def colorize_depths(
     input_dir: str | os.PathLike,
     output_dir: str | os.PathLike,
-    pattern: str="depth_*.exr",
-    cmap: str="turbo",
-    ext: str=".png",
-    vmin=None,
-    vmax=None,
-    percentage: float=0.2,
-    sample: float=0.01,
-    step: int=1,
+    pattern: str = "depth_*.exr",
+    cmap: str = "turbo",
+    ext: str = ".png",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    percentage: float = 0.2,
+    sample: float = 0.01,
+    step: int = 1,
 ):
     """Convert .exr depth maps into color-coded images for visualization
 
@@ -110,16 +110,16 @@ def colorize_depths(
 def colorize_flows(
     input_dir: str | os.PathLike,
     output_dir: str | os.PathLike,
-    direction: Literal["forward", "backward"]="forward",
-    pattern: str="flow_*.exr",
-    ext: str=".png",
-    vmax=None,
-    percentage: float=0.2,
-    sample: float=0.01,
-    step: int=1,
+    direction: Literal["forward", "backward"] = "forward",
+    pattern: str = "flow_*.exr",
+    ext: str = ".png",
+    vmax: float | None = None,
+    percentage: float = 0.2,
+    sample: float = 0.01,
+    step: int = 1,
 ):
     """Convert .exr optical flow maps into color-coded images for visualization
-    
+
     Args:
         input_dir: directory in which to look for frames
         output_dir: directory in which to save colorized frames
@@ -170,12 +170,12 @@ def colorize_flows(
 def colorize_normals(
     input_dir: str | os.PathLike,
     output_dir: str | os.PathLike,
-    pattern: str="normal_*.exr",
-    ext: str=".png",
-    step: int=1,
+    pattern: str = "normal_*.exr",
+    ext: str = ".png",
+    step: int = 1,
 ):
     """Convert .exr normal maps into color-coded images for visualization
-    
+
     Args:
         input_dir: directory in which to look for frames
         output_dir: directory in which to save colorized frames
@@ -200,12 +200,12 @@ def colorize_normals(
 def colorize_segmentations(
     input_dir: str | os.PathLike,
     output_dir: str | os.PathLike,
-    pattern: str="segmentation_*.exr",
-    ext: str=".png",
-    num_objects:int | None=None,
-    shuffle: bool=True,
-    seed: int=1234,
-    step: int=1,
+    pattern: str = "segmentation_*.exr",
+    ext: str = ".png",
+    num_objects: int | None = None,
+    shuffle: bool = True,
+    seed: int = 1234,
+    step: int = 1,
 ):
     """Convert .exr segmentation maps into color-coded images for visualization
 
@@ -248,16 +248,22 @@ def colorize_segmentations(
 
         if idx.shape[-1] != 1:
             idx = idx[..., 0]
-            
+
         img = np.stack([r[idx], g[idx], b[idx]], axis=-1)
         img = (img * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
         iio.imwrite(str(path.with_suffix(ext)), img)
 
 
-def tonemap_exrs(input_dir: str | os.PathLike, output_dir:str | os.PathLike | None=None, batch_size: int=4, hdr_quantile: float=0.01, force: bool=False):
+def tonemap_exrs(
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike | None = None,
+    batch_size: int = 4,
+    hdr_quantile: float = 0.01,
+    force: bool = False,
+):
     """Convert .exr linear intensity frames into tone-mapped sRGB images
-    
+
     Args:
         input_dir: directory in which to look for frames
         output_dir: directory in which to save tone mapped frames, if not specified the dynamic range is calculated and no tonemapping occurs

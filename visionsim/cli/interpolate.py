@@ -10,9 +10,9 @@ from visionsim.dataset import IMG_SCHEMA, read_and_validate
 from visionsim.interpolate import interpolate_frames, interpolate_poses, poses_and_frames_to_json
 
 
-def video(input_file: str | os.PathLike, output_file: str | os.PathLike, method: str="rife", n: int=2):
+def video(input_file: str | os.PathLike, output_file: str | os.PathLike, method: str = "rife", n: int = 2):
     """Interpolate video by extracting all frames, performing frame-wise interpolation and re-assembling video
-    
+
     Args:
         input_file: path to video file from which to extract frames
         output_file: path in which to save interpolated video
@@ -57,9 +57,15 @@ def video(input_file: str | os.PathLike, output_file: str | os.PathLike, method:
 #         "n": "interpolation factor, must be a multiple of 2, default: 2",
 #     }
 # )
-def frames(input_dir: str | os.PathLike, output_dir: str | os.PathLike, method: str="rife", file_name: str="transforms.json", n:int =2):
+def frames(
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
+    method: str = "rife",
+    file_name: str = "transforms.json",
+    n: int = 2,
+):
     """Interpolate poses and frames separately, then combine into transforms.json file
-    
+
     Args:
         input_dir: directory in which to look for frames,
         output_dir: directory in which to save interpolated frames,

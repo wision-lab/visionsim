@@ -308,18 +308,17 @@ class BlenderServer(rpyc.utils.server.Server):
             registry.start()
             REGISTRY = (registry, client)
         return REGISTRY
-    
 
     @staticmethod
     def _launch_registry():
-            try:
-                registry = rpyc.utils.registry.UDPRegistryServer()
-                registry.start()
-            except OSError:
-                # Note: Address is likely already in use, meaning there's
-                #   already a spawned registry in another thread/process which
-                #   we should be able to use. No need to re-spawn one then.
-                pass
+        try:
+            registry = rpyc.utils.registry.UDPRegistryServer()
+            registry.start()
+        except OSError:
+            # Note: Address is likely already in use, meaning there's
+            #   already a spawned registry in another thread/process which
+            #   we should be able to use. No need to re-spawn one then.
+            pass
 
     @staticmethod
     def discover() -> list[tuple[str, int]]:

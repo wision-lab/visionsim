@@ -33,7 +33,7 @@ def _run(command, shell=False, echo=False, log_path=None):
                     check=False,  # Don't raise exception on non-zero exit
                     stdout=f_out,
                     stderr=f_err,
-                    text=True  # Return strings instead of bytes
+                    text=True,  # Return strings instead of bytes
                 )
     else:
         return subprocess.run(
@@ -42,7 +42,7 @@ def _run(command, shell=False, echo=False, log_path=None):
             check=False,  # Don't raise exception on non-zero exit
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True  # Return strings instead of bytes
+            text=True,  # Return strings instead of bytes
         )
 
 

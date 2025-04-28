@@ -35,15 +35,15 @@ def _spad_collate(batch, *, mode, rng, factor, is_tonemapped=True):
 def spad(
     input_dir: str | os.PathLike,
     output_dir: str | os.PathLike,
-    pattern: str="frame_{:06}.png",
-    factor: float=1.0,
-    seed: int=2147483647,
-    mode: Literal['npy', 'img']="npy",
-    batch_size: int=4,
-    force: bool=False,
+    pattern: str = "frame_{:06}.png",
+    factor: float = 1.0,
+    seed: int = 2147483647,
+    mode: Literal["npy", "img"] = "npy",
+    batch_size: int = 4,
+    force: bool = False,
 ):
     """Perform bernoulli sampling on linearized RGB frames to yield binary frames
-    
+
     Args:
         input_dir: directory in which to look for frames
         output_dir: directory in which to save binary frames
@@ -105,17 +105,17 @@ def events(
     input_dir: str | os.PathLike,
     output_dir: str | os.PathLike,
     fps: int,
-    pos_thres: float=0.2,
-    neg_thres: float=0.2,
-    sigma_thres: float=0.03,
-    cutoff_hz: int=200,
-    leak_rate_hz: float=1.0,
-    shot_noise_rate_hz: float=10.0,
-    seed: int=2147483647,
-    force: bool=False,
+    pos_thres: float = 0.2,
+    neg_thres: float = 0.2,
+    sigma_thres: float = 0.03,
+    cutoff_hz: int = 200,
+    leak_rate_hz: float = 1.0,
+    shot_noise_rate_hz: float = 10.0,
+    seed: int = 2147483647,
+    force: bool = False,
 ):
     """Emulate an event camera using v2e and high speed input frames
-    
+
     Args:
         input_dir: directory in which to look for frames
         output_dir: directory in which to save events
@@ -194,17 +194,17 @@ def events(
 def rgb(
     input_dir: str | os.PathLike,
     output_dir: str | os.PathLike,
-    chunk_size: int=10,
-    factor: float=1.0,
-    readout_std: float=20.0,
-    fwc=None,
-    duplicate=1,
-    pattern: str="frame_{:06}.png",
-    mode: Literal['npy', 'img']="npy",
-    force: bool=False,
+    chunk_size: int = 10,
+    factor: float = 1.0,
+    readout_std: float = 20.0,
+    fwc: int | None = None,
+    duplicate: float = 1.0,
+    pattern: str = "frame_{:06}.png",
+    mode: Literal["npy", "img"] = "npy",
+    force: bool = False,
 ):
     """Simulate real camera, adding read/poisson noise and tonemapping
-    
+
     Args:
         input_dir: directory in which to look for frames
         output_dir: directory in which to save binary frames
@@ -279,19 +279,19 @@ def rgb(
 
 def imu(
     input_dir: str | os.PathLike,
-    output_file: str | os.PathLike="",
-    seed: int=2147483647,
-    gravity: str="(0.0, 0.0, -9.8)",
-    dt: float=0.00125,
-    init_bias_acc: str="(0.0,0.0,0.0)",
-    init_bias_gyro: str="(0.0,0.0,0.0)",
-    std_bias_acc: float=5.5e-5,
-    std_bias_gyro: float=2e-5,
-    std_acc: float=8e-3,
-    std_gyro: float=1.2e-3,
+    output_file: str | os.PathLike = "",
+    seed: int = 2147483647,
+    gravity: str = "(0.0, 0.0, -9.8)",
+    dt: float = 0.00125,
+    init_bias_acc: str = "(0.0, 0.0, 0.0)",
+    init_bias_gyro: str = "(0.0, 0.0, 0.0)",
+    std_bias_acc: float = 5.5e-5,
+    std_bias_gyro: float = 2e-5,
+    std_acc: float = 8e-3,
+    std_gyro: float = 1.2e-3,
 ):
     """Simulate data from a co-located IMU using the poses in transforms.json.
-    
+
     Args:
         input_dir: directory in which to look for transforms.json,
         output_file: file in which to save simulated IMU data. Prints to stdout if empty. default: '',

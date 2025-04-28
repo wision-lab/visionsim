@@ -9,12 +9,12 @@ import numpy as np
 def imgs_to_npy(
     input_dir: str | os.PathLike,
     output_dir: str | os.PathLike,
-    bitpack: bool=False,
-    bitpack_dim=None,
-    batch_size: int=4,
-    alpha_color: str="(255, 255, 255)",
-    is_grayscale: bool=False,
-    force: bool=False,
+    bitpack: bool = False,
+    bitpack_dim: int | None = None,
+    batch_size: int = 4,
+    alpha_color: str = "(255, 255, 255)",
+    is_grayscale: bool = False,
+    force: bool = False,
 ):
     """Convert an image folder based dataset to a NPY dataset
 
@@ -95,15 +95,15 @@ def imgs_to_npy(
 
 
 def npy_to_imgs(
-    input_dir:str | os.PathLike,
-    output_dir:str | os.PathLike,
-    batch_size:int=4,
-    pattern:str="frame_{:06}.png",
-    step:int=1,
-    force:bool=False,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
+    batch_size: int = 4,
+    pattern: str = "frame_{:06}.png",
+    step: int = 1,
+    force: bool = False,
 ):
     """Convert an NPY based dataset to an image-folder dataset
-    
+
     Args:
         input_dir: directory in which to look for frames
         output_dir: directory in which to save npy file
@@ -111,7 +111,7 @@ def npy_to_imgs(
         pattern: filenames of frames will match this
         step: skip some frames when converting between formats
         force: if true, overwrite output file(s) if present
-    
+
     """
     import copy
 
@@ -149,9 +149,9 @@ def npy_to_imgs(
             progress.update(task1, advance=len(idxs))
 
 
-def info(input_dir: str | os.PathLike, json: bool=False):
+def info(input_dir: str | os.PathLike, json: bool = False):
     """Print information about the dataset
-    
+
     Args:
         input_dir: directory in which to look for dataset
         json: print the output in a json-formatted string

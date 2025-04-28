@@ -8,20 +8,20 @@ from visionsim.cli.common import _run, _validate_directories
 
 def animate(
     input_dir: str | os.PathLike,
-    pattern: str="frame_*.png",
-    outfile: str="out.mp4",
-    fps: int=25,
-    crf: int=22,
-    vcodec: str="libx264",
-    step: int=1,
-    multiple: int=2,
-    force: bool=False,
-    bg_color: str="black",
-    strip_alpha: bool=False,
-    auto_tonemap: bool=True,
+    pattern: str = "frame_*.png",
+    outfile: str = "out.mp4",
+    fps: int = 25,
+    crf: int = 22,
+    vcodec: str = "libx264",
+    step: int = 1,
+    multiple: int = 2,
+    force: bool = False,
+    bg_color: str = "black",
+    strip_alpha: bool = False,
+    auto_tonemap: bool = True,
 ):
     """Combine generated frames into an MP4 using ffmpeg wizardry
-    
+
     Args:
         input_dir: directory in which to look for frames,
         pattern: filenames of frames should match this
@@ -93,7 +93,14 @@ def animate(
         _run(cmd)
 
 
-def combine(matrix: str, outfile: str="combined.mp4", mode: str="shortest", color: str="white", multiple: int=2, force: bool=False):
+def combine(
+    matrix: str,
+    outfile: str = "combined.mp4",
+    mode: str = "shortest",
+    color: str = "white",
+    multiple: int = 2,
+    force: bool = False,
+):
     """Combine multiple videos into one by stacking, padding and resizing them using ffmpeg.
 
     Internally this task will first optionally pad all videos to length using ffmpeg's `tpad` filter,
@@ -240,9 +247,16 @@ def combine(matrix: str, outfile: str="combined.mp4", mode: str="shortest", colo
             shutil.move(row_paths[0], outfile)
 
 
-def grid(input_dir: str | os.PathLike, width: int=-1, height: int=-1, pattern: str="*.mp4", outfile: str="combined.mp4", force: bool=False):
+def grid(
+    input_dir: str | os.PathLike,
+    width: int = -1,
+    height: int = -1,
+    pattern: str = "*.mp4",
+    outfile: str = "combined.mp4",
+    force: bool = False,
+):
     """Make a mosaic from videos in a folder, organizing them in a grid
-    
+
 
     Args:
         input_dir: directory containing all video files (mp4's expected),
@@ -283,7 +297,7 @@ def grid(input_dir: str | os.PathLike, width: int=-1, height: int=-1, pattern: s
 
 def count_frames(input_file: str | os.PathLike):
     """Count the number of frames a video file contains using ffprobe
-    
+
     Args:
         input_file: video file input
     """
@@ -303,7 +317,7 @@ def count_frames(input_file: str | os.PathLike):
 def duration(input_file: str | os.PathLike):
     """Return duration (in seconds) of first video stream in file using ffprobe
 
-    
+
     Args:
         input_file: video file input
     """
@@ -322,7 +336,7 @@ def duration(input_file: str | os.PathLike):
 
 def dimensions(input_file: str | os.PathLike):
     """Return size (WxH in pixels) of first video stream in file using ffprobe
-    
+
     Args:
         input_file: video file input
     """
@@ -336,9 +350,9 @@ def dimensions(input_file: str | os.PathLike):
     return tuple(int(dim) for dim in result.stdout.strip().split("x"))
 
 
-def extract(input_file: str | os.PathLike, output_dir: str | os.PathLike, pattern: str="frames_%06d.png"):
+def extract(input_file: str | os.PathLike, output_dir: str | os.PathLike, pattern: str = "frames_%06d.png"):
     """Extract frames from video file
-    
+
     Args:
         input_file: path to video file from which to extract frames,
         output_dir: directory in which to save extracted frames,
