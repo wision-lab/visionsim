@@ -7,11 +7,6 @@ from functools import partial
 from pathlib import Path
 from typing import Literal
 
-from rich.progress import Progress
-
-from visionsim.cli.common import _run
-from visionsim.simulate.blender import BlenderClients
-
 
 def render_animation(
     blend_file: str | os.PathLike,
@@ -76,6 +71,10 @@ def render_animation(
     Example:
         visionsim blender.render_animation --blend-file=<blend-file> --root-path=<output-path>
     """
+    from rich.progress import Progress
+
+    from visionsim.cli import _run
+    from visionsim.simulate.blender import BlenderClients
 
     # Runtime checks and gard rails
     if _run(f"{executable or 'blender'} --version", shell=True).returncode != 0:

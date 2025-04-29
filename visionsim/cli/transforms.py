@@ -9,8 +9,6 @@ import numpy as np
 import OpenEXR
 from rich.progress import Progress, track
 
-from visionsim.cli.common import _validate_directories
-
 
 def _read_exr(path):
     # imageio and cv2's cannot read an exr file when the data is stored in any other channel than RGB(A)
@@ -79,6 +77,8 @@ def colorize_depths(
     import matplotlib as mpl
     import matplotlib.cm as cm
 
+    from visionsim.cli import _validate_directories
+
     DEPTH_CUTOFF = 10000000000
 
     input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
@@ -138,6 +138,8 @@ def colorize_flows(
 
     import imageio.v3 as iio
 
+    from visionsim.cli import _validate_directories
+
     if direction.lower() not in ("forward", "backward"):
         raise ValueError("Direction needs to be either 'forward' or 'backwards'.")
 
@@ -187,6 +189,8 @@ def colorize_normals(
     # Lazy load imports to improve CLI responsiveness
     import imageio.v3 as iio
 
+    from visionsim.cli import _validate_directories
+
     input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
     in_files = in_files[::step]
 
@@ -224,6 +228,8 @@ def colorize_segmentations(
     import colorsys
 
     import imageio.v3 as iio
+
+    from visionsim.cli import _validate_directories
 
     input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
     in_files = in_files[::step]
@@ -273,6 +279,7 @@ def tonemap_exrs(
     """
     from torch.utils.data import DataLoader
 
+    from visionsim.cli import _validate_directories
     from visionsim.dataset import Dataset, ImgDatasetWriter
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)

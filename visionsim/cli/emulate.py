@@ -61,7 +61,7 @@ def spad(
 
     from visionsim.dataset import Dataset, ImgDatasetWriter, NpyDatasetWriter
 
-    from .common import _validate_directories
+    from . import _validate_directories
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     dataset = Dataset.from_path(input_dir)
@@ -137,7 +137,7 @@ def events(
     from visionsim.dataset import Dataset
     from visionsim.emulate.dvs import EventEmulator
 
-    from .common import _validate_directories
+    from . import _validate_directories
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     (output_dir / "frames").mkdir(parents=True, exist_ok=True)
@@ -227,7 +227,7 @@ def rgb(
     from visionsim.interpolate import pose_interp
     from visionsim.utils.color import srgb_to_linearrgb
 
-    from .common import _validate_directories
+    from . import _validate_directories
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     dataset = Dataset.from_path(input_dir)

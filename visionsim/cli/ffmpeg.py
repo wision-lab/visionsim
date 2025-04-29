@@ -3,8 +3,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from visionsim.cli.common import _run, _validate_directories
-
 
 def animate(
     input_dir: str | os.PathLike,
@@ -41,6 +39,7 @@ def animate(
 
     from natsort import natsorted
 
+    from visionsim.cli import _run, _validate_directories
     from visionsim.cli.transforms import tonemap_exrs
 
     if _run("ffmpeg -version").returncode != 0:
@@ -128,6 +127,8 @@ def combine(
     import tempfile
 
     import numpy as np
+
+    from visionsim.cli import _run
 
     if Path(outfile).is_file() and not force:
         raise RuntimeError("Output file already exists, either specify different output path or `--force` to override.")
@@ -301,6 +302,8 @@ def count_frames(input_file: str | os.PathLike):
     Args:
         input_file: video file input
     """
+    from visionsim.cli import _run
+
     # See: https://stackoverflow.com/questions/2017843
     if _run("ffprobe -version").returncode != 0:
         raise RuntimeError("No ffprobe installation found on path!")
@@ -321,6 +324,8 @@ def duration(input_file: str | os.PathLike):
     Args:
         input_file: video file input
     """
+    from visionsim.cli import _run
+
     # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
     if _run("ffprobe -version").failed:
         raise RuntimeError("No ffprobe installation found on path!")
@@ -340,6 +345,8 @@ def dimensions(input_file: str | os.PathLike):
     Args:
         input_file: video file input
     """
+    from visionsim.cli import _run
+
     # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
     if _run("ffprobe -version").returncode != 0:
         raise RuntimeError("No ffprobe installation found on path!")
@@ -358,6 +365,8 @@ def extract(input_file: str | os.PathLike, output_dir: str | os.PathLike, patter
         output_dir: directory in which to save extracted frames,
         pattern: filenames of frames will match this pattern
     """
+    from visionsim.cli import _run
+
     if _run("ffmpeg -version").returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
     if not Path(input_file).is_file():

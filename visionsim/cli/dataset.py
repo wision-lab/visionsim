@@ -42,7 +42,7 @@ def imgs_to_npy(
 
     from visionsim.dataset import ImgDataset, NpyDatasetWriter, default_collate
 
-    from .common import _validate_directories
+    from . import _validate_directories
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     dataset = ImgDataset(input_dir)
@@ -120,7 +120,7 @@ def npy_to_imgs(
 
     from visionsim.dataset import ImgDatasetWriter, NpyDataset, default_collate
 
-    from .common import _validate_directories
+    from . import _validate_directories
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     dataset = NpyDataset(input_dir)
@@ -160,7 +160,7 @@ def info(input_dir: str | os.PathLike, json: bool = False):
 
     from visionsim.dataset import Dataset
 
-    from .common import _validate_directories
+    from . import _validate_directories
 
     input_dir, _ = _validate_directories(input_dir=input_dir)
     dataset = Dataset.from_path(input_dir)

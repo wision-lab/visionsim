@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 
-from visionsim.cli.common import _validate_directories
 from visionsim.dataset import IMG_SCHEMA, read_and_validate
 from visionsim.interpolate import interpolate_frames, interpolate_poses, poses_and_frames_to_json
 
@@ -73,6 +72,7 @@ def frames(
         file_name: name of file containing transforms, default: 'transforms.json',
         n: interpolation factor, must be a multiple of 2, default: 2,
     """
+    from visionsim.cli import _validate_directories
 
     # Extract transforms from transforms.json file
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
