@@ -1,9 +1,24 @@
+[build-system]
+requires = ["hatchling >= 1.26"]
+build-backend = "hatchling.build"
+
 [project]
 name = "visionsim"
-description = "Single Photon Simulator and Tools"
-version = "0.0.1"
+description = "Towards a Sensor-Realistic World Simulator"
+version = "0.1.0alpha1"
 requires-python = ">=3.9"
 readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent"
+]
 dependencies = [
     "opencv-python",
     "imageio",
@@ -24,6 +39,11 @@ dependencies = [
     "tdigest",
     "tyro"
 ]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+
+[project.urls]
+"GitHub" = "https://github.com/WISION-Lab/visionsim"
 
 [project.scripts]
 visionsim = "visionsim.cli:main"
