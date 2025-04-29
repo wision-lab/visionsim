@@ -1,6 +1,8 @@
-# Single Photon Simulator and Tools
+# VisionSIM: Towards a Sensor-Realistic World Simulator
 
-This package uses blender to render out scenes at high frame rates to simulate passive single photon cameras.
+A modular and extensible framework that realistically emulates many different sensor types, alongside rich pixel-perfect ground truth annotations across low-, mid-, and high-level scene characteristics, as well as intrinsic and extrinsic camera properties.
+
+*Warning:* This project is under heavy development and still considered unstable. 
 
 ## Installation & Dependencies 
 
@@ -16,7 +18,7 @@ The first time you use the renderer, it may ask you to install additional packag
 
 ## Building the Documentation
 
-In the project root, run:
+In the project root, with visionsim installed with the dev dependencies, run:
 ```
 inv clean build-docs --preview
 ```
