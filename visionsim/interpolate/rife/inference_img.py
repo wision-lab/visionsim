@@ -36,13 +36,10 @@ def interpolate_img(img_paths, output_dir, model_dir=None, exp=4, ratio=0, rthre
         elif (Path(torch.hub.get_dir()) / "flownet.pkl").exists():
             model_dir = torch.hub.get_dir()
         else:
-            # TODO: Replace URL below with this one:
-            # "https://github.com/WISION-Lab/visionsim/releases/download/v0.1/flownet.pkl",
-            #  This currently does not work as the repo is private...
             print(f"Downloading weights to {str(Path(torch.hub.get_dir()) / 'flownet.pkl')}")
             Path(torch.hub.get_dir()).mkdir(exist_ok=True, parents=True)
             torch.hub.download_url_to_file(
-                "https://gist.github.com/jungerm2/1a32b3dc343c77f31d1efed224a59b5f/raw/2efe1013a34134611f2a776ccb03609446e889f9/flownet.pkl",
+                "https://github.com/WISION-Lab/visionsim/releases/download/v0.1.0-alpha/flownet.pkl",
                 str(Path(torch.hub.get_dir()) / "flownet.pkl"),
             )
             model_dir = torch.hub.get_dir()
