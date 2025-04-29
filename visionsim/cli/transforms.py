@@ -250,9 +250,9 @@ def colorize_segmentations(
     r, g, b = np.insert(r, 0, 0), np.insert(g, 0, 0), np.insert(b, 0, 0)
 
     for in_file in track(in_files):
-        idx = _read_exr(in_file).astype(int)
+        idx = _read_exr(in_file).astype(int).squeeze()
 
-        if idx.shape[-1] != 1:
+        if idx.shape[-1] != 1 and idx.ndim == 3:
             idx = idx[..., 0]
 
         img = np.stack([r[idx], g[idx], b[idx]], axis=-1)

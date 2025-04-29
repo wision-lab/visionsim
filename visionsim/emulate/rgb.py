@@ -41,7 +41,7 @@ def emulate_rgb_from_sequence(
     # Perform poisson sampling and add zero-mean gaussian read noise
     rng = np.random.default_rng() if rng is None else rng
     patch = rng.poisson(patch).astype(float)
-    patch += rng.normal(0, readout_std / 255.0, size=patch.shape)
+    patch += rng.normal(0, readout_std * burst_size / 255.0, size=patch.shape)
 
     # Normalize by full well capacity, clip highlights, and quantize to 12-bits
     patch = np.clip(patch / fwc, 0, 1.0)

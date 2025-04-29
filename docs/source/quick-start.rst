@@ -114,10 +114,6 @@ We use ``emulate.rgb`` to create the RGB data with motion blur. The ``chunk-size
    :language: bash 
    :lines: 6
 
-.. .. note::
-..     The `fwc` or full-well-capacity argument is not in units of electrons, since we have no physical camera model which matches an rgb linear intensity to a number of electrons, but rather is relative to the `chunk-size`. A FWC equal to the chunk size means that, if each image has a normalized intensity of 1.0, the well will fill up.
-
-
 Next, we can emulate a single-photon camera using ``emulate.spad``, at the same framerate as the interpolated dataset like so:
 
 .. literalinclude:: ../../examples/quickstart.sh 
