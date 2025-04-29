@@ -3,10 +3,11 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 import torch
+from typing_extensions import cast
 
 
 def emulate_spc(
-    img: npt.ArrayLike, factor: float = 1.0, rng: np.random.Generator | None = None
+    img: npt.NDArray[np.floating], factor: float = 1.0, rng: np.random.Generator | None = None
 ) -> npt.NDArray[np.integer]:
     """Perform bernoulli sampling on linearized RGB frames to yield binary frames.
 
@@ -20,7 +21,7 @@ def emulate_spc(
     """
     # Perform bernoulli sampling (equivalent to binomial w/ n=1)
     rng = np.random.default_rng() if rng is None else rng
-    return rng.binomial(1, 1.0 - np.exp(-img * factor))
+    return rng.binomial(cast(npt.NDArray[np.integer], 1), 1.0 - np.exp(-img * factor))
 
 
 def spc_avg_to_rgb(

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import functools
 import os
-from typing import Literal
+from pathlib import Path
 
 import numpy as np
+from typing_extensions import Literal
 
 from visionsim.emulate.rgb import emulate_rgb_from_sequence
 
@@ -63,8 +64,8 @@ def spad(
 
     from . import _validate_directories
 
-    input_dir, output_dir = _validate_directories(input_dir, output_dir)
-    dataset = Dataset.from_path(input_dir)
+    input_path, output_path, *_ = _validate_directories(input_dir, output_dir)
+    dataset = Dataset.from_path(input_path)
     transforms_new = copy.deepcopy(dataset.transforms or {})
     shape = np.array(dataset.full_shape)
     shape[-1] = transforms_new["c"] = 3
@@ -85,14 +86,14 @@ def spad(
     loader = DataLoader(
         dataset,
         batch_size=batch_size,
-        num_workers=os.cpu_count(),
+        num_workers=os.cpu_count() or 1,
         collate_fn=functools.partial(_spad_collate, mode=mode, rng=rng, factor=factor, is_tonemapped=is_tonemapped),
     )
 
     with (
-        ImgDatasetWriter(output_dir, transforms=transforms_new, force=force, pattern=pattern)
+        ImgDatasetWriter(output_path, transforms=transforms_new, force=force, pattern=pattern)
         if mode.lower() == "img"
-        else NpyDatasetWriter(output_dir, np.ceil(shape).astype(int), transforms=transforms_new, force=force) as writer,
+        else NpyDatasetWriter(output_path, np.ceil(shape).astype(int), transforms=transforms_new, force=force) as writer,
         Progress() as progress,
     ):
         task1 = progress.add_task("Writing SPAD frames", total=len(dataset))
@@ -139,10 +140,10 @@ def events(
 
     from . import _validate_directories
 
-    input_dir, output_dir = _validate_directories(input_dir, output_dir)
-    (output_dir / "frames").mkdir(parents=True, exist_ok=True)
-    events_path = output_dir / "events.txt"
-    dataset = Dataset.from_path(input_dir)
+    input_path, output_path, *_ = _validate_directories(input_dir, output_dir)
+    (output_path / "frames").mkdir(parents=True, exist_ok=True)
+    events_path = output_path / "events.txt"
+    dataset = Dataset.from_path(input_path)
 
     emulator_kwargs = dict(
         pos_thres=pos_thres,
@@ -153,21 +154,21 @@ def events(
         shot_noise_rate_hz=shot_noise_rate_hz,
         seed=seed,
     )
-    emulator = EventEmulator(**emulator_kwargs)
+    emulator = EventEmulator(**emulator_kwargs)  # type: ignore
 
     if events_path.exists():
         if force:
             events_path.unlink()
         else:
-            raise FileExistsError(f"Event file already exists in {output_dir}")
+            raise FileExistsError(f"Event file already exists in {output_path}")
 
-    with open(output_dir / "params.json", "w") as f:
+    with open(output_path / "params.json", "w") as f:
         json.dump(emulator_kwargs | dict(fps=fps), f, indent=2)
 
     with open(events_path, "a+") as out, Progress() as progress:
         task = progress.add_task("Processing @ N/A KEV/s", total=len(dataset))
 
-        for idx, frame, _ in dataset:
+        for idx, frame, _ in dataset:  # type: ignore
             # Manually grayscale as we've already converted to floating point pixel values
             # Values from http://en.wikipedia.org/wiki/Grayscale
             r, g, b, *_ = np.transpose(frame, (2, 0, 1))
@@ -184,7 +185,7 @@ def events(
                 _, nx, ny, _ = events[events[:, -1] == -1].T.astype(int)
                 viz[ny, nx] = [255, 0, 0]
                 viz[py, px] = [0, 0, 255]
-                iio.imwrite(output_dir / "frames" / f"event_{idx:06}.png", viz)
+                iio.imwrite(output_path / "frames" / f"event_{idx:06}.png", viz)
             else:
                 rate = 0
 
@@ -229,8 +230,8 @@ def rgb(
 
     from . import _validate_directories
 
-    input_dir, output_dir = _validate_directories(input_dir, output_dir)
-    dataset = Dataset.from_path(input_dir)
+    input_path, output_path, *_ = _validate_directories(input_dir, output_dir)
+    dataset = Dataset.from_path(input_path)
     transforms_new = copy.deepcopy(dataset.transforms or {})
     shape = np.array(dataset.full_shape)
     shape[-1] = transforms_new["c"] = 3
@@ -244,23 +245,23 @@ def rgb(
         # TODO: This is due to the alpha blending below, we need alpha in [0, 1] to blend.
         raise NotImplementedError("Task does not yet support EXRs")
 
-    loader = DataLoader(dataset, batch_size=1, num_workers=os.cpu_count(), collate_fn=default_collate)
+    loader = DataLoader(dataset, batch_size=1, num_workers=os.cpu_count() or 1, collate_fn=default_collate)
 
     with (
-        ImgDatasetWriter(output_dir, transforms=transforms_new, force=force, pattern=pattern)
+        ImgDatasetWriter(output_path, transforms=transforms_new, force=force, pattern=pattern)
         if mode.lower() == "img"
-        else NpyDatasetWriter(output_dir, np.ceil(shape).astype(int), transforms=transforms_new, force=force) as writer,
+        else NpyDatasetWriter(output_path, np.ceil(shape).astype(int), transforms=transforms_new, force=force) as writer,
         Progress() as progress,
     ):
         task = progress.add_task("Writing RGB frames", total=len(dataset))
         for i, batch in enumerate(mitertools.ichunked(loader, chunk_size)):
             # Batch is an iterable of (idx, img, pose) that we need to reduce
-            idxs, imgs, poses = mitertools.unzip(batch)
-            imgs = [(i.astype(float) / 255.0).astype(float) for i in imgs]
-            idxs, poses = np.concatenate(list(idxs)), np.concatenate(list(poses))
+            idxs_iter, imgs_iter, poses_iter = mitertools.unzip(batch)
+            imgs = np.array([(i.astype(float) / 255.0).astype(float) for i in imgs_iter])
+            idxs, poses = np.concatenate(list(idxs_iter)), np.concatenate(list(poses_iter))
 
             # Assume images have been tonemapped and undo mapping
-            imgs = [srgb_to_linearrgb(i) for i in imgs]
+            imgs = srgb_to_linearrgb(imgs)
 
             rgb_img = emulate_rgb_from_sequence(
                 imgs * duplicate,
@@ -278,7 +279,7 @@ def rgb(
 
 
 def imu(
-    input_dir: str | os.PathLike,
+    input_dir: str | os.PathLike = ".",
     output_file: str | os.PathLike = "",
     seed: int = 2147483647,
     gravity: str = "(0.0, 0.0, -9.8)",
@@ -308,7 +309,6 @@ def imu(
 
     import ast
     import sys
-    from pathlib import Path
 
     from visionsim.dataset import Dataset
 
@@ -319,9 +319,9 @@ def imu(
         raise RuntimeError("dataset.transforms not found!")
 
     rng = np.random.default_rng(int(seed))
-    gravity = np.array(ast.literal_eval(gravity))
-    init_bias_acc = np.array(ast.literal_eval(init_bias_acc))
-    init_bias_gyro = np.array(ast.literal_eval(init_bias_gyro))
+    gravity_ = np.array(ast.literal_eval(gravity))
+    init_bias_acc_ = np.array(ast.literal_eval(init_bias_acc))
+    init_bias_gyro_ = np.array(ast.literal_eval(init_bias_gyro))
 
     from visionsim.emulate.imu import emulate_imu
 
@@ -332,9 +332,9 @@ def imu(
         std_gyro=std_gyro,
         std_bias_acc=std_bias_acc,
         std_bias_gyro=std_bias_gyro,
-        init_bias_acc=init_bias_acc,
-        init_bias_gyro=init_bias_gyro,
-        gravity=gravity,
+        init_bias_acc=init_bias_acc_,
+        init_bias_gyro=init_bias_gyro_,
+        gravity=gravity_,
         rng=rng,
     )
 
@@ -343,18 +343,6 @@ def imu(
         for d in data_gen:
             out.write(
                 "{},{},{},{},{},{},{},{},{},{},{},{},{}\n".format(
-                    d["t"],
-                    d["acc_reading"][0],
-                    d["acc_reading"][1],
-                    d["acc_reading"][2],
-                    d["gyro_reading"][0],
-                    d["gyro_reading"][1],
-                    d["gyro_reading"][2],
-                    d["acc_bias"][0],
-                    d["acc_bias"][1],
-                    d["acc_bias"][2],
-                    d["gyro_bias"][0],
-                    d["gyro_bias"][1],
-                    d["gyro_bias"][2],
+                    d["t"], *d["acc_reading"], *d["gyro_reading"], *d["acc_bias"], *d["gyro_bias"]
                 )
             )

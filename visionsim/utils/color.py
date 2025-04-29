@@ -3,6 +3,15 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 import torch
+from typing_extensions import overload
+
+
+@overload
+def srgb_to_linearrgb(img: npt.NDArray[np.floating]) -> npt.NDArray[np.floating]: ...
+
+
+@overload
+def srgb_to_linearrgb(img: torch.Tensor) -> torch.Tensor: ...
 
 
 def srgb_to_linearrgb(img: torch.Tensor | npt.NDArray[np.floating]) -> torch.Tensor | npt.NDArray[np.floating]:
@@ -21,6 +30,14 @@ def srgb_to_linearrgb(img: torch.Tensor | npt.NDArray[np.floating]) -> torch.Ten
     img[mask] = module.clip(img[mask], 0.0, module.inf) / 12.92
     img[~mask] = ((img[~mask] + 0.055) / 1.055) ** 2.4  # type: ignore
     return img
+
+
+@overload
+def linearrgb_to_srgb(img: npt.NDArray[np.floating]) -> npt.NDArray[np.floating]: ...
+
+
+@overload
+def linearrgb_to_srgb(img: torch.Tensor) -> torch.Tensor: ...
 
 
 def linearrgb_to_srgb(img: torch.Tensor | npt.NDArray) -> torch.Tensor | npt.NDArray:

@@ -44,8 +44,8 @@ def imgs_to_npy(
 
     from . import _validate_directories
 
-    input_dir, output_dir = _validate_directories(input_dir, output_dir)
-    dataset = ImgDataset(input_dir)
+    input_path, output_path, *_ = _validate_directories(input_dir, output_dir)
+    dataset = ImgDataset(input_path)
     transforms_new = copy.deepcopy(dataset.transforms or {})
 
     if ".exr" in set(Path(p).suffix for p in dataset.paths):
@@ -73,10 +73,12 @@ def imgs_to_npy(
         transforms_new["bitpack_dim"] = bitpack_dim
         shape[bitpack_dim] /= 8
 
-    loader = DataLoader(dataset, batch_size=batch_size, num_workers=os.cpu_count(), collate_fn=default_collate)
+    loader = DataLoader(dataset, batch_size=batch_size, num_workers=os.cpu_count() or 1, collate_fn=default_collate)
 
     with (
-        NpyDatasetWriter(output_dir, shape=np.ceil(shape).astype(int), transforms=transforms_new, force=force) as writer,
+        NpyDatasetWriter(
+            output_path, shape=np.ceil(shape).astype(int), transforms=transforms_new, force=force
+        ) as writer,
         Progress() as progress,
     ):
         task1 = progress.add_task("Writing frames...", total=len(dataset))
@@ -122,8 +124,8 @@ def npy_to_imgs(
 
     from . import _validate_directories
 
-    input_dir, output_dir = _validate_directories(input_dir, output_dir)
-    dataset = NpyDataset(input_dir)
+    input_path, output_path, *_ = _validate_directories(input_dir, output_dir)
+    dataset = NpyDataset(input_path)
 
     transforms_new = copy.deepcopy(dataset.transforms or {})
     transforms_new.pop("file_path", None)
@@ -132,11 +134,11 @@ def npy_to_imgs(
 
     sampler = range(0, len(dataset) - 1, step)
     loader = DataLoader(
-        dataset, sampler=sampler, batch_size=batch_size, num_workers=os.cpu_count(), collate_fn=default_collate
+        dataset, sampler=sampler, batch_size=batch_size, num_workers=os.cpu_count() or 1, collate_fn=default_collate
     )
 
     with (
-        ImgDatasetWriter(output_dir, transforms=transforms_new, force=force, pattern=pattern) as writer,
+        ImgDatasetWriter(output_path, transforms=transforms_new, force=force, pattern=pattern) as writer,
         Progress() as progress,
     ):
         task1 = progress.add_task("Writing frames...", total=len(sampler))
@@ -149,12 +151,12 @@ def npy_to_imgs(
             progress.update(task1, advance=len(idxs))
 
 
-def info(input_dir: str | os.PathLike, json: bool = False):
+def info(input_dir: str | os.PathLike, as_json: bool = False):
     """Print information about the dataset
 
     Args:
         input_dir: directory in which to look for dataset
-        json: print the output in a json-formatted string
+        as_json: print the output in a json-formatted string
     """
     import json
 
@@ -162,10 +164,10 @@ def info(input_dir: str | os.PathLike, json: bool = False):
 
     from . import _validate_directories
 
-    input_dir, _ = _validate_directories(input_dir=input_dir)
-    dataset = Dataset.from_path(input_dir)
+    input_path, *_ = _validate_directories(input_dir=input_dir)
+    dataset = Dataset.from_path(input_path)
 
-    if json:
+    if as_json:
         print(
             json.dumps(
                 {

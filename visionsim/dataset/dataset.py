@@ -358,7 +358,8 @@ class NpyDataset(Dataset):
 
         if self.bitpack_dim is not None:
             # Expand index over all dimensions
-            idx_list = np.atleast_1d(idx).tolist()
+            # Typing bug in numpy-2.2.4: https://github.com/numpy/numpy/issues/27944
+            idx_list: Any = np.atleast_1d(idx).tolist()
             idx_list += [slice(None)] * (self.data.ndim - len(idx_list))
             img_idx, *_ = idx_list
 

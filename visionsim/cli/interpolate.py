@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 import numpy as np
+from typing_extensions import Literal
 
 from visionsim.dataset import IMG_SCHEMA, read_and_validate
 from visionsim.interpolate import interpolate_frames, interpolate_poses, poses_and_frames_to_json
@@ -46,20 +47,10 @@ def video(input_file: str | os.PathLike, output_file: str | os.PathLike, method:
         animate(dst_dir, pattern="frames_*.png", outfile=output_file, fps=avg_fps)
 
 
-# @task(
-#     help={
-#         "input_dir": "directory in which to look for frames",
-#         "output_dir": "directory in which to save interpolated frames",
-#         # added file type for frames normals depths
-#         "method": "interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife'",
-#         "file_name": "name of file containing transforms, default: 'transforms.json'",
-#         "n": "interpolation factor, must be a multiple of 2, default: 2",
-#     }
-# )
 def frames(
     input_dir: str | os.PathLike,
     output_dir: str | os.PathLike,
-    method: str = "rife",
+    method: Literal["rife"] = "rife",
     file_name: str = "transforms.json",
     n: int = 2,
 ):
@@ -75,14 +66,14 @@ def frames(
     from visionsim.cli import _validate_directories
 
     # Extract transforms from transforms.json file
-    input_dir, output_dir = _validate_directories(input_dir, output_dir)
-    transforms = read_and_validate(path=input_dir / file_name, schema=IMG_SCHEMA)
+    input_path, output_path, *_ = _validate_directories(input_dir, output_dir)
+    transforms = read_and_validate(path=input_path / file_name, schema=IMG_SCHEMA)
 
     print("Interpolating poses")
     interpolated_poses = interpolate_poses(transforms, n=n)
 
     print("Interpolating frames")
-    interpolate_frames(input_dir, output_dir, method, n)
+    interpolate_frames(input_path, output_path, method, n)
 
     print(f"Generating {file_name}")
-    poses_and_frames_to_json(transforms, interpolated_poses, output_dir, file_name="transforms.json")
+    poses_and_frames_to_json(transforms, interpolated_poses, output_path, file_name="transforms.json")

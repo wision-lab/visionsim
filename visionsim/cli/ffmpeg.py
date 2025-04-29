@@ -7,7 +7,7 @@ from pathlib import Path
 def animate(
     input_dir: str | os.PathLike,
     pattern: str = "frame_*.png",
-    outfile: str = "out.mp4",
+    outfile: str | os.PathLike = "out.mp4",
     fps: int = 25,
     crf: int = 22,
     vcodec: str = "libx264",
@@ -16,7 +16,6 @@ def animate(
     force: bool = False,
     bg_color: str = "black",
     strip_alpha: bool = False,
-    auto_tonemap: bool = True,
 ):
     """Combine generated frames into an MP4 using ffmpeg wizardry
 
@@ -32,32 +31,27 @@ def animate(
         force: if true, overwrite output file if present
         bg_color: for images with transparencies, namely PNGs, use this color as a background
         strip_alpha: if true, do not pre-process PNGs to remove transparencies
-        auto_tonemap: if true and images are .exr (linear intensity), apply tonemapping first
     """
-    # TODO: Auto-tonemap for depth colorization
     import tempfile  # Lazy import
 
-    from natsort import natsorted
-
     from visionsim.cli import _run, _validate_directories
-    from visionsim.cli.transforms import tonemap_exrs
 
     if _run("ffmpeg -version").returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
 
-    input_dir, _, in_files = _validate_directories(input_dir, Path(outfile).parent, pattern=pattern)
+    *_, _, in_files = _validate_directories(input_dir, Path(outfile).parent, pattern=pattern)
 
     # See: https://stackoverflow.com/questions/52804749
-    strip_alpha = (
+    strip_alpha_filter = (
         (
             f'-filter_complex "color={bg_color},format=rgb24[c];[c][0]scale2ref[c][i];'
             f'[c][i]overlay=format=auto:shortest=1,setsar=1" '
         )
-        if (pattern.endswith(".png") or (pattern.endswith(".exr") and auto_tonemap)) and strip_alpha
+        if pattern.endswith(".png") and strip_alpha
         else ""
     )
 
-    with tempfile.TemporaryDirectory() as tmpdirname:
+    with tempfile.TemporaryDirectory() as tmpdir:
         # There's no easy way to select out a subset of frames to use.
         # The select filter (-vf "select=not(mod(n\,step))") interferes with
         # the PNG alpha channel removal, and the concat muxer doesn't work
@@ -65,24 +59,15 @@ def animate(
         # As a quick fix, we create a tmpdir with symlinks to the frames we
         # want to include and point ffmpeg to those.
 
-        tmpdirname = Path(tmpdirname)
+        tmpdirname = Path(tmpdir)
         ext = str(Path(pattern).suffix)
 
-        if pattern.endswith(".exr") and auto_tonemap:
-            # Apply tone mapping (linear -> sRGB) to all files
-            # Note: `tonemap_exrs` does not rename files, so we have to do it here...
-            print("Applying tonemapping to images...")
-            tonemap_exrs(input_dir, str(tmpdirname), pattern=pattern, ext=".png", step=step)
-            for i, p in enumerate(natsorted(tmpdirname.glob("*.png"))):
-                p.rename(tmpdirname / f"{i:09}.png")
-            ext = ".png"
-        else:
-            # No transformation needed, simply symlink files
-            for i, p in enumerate(in_files[::step]):
-                (tmpdirname / f"{i:09}{ext}").symlink_to(p, target_is_directory=False)
+        # No transformation needed, simply symlink files
+        for i, p in enumerate(in_files[::step]):
+            (tmpdirname / f"{i:09}{ext}").symlink_to(p, target_is_directory=False)
 
         cmd = (
-            f"ffmpeg -framerate {fps} -f image2 -i {tmpdirname / ('%09d' + ext)} {strip_alpha}"
+            f"ffmpeg -framerate {fps} -f image2 -i {tmpdirname / ('%09d' + ext)} {strip_alpha_filter}"
             f"{'-y' if force else ''} -vcodec {vcodec} -crf {crf} -pix_fmt yuv420p "
         )
         if multiple:
@@ -153,8 +138,8 @@ def combine(
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Keep track of new names of mp4s
-        mapping = {}
-        row_paths = []
+        mapping: dict[str, Path] = {}
+        row_paths: list[Path] = []
 
         # Keep track of all original dimensions
         sizes = {path: dimensions(path) for path in flat_mat}
@@ -216,13 +201,13 @@ def combine(
                 )
                 _run(cmd)
             else:
-                row_paths.append(mapping.get(row[0], row[0]))
+                row_paths.append(mapping.get(row[0], Path(row[0])))
 
         # Combine all rows
         if len(matrix) >= 2:
             # Resize row videos if needed
-            row_sizes = {path: dimensions(path) for path in row_paths}
-            max_width = max(row_sizes[path][0] for path in row_paths)
+            row_sizes: dict[Path, tuple] = {path: dimensions(path) for path in row_paths}
+            max_width: int = max(row_sizes[path][0] for path in row_paths)
             new_row_paths = []
 
             for path in row_paths:
@@ -233,7 +218,7 @@ def combine(
                     _run(f"ffmpeg -i {path} -vf scale={max_width}:-{multiple} {out_path} -y")
                     new_row_paths.append(out_path)
                 else:
-                    new_row_paths.append(path)
+                    new_row_paths.append(Path(path))
 
             # Join all row videos
             paths = " -i ".join(str(p) for p in new_row_paths)
@@ -257,7 +242,6 @@ def grid(
     force: bool = False,
 ):
     """Make a mosaic from videos in a folder, organizing them in a grid
-
 
     Args:
         input_dir: directory containing all video files (mp4's expected),
@@ -283,9 +267,9 @@ def grid(
         selection = int(input(">  "))
         width, height = candidates[selection]
     elif width <= 0:
-        width = len(files) / height
+        width = len(files) // height
     elif height <= 0:
-        height = len(files) / width
+        height = len(files) // width
 
     if int(width) != width or int(height) != height:
         raise ValueError(f"Width and height should be integers, instead got {width}, {height}.")
@@ -293,7 +277,7 @@ def grid(
         width, height = int(width), int(height)
 
     matrix = np.array([str(p) for p in files]).reshape((height, width)).tolist()
-    combine([], outfile, matrix=str(matrix), force=force)
+    combine(str(matrix), outfile, force=force)
 
 
 def count_frames(input_file: str | os.PathLike):
@@ -317,7 +301,7 @@ def count_frames(input_file: str | os.PathLike):
     return int(result.stdout.strip())
 
 
-def duration(input_file: str | os.PathLike):
+def duration(input_file: str | os.PathLike, /):
     """Return duration (in seconds) of first video stream in file using ffprobe
 
 
@@ -327,7 +311,7 @@ def duration(input_file: str | os.PathLike):
     from visionsim.cli import _run
 
     # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
-    if _run("ffprobe -version").failed:
+    if _run("ffprobe -version").returncode != 0:
         raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = (

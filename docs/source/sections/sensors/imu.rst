@@ -38,7 +38,7 @@ This sensor modeling is incorporated into :func:`emulate_imu <visionsim.emulate.
 
 To emulate an IMU from a ``transforms.json`` file, we can also use the CLI::
 
-    $ visionsim emulate.imu transforms.json -o imu.csv --dt=0.02
+    $ visionsim emulate.imu --input-dir=path/to/transforms.json --output-file=imu.csv --dt=0.02
 
 Where ``dt`` is the sampling period or the IMU, set here to 50Hz. This will output a CSV (comma separated values) table like so:
 

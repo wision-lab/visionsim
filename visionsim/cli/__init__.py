@@ -11,6 +11,7 @@ from pathlib import Path
 
 import tyro
 from natsort import natsorted
+from typing_extensions import overload
 
 from . import blender, dataset, emulate, ffmpeg, interpolate, transforms
 
@@ -18,26 +19,52 @@ from . import blender, dataset, emulate, ffmpeg, interpolate, transforms
 _cli_modules = [blender, dataset, emulate, ffmpeg, interpolate, transforms]
 
 
+@overload
+def _validate_directories(
+    input_dir: str | os.PathLike, output_dir: None = None, pattern: str = ""
+) -> tuple[Path, None, list[str]]: ...
+
+
+@overload
+def _validate_directories(
+    input_dir: str | os.PathLike, output_dir: str | os.PathLike = "", pattern: str = ""
+) -> tuple[Path, Path, list[str]]: ...
+
+
+@overload
+def _validate_directories(
+    input_dir: str | os.PathLike, output_dir: None = None, pattern: str | None = None
+) -> tuple[Path, None]: ...
+
+
+@overload
+def _validate_directories(
+    input_dir: str | os.PathLike, output_dir: str | os.PathLike = "", pattern: str | None = None
+) -> tuple[Path, Path]: ...
+
+
 def _validate_directories(
     input_dir: str | os.PathLike, output_dir: str | os.PathLike | None = None, pattern: str | None = None
-):
-    input_dir = Path(input_dir).resolve()
+) -> tuple[Path, Path | None] | tuple[Path, Path | None, list[str]]:
+    input_path = Path(input_dir).resolve()
 
     if output_dir is not None:
-        output_dir = Path(output_dir).resolve()
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = Path(output_dir).resolve()
+        output_path.mkdir(parents=True, exist_ok=True)
+    else:
+        output_path = None
 
-    if not input_dir.exists():
-        raise RuntimeError(f"Input directory {input_dir} does not exist.")
+    if not input_path.exists():
+        raise RuntimeError(f"Input directory {input_path} does not exist.")
 
     if pattern:
         # Pattern might be ffmpeg-style like "frames_%06d.png", convert to "frames_*.png".
         pattern = re.sub(r"(%\d+d)", "*", pattern)
-        if not (in_files := glob.glob(str(input_dir / pattern))):
-            raise FileNotFoundError(f"No files matching {pattern} found in {input_dir}.")
+        if not (in_files := glob.glob(str(input_path / pattern))):
+            raise FileNotFoundError(f"No files matching {pattern} found in {input_path}.")
         in_files = natsorted(in_files)
-        return input_dir, output_dir, in_files
-    return input_dir, output_dir
+        return input_path, output_path, in_files
+    return input_path, output_path
 
 
 def _run(
@@ -47,7 +74,7 @@ def _run(
     log_path: str | os.PathLike | None = None,
     text: bool = True,
     check: bool = False,
-):
+) -> subprocess.CompletedProcess:
     """Execute a command and return an object with the result and failure status."""
 
     if echo:

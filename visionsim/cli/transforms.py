@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
-import OpenEXR
+import OpenEXR  # type: ignore
 from rich.progress import Progress, track
 
 
@@ -33,7 +33,7 @@ def _tonemap_collate(batch, *, hdr_quantile=0.01):
 
 
 def _estimate_distribution(in_files, percentage=0.2, transform=None):
-    from tdigest import TDigest
+    from tdigest import TDigest  # type: ignore
 
     digest = TDigest()
     probe_files = np.random.choice(in_files, size=int(len(in_files) * percentage), replace=False)
@@ -95,14 +95,14 @@ def colorize_depths(
         vmin, vmax = digest.percentile(1), digest.percentile(99)
         print(f"Using depth range [{vmin:0.2f}, {vmax:0.2f}]\n")
 
-    cmap = getattr(cm, cmap)
+    colormap = getattr(cm, cmap)
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
 
     for in_file in track(in_files):
         # Open with imageio, convert to color using matplotlib's cmaps and save as png.
         depth = _read_exr(in_file)
         depth[depth >= DEPTH_CUTOFF] = np.nan
-        img = (cmap(norm(depth)) * 255).astype(np.uint8)
+        img = (colormap(norm(depth)) * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
         iio.imwrite(str(path.with_suffix(ext)), img)
 
@@ -282,13 +282,13 @@ def tonemap_exrs(
     from visionsim.cli import _validate_directories
     from visionsim.dataset import Dataset, ImgDatasetWriter
 
-    input_dir, output_dir = _validate_directories(input_dir, output_dir)
-    dataset = Dataset.from_path(input_dir)
+    input_path, output_path, *_ = _validate_directories(input_dir, output_dir)
+    dataset = Dataset.from_path(input_path)
 
     loader = DataLoader(
         dataset,
         batch_size=batch_size,
-        num_workers=os.cpu_count(),
+        num_workers=os.cpu_count() or 1,
         collate_fn=functools.partial(_tonemap_collate, hdr_quantile=hdr_quantile),
     )
     hdrs = []
@@ -297,12 +297,12 @@ def tonemap_exrs(
         pbar = progress.add_task(description="Processing Frames...", total=len(dataset))
 
         with ImgDatasetWriter(
-            output_dir, transforms=dataset.transforms, force=force, pattern="frame_{:06}.png"
+            output_path, transforms=dataset.transforms, force=force, pattern="frame_{:06}.png"
         ) as writer:
             for idxs, imgs, poses, hdr in loader:
                 writer[idxs] = (imgs, poses)
                 hdrs.append(hdr)
                 progress.update(pbar, advance=len(idxs))
 
-    hdrs = np.array(hdrs)
-    print(f"Mean dynamic range is {hdrs.mean():0.2f}, with range ({hdrs.min():0.2f}, {hdrs.max():0.2f})")
+    hdrs_ = np.array(hdrs)
+    print(f"Mean dynamic range is {hdrs_.mean():0.2f}, with range ({hdrs_.min():0.2f}, {hdrs_.max():0.2f})")

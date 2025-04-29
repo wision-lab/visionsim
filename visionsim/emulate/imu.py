@@ -100,7 +100,7 @@ def imu_integration_step(
 
 
 def emulate_imu(
-    poses: list[npt.NDArray],
+    poses: list[npt.NDArray] | npt.NDArray,
     *,
     dt: float = 1 / 800,
     std_acc: float = 8e-3,
@@ -120,7 +120,7 @@ def emulate_imu(
     The default parameter values are taken from Table I in Leutenegger et al [3]_.
 
     Args:
-        poses (list[npt.NDArray]): Sequence of ground-truth poses to emulate IMU from.
+        poses (list[npt.NDArray] | npt.NDArray): Sequence of ground-truth poses to emulate IMU from.
         dt (float, optional): Sampling period in seconds. Defaults to 1/800.
         std_acc (float, optional): Standard deviation for positional acceleration in m/(s^2 sqrt(Hz)). Defaults to 8e-3.
         std_gyro (float, optional): Standard deviation for angular velocity in rad/(s sqrt(Hz)). Defaults to 1.2e-3.
