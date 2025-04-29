@@ -1,37 +1,33 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
-from invoke import task
 
 
-@task(
-    help={
-        "input_dir": "directory in which to look for frames",
-        "output_dir": "directory in which to save npy file",
-        "bitpack": "if true, each chunk of 8 binary pixels will by packed into a single byte. "
-        "Only enable if data is binary valued. Default: False",
-        "bitpack_dim": "axis along which to pack bits (H=1, W=2), default: 2",
-        "batch_size": "number of frames to write at once, default: 4",
-        "alpha_color": "if set, blend with this background color and do not store "
-        "alpha channel. default: (255, 255, 255)",
-        "is_grayscale": "If set, assume images are grayscale and only save first channel, default: False",
-        "force": "if true, overwrite output file(s) if present, default: False",
-    }
-)
 def imgs_to_npy(
-    c,
-    input_dir,
-    output_dir,
-    bitpack=False,
-    bitpack_dim=None,
-    batch_size=4,
-    alpha_color="(255, 255, 255)",
-    is_grayscale=False,
-    force=False,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
+    bitpack: bool = False,
+    bitpack_dim: int | None = None,
+    batch_size: int = 4,
+    alpha_color: str = "(255, 255, 255)",
+    is_grayscale: bool = False,
+    force: bool = False,
 ):
-    """Convert an image folder based dataset to a NPY dataset"""
+    """Convert an image folder based dataset to a NPY dataset
+
+    Args:
+        input_dir: directory in which to look for frames
+        output_dir: directory in which to save npy file
+        bitpack: if true, each chunk of 8 binary pixels will by packed into a single byte. Only enable if data is binary valued
+        bitpack_dim: axis along which to pack bits (H=1, W=2)
+        batch_size: number of frames to write at once
+        alpha_color: if set, blend with this background color and do not store alpha channel
+        is_grayscale: If set, assume images are grayscale and only save first channel
+        force: if true, overwrite output file(s) if present
+    """
     # TODO: Add data integrity check
     #   - If npy file is present, scan through it to check if any data is missing
     #   - If so, fill in those frames only and skip the rest (add allow-skips arg?)
@@ -46,7 +42,7 @@ def imgs_to_npy(
 
     from visionsim.dataset import ImgDataset, NpyDatasetWriter, default_collate
 
-    from .common import _validate_directories
+    from . import _validate_directories
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     dataset = ImgDataset(input_dir)
@@ -77,7 +73,7 @@ def imgs_to_npy(
         transforms_new["bitpack_dim"] = bitpack_dim
         shape[bitpack_dim] /= 8
 
-    loader = DataLoader(dataset, batch_size=batch_size, num_workers=c.get("max_threads"), collate_fn=default_collate)
+    loader = DataLoader(dataset, batch_size=batch_size, num_workers=os.cpu_count(), collate_fn=default_collate)
 
     with (
         NpyDatasetWriter(output_dir, shape=np.ceil(shape).astype(int), transforms=transforms_new, force=force) as writer,
@@ -98,26 +94,25 @@ def imgs_to_npy(
             progress.update(task1, advance=len(idxs))
 
 
-@task(
-    help={
-        "input_dir": "directory in which to look for frames",
-        "output_dir": "directory in which to save npy file",
-        "batch_size": "number of frames to write at once, default: 4",
-        "pattern": "filenames of frames will match this, default: 'frame_{:06}.png'",
-        "step": "skip some frames when converting between formats, default: 1",
-        "force": "if true, overwrite output file(s) if present, default: False",
-    }
-)
 def npy_to_imgs(
-    c,
-    input_dir,
-    output_dir,
-    batch_size=4,
-    pattern="frame_{:06}.png",
-    step=1,
-    force=False,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
+    batch_size: int = 4,
+    pattern: str = "frame_{:06}.png",
+    step: int = 1,
+    force: bool = False,
 ):
-    """Convert an NPY based dataset to an image-folder dataset"""
+    """Convert an NPY based dataset to an image-folder dataset
+
+    Args:
+        input_dir: directory in which to look for frames
+        output_dir: directory in which to save npy file
+        batch_size: number of frames to write at once
+        pattern: filenames of frames will match this
+        step: skip some frames when converting between formats
+        force: if true, overwrite output file(s) if present
+
+    """
     import copy
 
     from rich.progress import Progress
@@ -125,7 +120,7 @@ def npy_to_imgs(
 
     from visionsim.dataset import ImgDatasetWriter, NpyDataset, default_collate
 
-    from .common import _validate_directories
+    from . import _validate_directories
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     dataset = NpyDataset(input_dir)
@@ -137,7 +132,7 @@ def npy_to_imgs(
 
     sampler = range(0, len(dataset) - 1, step)
     loader = DataLoader(
-        dataset, sampler=sampler, batch_size=batch_size, num_workers=c.get("max_threads"), collate_fn=default_collate
+        dataset, sampler=sampler, batch_size=batch_size, num_workers=os.cpu_count(), collate_fn=default_collate
     )
 
     with (
@@ -154,19 +149,18 @@ def npy_to_imgs(
             progress.update(task1, advance=len(idxs))
 
 
-@task(
-    help={
-        "input_dir": "directory in which to look for dataset",
-        "json": "print the output in a json-formatted string, default: False",
-    }
-)
-def info(_, input_dir, json=False):
-    """Print information about the dataset"""
+def info(input_dir: str | os.PathLike, json: bool = False):
+    """Print information about the dataset
+
+    Args:
+        input_dir: directory in which to look for dataset
+        json: print the output in a json-formatted string
+    """
     import json
 
     from visionsim.dataset import Dataset
 
-    from .common import _validate_directories
+    from . import _validate_directories
 
     input_dir, _ = _validate_directories(input_dir=input_dir)
     dataset = Dataset.from_path(input_dir)

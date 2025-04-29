@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import functools
+import os
+from typing import Literal
 
 import numpy as np
-from invoke import task
 
 from visionsim.emulate.rgb import emulate_rgb_from_sequence
 
@@ -31,30 +32,28 @@ def _spad_collate(batch, *, mode, rng, factor, is_tonemapped=True):
     return idxs, binary_img, poses
 
 
-@task(
-    help={
-        "input_dir": "directory in which to look for frames",
-        "output_dir": "directory in which to save binary frames",
-        "pattern": "filenames of frames should match this, default: 'frame_{:06}.png'",
-        "factor": "multiplicative factor controlling dynamic range of output, default: 1.0",
-        "seed": "random seed to use while sampling, ensures reproducibility. default: 2147483647",
-        "mode": "how to save binary frames, either as 'img' or as 'npy', default: 'npy'",
-        "batch_size": "number of frames to write at once, default: 4",
-        "force": "if true, overwrite output file(s) if present, default: False",
-    }
-)
 def spad(
-    c,
-    input_dir,
-    output_dir,
-    pattern="frame_{:06}.png",
-    factor=1.0,
-    seed=2147483647,
-    mode="npy",
-    batch_size=4,
-    force=False,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
+    pattern: str = "frame_{:06}.png",
+    factor: float = 1.0,
+    seed: int = 2147483647,
+    mode: Literal["npy", "img"] = "npy",
+    batch_size: int = 4,
+    force: bool = False,
 ):
-    """Perform bernoulli sampling on linearized RGB frames to yield binary frames"""
+    """Perform bernoulli sampling on linearized RGB frames to yield binary frames
+
+    Args:
+        input_dir: directory in which to look for frames
+        output_dir: directory in which to save binary frames
+        pattern: filenames of frames should match this
+        factor: multiplicative factor controlling dynamic range of output
+        seed: random seed to use while sampling, ensures reproducibility
+        mode: how to save binary frames
+        batch_size: number of frames to write at once
+        force: if true, overwrite output file(s) if present
+    """
     import copy
 
     from rich.progress import Progress
@@ -62,7 +61,7 @@ def spad(
 
     from visionsim.dataset import Dataset, ImgDatasetWriter, NpyDatasetWriter
 
-    from .common import _validate_directories
+    from . import _validate_directories
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     dataset = Dataset.from_path(input_dir)
@@ -86,7 +85,7 @@ def spad(
     loader = DataLoader(
         dataset,
         batch_size=batch_size,
-        num_workers=c.get("max_threads"),
+        num_workers=os.cpu_count(),
         collate_fn=functools.partial(_spad_collate, mode=mode, rng=rng, factor=factor, is_tonemapped=is_tonemapped),
     )
 
@@ -102,36 +101,34 @@ def spad(
             progress.update(task1, advance=len(idxs))
 
 
-@task(
-    help={
-        "input_dir": "directory in which to look for frames",
-        "output_dir": "directory in which to save events",
-        "fps": "frame rate of input sequence",
-        "pos_thres": "nominal threshold of triggering positive event in log intensity, default: 0.2",
-        "neg_thres": "nominal threshold of triggering negative event in log intensity, default: 0.2",
-        "sigma_thres": "std deviation of threshold in log intensity, default: 0.03",
-        "cutoff_hz": "3dB cutoff frequency in Hz of DVS photoreceptor, default: 200",
-        "leak_rate_hz": "leak event rate per pixel in Hz, from junction leakage in reset switch, default: 1",
-        "shot_noise_rate_hz": "shot noise rate in Hz, default: 10",
-        "seed": "random seed to use while sampling, ensures reproducibility, default: 2147483647",
-        "force": "if true, overwrite output file(s) if present, default: False",
-    }
-)
 def events(
-    _,
-    input_dir,
-    output_dir,
-    fps,
-    pos_thres=0.2,
-    neg_thres=0.2,
-    sigma_thres=0.03,
-    cutoff_hz=200,
-    leak_rate_hz=1.0,
-    shot_noise_rate_hz=10.0,
-    seed=2147483647,
-    force=False,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
+    fps: int,
+    pos_thres: float = 0.2,
+    neg_thres: float = 0.2,
+    sigma_thres: float = 0.03,
+    cutoff_hz: int = 200,
+    leak_rate_hz: float = 1.0,
+    shot_noise_rate_hz: float = 10.0,
+    seed: int = 2147483647,
+    force: bool = False,
 ):
-    """Emulate an event camera using v2e and high speed input frames"""
+    """Emulate an event camera using v2e and high speed input frames
+
+    Args:
+        input_dir: directory in which to look for frames
+        output_dir: directory in which to save events
+        fps: frame rate of input sequence
+        pos_thres: nominal threshold of triggering positive event in log intensity
+        neg_thres: nominal threshold of triggering negative event in log intensity
+        sigma_thres: std deviation of threshold in log intensity
+        cutoff_hz: 3dB cutoff frequency in Hz of DVS photoreceptor, default: 200,
+        leak_rate_hz: leak event rate per pixel in Hz, from junction leakage in reset switch
+        shot_noise_rate_hz: shot noise rate in Hz
+        seed: random seed to use while sampling, ensures reproducibility
+        force: if true, overwrite output file(s) if present
+    """
     import json
 
     import imageio.v3 as iio
@@ -140,7 +137,7 @@ def events(
     from visionsim.dataset import Dataset
     from visionsim.emulate.dvs import EventEmulator
 
-    from .common import _validate_directories
+    from . import _validate_directories
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     (output_dir / "frames").mkdir(parents=True, exist_ok=True)
@@ -194,38 +191,32 @@ def events(
             progress.update(task, description=f"Processing @ {rate:.1f} KEV/s", advance=1)
 
 
-@task(
-    help={
-        "input_dir": "directory in which to look for frames",
-        "output_dir": "directory in which to save binary frames",
-        "chunk_size": "number of consecutive frames to average together, default: 10",
-        "factor": "multiply image's linear intensity by this weight, default: 1.0",
-        "readout_std": "standard deviation of gaussian read noise, default: 20",
-        "fwc": "full well capacity of sensor in arbitrary units (relative to factor & chunk_size), default: chunk_size",
-        "duplicate": (
-            "when chunk size is too small, this model is ill-suited and creates unrealistic noise. "
-            "This parameter artificially increases the chunk size by using each input image `duplicate` "
-            "number of times. default: 1"
-        ),
-        "pattern": "filenames of frames should match this, default: 'frame_{:06}.png'",
-        "mode": "how to save binary frames, either as 'img' or as 'npy', default: 'npy'",
-        "force": "if true, overwrite output file(s) if present, default: False",
-    }
-)
 def rgb(
-    c,
-    input_dir,
-    output_dir,
-    chunk_size=10,
-    factor=1.0,
-    readout_std=20.0,
-    fwc=None,
-    duplicate=1,
-    pattern="frame_{:06}.png",
-    mode="img",
-    force=False,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
+    chunk_size: int = 10,
+    factor: float = 1.0,
+    readout_std: float = 20.0,
+    fwc: int | None = None,
+    duplicate: float = 1.0,
+    pattern: str = "frame_{:06}.png",
+    mode: Literal["npy", "img"] = "npy",
+    force: bool = False,
 ):
-    """Simulate real camera, adding read/poisson noise and tonemapping"""
+    """Simulate real camera, adding read/poisson noise and tonemapping
+
+    Args:
+        input_dir: directory in which to look for frames
+        output_dir: directory in which to save binary frames
+        chunk_size: number of consecutive frames to average together
+        factor: multiply image's linear intensity by this weight
+        readout_std: standard deviation of gaussian read noise
+        fwc: full well capacity of sensor in arbitrary units (relative to factor & chunk_size)
+        duplicate: when chunk size is too small, this model is ill-suited and creates unrealistic noise. This parameter artificially increases the chunk size by using each input image `duplicate` number of times
+        pattern: filenames of frames should match this
+        mode: how to save binary frames
+        force: if true, overwrite output file(s) if present
+    """
     import copy
 
     import more_itertools as mitertools
@@ -236,7 +227,7 @@ def rgb(
     from visionsim.interpolate import pose_interp
     from visionsim.utils.color import srgb_to_linearrgb
 
-    from .common import _validate_directories
+    from . import _validate_directories
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
     dataset = Dataset.from_path(input_dir)
@@ -253,7 +244,7 @@ def rgb(
         # TODO: This is due to the alpha blending below, we need alpha in [0, 1] to blend.
         raise NotImplementedError("Task does not yet support EXRs")
 
-    loader = DataLoader(dataset, batch_size=1, num_workers=c.get("max_threads"), collate_fn=default_collate)
+    loader = DataLoader(dataset, batch_size=1, num_workers=os.cpu_count(), collate_fn=default_collate)
 
     with (
         ImgDatasetWriter(output_dir, transforms=transforms_new, force=force, pattern=pattern)
@@ -286,45 +277,34 @@ def rgb(
             progress.update(task, advance=len(idxs))
 
 
-@task(
-    help={
-        "input_dir": "directory in which to look for transforms.json",
-        "output_file": "file in which to save simulated IMU data. Prints to stdout if empty. default: ''",
-        "seed": "RNG seed value for reproducibility. default: 2147483647",
-        "gravity": "gravity vector in world coordinate frame. Given in m/s^2. default: [0,0,-9.8]",
-        "dt": "time between consecutive transforms.json poses (assumed regularly spaced). Given in seconds. default: 0.00125",
-        "init_bias_acc": "initial bias/drift in accelerometer reading. Given in m/s^2. default: [0,0,0]",
-        "init_bias_gyro": "initial bias/drift in gyroscope reading. Given in rad/s. default: [0,0,0]",
-        "std_bias_acc": (
-            "stdev for random-walk component of error (drift) in accelerometer. "
-            "Given in m/(s^3 sqrt(Hz)). default: 5.5e-5"
-        ),
-        "std_bias_gyro": (
-            "stdev for random-walk component of error (drift) in gyroscope. Given in rad/(s^2 sqrt(Hz)). default: 2e-5"
-        ),
-        "std_acc": (
-            "stdev for white-noise component of error in accelerometer. Given in m/(s^2 sqrt(Hz)). default: 8e-3"
-        ),
-        "std_gyro": (
-            "stdev for white-noise component of error in gyroscope. Given in rad/(s sqrt(Hz)). default: 1.2e-3"
-        ),
-    }
-)
 def imu(
-    _,
-    input_dir,
-    output_file="",
-    seed=2147483647,
-    gravity="(0.0, 0.0, -9.8)",
-    dt=0.00125,
-    init_bias_acc="(0.0,0.0,0.0)",
-    init_bias_gyro="(0.0,0.0,0.0)",
-    std_bias_acc=5.5e-5,
-    std_bias_gyro=2e-5,
-    std_acc=8e-3,
-    std_gyro=1.2e-3,
+    input_dir: str | os.PathLike,
+    output_file: str | os.PathLike = "",
+    seed: int = 2147483647,
+    gravity: str = "(0.0, 0.0, -9.8)",
+    dt: float = 0.00125,
+    init_bias_acc: str = "(0.0, 0.0, 0.0)",
+    init_bias_gyro: str = "(0.0, 0.0, 0.0)",
+    std_bias_acc: float = 5.5e-5,
+    std_bias_gyro: float = 2e-5,
+    std_acc: float = 8e-3,
+    std_gyro: float = 1.2e-3,
 ):
-    """Simulate data from a co-located IMU using the poses in transforms.json."""
+    """Simulate data from a co-located IMU using the poses in transforms.json.
+
+    Args:
+        input_dir: directory in which to look for transforms.json,
+        output_file: file in which to save simulated IMU data. Prints to stdout if empty. default: '',
+        seed: RNG seed value for reproducibility. default: 2147483647,
+        gravity: gravity vector in world coordinate frame. Given in m/s^2. default: [0,0,-9.8],
+        dt: time between consecutive transforms.json poses (assumed regularly spaced). Given in seconds. default: 0.00125,
+        init_bias_acc: initial bias/drift in accelerometer reading. Given in m/s^2. default: [0,0,0],
+        init_bias_gyro: initial bias/drift in gyroscope reading. Given in rad/s. default: [0,0,0],
+        std_bias_acc: stdev for random-walk component of error (drift) in accelerometer. Given in m/(s^3 sqrt(Hz))
+        std_bias_gyro: stdev for random-walk component of error (drift) in gyroscope. Given in rad/(s^2 sqrt(Hz))
+        std_acc: stdev for white-noise component of error in accelerometer. Given in m/(s^2 sqrt(Hz))
+        std_gyro: stdev for white-noise component of error in gyroscope. Given in rad/(s sqrt(Hz))
+    """
 
     import ast
     import sys

@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import functools
+import os
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import OpenEXR
-from invoke import task
 from rich.progress import Progress, track
-
-from visionsim.tasks.common import _validate_directories
 
 
 def _read_exr(path):
@@ -46,41 +45,39 @@ def _estimate_distribution(in_files, percentage=0.2, transform=None):
     return digest
 
 
-@task(
-    auto_shortflags=False,
-    help={
-        "input_dir": "directory in which to look for frames",
-        "output_dir": "directory in which to save colorized frames",
-        "pattern": "filenames of frames should match this, default: 'depth_*.exr'",
-        "cmap": "which matplotlib colormap to use, default: 'turbo'",
-        "ext": "which format to save colorized frames as, default: '.png'",
-        "vmin": "minimum expected depth used to normalize colormap, default: None",
-        "vmax": "maximum expected depth used to normalize colormap, default: None",
-        "percentage": "if vmin/vmax are None, sample a subset of frames to determine range. "
-        "This sets the sampling amount, default: 0.2",
-        "sample": "proportion of pixels to sample per depth map when auto-setting vmin/vmax, default: 0.01",
-        "step": "drop some frames when colorizing, use frames 0+step*n, default: 1",
-    },
-)
 def colorize_depths(
-    _,
-    input_dir,
-    output_dir,
-    pattern="depth_*.exr",
-    cmap="turbo",
-    ext=".png",
-    vmin=None,
-    vmax=None,
-    percentage=0.2,
-    sample=0.01,
-    step=1,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
+    pattern: str = "depth_*.exr",
+    cmap: str = "turbo",
+    ext: str = ".png",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    percentage: float = 0.2,
+    sample: float = 0.01,
+    step: int = 1,
 ):
-    """Convert .exr depth maps into color-coded images for visualization"""
+    """Convert .exr depth maps into color-coded images for visualization
+
+    Args:
+        input_dir: directory in which to look for frames
+        output_dir: directory in which to save colorized frames
+        pattern: filenames of frames should match this
+        cmap: which matplotlib colormap to use
+        ext: which format to save colorized frames as
+        vmin: minimum expected depth used to normalize colormap
+        vmax: maximum expected depth used to normalize colormap
+        percentage: if vmin/vmax are None, sample a subset of frames to determine range. This sets the sampling amount
+        sample: proportion of pixels to sample per depth map when auto-setting vmin/vmax
+        step: drop some frames when colorizing, use frames 0+step*n
+    """
     # TODO: Multiprocess this
     # Lazy load imports to improve CLI responsiveness
     import imageio.v3 as iio
     import matplotlib as mpl
     import matplotlib.cm as cm
+
+    from visionsim.cli import _validate_directories
 
     DEPTH_CUTOFF = 10000000000
 
@@ -110,39 +107,38 @@ def colorize_depths(
         iio.imwrite(str(path.with_suffix(ext)), img)
 
 
-@task(
-    auto_shortflags=False,
-    help={
-        "input_dir": "directory in which to look for frames",
-        "output_dir": "directory in which to save colorized frames",
-        "direction": "direction of flow to colorize, either 'forward' or 'backwards', default: 'forward'",
-        "pattern": "filenames of frames should match this, default: 'flow_*.exr'",
-        "ext": "which format to save colorized frames as, default: '.png'",
-        "vmax": "maximum expected flow magnitude, default: None",
-        "percentage": "if vmax is None, sample a subset of frames to determine range. "
-        "This sets the sampling amount, default: 0.2",
-        "sample": "proportion of pixels to sample per flow map when auto-setting vmin/vmax, default: 0.01",
-        "step": "drop some frames when colorizing, use frames 0+step*n, default: 1",
-    },
-)
 def colorize_flows(
-    _,
-    input_dir,
-    output_dir,
-    direction="forward",
-    pattern="flow_*.exr",
-    ext=".png",
-    vmax=None,
-    percentage=0.2,
-    sample=0.01,
-    step=1,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
+    direction: Literal["forward", "backward"] = "forward",
+    pattern: str = "flow_*.exr",
+    ext: str = ".png",
+    vmax: float | None = None,
+    percentage: float = 0.2,
+    sample: float = 0.01,
+    step: int = 1,
 ):
-    """Convert .exr optical flow maps into color-coded images for visualization"""
+    """Convert .exr optical flow maps into color-coded images for visualization
+
+    Args:
+        input_dir: directory in which to look for frames
+        output_dir: directory in which to save colorized frames
+        direction: direction of flow to colorize
+        pattern: filenames of frames should match this
+        ext: which format to save colorized frames as
+        vmax: maximum expected flow magnitude
+        percentage: if vmax is None, sample a subset of frames to determine range. This sets the sampling amount
+        sample: proportion of pixels to sample per flow map when auto-setting vmin/vmax
+        step: drop some frames when colorizing, use frames 0+step*n
+    """
+
     # TODO: Multiprocess this
     # Lazy load imports to improve CLI responsiveness
     import colorsys
 
     import imageio.v3 as iio
+
+    from visionsim.cli import _validate_directories
 
     if direction.lower() not in ("forward", "backward"):
         raise ValueError("Direction needs to be either 'forward' or 'backwards'.")
@@ -173,28 +169,27 @@ def colorize_flows(
         iio.imwrite(str(path.with_suffix(ext)), img)
 
 
-@task(
-    auto_shortflags=False,
-    help={
-        "input_dir": "directory in which to look for frames",
-        "output_dir": "directory in which to save colorized frames",
-        "pattern": "filenames of frames should match this, default: 'normal_*.exr'",
-        "ext": "which format to save colorized frames as, default: '.png'",
-        "step": "drop some frames when colorizing, use frames 0+step*n, default: 1",
-    },
-)
 def colorize_normals(
-    _,
-    input_dir,
-    output_dir,
-    pattern="normal_*.exr",
-    ext=".png",
-    step=1,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
+    pattern: str = "normal_*.exr",
+    ext: str = ".png",
+    step: int = 1,
 ):
-    """Convert .exr normal maps into color-coded images for visualization"""
+    """Convert .exr normal maps into color-coded images for visualization
+
+    Args:
+        input_dir: directory in which to look for frames
+        output_dir: directory in which to save colorized frames
+        pattern: filenames of frames should match this
+        ext: which format to save colorized frames as
+        step: drop some frames when colorizing, use frames 0+step*n
+    """
     # TODO: Multiprocess this
     # Lazy load imports to improve CLI responsiveness
     import imageio.v3 as iio
+
+    from visionsim.cli import _validate_directories
 
     input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
     in_files = in_files[::step]
@@ -206,36 +201,35 @@ def colorize_normals(
         iio.imwrite(str(path.with_suffix(ext)), img)
 
 
-@task(
-    auto_shortflags=False,
-    help={
-        "input_dir": "directory in which to look for frames",
-        "output_dir": "directory in which to save colorized frames",
-        "pattern": "filenames of frames should match this, default: 'segmentation_*.exr'",
-        "ext": "which format to save colorized frames as, default: '.png'",
-        "num_objects": "number of unique objects to expect in the scene, default: None",
-        "shuffle": "if true, colorize items in a random order, default: True",
-        "seed": "seed used when shuffling colors, default: 1234",
-        "step": "drop some frames when colorizing, use frames 0+step*n, default: 1",
-    },
-)
 def colorize_segmentations(
-    _,
-    input_dir,
-    output_dir,
-    pattern="segmentation_*.exr",
-    ext=".png",
-    num_objects=None,
-    shuffle=True,
-    seed=1234,
-    step=1,
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike,
+    pattern: str = "segmentation_*.exr",
+    ext: str = ".png",
+    num_objects: int | None = None,
+    shuffle: bool = True,
+    seed: int = 1234,
+    step: int = 1,
 ):
-    """Convert .exr segmentation maps into color-coded images for visualization"""
+    """Convert .exr segmentation maps into color-coded images for visualization
+
+    Args:
+        input_dir: directory in which to look for frames
+        output_dir: directory in which to save colorized frames
+        pattern: filenames of frames should match this
+        ext: which format to save colorized frames as
+        num_objects: number of unique objects to expect in the scene
+        shuffle: if true, colorize items in a random order
+        seed: seed used when shuffling colors
+        step: drop some frames when colorizing, use frames 0+step*n
+    """
     # TODO: Multiprocess this
     # Lazy load imports to improve CLI responsiveness
     import colorsys
 
     import imageio.v3 as iio
+
+    from visionsim.cli import _validate_directories
 
     input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
     in_files = in_files[::step]
@@ -260,26 +254,32 @@ def colorize_segmentations(
 
         if idx.shape[-1] != 1:
             idx = idx[..., 0]
-            
+
         img = np.stack([r[idx], g[idx], b[idx]], axis=-1)
         img = (img * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
         iio.imwrite(str(path.with_suffix(ext)), img)
 
 
-@task(
-    help={
-        "input_dir": "directory in which to look for frames",
-        "output_dir": "directory in which to save tone mapped frames, if not specified the dynamic range is calculated and no tonemapping occurs, default: None",
-        "batch_size": "number of frames to write at once, default: 4",
-        "hdr_quantile": "calculate dynamic range using brightness quantiles instead of extrema, default: 0.01",
-        "force": "if true, overwrite output file(s) if present, default: False",
-    }
-)
-def tonemap_exrs(c, input_dir, output_dir=None, batch_size=4, hdr_quantile=0.01, force=False):
-    """Convert .exr linear intensity frames into tone-mapped sRGB images"""
+def tonemap_exrs(
+    input_dir: str | os.PathLike,
+    output_dir: str | os.PathLike | None = None,
+    batch_size: int = 4,
+    hdr_quantile: float = 0.01,
+    force: bool = False,
+):
+    """Convert .exr linear intensity frames into tone-mapped sRGB images
+
+    Args:
+        input_dir: directory in which to look for frames
+        output_dir: directory in which to save tone mapped frames, if not specified the dynamic range is calculated and no tonemapping occurs
+        batch_size: number of frames to write at once
+        hdr_quantile: calculate dynamic range using brightness quantiles instead of extrema
+        force: if true, overwrite output file(s) if present
+    """
     from torch.utils.data import DataLoader
 
+    from visionsim.cli import _validate_directories
     from visionsim.dataset import Dataset, ImgDatasetWriter
 
     input_dir, output_dir = _validate_directories(input_dir, output_dir)
@@ -288,7 +288,7 @@ def tonemap_exrs(c, input_dir, output_dir=None, batch_size=4, hdr_quantile=0.01,
     loader = DataLoader(
         dataset,
         batch_size=batch_size,
-        num_workers=c.get("max_threads"),
+        num_workers=os.cpu_count(),
         collate_fn=functools.partial(_tonemap_collate, hdr_quantile=hdr_quantile),
     )
     hdrs = []

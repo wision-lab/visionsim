@@ -21,11 +21,12 @@ dependencies = [
     "OpenEXR",
     "multiprocess",
     "rpyc",
-    "tdigest"
+    "tdigest",
+    "tyro"
 ]
 
 [project.scripts]
-visionsim = "visionsim.tasks:program.run"
+visionsim = "visionsim.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["visionsim*"]

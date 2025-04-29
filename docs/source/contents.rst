@@ -30,5 +30,5 @@
    :caption: For Developers
 
    API Documentation <apidocs/visionsim>
-   CLI Usage <clidocs/tasks>
+   CLI Usage <clidocs/visionsim.cli>
    development
