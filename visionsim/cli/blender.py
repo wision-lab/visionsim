@@ -8,6 +8,12 @@ from pathlib import Path
 from typing import Literal
 
 
+def post_install():
+    from visionsim.simulate import install_dependencies
+
+    install_dependencies()
+
+
 def render_animation(
     blend_file: str | os.PathLike,
     root_path: str | os.PathLike,
