@@ -24,6 +24,7 @@
    tutorials/stereo
    tutorials/extending 
    tutorials/large-dataset
+   tutorials/first_interpolation
 
 .. toctree::
    :hidden:
