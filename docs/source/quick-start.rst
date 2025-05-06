@@ -4,19 +4,12 @@ Quick Start
 Installation & Dependencies 
 ---------------------------
 
-.. TODO: 
-    Remove following warning for v0.1.0 release.
-
-.. warning::
-    Until visionsim goes public, it will not be accessible on PyPI. Please use the :doc:`development instructions for installation <../development>` in the meantime.  
-
 The recommended way to get visionsim is to **install the latest stable release** via `pip <https://pip.pypa.io>`_::
     
     $ pip install visionsim
 
 
-We currently support **Python 3.9+**. Users still on Python 3.8 or older are
-urged to upgrade.
+We currently support **Python 3.9+**. Users still on Python 3.8 or older are urged to upgrade.
 
 
 

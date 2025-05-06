@@ -5,7 +5,6 @@
    quick-start
    overview
    installation 
-   autocomplete
 
 .. toctree::
    :hidden:
@@ -20,10 +19,10 @@
    :hidden:
    :caption: Tutorials & Use Cases
 
-   tutorials/preexisting-ds
-   tutorials/stereo
    tutorials/extending 
    tutorials/large-dataset
+   .. tutorials/stereo
+   .. tutorials/preexisting-ds
 
 .. toctree::
    :hidden:

@@ -8,6 +8,17 @@ To install visionsim locally in an editable state with all required development 
     
     $ pip install -e ".[dev]"
 
+| 
+
+Building the Documentation
+--------------------------
+
+In the project root, with visionsim installed with the dev dependencies, run:
+```
+inv clean build-docs --preview
+```
+
+|
 
 Dev tools
 ---------
