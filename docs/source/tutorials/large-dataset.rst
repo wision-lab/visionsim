@@ -1,7 +1,12 @@
 Large Scale Datasets 
 ====================
 
-In this tutorial we will build up a CLI tool to create a large dataset from many blender scenes. Specifically, for each scene we will uniformly sample multiple sub-trajectories (making sure none overlap) and, for each, we'll render the ground truth RGB, depth maps, etc. 
+In this tutorial we will build up a CLI tool to create a large dataset from many blender scenes. Specifically, for each scene we will uniformly sample multiple sub-trajectories (making sure none overlap) and, for each, we'll render the ground truth RGB, depth maps, etc. The final product will look something like this: 
+
+.. video:: https://pages.cs.wisc.edu/~sjungerman/visionsim/gt-annotations.mp4
+   :loop:
+   :width: 100%
+   :align: center
 
 .. note:: This example requires extra dependencies, notably `tyro <https://brentyi.github.io/tyro/>`_ for CLI creation. 
 
