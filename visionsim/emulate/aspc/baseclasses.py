@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import numpy as np
 import numpy.typing as npt
-import torch
-from typing_extensions import cast
 
 
 #######################################
@@ -35,7 +33,7 @@ class DynamicSource(LightSource):
     Base class for any time varying light source. Can model flicker or AC light sources?
     """
     def __init__(self):
-        super().__init__()
+        pass
 
 # Encode scene geometry #
 #########################
@@ -53,7 +51,6 @@ class RGBDStream:
             - Undistortion method? One option is to assume that the RGBD images are already undistorted?
             - dictionary to pass all the camera parameters?
         """
-        pass
 
     def batch_frames(self,batch_size: int):
         """_summary_
@@ -61,7 +58,7 @@ class RGBDStream:
         Args:
             batch_size (int): Combines multiple RGBD frames to enable SPC histograms generated combining multiple histograms
         """
-        pass
+
 
 
 ########################
@@ -106,7 +103,7 @@ class ActiveSource(LightSource):
         * Use a custom IRF (Allows better hardware emulation)
     """
     def __init__(self):
-        super().__init__()
+        pass
 
 class Histogrammer:
     """Base class for all types of histogrammers.
@@ -137,7 +134,6 @@ class Histogrammer:
                     frame for desired K pixels and a 4D mask to include the temporal aspect if we want to use multiple 
                     RGB-D frames to generate the transient and histograms (simulate motion artifacts).
         """
-        pass
 
     def simulate_photons(self, tr: npt.NDArray[np.floating]):
         """Simulate photon timestamps based on the transient (tr)
@@ -145,7 +141,6 @@ class Histogrammer:
         Args:
             tr (npt.NDArray[np.floating]): _description_
         """
-        pass
 
 
 class BaseEWH:
