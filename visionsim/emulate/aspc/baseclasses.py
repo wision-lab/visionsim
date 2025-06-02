@@ -41,19 +41,20 @@ class DynamicSource(LightSource):
 
 class RGBDStream:
     """Base class to load an RGBD stream from existing datasets."""
-    def __init__(self, frame_exposure: int):
+    def __init__(self: int):
         """_summary_
-
+        Use RGBStream to extract instances and avoid the sense of absolute time right now. 
+        The data loader will decide the batch size based on the required FPS.
         Args:
-            frame_exposure (int): Set the per frame exposure time. Or we can use fps.
-        
+                    
         ..note:: Can add 
             - Undistortion method? One option is to assume that the RGBD images are already undistorted?
-            - dictionary to pass all the camera parameters?
+            - Dictionary to pass all the camera parameters?
         """
 
     def batch_frames(self,batch_size: int):
         """_summary_
+        Needs to be moved to a dataloader class to decide the number of frames.
 
         Args:
             batch_size (int): Combines multiple RGBD frames to enable SPC histograms generated combining multiple histograms
