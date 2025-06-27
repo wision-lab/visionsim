@@ -47,6 +47,7 @@ license-files = ["LICEN[CS]E*"]
 
 [project.scripts]
 visionsim = "visionsim.cli:main"
+vsim = "visionsim.cli:main"
 
 [project.optional-dependencies]
 dev = [
