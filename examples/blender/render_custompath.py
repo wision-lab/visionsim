@@ -7,7 +7,7 @@ from rich.progress import Progress
 from visionsim.simulate.blender import BlenderClient
 
 with BlenderClient.spawn(timeout=30) as client, Progress() as progress:
-    client.initialize(Path("monkey.blend").resolve(), Path("renders/monkey").resolve())
+    client.initialize(Path("assets/monkey.blend").resolve(), Path("renders/monkey").resolve())
 
     # Unbind camera from any parents, otherwise position will be relative to parent
     client.unbind_camera()

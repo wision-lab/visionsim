@@ -233,7 +233,7 @@ def create_datasets(
     # Define helper to map each sequence to a unique path
     def get_sequence_dir(scene_name, frame_start):
         Path(datasets_dir).mkdir(parents=True, exist_ok=True)
-        sequence_id = f"{int(render_config.keyframe_multiplier):03}-{frame_start:05}-{frame_start+num_frames:05}"
+        sequence_id = f"{int(render_config.keyframe_multiplier):03}-{frame_start:05}-{frame_start + num_frames:05}"
         sequence_dir = Path(datasets_dir) / "renders" / scene_name / sequence_id
         return sequence_dir.resolve()
 
@@ -253,7 +253,7 @@ def create_datasets(
 
             if not allow_skips or not (sequence_dir / "transforms.json").exists():
                 # Note: The client will be automagically passed to `render` here.
-                tick = progress.add_task(f"{blend_file.stem} ({frame_start}-{frame_start+num_frames})")
+                tick = progress.add_task(f"{blend_file.stem} ({frame_start}-{frame_start + num_frames})")
                 pool.apply_async(
                     render,
                     args=(blend_file, sequence_dir),

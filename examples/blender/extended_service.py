@@ -5,9 +5,6 @@ import bpy
 import numpy as np
 from mathutils import Vector
 
-# Add visionsim on path such that we don't have to install it within blender
-# This is subject to change once packaging improves.
-sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
 from visionsim.simulate.blender import BlenderServer, BlenderService
 
 

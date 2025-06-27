@@ -225,7 +225,7 @@ class BlenderServer(rpyc.utils.server.Server):
         BlenderServer.spawn_registry()
         existing = BlenderServer.discover()
         autoexec_cmd = "--enable-autoexec" if autoexec else "--disable-autoexec"
-        cmd = shlex.split(f"{executable or 'blender'} -b --python {__file__} {autoexec_cmd}")
+        cmd = shlex.split(f"{executable or 'blender'} -b --python-use-system-env --python {__file__} {autoexec_cmd}")
         procs = []
 
         if log_dir:
@@ -254,7 +254,9 @@ class BlenderServer(rpyc.utils.server.Server):
                 if timeout > 0 and (time.time() - start) > timeout:
                     # Terminate all procs and close fds
                     stack.close()
-                    raise TimeoutError("Unable to spawn and discover server(s) in alloted time.")
+                    raise TimeoutError(
+                        "Unable to spawn and discover server(s) in alloted time. Ensure blender dependencies are up to date using the `post-install` CLI."
+                    )
                 if len(conns := set(BlenderServer.discover()) - set(existing)) == jobs:
                     break
                 time.sleep(0.1)
