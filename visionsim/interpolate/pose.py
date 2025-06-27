@@ -26,6 +26,8 @@ class pose_interp:
         self.transforms = np.array(transforms)
         self.ts = np.linspace(0, 1, len(self.transforms)) if ts is None else np.array(ts)
         self.determinants = np.linalg.det(self.transforms[:, :3, :3])
+
+        k = min(len(self.transforms)-1, k)  # for small chunk_sizes
         self.k = k
 
         if normalize:

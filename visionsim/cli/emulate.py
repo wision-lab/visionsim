@@ -269,7 +269,10 @@ def rgb(
                 fwc=fwc or (chunk_size * duplicate),
                 factor=factor,
             )
-            pose = pose_interp(poses)(0.5) if transforms_new else None
+            if transforms_new:
+                pose = pose_interp(poses)(0.5) if chunk_size != 1 else poses[0]
+            else:
+                pose = None
 
             if rgb_img.shape[-1] == 1:
                 rgb_img = np.repeat(rgb_img, 3, axis=-1)
