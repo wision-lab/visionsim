@@ -111,15 +111,26 @@ def _run(
         )
 
 
+def post_install(executable: str | os.PathLike | None = None):
+    """Install additional dependencies
+
+    Args:
+        executable (str | os.PathLike | None, optional): Path to Blender executable. Defaults to one found on $PATH.
+    """
+    from visionsim.simulate import install_dependencies
+
+    install_dependencies(executable)
+
+
 def main():
-    cli_dict = {}
+    cli_dict = {"post-install": post_install}
 
     for module in _cli_modules:
         current_module = sys.modules[module.__name__]
         module_name = current_module.__name__.split(".")[-1]
         cli_dict.update(
             {
-                f"{module_name}.{func_name}": func
+                f"{module_name}.{func_name}".replace("_", "-"): func
                 for func_name, func in inspect.getmembers(current_module, inspect.isfunction)
                 if func.__module__ == module.__name__ and not func_name.startswith("_")
             }

@@ -6,7 +6,6 @@ import itertools
 import os
 import shlex
 import signal
-import site
 import socket
 import subprocess
 import sys
@@ -17,6 +16,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+import rpyc  # type: ignore
+import rpyc.utils.registry  # type: ignore
 
 if TYPE_CHECKING:
     # Import only when type checking as to not introduce
@@ -53,37 +54,6 @@ except ImportError:
     addon_utils = None
     bpy = None
     mathutils = None
-
-try:
-    if site.USER_SITE:
-        sys.path.insert(0, site.USER_SITE)
-
-    import rpyc  # type: ignore
-    import rpyc.utils.registry  # type: ignore
-except ImportError as e:
-    # Note: the same can be done for np, mathutils, etc but these
-    # should already be installed by default inside of blender.
-    try:
-        if bpy is not None:
-            print("Attempting to auto install dependencies into blender's runtime...")
-            print(subprocess.check_output(shlex.split(f"{sys.executable} -m ensurepip"), universal_newlines=True))
-            print(
-                subprocess.check_output(
-                    shlex.split(f"{sys.executable} -m pip install rpyc --target {site.USER_SITE}"),
-                    universal_newlines=True,
-                )
-            )
-            sys.exit()
-        else:
-            raise e
-    except subprocess.CalledProcessError:
-        print(
-            "Some dependencies are needed to run this script. To install it so that "
-            "it is accessible from blender, you need to pip install it "
-            "into blender's python interpreter like so:\n"
-        )
-        print(f"$ {sys.executable} -m ensurepip")
-        print(f"$ {sys.executable} -m pip install rpyc --target {site.USER_SITE}")
 
 REGISTRY = None
 
@@ -218,7 +188,7 @@ class BlenderServer(rpyc.utils.server.Server):
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
             timeout (float, optional): try to discover spawned instances for `timeout`
-                (in seconds) before giving up. Defaults to 10.0 seconds.
+                (in seconds) before giving up, if negative, try forever. Defaults to 10.0 seconds.
             log_dir (str | os.PathLike | None, optional): path to log directory,
                 stdout/err will be captured if set, otherwise outputs will go to os.devnull.
                 Defaults to None (devnull).
@@ -281,7 +251,7 @@ class BlenderServer(rpyc.utils.server.Server):
             start = time.time()
 
             while True:
-                if (time.time() - start) > timeout:
+                if timeout > 0 and (time.time() - start) > timeout:
                     # Terminate all procs and close fds
                     stack.close()
                     raise TimeoutError("Unable to spawn and discover server(s) in alloted time.")
