@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+title: visionsim
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Sacha
+    family-names: Jungerman
+    affiliation: UW-Madison
+  - given-names: Max
+    family-names: Leblang
+    affiliation: UW-Madison
+  - given-names: Shantanu
+    family-names: Gupta
+    affiliation: UW-Madison
+  - given-names: Kaustubh
+    family-names: Sadekar
+    affiliation: UW-Madison
+repository-code: 'https://github.com/WISION-Lab/visionsim'
+url: 'https://visionsim.readthedocs.io/en/latest/'
+abstract: >-
+  VisionSIM is a modular and extensible framework for
+  distributed simulations with rich pixel-perfect ground
+  truth annotations and realistic sensor emulation
+keywords:
+  - simulator
+  - computer-vision
+  - single photon
+license: MIT
+commit: 48b808f1ea2d592a4d2ab97c85563ff5ecd33324
+date-released: '2025-05-12'
