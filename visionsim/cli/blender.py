@@ -8,12 +8,6 @@ from pathlib import Path
 from typing import Literal
 
 
-def post_install():
-    from visionsim.simulate import install_dependencies
-
-    install_dependencies()
-
-
 def render_animation(
     blend_file: str | os.PathLike,
     root_path: str | os.PathLike,
@@ -75,7 +69,7 @@ def render_animation(
         executable: use a different blender executable that the one on PATH
 
     Example:
-        visionsim blender.render_animation --blend-file=<blend-file> --root-path=<output-path>
+        visionsim blender.render-animation --blend-file=<blend-file> --root-path=<output-path>
     """
     from rich.progress import Progress
 
