@@ -37,7 +37,8 @@ dependencies = [
     "multiprocess",
     "rpyc",
     "tdigest",
-    "tyro"
+    "tyro",
+    "ephemeral-port-reserve"
 ]
 license = "MIT"
 license-files = ["LICEN[CS]E*"]

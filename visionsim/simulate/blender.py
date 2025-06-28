@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import functools
 import inspect
 import itertools
@@ -172,7 +173,7 @@ class BlenderServer(rpyc.utils.server.Server):
     @contextmanager
     def spawn(
         jobs: int = 1,
-        timeout: float = 10.0,
+        timeout: float = -1.0,
         log_dir: str | os.PathLike | None = None,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
@@ -188,7 +189,10 @@ class BlenderServer(rpyc.utils.server.Server):
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
             timeout (float, optional): try to discover spawned instances for `timeout`
-                (in seconds) before giving up, if negative, try forever. Defaults to 10.0 seconds.
+                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
+                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
+                this context manager will immediately yield, even if the server is not yet ready to accept
+                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
             log_dir (str | os.PathLike | None, optional): path to log directory,
                 stdout/err will be captured if set, otherwise outputs will go to os.devnull.
                 Defaults to None (devnull).
@@ -206,6 +210,8 @@ class BlenderServer(rpyc.utils.server.Server):
             procs: List of `subprocess.Popen` corresponding to all spawned servers.
             conns: List of connection setting for each server, where each element is a (hostname, port) tuple.
         """
+        # Note import here as this is a dependency only on the client-side
+        from ephemeral_port_reserve import reserve as port_reserve  # type: ignore
 
         @contextmanager
         def terminate_jobs(procs):
@@ -224,9 +230,7 @@ class BlenderServer(rpyc.utils.server.Server):
 
         BlenderServer.spawn_registry()
         existing = BlenderServer.discover()
-        autoexec_cmd = "--enable-autoexec" if autoexec else "--disable-autoexec"
-        cmd = shlex.split(f"{executable or 'blender'} -b --python {__file__} {autoexec_cmd}")
-        procs = []
+        procs, ports = [], []
 
         if log_dir:
             log_dir_path = Path(log_dir).expanduser().resolve()
@@ -236,6 +240,12 @@ class BlenderServer(rpyc.utils.server.Server):
 
         with ExitStack() as stack:
             for i in range(jobs):
+                port = port_reserve("localhost") if timeout < 0 else 0
+                autoexec_cmd = "--enable-autoexec" if autoexec else "--disable-autoexec"
+                cmd = shlex.split(
+                    f"{executable or 'blender'} -b {autoexec_cmd} --python-use-system-env --python {__file__} -- --port {port}"
+                )
+
                 if log_dir_path:
                     (log_dir_path / f"job{i:03}").mkdir(parents=True, exist_ok=True)
                     stdout = stack.enter_context(open(log_dir_path / f"job{i:03}" / "stdout.log", "w"))
@@ -246,18 +256,22 @@ class BlenderServer(rpyc.utils.server.Server):
                         cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, universal_newlines=True
                     )
                 procs.append(proc)
+                ports.append(port)
             stack.enter_context(terminate_jobs(procs))
 
-            start = time.time()
+            if timeout > 0:
+                start = time.time()
 
-            while True:
-                if timeout > 0 and (time.time() - start) > timeout:
-                    # Terminate all procs and close fds
-                    stack.close()
-                    raise TimeoutError("Unable to spawn and discover server(s) in alloted time.")
-                if len(conns := set(BlenderServer.discover()) - set(existing)) == jobs:
-                    break
-                time.sleep(0.1)
+                while True:
+                    if (time.time() - start) > timeout:
+                        # Terminate all procs and close fds
+                        stack.close()
+                        raise TimeoutError("Unable to spawn and discover server(s) in alloted time.")
+                    if len(conns := set(BlenderServer.discover()) - set(existing)) == jobs:
+                        break
+                    time.sleep(0.1)
+            else:
+                conns = set(("localhost", p) for p in ports)
 
             yield (procs, list(conns))
 
@@ -325,17 +339,21 @@ class BlenderClient:
     is a remote procedure call to `BlenderService.exposed_include_depths`.
     """
 
-    def __init__(self, addr: tuple[str, int]) -> None:
+    def __init__(self, addr: tuple[str, int], timeout: float = 10.0) -> None:
         """Initialize a client with known address of server.
         Note: Using `auto_connect` or `spawn` is often more convenient.
 
         Args:
             addr (tuple[str, int]): Connection tuple containing the hostname and port
+            timeout (float, optional): Maximum time in seconds the client will attempt
+                to connect to the server for before an error is thrown. Only used when
+                entering context manager. Defaults to 10 seconds.
         """
         self.addr: tuple[str, int] = addr
         self.conn: rpyc.Connection = None
         self.awaitable: rpyc.AsyncResult = None
         self.process: subprocess.Popen | None = None
+        self.timeout: float = timeout
 
     @classmethod
     def auto_connect(cls, timeout: float = 10.0) -> Self:
@@ -372,7 +390,7 @@ class BlenderClient:
     @contextmanager
     def spawn(
         cls,
-        timeout: float = 10.0,
+        timeout: float = -1.0,
         log_dir: str | os.PathLike | None = None,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
@@ -437,7 +455,19 @@ class BlenderClient:
             self.awaitable.wait()
 
     def __enter__(self) -> Self:
-        self.conn = rpyc.connect(*self.addr, config={"sync_request_timeout": -1, "allow_pickle": True})
+        # Loop until we connect or timeout
+        start = time.time()
+
+        while True:
+            try:
+                self.conn = rpyc.connect(*self.addr, config={"sync_request_timeout": -1, "allow_pickle": True})
+                break
+            except ConnectionRefusedError:
+                pass
+
+            if (time.time() - start) > self.timeout:
+                raise TimeoutError("Unable to connect to server in alloted time.")
+            time.sleep(0.1)
 
         for method_name in dir(self.conn.root):
             if method_name.startswith("exposed_"):
@@ -512,7 +542,7 @@ class BlenderClients(tuple):
     def spawn(
         cls,
         jobs: int = 1,
-        timeout: float = 10.0,
+        timeout: float = -1.0,
         log_dir: str | os.PathLike | None = None,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
@@ -542,7 +572,7 @@ class BlenderClients(tuple):
     @contextmanager
     def pool(
         jobs: int = 1,
-        timeout: float = 10.0,
+        timeout: float = -1.0,
         log_dir: str | os.PathLike | None = None,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
@@ -1701,10 +1731,22 @@ class BlenderService(rpyc.Service):
         bpy.ops.wm.save_as_mainfile(filepath=str(path))
 
 
-# This script has only been tested using Blender 3.3.1 (hash b292cfe5a936 built 2022-10-05 00:14:35) and above.
 if __name__ == "__main__":
     if sys.version_info < (3, 9, 0):
         raise RuntimeError("Please use newer blender version with a python version of at least 3.9.")
 
-    server = BlenderServer(port=0)
+    if bpy is None:
+        sys.exit()
+
+    # Get script specific arguments
+    try:
+        index = sys.argv.index("--") + 1
+    except ValueError:
+        index = len(sys.argv)
+
+    parser = argparse.ArgumentParser("Install dependencies into blender's runtime.")
+    parser.add_argument("-p", "--port", type=int, default=0)
+    args, unknown = parser.parse_known_args(sys.argv[index:])
+
+    server = BlenderServer(port=args.port)
     server.start()
