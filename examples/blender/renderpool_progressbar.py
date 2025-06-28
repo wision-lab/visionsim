@@ -17,7 +17,7 @@ if __name__ == "__main__":
         BlenderClients.pool(2, log_dir="logs", timeout=30) as pool,
         PoolProgress() as progress,
     ):
-        for blend_file in ["monkey.blend", "cube.blend", "metaballs.blend"]:
+        for blend_file in ["assets/monkey.blend", "assets/cube.blend", "assets/metaballs.blend"]:
             tick = progress.add_task(f"Rendering {blend_file}...")
 
             # Note: The client will be automagically passed to `render` here.
