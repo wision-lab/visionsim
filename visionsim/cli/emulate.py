@@ -196,10 +196,12 @@ def rgb(
     input_dir: str | os.PathLike,
     output_dir: str | os.PathLike,
     chunk_size: int = 10,
-    factor: float = 1.0,
+    frac_shutter_angle: float = 1.0,
     readout_std: float = 20.0,
-    fwc: int | None = None,
+    fwc: float | None = None,
     duplicate: float = 1.0,
+    scale_flux: float = 1.0,
+    gain_ISO: float = 1.0,
     pattern: str = "frame_{:06}.png",
     mode: Literal["npy", "img"] = "npy",
     force: bool = False,
@@ -210,10 +212,12 @@ def rgb(
         input_dir: directory in which to look for frames
         output_dir: directory in which to save binary frames
         chunk_size: number of consecutive frames to average together
-        factor: multiply image's linear intensity by this weight
+        frac_shutter_angle: fraction of inter-frame duration shutter is active
         readout_std: standard deviation of gaussian read noise
         fwc: full well capacity of sensor in arbitrary units (relative to factor & chunk_size)
         duplicate: when chunk size is too small, this model is ill-suited and creates unrealistic noise. This parameter artificially increases the chunk size by using each input image `duplicate` number of times
+        scale_flux: factor to scale the input images before Poisson simulation
+        gain_ISO: gain for photo-electron reading after Poisson rng
         pattern: filenames of frames should match this
         mode: how to save binary frames
         force: if true, overwrite output file(s) if present
@@ -266,8 +270,10 @@ def rgb(
             rgb_img = emulate_rgb_from_sequence(
                 imgs * duplicate,
                 readout_std=readout_std,
-                fwc=fwc or (chunk_size * duplicate),
-                factor=factor,
+                fwc=fwc or np.inf,
+                frac_shutter_angle=frac_shutter_angle,
+                scale_flux=scale_flux,
+                gain_ISO=gain_ISO,
             )
             if transforms_new:
                 pose = pose_interp(poses)(0.5) if chunk_size != 1 else poses[0]
