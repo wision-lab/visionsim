@@ -998,7 +998,7 @@ class BlenderService(rpyc.Service):
         return (self.scene.frame_start, self.scene.frame_end, self.scene.frame_step)  # type: ignore
 
     @require_initialized_service
-    def exposed_include_depths(self, debug=True, file_format="OPEN_EXR") -> None:
+    def exposed_include_depths(self, debug=True, file_format="OPEN_EXR", exr_codec="ZIP") -> None:
         """Sets up Blender compositor to include depth map for rendered images.
 
         Args:
@@ -1007,6 +1007,9 @@ class BlenderService(rpyc.Service):
             file_format (str, optional): format of depth maps, one of "OPEN_EXR" or "HDR". The former
                 is lossless, but can require significant storage, the later is lossy and more compressed.
                 If depth is needed to compute scene-flow, use open-exr. Defaults to "OPEN_EXR".
+            exr_codec (str, optional): codec used to compress exr file. Only used when `file_format="OPEN_EXR"`,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "ZIP".
 
         Note:
             The debug colormap is re-normalized on a per-frame basis, to visually
@@ -1050,8 +1053,8 @@ class BlenderService(rpyc.Service):
         self.depth_path.file_slots[0].path = f"depth_{'#' * 6}"
         self.depth_path.format.file_format = file_format
 
-        if file_format.upper():
-            self.depth_path.format.exr_codec = "ZIP"
+        if file_format.upper() == "OPEN_EXR":
+            self.depth_path.format.exr_codec = exr_codec
             self.depth_path.format.color_mode = "BW"
             self.depth_extension = ".exr"
         else:
@@ -1064,12 +1067,15 @@ class BlenderService(rpyc.Service):
         self.depth_path.base_path = str(self.root_path / "depths")
 
     @require_initialized_service
-    def exposed_include_normals(self, debug=True) -> None:
+    def exposed_include_normals(self, debug=True, exr_codec="ZIP") -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
         Args:
             debug (bool, optional): if true, colorized normal maps will also be generated with each vector
                 component being remapped from [-1, 1] to [0-255] with xyz becoming rgb. Defaults to True.
+            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+                with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
+                Defaults to "ZIP".
         """
         self.view_layer.use_pass_normal = True
         (self.root_path / "normals").mkdir(parents=True, exist_ok=True)
@@ -1105,7 +1111,7 @@ class BlenderService(rpyc.Service):
         self.normal_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.normal_path.label = "Normal Output"
         self.normal_path.format.file_format = "OPEN_EXR"
-        self.normal_path.format.exr_codec = "ZIP"
+        self.normal_path.format.exr_codec = exr_codec
         self.normal_path.format.color_management = "OVERRIDE"
         self.normal_path.format.linear_colorspace_settings.name = "Non-Color"
         self.tree.links.new(normal_group.outputs["Vector"], self.normal_path.inputs[0])
@@ -1113,7 +1119,7 @@ class BlenderService(rpyc.Service):
         self.normal_path.file_slots[0].path = f"normal_{'#' * 6}"
 
     @require_initialized_service
-    def exposed_include_flows(self, direction="forward", debug=True) -> None:
+    def exposed_include_flows(self, direction="forward", debug=True, exr_codec="ZIP") -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
         Args:
@@ -1121,6 +1127,9 @@ class BlenderService(rpyc.Service):
                 for debug visualization. Only used when debug is true, otherwise both forward and backward
                 flows are saved. Defaults to "forward".
             debug (bool, optional): If true, also save debug visualizations of flow. Defaults to True.
+            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+                with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
+                Defaults to "ZIP".
 
         Note:
             The debug colormap is re-normalized on a per-frame basis, to visually
@@ -1191,7 +1200,7 @@ class BlenderService(rpyc.Service):
         self.flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.flow_path.label = "Flow Debug Output"
         self.flow_path.format.file_format = "OPEN_EXR"
-        self.flow_path.format.exr_codec = "ZIP"
+        self.flow_path.format.exr_codec = exr_codec
         self.flow_path.format.color_mode = "RGBA"
         self.flow_path.format.color_management = "OVERRIDE"
         self.flow_path.format.linear_colorspace_settings.name = "Non-Color"
@@ -1206,7 +1215,7 @@ class BlenderService(rpyc.Service):
         self.tree.links.new(vec2rgba.outputs["Image"], self.flow_path.inputs["Image"])
 
     @require_initialized_service
-    def exposed_include_segmentations(self, shuffle=True, debug=True, seed=1234) -> None:
+    def exposed_include_segmentations(self, shuffle=True, debug=True, seed=1234, exr_codec="ZIP") -> None:
         """Sets up Blender compositor to include segmentation maps for rendered images.
 
         The debug visualization simply assigns a color to each object ID by mapping the
@@ -1217,6 +1226,9 @@ class BlenderService(rpyc.Service):
             shuffle (bool, optional): shuffle debug colors, helps differentiate object instances. Defaults to True.
             debug (bool, optional): If true, also save debug visualizations of segmentation. Defaults to True.
             seed (int, optional): random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+                with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
+                Defaults to "ZIP".
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
@@ -1269,7 +1281,7 @@ class BlenderService(rpyc.Service):
         self.segmentation_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.segmentation_path.label = "Segmentation Output"
         self.segmentation_path.format.file_format = "OPEN_EXR"
-        self.segmentation_path.format.exr_codec = "ZIP"
+        self.segmentation_path.format.exr_codec = exr_codec
         self.segmentation_path.format.color_mode = "BW"
         self.segmentation_path.format.color_management = "OVERRIDE"
         self.segmentation_path.format.linear_colorspace_settings.name = "Non-Color"

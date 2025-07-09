@@ -72,6 +72,8 @@ class RenderConfig:
     """Bit depth for intensity frames. Usually 8 for pngs, 32 or 16 bits for OPEN_EXR"""
     file_format: str = "PNG"
     """File format to use for intensity frames"""
+    exr_codec: str = "ZIP"
+    """Encoding used to compress EXRs, used for all supported ground truths"""
     depths: bool = False
     """If true, enable depth map outputs"""
     normals: bool = False
@@ -171,13 +173,13 @@ def _render_job(
     )
 
     if config.depths:
-        client.include_depths(debug=config.debug)
+        client.include_depths(debug=config.debug, exr_codec=config.exr_codec)
     if config.normals:
-        client.include_normals(debug=config.debug)
+        client.include_normals(debug=config.debug, exr_codec=config.exr_codec)
     if config.flows:
-        client.include_flows(debug=config.debug, direction=config.flow_direction)
+        client.include_flows(debug=config.debug, direction=config.flow_direction, exr_codec=config.exr_codec)
     if config.segmentations:
-        client.include_segmentations(debug=config.debug)
+        client.include_segmentations(debug=config.debug, exr_codec=config.exr_codec)
 
     if config.unbind_camera:
         client.unbind_camera()
