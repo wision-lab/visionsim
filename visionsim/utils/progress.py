@@ -16,6 +16,18 @@ from rich.progress import (
 from visionsim.types import UpdateFn
 
 
+class ElapsedProgress(Progress):
+    @classmethod
+    def get_default_columns(cls) -> tuple[ProgressColumn, ...]:
+        """Overrides `rich.progress.Progress`'s default columns to enable showing elapsed time when finished."""
+        return (
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeRemainingColumn(elapsed_when_finished=True),
+        )
+
+
 class PoolProgress(Progress):
     """Convenience wrapper around rich's `Progress` to enable progress bars when
     using multiple processes. All progressbar updates are carried out by the main

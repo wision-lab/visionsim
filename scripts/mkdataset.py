@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import itertools
-import json
 import logging
 import os
 import random
@@ -9,7 +8,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+import tempfile
 from functools import partial
 from pathlib import Path
 
@@ -23,9 +22,9 @@ from rich.logging import RichHandler
 from rich.progress import track
 from rich.traceback import install
 
-from visionsim.dataset import Dataset
-from visionsim.simulate.blender import BlenderClient, BlenderClients
-from visionsim.types import UpdateFn
+from visionsim.cli import ffmpeg
+from visionsim.cli.blender import RenderConfig, _render_job, sequence_info
+from visionsim.simulate.blender import BlenderClients
 from visionsim.utils.progress import PoolProgress
 
 logging.basicConfig(
@@ -86,111 +85,6 @@ def sample_scenes(
         )
         sys.exit(2)
     return frame_starts, num_frames
-
-
-def sequence_info(
-    dataset: str | os.PathLike,
-    config: RenderConfig,
-    output: str | os.PathLike | None = None,
-):
-    """Query dataset and to collect some extra metadata, write it to a json file
-
-    Args:
-        dataset (str | os.PathLike): Root pathy of dataset
-        config (RenderConfig): Render configuration.
-        output (str | os.PathLike | None, optional): Path of output info file. Defaults to
-            "info.json" in the dataset's root directory.
-    """
-    ds = Dataset.from_path(dataset)
-    dt = len(ds) / (config.native_fps * config.keyframe_multiplier)
-    output = Path(dataset) / "info.json" if output is None else output
-
-    info = {
-        "frame_rate": int(config.native_fps * config.keyframe_multiplier),
-        "distance_traveled": ds.arclength,
-        "average_velocity": ds.arclength / dt,
-        "elapsed_time": dt,
-    }
-
-    with open(output, "w") as f:
-        json.dump(info, f, indent=2)
-
-
-@dataclass
-class RenderConfig:
-    executable: str | os.PathLike | None = None
-    """Path to blender executable"""
-    height: int = 512
-    """Height of rendered frames"""
-    width: int = 512
-    """Width of rendered frames"""
-    depths: bool = False
-    """If true, enable depth map outputs"""
-    normals: bool = False
-    """If true, enable normal map outputs"""
-    flows: bool = False
-    """If true, enable optical flow outputs"""
-    segmentations: bool = False
-    """If true, enable segmentation map outputs"""
-    debug: bool = True
-    """If true, also save debug visualizations for auxiliary outputs"""
-    keyframe_multiplier: float = 1.0
-    """Stretch keyframes by this amount, eg: 2.0 will slow down time"""
-    timeout: int = 30
-    """Maximum allowed time in seconds to wait to connect to render instance"""
-    autoexec: bool = True
-    """If true, allow python execution of embedded scripts (warning: potentially dangerous)"""
-    device_type: str = "optix"
-    """Name of device to use, one of "cpu", "cuda", "optix", "metal", etc"""
-    native_fps: int = 50
-    """Framerate of native blender animation"""
-    log_dir: str | os.PathLike = "logs/"
-    """Directory to use for logging"""
-    jobs: int = 1
-    """Number of concurrent render jobs"""
-
-
-def render(
-    client: BlenderClient,
-    blend_file: str | os.PathLike,
-    root: str | os.PathLike,
-    frame_start: int,
-    frame_end: int,
-    config: RenderConfig,
-    dry_run: bool = False,
-    tick: UpdateFn | None = None,
-):
-    """Render a sequence from a given blender-file"""
-    client.initialize(blend_file, root)
-    client.set_resolution(height=config.height, width=config.width)
-    client.use_motion_blur(False)
-    client.cycles_settings(
-        device_type=config.device_type,
-        use_cpu=True,
-        adaptive_threshold=0.05,
-        use_denoising=True,
-        max_samples=256,
-    )
-    client.move_keyframes(scale=config.keyframe_multiplier)
-    client.image_settings(file_format="PNG", bitdepth=8)
-
-    if config.depths:
-        client.include_depths(debug=config.debug)
-    if config.normals:
-        client.include_normals(debug=config.debug)
-    if config.flows:
-        client.include_flows(debug=config.debug)
-    if config.segmentations:
-        client.include_segmentations(debug=config.debug)
-
-    # Note: The allow-skips arg here enables fine grain skipping, at the frame level,
-    #   as opposed to the "skip over whole sequences" argument in create_datasets below.
-    transforms = client.render_animation(
-        frame_start=frame_start, frame_end=frame_end, allow_skips=True, dry_run=dry_run, update_fn=tick
-    )
-
-    with open(root / "transforms.json", "w") as f:
-        json.dump(transforms, f, indent=2)
 
 
 @app.command
@@ -255,7 +149,7 @@ def create_datasets(
                 # Note: The client will be automagically passed to `render` here.
                 tick = progress.add_task(f"{blend_file.stem} ({frame_start}-{frame_start + num_frames})")
                 pool.apply_async(
-                    render,
+                    _render_job,
                     args=(blend_file, sequence_dir),
                     kwds=dict(
                         frame_start=frame_start,
@@ -352,31 +246,22 @@ def preview_datasets(
             shutil.rmtree(d, ignore_errors=True)
 
     if grids:
-        # Note: This is effectively taken from ffmpeg.grid and combine tasks
         for frame_type in track(frame_types, description="Making Preview Grids..."):
-            outfile = previews_dir / "grids" / f"grid-{frame_type}.mp4"
-            files = natsorted(Path(previews_dir).glob(f"**/{frame_type}.mp4"))
-            candidates = [
-                (w, int(len(files) / w)) for w in range(1, len(files) + 1) if int(len(files) / w) == (len(files) / w)
-            ]
-            w, h = min(reversed(candidates), key=lambda c: sum(c))
-            matrix = np.array([str(p) for p in files]).reshape((h, w)).tolist()
-            in_paths = [p for row in matrix for p in row]
-            in_paths_str = "".join(f"-i {p} " for p in in_paths)
-            filter_inputs_str = "".join(
-                f"[{i}:v] setpts=PTS-STARTPTS, scale=qvga [a{i}]; " for i, _ in enumerate(in_paths)
-            )
-            W, H = np.meshgrid(
-                ["+".join(f"w{i}" for i in range(j)) or "0" for j in range(w)],
-                ["+".join(f"h{i}" for i in range(j)) or "0" for j in range(h)],
-            )
-            layout_spec = "|".join(f"{i}_{j}" for i, j in zip(W.flatten(), H.flatten()))
-            placement = (
-                "".join(f"[a{i}]" for i, _ in enumerate(in_paths))
-                + f"xstack=inputs={len(in_paths)}:layout={layout_spec}[out]"
-            )
-            cmd = f'ffmpeg {in_paths_str} -filter_complex "{filter_inputs_str} {placement}" -map "[out]" -c:v libx264 {outfile} -y'
-            subprocess.run(shlex.split(cmd), check=True, stdout=subprocess.DEVNULL)
+            with tempfile.TemporaryDirectory() as tmpdir:
+                # ffmpeg grid already searches for videos in a folder, so here
+                # we just symlink all input videos into a tempdir
+                files = natsorted(Path(previews_dir).glob(f"**/{frame_type}.mp4"))
+                outfile = previews_dir / "grids" / f"grid-{frame_type}.mp4"
+                tmpdirname = Path(tmpdir)
+
+                for i, p in enumerate(files):
+                    (tmpdirname / f"{i:09}{p.suffix}").symlink_to(p, target_is_directory=False)
+
+                candidates = [
+                    (w, int(len(files) / w)) for w in range(1, len(files) + 1) if int(len(files) / w) == (len(files) / w)
+                ]
+                w, h = min(reversed(candidates), key=lambda c: sum(c))
+                ffmpeg.grid(tmpdirname, width=w, height=h, outfile=outfile, force=True)
 
 
 @app.command

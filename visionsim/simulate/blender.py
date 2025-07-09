@@ -4,6 +4,7 @@ import argparse
 import functools
 import inspect
 import itertools
+import logging
 import os
 import shlex
 import signal
@@ -51,6 +52,15 @@ try:
         segmentationdebug_node_group,
         vec2rgba_node_group,
     )
+
+    # Enable server-side logging
+    logging.basicConfig(
+        level=logging.WARNING,
+        format="%(message)s",
+        datefmt="[%X]",
+    )
+    server_log = logging.getLogger(__name__)
+    server_log.setLevel(logging.INFO)
 except ImportError:
     addon_utils = None
     bpy = None
@@ -109,7 +119,7 @@ def validate_camera_moved(
         post_matrix = np.array(self.camera.matrix_world.copy())
 
         if np.allclose(prev_matrix, post_matrix):
-            print("WARNING: Camera has not moved as intended, perhaps it is still bound by parent or animation?")
+            self.log.warning("Camera has not moved as intended, perhaps it is still bound by parent or animation?")
         return retval
 
     return _decorator
@@ -163,11 +173,11 @@ class BlenderServer(rpyc.utils.server.Server):
             service or BlenderService,
             hostname=hostname,
             port=port,
-            protocol_config={"allow_all_attrs": True, "allow_setattr": True} | (extra_config or {}),
+            protocol_config=rpyc.core.protocol.DEFAULT_CONFIG | (extra_config or {"allow_all_attrs": True}),
             auto_register=True,
             **kwargs,
         )
-        print(f"INFO: Started listening on {self.host}:{self.port}")
+        server_log.info(f"Started listening on {self.host}:{self.port}")
 
     @staticmethod
     @contextmanager
@@ -460,7 +470,7 @@ class BlenderClient:
 
         while True:
             try:
-                self.conn = rpyc.connect(*self.addr, config={"sync_request_timeout": -1, "allow_pickle": True})
+                self.conn = rpyc.connect(*self.addr, config={"sync_request_timeout": -1, "allow_all_attrs": True})
                 break
             except ConnectionRefusedError:
                 pass
@@ -469,11 +479,18 @@ class BlenderClient:
                 raise TimeoutError("Unable to connect to server in alloted time.")
             time.sleep(0.1)
 
+        # Spoof all `exposed_` methods from the service
         for method_name in dir(self.conn.root):
             if method_name.startswith("exposed_"):
                 name = method_name.replace("exposed_", "")
                 method = getattr(self.conn.root, method_name)
                 setattr(self, name, method)
+
+        # Setup default logger for client, otherwise warnings
+        # in the render service won't propagate to the client
+        logger = logging.getLogger(__name__ + str(self.addr))
+        logger.setLevel(logging.WARN)
+        self.with_logger(logger)
         return self
 
     def __exit__(self, type, value, traceback) -> None:
@@ -725,6 +742,16 @@ class BlenderClients(tuple):
 
         return self.render_frames(frame_range, allow_skips=allow_skips, dry_run=dry_run, update_fn=update_fn)
 
+    @require_connected_clients
+    def save_file(self, path: str | os.PathLike) -> None:
+        """Save opened blender file. This is useful for introspecting the state of the compositor/scene/etc.
+
+        Note: Only saves file once (from a single connected client), assumes all clients have
+        been initialized in the same manner.
+        """
+        client, *_ = self
+        client.save_file(path)
+
     def wait(self) -> None:
         """Wait for all clients at once."""
         awaitables = [client.awaitable for client in self]
@@ -757,6 +784,7 @@ class BlenderService(rpyc.Service):
         if bpy is None:
             raise RuntimeError(f"{type(self).__name__} needs to be instantiated from within blender's python runtime.")
         self.initialized = False
+        self.log = server_log
         self._conn = None
 
     def _clear_cached_properties(self) -> None:
@@ -771,8 +799,8 @@ class BlenderService(rpyc.Service):
         Args:
             conn (rpyc.Connection): Connection object
         """
-        # TODO: Proper logging
-        print("INFO: Successfully connected to BlenderClient instance.")
+        # Log to server as logging is likely not setup yet.
+        server_log.info("Successfully connected to BlenderClient instance.")
         self._conn = conn
 
     def on_disconnect(self, conn: rpyc.Connection) -> None:
@@ -782,9 +810,9 @@ class BlenderService(rpyc.Service):
         Args:
             conn (rpyc.Connection): Connection object
         """
-        self.reset()
+        server_log.info("Successfully disconnected from BlenderClient instance.")
         self._conn = None
-        print("INFO: Successfully disconnected from BlenderClient instance.")
+        self.reset()
 
     def reset(self) -> None:
         """Cleans up and resets blender runtime.
@@ -835,10 +863,10 @@ class BlenderService(rpyc.Service):
         if not cameras:
             raise RuntimeError("No camera found, please add one manually.")
         elif len(cameras) > 1 and self.scene.camera:
-            print(f"Multiple cameras found. Using active camera: '{self.scene.camera.name}'.")
+            self.log.warning(f"Multiple cameras found. Using active camera named: '{self.scene.camera.name}'.")
             return self.scene.camera
         else:
-            print(f"No active camera was found. Using camera: '{cameras[0].name}'.")
+            self.log.warning(f"No active camera was found. Using camera named: '{cameras[0].name}'.")
             return cameras[0]
 
     @require_initialized_service
@@ -855,6 +883,14 @@ class BlenderService(rpyc.Service):
             return [obj.parent] + self.get_parents(obj.parent)
         return []
 
+    def exposed_with_logger(self, log: logging.Logger):
+        """Use supplied logger, if logger is initialized in client, messages will log to the client.
+
+        Args:
+            log (logging.Logger): Logger to use for messages
+        """
+        self.log = log
+
     def exposed_initialize(self, blend_file: str | os.PathLike, root_path: str | os.PathLike):
         """Initialize BlenderService and load blendfile.
 
@@ -870,7 +906,7 @@ class BlenderService(rpyc.Service):
         # Load blendfile
         self.blend_file = blend_file
         bpy.ops.wm.open_mainfile(filepath=str(blend_file))
-        print(f"INFO: Successfully loaded {blend_file}")
+        self.log.info(f"Successfully loaded {blend_file}")
 
         # Ensure root paths exist
         self.root_path = Path(str(root_path)).resolve()
@@ -898,7 +934,7 @@ class BlenderService(rpyc.Service):
         # Warn if extra file output pipelines are found
         for n in getattr(self.tree, "nodes", []):
             if isinstance(n, bpy.types.CompositorNodeOutputFile):
-                print(f"WARNING: Found output node {n}")
+                self.log.warning(f"Found unexpected output node {n}")
 
         # Catalogue any animations that are already disabled, otherwise
         # disabling and re-enabling animations would enable them.
@@ -945,6 +981,11 @@ class BlenderService(rpyc.Service):
         transforms["cy"] = 1 / 2 * self.scene.render.resolution_y + transforms["shift_y"]
         transforms["intrinsics"] = self.exposed_camera_intrinsics().tolist()
         return transforms
+
+    @require_initialized_service
+    def exposed_original_fps(self) -> int:
+        # Note: Exposed properties are not supported by rpyc.
+        return int(round(self.scene.render.fps / self.scene.render.fps_base))
 
     @require_initialized_service
     def exposed_animation_range(self) -> range:
@@ -1242,7 +1283,7 @@ class BlenderService(rpyc.Service):
         for addon in addons:
             addon = addon.strip().lower()
             addon_module = addon_utils.enable(addon, default_set=True)
-            print(f"INFO: Loaded addon {addon}: {addon_module}")
+            self.log.info(f"Loaded addon {addon}: {addon_module}")
 
     @require_initialized_service
     def exposed_set_resolution(
@@ -1267,15 +1308,15 @@ class BlenderService(rpyc.Service):
 
     @require_initialized_service
     def exposed_image_settings(
-        self, file_format: str | None = None, bitdepth: int | None = None, color_mode: str | None = None
+        self, file_format: str | None = None, bit_depth: int | None = None, color_mode: str | None = None
     ) -> None:
-        """Set the render's output format and bitdepth.
+        """Set the render's output format and bit-depth.
         Useful for linear intensity renders, using "OPEN_EXR" and 32 or 16 bits.
         """
         if file_format is not None:
             self.scene.render.image_settings.file_format = file_format.upper()
-        if bitdepth is not None:
-            self.scene.render.image_settings.color_depth = str(bitdepth)
+        if bit_depth is not None:
+            self.scene.render.image_settings.color_depth = str(bit_depth)
         if color_mode is not None:
             self.scene.render.image_settings.color_mode = color_mode.upper()
 
@@ -1312,7 +1353,7 @@ class BlenderService(rpyc.Service):
                 for full list. Defaults to None.
             use_cpu (bool, optional): Boolean flag to enable CPUs alongside GPU devices. Defaults to None.
             adaptive_threshold (float, optional): Set noise threshold upon which to stop taking samples. Defaults to None.
-            max_samples (int, optional): Max number of samples per pixel to take before threshold is met.. Defaults to None.
+            max_samples (int, optional): Maximum number of samples per pixel to take. Defaults to None.
             use_denoising (bool, optional): If enabled, a denoising pass will be used. Defaults to None.
 
         Raises:
@@ -1323,8 +1364,8 @@ class BlenderService(rpyc.Service):
             devices: List of activated devices.
         """
         if self.scene.render.engine.upper() != "CYCLES":
-            print(
-                f"WARNING: Using {self.scene.render.engine.upper()} rendering engine, "
+            self.log.warning(
+                f"Using {self.scene.render.engine.upper()} rendering engine, "
                 f"with default OpenGL rendering device(s)."
             )
             return []
@@ -1356,7 +1397,7 @@ class BlenderService(rpyc.Service):
             devices = filter(lambda d: d.type.upper() == device_type.upper(), cycles_preferences.devices)
 
             for device in itertools.chain(devices, filter(lambda d: d.type == "CPU" and use_cpu, devices)):
-                print("INFO: Activated device", device.name, device.type)
+                self.log.info("Activated device", device.name, device.type)
                 activated_devices.append(device.name)
                 device.use = True
             cycles_preferences.compute_device_type = "NONE" if device_type.upper() == "CPU" else device_type.upper()
@@ -1645,8 +1686,8 @@ class BlenderService(rpyc.Service):
 
         # Warn if requested frames lie outside animation range
         if self.use_animation and (frame_start < self.scene.frame_start or self.scene.frame_end < frame_end):
-            print(
-                f"WARNING: Current animation starts at frame #{self.scene.frame_start} and ends at "
+            self.log.warning(
+                f"Current animation starts at frame #{self.scene.frame_start} and ends at "
                 f"#{self.scene.frame_end} (with step={self.scene.frame_step}), but you requested "
                 f"some frames between #{frame_start} and to #{frame_end} to be rendered.\n"
             )
@@ -1717,7 +1758,7 @@ class BlenderService(rpyc.Service):
                 "To instead render a single frame, use `render_frame`."
             )
         elif all(p.animation_data is None for p in self.get_parents(self.camera)) and self.camera.animation_data is None:
-            print("WARNING: Active camera nor it's parents are animated, camera will be static.")
+            self.log.warning("Active camera nor it's parents are animated, camera will be static.")
 
         return self.exposed_render_frames(frame_range, allow_skips=allow_skips, dry_run=dry_run, update_fn=update_fn)
 
@@ -1727,6 +1768,7 @@ class BlenderService(rpyc.Service):
         if (path := Path(str(path)).resolve()) == Path(str(self.blend_file)).resolve():
             raise ValueError("Cannot overwrite currently loaded blend-file!")
 
+        self.log.info(f"Saving scene to {path}...")
         path.parent.mkdir(exist_ok=True, parents=True)
         bpy.ops.wm.save_as_mainfile(filepath=str(path))
 

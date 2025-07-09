@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import glob
 import inspect
+import logging
 import os
 import re
 import shlex
@@ -11,9 +12,22 @@ from pathlib import Path
 
 import tyro
 from natsort import natsorted
+from rich.logging import RichHandler
+from rich.traceback import install
 from typing_extensions import overload
 
 from . import blender, dataset, emulate, ffmpeg, interpolate, transforms
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[RichHandler(rich_tracebacks=True)],
+)
+logging.getLogger("PIL").setLevel(logging.WARNING)
+_log = logging.getLogger("rich")
+install(suppress=[tyro])
+
 
 # Exposed for tests
 _cli_modules = [blender, dataset, emulate, ffmpeg, interpolate, transforms]
@@ -119,6 +133,10 @@ def post_install(executable: str | os.PathLike | None = None):
     """
     from visionsim.simulate import install_dependencies
 
+    if _run(f"{executable or 'blender'} --version", shell=True).returncode != 0:
+        raise RuntimeError(
+            "No blender installation found on path! Please make sure it is discoverable, or specify executable."
+        )
     install_dependencies(executable)
 
 

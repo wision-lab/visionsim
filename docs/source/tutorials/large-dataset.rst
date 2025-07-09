@@ -8,7 +8,7 @@ In this tutorial we will build up a CLI tool to create a large dataset from many
    :width: 100%
    :align: center
 
-.. note:: This example requires extra dependencies, notably `tyro <https://brentyi.github.io/tyro/>`_ for CLI creation. 
+.. note:: For brevity, there's a few things that have been omitted in this tutorial, for the full source, see ``scripts/mkdataset.py``. Notably, extra dependencies may be needed. 
 
 Here, we assume each scene is setup correctly and has an animation range of [1-600]. The scenes used for this example can be `found here <https://drive.google.com/drive/folders/1gRxhL3rbGDTfgKytre8WkbBu-QDJFy15?usp=sharing>`_. 
 
@@ -36,21 +36,14 @@ For clarity, we'll refer to a single blend-file as a scene, and a sequence will 
 
 |
 
-To enable easy configuration and CLI parsing, we create a render configuration class which stores all important parameters such as render device, dimensions, and types of ground truth to use:
+To enable easy configuration and CLI parsing, we re-use the render configuration class used in the :func:`render-animation <visionsim.cli.blender.render_animation>` CLI which stores all important parameters such as render device, dimensions, and types of ground truth to use:
 
-.. literalinclude:: ../../../scripts/mkdataset.py
+.. literalinclude:: ../../../visionsim/cli/blender.py
    :pyobject: RenderConfig
 
 | 
 
-We can then define a render function which will be called for each sequence. This function is very similar to the :func:`render-animation <visionsim.tasks.blender.render_animation>` CLI, except it can be used with :meth:`BlenderClients.pool <visionsim.simulate.blender.BlenderClients.pool>` which enables us to render many sequences at the same time:
-
-.. literalinclude:: ../../../scripts/mkdataset.py
-   :pyobject: render
-
-|
-
-Finally, putting it all together:
+We can then reuse the same render-job as :func:`render-animation <visionsim.cli.blender.render_animation>`, except we'll use it in conjunction with a :meth:`BlenderClients.pool <visionsim.simulation.blender.BlenderClients.pool>` in order to render multiple scenes at once (as opposed to a single scene being rendered with multiple jobs). Putting it all together we have:
 
 .. literalinclude:: ../../../scripts/mkdataset.py
    :pyobject: create_datasets
@@ -64,4 +57,4 @@ This CLI can be used, for instance, like so::
       --render-config.flows --render-config.segmentations \ 
       --render-config.keyframe-multiplier=2.0 --render-config.jobs=5 
 
-For brevity, there's a few things that have been omitted in this tutorial, for the full source, see ``scripts/mkdataset.py``.
+Which will render the dataset show above at a framerate of 100fps (original fps of 50 time 2x keyframe multiplier).
