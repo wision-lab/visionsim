@@ -489,7 +489,7 @@ class BlenderClient:
         # Setup default logger for client, otherwise warnings
         # in the render service won't propagate to the client
         logger = logging.getLogger(__name__ + str(self.addr))
-        logger.setLevel(logging.WARN)
+        logger.setLevel(logging.INFO)
         self.with_logger(logger)
         return self
 
