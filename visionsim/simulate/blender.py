@@ -1409,7 +1409,7 @@ class BlenderService(rpyc.Service):
             devices = filter(lambda d: d.type.upper() == device_type.upper(), cycles_preferences.devices)
 
             for device in itertools.chain(devices, filter(lambda d: d.type == "CPU" and use_cpu, devices)):
-                self.log.info("Activated device", device.name, device.type)
+                self.log.info(f"Activated device {device.name}, {device.type}")
                 activated_devices.append(device.name)
                 device.use = True
             cycles_preferences.compute_device_type = "NONE" if device_type.upper() == "CPU" else device_type.upper()
