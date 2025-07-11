@@ -11,7 +11,7 @@ Currently, in order to use this new rendering service, the user must spin it up 
 
 .. code-block:: console 
     
-    $ blender --background --python --python-use-system-env examples/extended_service.py
+    $ blender --background --python-use-system-env --python examples/extended_service.py
 
 And then connect to that render service, either directly using the appropriate connection settings, or using the :meth:`BlenderClient.auto_connect <visionsim.simulate.blender.BlenderClient.auto_connect>`: 
 
