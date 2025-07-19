@@ -10,11 +10,11 @@ In this tutorial we will build up a CLI tool to create a large dataset from many
 
 .. note:: For brevity, there's a few things that have been omitted in this tutorial, for the full source, see ``scripts/mkdataset.py``. Notably, extra dependencies may be needed. 
 
-Here, we assume each scene is setup correctly and has an animation range of [1-600]. The scenes used for this example can be `found here <https://drive.google.com/drive/folders/1gRxhL3rbGDTfgKytre8WkbBu-QDJFy15?usp=sharing>`_. 
+Here, we assume each scene is setup correctly and has an animation range of [1-600]. The scenes used for this example can be `found here <https://drive.google.com/drive/folders/1gRxhL3rbGDTfgKytre8WkbBu-QDJFy15?usp=sharing>`_, and the final dataset can be `found here <https://github.com/WISION-Lab/datasets?tab=readme-ov-file#visionsim-50-dataset-pre-release>`_.
 
 For clarity, we'll refer to a single blend-file as a scene, and a sequence will refer to a rendered portion of a scene. So if we use ``sequences_per_scene=10`` and we're rendering from 20 scenes, we will have 200 sequences which will be saved roughly like so::
     
-    DATSETS-DIR
+    DATASETS-DIR
     └── renders
         ├── SCENE-NAME
         │   ├── SEQUENCE-ID
