@@ -265,7 +265,12 @@ def render_animation(
     root_path.mkdir(parents=True, exist_ok=True)
 
     if render_config.autoscale:
-        if torch.cuda.device_count() != 1:
+        if not torch.cuda.is_available():
+            _log.warning("No GPU devices found, cannot autoscale. Falling back on using a single render job.")
+            render_config.autoscale = False
+            render_config.max_job_vram = None
+            render_config.jobs = 1
+        elif torch.cuda.device_count() != 1:
             _log.warning("Cannot autoscale when using multi-gpu. Falling back on using a single render job.")
             render_config.autoscale = False
             render_config.max_job_vram = None

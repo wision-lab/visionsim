@@ -933,7 +933,7 @@ class BlenderService(rpyc.Service):
 
         # Warn if extra file output pipelines are found
         for n in getattr(self.tree, "nodes", []):
-            if isinstance(n, bpy.types.CompositorNodeOutputFile):
+            if isinstance(n, bpy.types.CompositorNodeOutputFile) and not n.mute:
                 self.log.warning(f"Found unexpected output node {n}")
 
         # Catalogue any animations that are already disabled, otherwise
