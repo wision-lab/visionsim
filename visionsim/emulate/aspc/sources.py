@@ -448,3 +448,14 @@ class FlickeringLamp(DynamicSource, BlackBodySource):
     
     def __repr__(self):
         return f"FlickeringLamp(temperature={self.temperature.to(ureg.kelvin)}, illuminance={self.lux.to(ureg.lux)}, modulation_frequency={self.modulation_frequency.to(ureg.hertz)}, modulation_amplitude={self.modulation_amplitude.to(ureg.dimensionless)})"
+
+class CombinedSource:
+    def __init__(self, *sources):
+        # Filter out None sources
+        self.sources = [s for s in sources if s is not None]
+
+    def get_scene_radiance(self, *args, **kwargs):
+        result = 0
+        for source in self.sources:
+            result += source.get_scene_radiance(*args, **kwargs)
+        return result
