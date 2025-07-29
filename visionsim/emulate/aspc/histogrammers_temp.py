@@ -60,7 +60,7 @@ def get_albedo_intensity_depth_frames(data_dir: str, num_frames: int, Nr: int = 
 def get_pixel_fov_mask(empty_mask: np.ndarray, row1: float, row2: float, col1: float, col2: float) -> np.ndarray:
     """
     Generates a rectangular FOV mask for each pixel based on row,column parameters.
-    (Placeholder function which can be added as a builder method to sensor class)
+    (Placeholder function which can be added as a builder method to the sensor class)
 
     Args:
         empty_mask (np.ndarray): Passing empty array which can be reused to create fov masks.
@@ -84,7 +84,7 @@ def get_pixel_fov_mask(empty_mask: np.ndarray, row1: float, row2: float, col1: f
 def get_perpixel_fov_masks(empty_mask: np.ndarray, pixel_fov_list: list, device: torch.device = torch.device("cpu")) -> torch.Tensor:
     """
     Generates a list of FOV masks based on `pixel_fov_list`.
-    (Placeholder function which can be added as a builder method to sensor class)
+    (Placeholder function which can be added as a builder method to the sensor class)
 
     Args:
         empty_mask (np.ndarray): An array to define the shape of the masks.
@@ -211,7 +211,7 @@ def _apply_non_pr_deadtime(buffer: torch.Tensor, dead_time_bins: int, n_tbins: i
 def simulate_pixel_ewh(phi_bar: torch.Tensor, n_pulses: int, n_hist_bins: int,
                        free_running: bool, dead_time_bins: int) -> torch.Tensor:
     """
-    Simulates the Early-Window Histogram (EWH) for a single pixel.
+    Simulates the Equi-Width Histogram (EWH) for a single pixel.
 
     Args:
         phi_bar (torch.Tensor): Expected photon arrival rates for one pixel across time bins.
@@ -252,7 +252,7 @@ def simulate_pixel_ewh(phi_bar: torch.Tensor, n_pulses: int, n_hist_bins: int,
 def simulate_ewh(arrival_rates: torch.Tensor, n_pulses: int, n_hist_bins: int,
                  free_running: bool = False, dead_time_bins: int = 0) -> list[torch.Tensor]:
     """
-    Simulates the Early-Window Histogram (EWH) for all pixels/FOVs.
+    Simulates the Equi-Width Histogram (EWH) for all pixels/FOVs.
 
     Args:
         arrival_rates (torch.Tensor): Tensor of photon arrival rates for all FOVs.
