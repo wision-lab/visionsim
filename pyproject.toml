@@ -36,7 +36,7 @@ dependencies = [
     "OpenEXR",
     "multiprocess",
     "rpyc",
-    "tdigest",
+    "fastdigest",
     "tyro",
     "ephemeral-port-reserve"
 ]

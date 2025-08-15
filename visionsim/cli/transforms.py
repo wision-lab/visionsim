@@ -3,14 +3,15 @@ from __future__ import annotations
 import functools
 import os
 from pathlib import Path
-from typing import Literal
 
 import numpy as np
+import numpy.typing as npt
 import OpenEXR  # type: ignore
 from rich.progress import Progress, track
+from typing_extensions import Iterable, Literal
 
 
-def _read_exr(path):
+def _read_exr(path: str | os.PathLike) -> npt.NDArray:
     # imageio and cv2's cannot read an exr file when the data is stored in any other channel than RGB(A)
     # but as of blender 4.x depth maps are correctly saved as single channel exrs, in the V channel.
     with OpenEXR.File(path) as f:
@@ -19,7 +20,9 @@ def _read_exr(path):
         return np.array([c.pixels for c in f.channels().values()])
 
 
-def _tonemap_collate(batch, *, hdr_quantile=0.01):
+def _tonemap_collate(
+    batch: Iterable[tuple[int, npt.NDArray, npt.NDArray]], *, hdr_quantile: float = 0.01
+) -> tuple[npt.NDArray, npt.NDArray, npt.NDArray, float]:
     """Use default collate function on batch and then tonemap, enabling compute to be done in threads"""
     from visionsim.dataset import default_collate
     from visionsim.utils.color import linearrgb_to_srgb
@@ -32,13 +35,12 @@ def _tonemap_collate(batch, *, hdr_quantile=0.01):
     return idxs, imgs, poses, high / low
 
 
-def _estimate_distribution(in_files, percentage=0.2, transform=None):
-    from tdigest import TDigest  # type: ignore
+def _estimate_distribution(in_files, transform=None):
+    from fastdigest import TDigest
 
     digest = TDigest()
-    probe_files = np.random.choice(in_files, size=int(len(in_files) * percentage), replace=False)
 
-    for in_file in track(probe_files, description="Probing Files..."):
+    for in_file in track(in_files, description="Probing Files..."):
         im = _read_exr(in_file)
         values = transform(im) if transform is not None else im.flatten()
         digest.batch_update(values)
@@ -53,8 +55,7 @@ def colorize_depths(
     ext: str = ".png",
     vmin: float | None = None,
     vmax: float | None = None,
-    percentage: float = 0.2,
-    sample: float = 0.01,
+    quantile: float = 0.01,
     step: int = 1,
 ):
     """Convert .exr depth maps into color-coded images for visualization
@@ -67,8 +68,7 @@ def colorize_depths(
         ext: which format to save colorized frames as
         vmin: minimum expected depth used to normalize colormap
         vmax: maximum expected depth used to normalize colormap
-        percentage: if vmin/vmax are None, sample a subset of frames to determine range. This sets the sampling amount
-        sample: proportion of pixels to sample per depth map when auto-setting vmin/vmax
+        quantile: if vmin/vmax are None, use this quantile to estimate them
         step: drop some frames when colorizing, use frames 0+step*n
     """
     # TODO: Multiprocess this
@@ -88,11 +88,14 @@ def colorize_depths(
         # Filter out large depths, this is a render bug in CYCLES
         # See: https://blender.stackexchange.com/questions/325007
         d = d[d < DEPTH_CUTOFF]
-        return np.random.choice(d.flatten(), size=int(d.size * sample))
+        return d.flatten()
 
-    if vmin is None and vmax is None:
-        digest = _estimate_distribution(in_files, percentage=percentage, transform=transform_depth)
-        vmin, vmax = digest.percentile(1), digest.percentile(99)
+    if vmin is None or vmax is None:
+        digest = _estimate_distribution(in_files, transform=transform_depth)
+        vmin_, vmax_ = digest.quantile(quantile), digest.quantile(1 - quantile)
+        vmin = vmin_ if vmin is None else vmin
+        vmax = vmax_ if vmax is None else vmax
+        print(f"Found depth range [{vmin_:0.2f}, {vmax_:0.2f}]")
         print(f"Using depth range [{vmin:0.2f}, {vmax:0.2f}]\n")
 
     colormap = getattr(cm, cmap)
@@ -114,8 +117,7 @@ def colorize_flows(
     pattern: str = "flow_*.exr",
     ext: str = ".png",
     vmax: float | None = None,
-    percentage: float = 0.2,
-    sample: float = 0.01,
+    quantile: float = 0.01,
     step: int = 1,
 ):
     """Convert .exr optical flow maps into color-coded images for visualization
@@ -127,8 +129,7 @@ def colorize_flows(
         pattern: filenames of frames should match this
         ext: which format to save colorized frames as
         vmax: maximum expected flow magnitude
-        percentage: if vmax is None, sample a subset of frames to determine range. This sets the sampling amount
-        sample: proportion of pixels to sample per flow map when auto-setting vmin/vmax
+        quantile: if vmax is None, use this quantile to estimate it
         step: drop some frames when colorizing, use frames 0+step*n
     """
 
@@ -151,11 +152,11 @@ def colorize_flows(
         fx, fy, bx, by = flows
         x, y = (fx, fy) if direction.lower() == "forward" else (bx, by)
         mag = np.sqrt(x**2 + y**2)
-        return np.random.choice(mag.flatten(), size=int(mag.size * sample))
+        return mag.flatten()
 
     if vmax is None:
-        digest = _estimate_distribution(in_files, percentage=percentage, transform=magnitude)
-        vmax = digest.percentile(99)
+        digest = _estimate_distribution(in_files, transform=magnitude)
+        vmax = digest.quantile(1 - quantile)
         print(f"Using a maximum magnitude of {vmax:0.2f}\n")
 
     for in_file in track(in_files):
@@ -195,7 +196,7 @@ def colorize_normals(
     in_files = in_files[::step]
 
     for in_file in track(in_files):
-        img = np.stack(_read_exr(in_file) / 2 + 0.5, axis=-1)
+        img = _read_exr(in_file).transpose(1, 2, 0) / 2 + 0.5
         img = (img * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
         iio.imwrite(str(path.with_suffix(ext)), img)
@@ -235,8 +236,8 @@ def colorize_segmentations(
     in_files = in_files[::step]
 
     if num_objects is None:
-        digest = _estimate_distribution(in_files, percentage=1, transform=np.unique)
-        num_objects = int(digest.percentile(100))
+        digest = _estimate_distribution(in_files, transform=np.unique)
+        num_objects = int(digest.max())
         print(f"Found {num_objects} objects.\n")
 
     indices = np.arange(num_objects)
