@@ -2,8 +2,11 @@ import numpy as np
 import math
 import random
 from typing import Tuple
+
+import torch
 from units import validate_units
-from utils import ureg, Quantity, tof2depth, radiance_photons, watts2photons
+from pint import Quantity
+from utils import ureg, tof2depth, radiance_photons, watts2photons
 from scipy.constants import Wien, c, h, k, sigma
 import matplotlib.pyplot as plt
 from enum import Enum
@@ -93,15 +96,17 @@ class DynamicSource(LightSource):
         modulation_amplitude = 0.5 * ureg.dimensionless, 
         phase = 0.0 * ureg.radian,
         pulse_width = 1 * ureg.nanosecond,
-        pulse_shape="gaussian"
+        pulse_shape="gaussian",
+        pulse_shape_custom: str = "lambda x: np.sinc(x / 2)"
         ):
         super().__init__()
         self.modulation_frequency = modulation_frequency    # Hz
         self.modulation_amplitude = modulation_amplitude    # Amplitude of variation (0-1)
         self.phase = phase                                  # Phase shift in radians
         self.pulse_width = pulse_width                      # Pulse width in seconds
-        self.pulse_shape = pulse_shape                      # 'gaussian', 'square', callable, or array
-   
+        self.pulse_shape = pulse_shape                      # 'gaussian', 'square', 'custom'
+        self.pulse_shape_custom = pulse_shape_custom        # Custom pulse shape function
+
     @validate_units()
     def get_kernel(self, bin_width=1 * ureg.centimeter, normalize="sum"):
         """Given histogram parameters, return a kernel representing the pulse
@@ -128,15 +133,18 @@ class DynamicSource(LightSource):
             elif self.pulse_shape == "square":
                 x = np.arange(-pulse_bins, 2 * pulse_bins) * bin_width
                 kernel = np.repeat([0, 1, 0], pulse_bins)
-            else:
-                raise ValueError(f"Unsupported pulse shape string: {self.pulse_shape}")
-        elif callable(self.pulse_shape):
-            # User has provided a function, e.g., lambda x: np.sinc(x / T)
-            x = np.arange(-2 * pulse_bins, 2 * pulse_bins + 1) * bin_width
-            kernel = self.pulse_shape(x)
-        elif isinstance(self.pulse_shape, np.ndarray):
-            # User has given the kernel directly
-            kernel = self.pulse_shape
+            elif self.pulse_shape == "custom":
+                # Remove surrounding quotes if present
+                pulse_shape_eval = eval(self.pulse_shape_custom)
+                if callable(pulse_shape_eval):
+                    x = np.arange(-2 * pulse_bins, 2 * pulse_bins + 1) * bin_width
+                    x_magnitude = x.magnitude if hasattr(x, 'magnitude') else x
+                    kernel = pulse_shape_eval(x_magnitude)
+                elif isinstance(pulse_shape_eval, np.ndarray):
+                    x = np.arange(- len(pulse_shape_eval)//2, len(pulse_shape_eval)//2) * bin_width
+                    kernel = pulse_shape_eval
+                else:
+                    raise ValueError("Custom pulse_shape string did not evaluate to a callable or ndarray.")
         else:
             raise TypeError("pulse_shape must be a string ('gaussian', 'square'), a callable, or a numpy array.")
     
@@ -152,7 +160,7 @@ class DynamicSource(LightSource):
         kernel = kernel.magnitude if isinstance(kernel, Quantity) else kernel
         return x, kernel
     
-    def plot_kernel(self, bin_width, normalize):
+    def plot_kernel(self, bin_width, normalize="sum"):
         x, k = self.get_kernel(bin_width, normalize)
         plt.plot(x, k)
         plt.title(f"Pulse kernel")
@@ -234,12 +242,24 @@ class BlackBodySource(LightSource):
         Plank's Law see: https://en.wikipedia.org/wiki/Planck%27s_law
         B(λ,T) = (2hc²/λ⁵) * 1/(e^(hc/λkT) - 1)"""        
         numerator = 2 * h * c**2 / (wavelength**5)
-        denominator = math.exp(h * c / (wavelength * k * self.temperature)) - 1
+        # Extract magnitude for math.exp() which expects dimensionless values
+        exp_argument = (h * c / (wavelength * k * self.temperature)).magnitude
+        
+        # Handle both scalar and array inputs
+        if hasattr(exp_argument, '__len__'):
+            # Array input - use numpy exp
+            denominator = np.exp(exp_argument) - 1
+        else:
+            # Scalar input - use math exp
+            denominator = math.exp(exp_argument) - 1
+            
         return numerator / denominator
     
-    def lambda_max(self) -> float:
+    def lambda_max(self) -> Quantity:
         # Wien's Law, see: https://en.wikipedia.org/wiki/Wien%27s_displacement_law
-        return Wien / self.temperature
+        # Wien constant is approximately 2.8978e-3 m·K
+        wien_constant = 2.8978e-3 * ureg.meter * ureg.kelvin
+        return wien_constant / self.temperature
     
     def total_radiance(self) -> float:
         """Calculate the total radiance emitted by a black-body source over all wavelengths.
@@ -279,23 +299,25 @@ class PulsedLaser(DynamicSource, CoherentSource):
     @validate_units()
     def __init__(
         self,  
-        wavelength=ureg.nanometer, 
-        frequency=10e6 * ureg.hertz, 
-        pulse_width=5e-9 * ureg.second, 
+        wavelength=550 * ureg.nanometer, 
+        frequency=10e6 * ureg.hertz,        # Repetition rate at which to flash light source
+        pulse_width=5e-9 * ureg.second,     # Duration (in seconds) of pulse that is sent out
         avg_watts=1.0 * ureg.watt,
-        pulse_shape: str = "gaussian"
+        pulse_shape: str = "gaussian",
+        pulse_shape_custom: str = "lambda x: np.sinc(x / 2)"
         ):
         
         # Initialize both parent classes
-        DynamicSource.__init__(self, pulse_width=pulse_width, pulse_shape=pulse_shape)
+        DynamicSource.__init__(self, pulse_width=pulse_width, pulse_shape=pulse_shape, pulse_shape_custom=pulse_shape_custom)
         CoherentSource.__init__(self, wavelength=wavelength, avg_watts=avg_watts)
         
         self.frequency = frequency  
-        self.max_resolvable_depth = tof2depth(1 / frequency)
+        self.pulse_width = pulse_width
+        self.max_resolvable_depth = tof2depth(1 / self.frequency)
         self.gaussian = (pulse_shape.lower() == "gaussian")
         self.peak_watts = (self.avg_watts / (pulse_width * frequency)).to_reduced_units().to_compact()
         self.peak_watts = 2 * np.sqrt(np.log(2) / np.pi) * self.peak_watts if self.gaussian else self.peak_watts
-        self.num_photons_per_cycle = watts2photons(self.avg_watts, 1 / self.frequency, self.wavelength)
+        self.num_photons_per_cycle = watts2photons(self.avg_watts, self.pulse_width, self.wavelength)
 
     @ureg.check(None, None, ureg.meter, None, ureg.steradian, ureg.meter)
     def get_scene_radiance(self, rho_hat, depth_map, num_pixels, omega, epsilon=1e-12 * ureg.meters):
@@ -342,7 +364,7 @@ class Sun(ConstantSource, BlackBodySource):
         
         # Initialize both parent classes
         ConstantSource.__init__(self, intensity=intensity, stability_factor=stability_factor)
-        BlackBodySource.__init__(self, temperature=temperature)
+        BlackBodySource.__init__(self, temperature=temperature, illuminance=light_conditions)
         
         self.lambda_pass = lambda_pass
         self.delta_lambda = delta_lambda
@@ -356,9 +378,13 @@ class Sun(ConstantSource, BlackBodySource):
             )
             * ureg.meters
         )
-        passes_through = np.trapz(self.radiance_per_wavelength(filter_lam), x=filter_lam)
+        # Calculate radiance values and ensure proper unit handling
+        radiance_values = self.radiance_per_wavelength(filter_lam)
+        # Use numpy trapz with proper unit handling
+        passes_through = np.trapz(radiance_values.magnitude, x=filter_lam.magnitude) * radiance_values.units
         self.c_eff = passes_through / self.total_radiance()
-        self.c_eff.ito(ureg.dimensionless)
+        # Convert to dimensionless by extracting magnitude
+        self.c_eff = self.c_eff.magnitude * ureg.dimensionless
 
     @ureg.check(None, ureg.steradian, None, ureg.hertz)
     def get_scene_radiance(self, omega, rho_hat, frequency):
@@ -370,6 +396,7 @@ class Sun(ConstantSource, BlackBodySource):
             watts2photons(watts_eff_per_area, 1 / frequency, self.lambda_pass) / ureg.meter**2
         )
         radiance = photons_eff_per_area_per_cycle.to(ureg.count / ureg.meter**2) * (omega * rho_hat) / np.pi
+
         return radiance.to(radiance_photons)
 
     @property
@@ -420,23 +447,25 @@ class FlickeringLamp(DynamicSource, BlackBodySource):
         """Get the current intensity with flickering modulation"""
         base_intensity = self.effective_intensity
         # Apply dynamic modulation from DynamicSource
-        modulation = 1 + self.modulation_amplitude * np.sin(
-            2 * np.pi * self.modulation_frequency * time.time() + self.phase
-        )
+        # Convert time to dimensionless and ensure phase calculation is in radians
+        current_time = time.time() * ureg.second
+        phase_calculation = 2 * np.pi * self.modulation_frequency * current_time + self.phase
+        modulation = 1 + self.modulation_amplitude * np.sin(phase_calculation)
         return base_intensity * modulation
     
     @ureg.check(None, ureg.steradian, None, ureg.hertz)
     def get_scene_radiance(self, omega, rho_hat, frequency):
         """Get scene radiance due to flickering ambient source"""
-        # Get current modulated intensity
+        # Get current modulated intensity (watts per square meter)
         current_intensity = self.get_intensity()
         
-        # Convert to photons per cycle
-        photons_per_area_per_cycle = watts2photons(
-            current_intensity, 
-            1 / frequency, 
-            self.lambda_max()  # Use peak wavelength from black body
-        ) / ureg.meter**2
+        # Convert to photons per cycle per area
+        # Note: watts2photons expects total power, so we multiply by 1 m² to get total power
+        # then divide by 1 m² to get back to per-area units
+        photons_per_area_per_cycle = (
+            watts2photons(current_intensity * (1 * ureg.meter**2), 1 / frequency, self.lambda_max()) 
+            / (1 * ureg.meter**2)
+        )
         
         # Calculate radiance (assumes lambertian BRDF)
         radiance = photons_per_area_per_cycle.to(ureg.count / ureg.meter**2) * (omega * rho_hat) / np.pi
@@ -455,7 +484,63 @@ class CombinedSource:
         self.sources = [s for s in sources if s is not None]
 
     def get_scene_radiance(self, *args, **kwargs):
-        result = 0
-        for source in self.sources:
-            result += source.get_scene_radiance(*args, **kwargs)
+        # Initialize result with the shape of the first source's output
+        if not self.sources:
+            return 0
+        
+        # Get the first source's result to determine the shape
+        # Handle different parameter signatures for the first source
+        first_source = self.sources[0]
+        try:
+            first_result = first_source.get_scene_radiance(*args, **kwargs)
+        except (TypeError, KeyError) as e:
+            # Handle different parameter signatures for different source types
+            if isinstance(first_source, PulsedLaser):
+                # PulsedLaser expects: (rho_hat, depth_map, num_pixels, omega, ...)
+                if len(args) >= 3:
+                    omega, rho_hat, frequency = args[0], args[1], args[2]
+                    # For PulsedLaser, we need depth_map and num_pixels
+                    # Use rho_hat.size as num_pixels and create a dummy depth_map
+                    depth_map = np.ones_like(rho_hat) * 1.0 * ureg.meter
+                    first_result = first_source.get_scene_radiance(rho_hat, depth_map, rho_hat.size, omega, **kwargs)
+                else:
+                    raise e
+            else:
+                # For other sources, try with the original args
+                first_result = first_source.get_scene_radiance(*args, **kwargs)
+        
+        result = np.zeros_like(first_result)
+        
+        # Add all sources
+        for i, source in enumerate(self.sources):
+            try:
+                source_result = source.get_scene_radiance(*args, **kwargs)
+            except (TypeError, KeyError) as e:
+                # Handle different parameter signatures for different source types
+                if isinstance(source, PulsedLaser):
+                    # PulsedLaser expects: (rho_hat, depth_map, num_pixels, omega, ...)
+                    if len(args) >= 3:
+                        omega, rho_hat, frequency = args[0], args[1], args[2]
+                        # For PulsedLaser, we need depth_map and num_pixels
+                        # Use rho_hat.size as num_pixels and create a dummy depth_map
+                        depth_map = np.ones_like(rho_hat) * 1.0 * ureg.meter
+                        source_result = source.get_scene_radiance(rho_hat, depth_map, rho_hat.size, omega, **kwargs)
+                    else:
+                        raise e
+                else:
+                    # For other sources, try with the original args
+                    source_result = source.get_scene_radiance(*args, **kwargs)
+            
+            if source_result.shape != result.shape:
+                print(f"Warning: Source {i} ({type(source).__name__}) returned shape {source_result.shape}, expected {result.shape}")
+                # Try to broadcast or resize if possible
+                if hasattr(source_result, 'shape') and hasattr(result, 'shape'):
+                    try:
+                        # Try broadcasting
+                        result += source_result
+                    except ValueError:
+                        print(f"Error: Cannot broadcast shapes {source_result.shape} and {result.shape}")
+                        raise
+            else:
+                result += source_result
         return result

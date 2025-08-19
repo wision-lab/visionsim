@@ -1,0 +1,55 @@
+# Histogrammer 
+histogrammer:
+  min_depth: 0.0
+  max_depth: 40.0
+  n_bins: 1000
+  shape: [300, 400]  # [height, width] to match sensor size
+  strict_units: true
+  strict_range: false
+  bin_width: 0.03  # meters per bin
+  pixel_fov_list: [[0, 0.4, 0.3, 0.6], [0.7, 0.95, 0.6, 0.9]]
+  n_pulses: 1000   # number of laser pulses
+  dead_time_s: 10e-9 # Dead time in seconds
+  free_running: False # Free-running mode (True) or gated mode (False) 
+
+# Active Light Source 
+active_source:
+  pulsed_laser:
+    enabled: true
+    wavelength: 550.0               # nanometers
+    frequency: 10.0e6              # hertz
+    pulse_width: 0.5e-9           # seconds
+    avg_watts: 1.0                  # watts
+    pulse_shape: "custom"         # "gaussian", "square", or "custom" 
+    # pulse_shape_custom: "lambda x: np.sinc(x / 3)"
+    pulse_shape_custom: "np.array([0,1,2,3,4,5,6,5,4,3,2,1,0])"
+    
+# Ambient Light Sources 
+ambient_source:
+  sun:
+    enabled: true
+    temperature: 5778.0            # kelvin
+    light_conditions: "AVERAGE_SUNLIGHT"  # from LightConditions enum
+    lambda_pass: 550.0             # nanometers
+    delta_lambda: 10.0             # nanometers
+    intensity: 3.828e26            # watts per square meter
+    stability_factor: 0.01         # dimensionless
+    emissivity: 1.0                # dimensionless
+    
+  flickering_lamp:
+    enabled: true
+    temperature: 2700.0           # kelvin (typical incandescent bulb)
+    illuminance: 800.0            # lux (typical room lighting)
+    modulation_frequency: 120.0   # hertz (AC power frequency)
+    modulation_amplitude: 0.1     # dimensionless (10% flicker)
+    phase: 0.0                    # radians
+    pulse_width: 0.001            # seconds
+    pulse_shape: "gaussian"
+    emissivity: 0.9              # dimensionless
+
+# Sensor
+sensor:
+  omega: 0.001                    # steradians
+  resolution: [300, 400]          # [height, width]
+  pixel_pitch: 20.0               # meters
+  f_number: 1.4

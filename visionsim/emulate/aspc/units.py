@@ -41,10 +41,16 @@ def validate_units(enum_aware=True, ignore_kwargs=None):
             for param_name, param_value in params:
                 value = kwargs.get(param_name)
 
-                if enum_aware:
-                    value = value.value if isinstance(value, Enum) else value
+                # Handle enum values
+                if enum_aware and isinstance(value, Enum):
+                    # If the default is also an enum, we're good
+                    if isinstance(param_value.default, Enum):
+                        continue
+                    # If the default is a Quantity, extract the enum's value
+                    value = value.value
 
-                if isinstance(param_value.default, Quantity) or (enum_aware and isinstance(param_value.default, Enum)):
+                # Handle Quantity validation
+                if isinstance(param_value.default, Quantity):
                     if not isinstance(value, Quantity):
                         raise PintTypeError(
                             f"Expected a quantity for keyword-argument {param_name} with "
