@@ -125,11 +125,13 @@ def _run(
         )
 
 
-def post_install(executable: str | os.PathLike | None = None):
+def post_install(executable: str | os.PathLike | None = None, editable: bool = False):
     """Install additional dependencies
 
     Args:
         executable (str | os.PathLike | None, optional): Path to Blender executable. Defaults to one found on $PATH.
+        editable: (bool, optional): If set, install current visionsim as editable in blender. Only works if
+            visionsim is already installed as editable locally.
     """
     from visionsim.simulate import install_dependencies
 
@@ -137,7 +139,7 @@ def post_install(executable: str | os.PathLike | None = None):
         raise RuntimeError(
             "No blender installation found on path! Please make sure it is discoverable, or specify executable."
         )
-    install_dependencies(executable)
+    install_dependencies(executable, editable=editable)
 
 
 def main():

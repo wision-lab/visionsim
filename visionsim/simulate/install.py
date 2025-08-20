@@ -27,14 +27,17 @@ if __name__ == "__main__":
         index = len(sys.argv)
 
     parser = argparse.ArgumentParser("Install dependencies into blender's runtime.")
-    parser.add_argument("version", type=str)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--version", type=str)
+    group.add_argument("--editable", type=str)
     args, unknown = parser.parse_known_args(sys.argv[index:])
 
+    module_spec = f"visionsim=={args.version}" if args.version else f"--editable {args.editable}"
     commands = [
         f"{sys.executable} -m ensurepip",
         f"{sys.executable} -m pip install -U pip",
         f"{sys.executable} -m pip install rpyc",
-        f"{sys.executable} -m pip install --no-dependencies visionsim=={args.version}",
+        f"{sys.executable} -m pip install --no-dependencies --verbose --force-reinstall {module_spec}",
     ]
 
     try:
