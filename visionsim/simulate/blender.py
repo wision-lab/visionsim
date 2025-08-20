@@ -891,7 +891,7 @@ class BlenderService(rpyc.Service):
         """
         self.log = log
 
-    def exposed_initialize(self, blend_file: str | os.PathLike, root_path: str | os.PathLike):
+    def exposed_initialize(self, blend_file: str | os.PathLike, root_path: str | os.PathLike, **kwargs):
         """Initialize BlenderService and load blendfile.
 
         Args:
@@ -905,7 +905,7 @@ class BlenderService(rpyc.Service):
 
         # Load blendfile
         self.blend_file = blend_file
-        bpy.ops.wm.open_mainfile(filepath=str(blend_file))
+        bpy.ops.wm.open_mainfile(filepath=str(blend_file), **kwargs)
         self.log.info(f"Successfully loaded {blend_file}")
 
         # Ensure root paths exist
@@ -1112,9 +1112,17 @@ class BlenderService(rpyc.Service):
         self.normal_path.label = "Normal Output"
         self.normal_path.format.file_format = "OPEN_EXR"
         self.normal_path.format.exr_codec = exr_codec
+        self.normal_path.format.color_mode = "RGB"
         self.normal_path.format.color_management = "OVERRIDE"
         self.normal_path.format.linear_colorspace_settings.name = "Non-Color"
-        self.tree.links.new(normal_group.outputs["Vector"], self.normal_path.inputs[0])
+
+        vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
+        vec2rgba.label = "Vector2RGBA"
+        vec2rgba.node_tree = vec2rgba_node_group()
+
+        self.tree.links.new(normal_group.outputs["Vector"], vec2rgba.inputs["Image"])
+        self.tree.links.new(vec2rgba.outputs["Image"], self.normal_path.inputs[0])
+
         self.normal_path.base_path = str(self.root_path / "normals")
         self.normal_path.file_slots[0].path = f"normal_{'#' * 6}"
 
