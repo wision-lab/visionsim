@@ -37,11 +37,12 @@ if __name__ == "__main__":
         f"{sys.executable} -m ensurepip",
         f"{sys.executable} -m pip install -U pip",
         f"{sys.executable} -m pip install rpyc",
-        f"{sys.executable} -m pip install --no-dependencies --verbose --force-reinstall {module_spec}",
+        f"{sys.executable} -m pip install --no-warn-script-location --force-reinstall --no-dependencies --verbose {module_spec}",
     ]
 
     try:
         print("Attempting to auto install dependencies into blender's runtime...")
+        print("\n".join(commands))
         outputs = [
             subprocess.run(shlex.split(cmd), stdout=sys.stdout, stderr=subprocess.STDOUT, universal_newlines=True)
             for cmd in commands
