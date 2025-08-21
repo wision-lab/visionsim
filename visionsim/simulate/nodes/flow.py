@@ -6,35 +6,28 @@
 
 import bpy  # type: ignore
 
+from .common import new_socket
+
 
 # initialize Cartesian2Polar node group
 def cartesian2polar_node_group():
     cartesian2polar = bpy.data.node_groups.new(type="CompositorNodeTree", name="Cartesian2Polar")
 
-    cartesian2polar.color_tag = "NONE"
-    cartesian2polar.description = ""
-    cartesian2polar.default_group_node_width = 140
+    if bpy.app.version >= (4, 3, 0):
+        cartesian2polar.default_group_node_width = 140
 
     # cartesian2polar interface
     # Socket r
-    r_socket = cartesian2polar.interface.new_socket(name="r", in_out="OUTPUT", socket_type="NodeSocketFloat")
-    r_socket.subtype = "NONE"
-    r_socket.attribute_domain = "POINT"
+    new_socket(cartesian2polar, name="r", in_out="OUTPUT", socket_type="NodeSocketFloat")
 
     # Socket theta
-    theta_socket = cartesian2polar.interface.new_socket(name="theta", in_out="OUTPUT", socket_type="NodeSocketFloat")
-    theta_socket.subtype = "NONE"
-    theta_socket.attribute_domain = "POINT"
+    new_socket(cartesian2polar, name="theta", in_out="OUTPUT", socket_type="NodeSocketFloat")
 
     # Socket x
-    x_socket = cartesian2polar.interface.new_socket(name="x", in_out="INPUT", socket_type="NodeSocketFloat")
-    x_socket.subtype = "NONE"
-    x_socket.attribute_domain = "POINT"
+    new_socket(cartesian2polar, name="x", in_out="INPUT", socket_type="NodeSocketFloat")
 
     # Socket y
-    y_socket = cartesian2polar.interface.new_socket(name="y", in_out="INPUT", socket_type="NodeSocketFloat")
-    y_socket.subtype = "NONE"
-    y_socket.attribute_domain = "POINT"
+    new_socket(cartesian2polar, name="y", in_out="INPUT", socket_type="NodeSocketFloat")
 
     # initialize cartesian2polar nodes
     # node Group Output
@@ -83,7 +76,6 @@ def cartesian2polar_node_group():
     # node Reroute
     reroute = cartesian2polar.nodes.new("NodeReroute")
     reroute.name = "Reroute"
-    reroute.socket_idname = "NodeSocketFloat"
 
     # Set locations
     group_output.location = (395.625, -57.550392150878906)
@@ -123,31 +115,21 @@ def cartesian2polar_node_group():
 def flowdebug_node_group():
     flowdebug = bpy.data.node_groups.new(type="CompositorNodeTree", name="FlowDebug")
 
-    flowdebug.color_tag = "NONE"
-    flowdebug.description = ""
-    flowdebug.default_group_node_width = 140
+    if bpy.app.version >= (4, 3, 0):
+        flowdebug.default_group_node_width = 140
 
     # flowdebug interface
     # Socket Image
-    image_socket = flowdebug.interface.new_socket(name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
-    image_socket.attribute_domain = "POINT"
+    new_socket(flowdebug, name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
 
     # Socket Orientation
-    orientation_socket = flowdebug.interface.new_socket(
-        name="Orientation", in_out="INPUT", socket_type="NodeSocketFloat"
-    )
-    orientation_socket.subtype = "NONE"
-    orientation_socket.attribute_domain = "POINT"
+    new_socket(flowdebug, name="Orientation", in_out="INPUT", socket_type="NodeSocketFloat")
 
     # Socket x
-    x_socket = flowdebug.interface.new_socket(name="x", in_out="INPUT", socket_type="NodeSocketFloat")
-    x_socket.subtype = "NONE"
-    x_socket.attribute_domain = "POINT"
+    new_socket(flowdebug, name="x", in_out="INPUT", socket_type="NodeSocketFloat")
 
     # Socket y
-    y_socket = flowdebug.interface.new_socket(name="y", in_out="INPUT", socket_type="NodeSocketFloat")
-    y_socket.subtype = "NONE"
-    y_socket.attribute_domain = "POINT"
+    new_socket(flowdebug, name="y", in_out="INPUT", socket_type="NodeSocketFloat")
 
     # initialize flowdebug nodes
     # node Group Output
@@ -183,10 +165,12 @@ def flowdebug_node_group():
     map_range.inputs[4].default_value = 6.2831854820251465
 
     # node Combine Color
-    combine_color = flowdebug.nodes.new("CompositorNodeCombineColor")
+    if bpy.app.version >= (3, 3, 0):
+        combine_color = flowdebug.nodes.new("CompositorNodeCombineColor")
+        combine_color.mode = "HSV"
+    else:
+        combine_color = flowdebug.nodes.new("CompositorNodeCombHSVA")
     combine_color.name = "Combine Color"
-    combine_color.mode = "HSV"
-    combine_color.ycc_mode = "ITUBT709"
     # Saturation
     combine_color.inputs[1].default_value = 1.0
     # Alpha
@@ -222,15 +206,12 @@ def flowdebug_node_group():
     # node Reroute
     reroute_1 = flowdebug.nodes.new("NodeReroute")
     reroute_1.name = "Reroute"
-    reroute_1.socket_idname = "NodeSocketFloat"
     # node Reroute.001
     reroute_2 = flowdebug.nodes.new("NodeReroute")
     reroute_2.name = "Reroute.001"
-    reroute_2.socket_idname = "NodeSocketFloat"
     # node Reroute.002
     reroute_3 = flowdebug.nodes.new("NodeReroute")
     reroute_3.name = "Reroute.002"
-    reroute_3.socket_idname = "NodeSocketFloat"
 
     # Set locations
     group_output.location = (734.375, -46.430747985839844)
@@ -282,18 +263,15 @@ def flowdebug_node_group():
 def vec2rgba_node_group():
     vec2rgba = bpy.data.node_groups.new(type="CompositorNodeTree", name="Vec2RGBA")
 
-    vec2rgba.color_tag = "NONE"
-    vec2rgba.description = ""
-    vec2rgba.default_group_node_width = 140
+    if bpy.app.version >= (4, 3, 0):
+        vec2rgba.default_group_node_width = 140
 
     # vec2rgba interface
     # Socket Image
-    output_socket = vec2rgba.interface.new_socket(name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
-    output_socket.attribute_domain = "POINT"
+    new_socket(vec2rgba, name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
 
     # Socket Image
-    input_socket = vec2rgba.interface.new_socket(name="Image", in_out="INPUT", socket_type="NodeSocketColor")
-    input_socket.attribute_domain = "POINT"
+    new_socket(vec2rgba, name="Image", in_out="INPUT", socket_type="NodeSocketColor")
 
     # initialize vec2rgba nodes
     # node Group Output
@@ -306,16 +284,20 @@ def vec2rgba_node_group():
     group_input.name = "Group Input"
 
     # node Separate Color
-    separate_color = vec2rgba.nodes.new("CompositorNodeSeparateColor")
+    if bpy.app.version >= (3, 3, 0):
+        separate_color = vec2rgba.nodes.new("CompositorNodeSeparateColor")
+        separate_color.mode = "RGB"
+    else:
+        separate_color = vec2rgba.nodes.new("CompositorNodeSepRGBA")
     separate_color.name = "Separate Color"
-    separate_color.mode = "RGB"
-    separate_color.ycc_mode = "ITUBT709"
 
     # node Combine Color
-    combine_color = vec2rgba.nodes.new("CompositorNodeCombineColor")
+    if bpy.app.version >= (3, 3, 0):
+        combine_color = vec2rgba.nodes.new("CompositorNodeCombineColor")
+        combine_color.mode = "RGB"
+    else:
+        combine_color = vec2rgba.nodes.new("CompositorNodeCombRGBA")
     combine_color.name = "Combine Color"
-    combine_color.mode = "RGB"
-    combine_color.ycc_mode = "ITUBT709"
 
     # Set locations
     group_output.location = (285.0, 0.0)

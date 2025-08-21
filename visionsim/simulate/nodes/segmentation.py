@@ -6,24 +6,22 @@
 
 import bpy  # type: ignore
 
+from .common import new_socket
+
 
 # initialize SegmentationDebug node group
 def segmentationdebug_node_group():
     segmentationdebug = bpy.data.node_groups.new(type="CompositorNodeTree", name="SegmentationDebug")
 
-    segmentationdebug.color_tag = "NONE"
-    segmentationdebug.description = ""
-    segmentationdebug.default_group_node_width = 140
+    if bpy.app.version >= (4, 3, 0):
+        segmentationdebug.default_group_node_width = 140
 
     # segmentationdebug interface
     # Socket Image
-    image_socket = segmentationdebug.interface.new_socket(name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
-    image_socket.attribute_domain = "POINT"
+    new_socket(segmentationdebug, name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
 
     # Socket Value
-    value_socket = segmentationdebug.interface.new_socket(name="Value", in_out="INPUT", socket_type="NodeSocketFloat")
-    value_socket.subtype = "NONE"
-    value_socket.attribute_domain = "POINT"
+    new_socket(segmentationdebug, name="Value", in_out="INPUT", socket_type="NodeSocketFloat")
 
     # initialize segmentationdebug nodes
     # node Group Output
@@ -36,10 +34,12 @@ def segmentationdebug_node_group():
     group_input.name = "Group Input"
 
     # node Combine Color
-    combine_color = segmentationdebug.nodes.new("CompositorNodeCombineColor")
+    if bpy.app.version >= (3, 3, 0):
+        combine_color = segmentationdebug.nodes.new("CompositorNodeCombineColor")
+        combine_color.mode = "HSV"
+    else:
+        combine_color = segmentationdebug.nodes.new("CompositorNodeCombHSVA")
     combine_color.name = "Combine Color"
-    combine_color.mode = "HSV"
-    combine_color.ycc_mode = "ITUBT709"
     # Saturation
     combine_color.inputs[1].default_value = 1.0
     # Alpha

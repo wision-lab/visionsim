@@ -1036,13 +1036,16 @@ class BlenderService(rpyc.Service):
             debug_depth_path.format.color_mode = "BW"
 
             # Important! Set the view settings to raw otherwise result is tonemapped
-            debug_depth_path.format.color_management = "OVERRIDE"
+            if bpy.app.version >= (3, 2, 0):
+                debug_depth_path.format.color_management = "OVERRIDE"
             debug_depth_path.format.view_settings.view_transform = "Raw"
             debug_depth_path.format.view_settings.look = "None"
             debug_depth_path.format.view_settings.gamma = 0
             debug_depth_path.format.view_settings.exposure = 1
             debug_depth_path.format.view_settings.use_curve_mapping = False
-            debug_depth_path.format.view_settings.use_white_balance = False
+
+            if bpy.app.version >= (4, 3, 0):
+                debug_depth_path.format.view_settings.use_white_balance = False
 
             normalize = self.tree.nodes.new("CompositorNodeNormalize")
             self.tree.links.new(self.render_layers.outputs["Depth"], normalize.inputs[0])
@@ -1051,18 +1054,25 @@ class BlenderService(rpyc.Service):
         self.depth_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.depth_path.label = "Depth Output"
         self.depth_path.file_slots[0].path = f"depth_{'#' * 6}"
+
+        if bpy.app.version >= (3, 2, 0):
+            self.depth_path.format.color_management = "OVERRIDE"
+            self.depth_path.format.linear_colorspace_settings.name = "Non-Color"
         self.depth_path.format.file_format = file_format
 
         if file_format.upper() == "OPEN_EXR":
             self.depth_path.format.exr_codec = exr_codec
-            self.depth_path.format.color_mode = "BW"
+
+            if bpy.app.version < (4, 3, 0):
+                self.depth_path.format.color_mode = "RGB"
+            else:
+                self.depth_path.format.color_mode = "BW"
+
             self.depth_extension = ".exr"
         else:
             self.depth_path.format.color_mode = "RGB"
             self.depth_extension = ".hdr"
 
-        self.depth_path.format.color_management = "OVERRIDE"
-        self.depth_path.format.linear_colorspace_settings.name = "Non-Color"
         self.tree.links.new(self.render_layers.outputs["Depth"], self.depth_path.inputs[0])
         self.depth_path.base_path = str(self.root_path / "depths")
 
@@ -1098,23 +1108,28 @@ class BlenderService(rpyc.Service):
             debug_normal_path.format.color_mode = "RGB"
 
             # Important! Set the view settings to raw otherwise result is tonemapped
-            debug_normal_path.format.color_management = "OVERRIDE"
+            if bpy.app.version >= (3, 2, 0):
+                debug_normal_path.format.color_management = "OVERRIDE"
             debug_normal_path.format.view_settings.view_transform = "Raw"
             debug_normal_path.format.view_settings.look = "None"
             debug_normal_path.format.view_settings.gamma = 0
             debug_normal_path.format.view_settings.exposure = 1
             debug_normal_path.format.view_settings.use_curve_mapping = False
-            debug_normal_path.format.view_settings.use_white_balance = False
+
+            if bpy.app.version >= (4, 3, 0):
+                debug_normal_path.format.view_settings.use_white_balance = False
 
             self.tree.links.new(normal_group.outputs["RGBA"], debug_normal_path.inputs[0])
 
         self.normal_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.normal_path.label = "Normal Output"
+
+        if bpy.app.version >= (3, 2, 0):
+            self.normal_path.format.color_management = "OVERRIDE"
+            self.normal_path.format.linear_colorspace_settings.name = "Non-Color"
         self.normal_path.format.file_format = "OPEN_EXR"
         self.normal_path.format.exr_codec = exr_codec
         self.normal_path.format.color_mode = "RGB"
-        self.normal_path.format.color_management = "OVERRIDE"
-        self.normal_path.format.linear_colorspace_settings.name = "Non-Color"
 
         vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
         vec2rgba.label = "Vector2RGBA"
@@ -1157,7 +1172,11 @@ class BlenderService(rpyc.Service):
 
         if debug:
             # Separate forward and backward flows (with a separate color not vector node)
-            split_flow = self.tree.nodes.new(type="CompositorNodeSeparateColor")
+            if bpy.app.version >= (3, 3, 0):
+                split_flow = self.tree.nodes.new(type="CompositorNodeSeparateColor")
+                split_flow.mode = "RGB"
+            else:
+                split_flow = self.tree.nodes.new(type="CompositorNodeSepRGBA")
             self.tree.links.new(self.render_layers.outputs["Vector"], split_flow.inputs["Image"])
 
             # Create output node
@@ -1171,13 +1190,16 @@ class BlenderService(rpyc.Service):
             debug_flow_path.format.color_mode = "RGB"
 
             # Important! Set the view settings to raw otherwise result is tonemapped
-            debug_flow_path.format.color_management = "OVERRIDE"
+            if bpy.app.version >= (3, 2, 0):
+                debug_flow_path.format.color_management = "OVERRIDE"
             debug_flow_path.format.view_settings.view_transform = "Raw"
             debug_flow_path.format.view_settings.look = "None"
             debug_flow_path.format.view_settings.gamma = 0
             debug_flow_path.format.view_settings.exposure = 1
             debug_flow_path.format.view_settings.use_curve_mapping = False
-            debug_flow_path.format.view_settings.use_white_balance = False
+
+            if bpy.app.version >= (4, 3, 0):
+                debug_flow_path.format.view_settings.use_white_balance = False
 
             # Instantiate flow debug node group(s) and connect them
             if direction.lower() in ("forward", "both"):
@@ -1185,8 +1207,8 @@ class BlenderService(rpyc.Service):
                 flow_group.label = "Forward FlowDebug"
                 flow_group.node_tree = flowdebug_node_group()
 
-                self.tree.links.new(split_flow.outputs["Red"], flow_group.inputs["x"])
-                self.tree.links.new(split_flow.outputs["Green"], flow_group.inputs["y"])
+                self.tree.links.new(split_flow.outputs[0], flow_group.inputs["x"])
+                self.tree.links.new(split_flow.outputs[1], flow_group.inputs["y"])
 
                 slot = debug_flow_path.file_slots.new(f"debug_fwd_flow_{'#' * 6}")
                 self.tree.links.new(flow_group.outputs["Image"], slot)
@@ -1195,8 +1217,8 @@ class BlenderService(rpyc.Service):
                 flow_group.label = "Backward FlowDebug"
                 flow_group.node_tree = flowdebug_node_group()
 
-                self.tree.links.new(split_flow.outputs["Blue"], flow_group.inputs["x"])
-                self.tree.links.new(split_flow.outputs["Alpha"], flow_group.inputs["y"])
+                self.tree.links.new(split_flow.outputs[2], flow_group.inputs["x"])
+                self.tree.links.new(split_flow.outputs[3], flow_group.inputs["y"])
 
                 slot = debug_flow_path.file_slots.new(f"debug_bwd_flow_{'#' * 6}")
                 self.tree.links.new(flow_group.outputs["Image"], slot)
@@ -1207,11 +1229,13 @@ class BlenderService(rpyc.Service):
         # vector as an image with 4 channels. This dummy node just splits and recombines channels.
         self.flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.flow_path.label = "Flow Debug Output"
+
+        if bpy.app.version >= (3, 2, 0):
+            self.flow_path.format.color_management = "OVERRIDE"
+            self.flow_path.format.linear_colorspace_settings.name = "Non-Color"
         self.flow_path.format.file_format = "OPEN_EXR"
         self.flow_path.format.exr_codec = exr_codec
         self.flow_path.format.color_mode = "RGBA"
-        self.flow_path.format.color_management = "OVERRIDE"
-        self.flow_path.format.linear_colorspace_settings.name = "Non-Color"
         self.flow_path.base_path = str(self.root_path / "flows")
         self.flow_path.file_slots[0].path = f"flow_{'#' * 6}"
 
@@ -1275,24 +1299,34 @@ class BlenderService(rpyc.Service):
             debug_seg_path.format.color_mode = "RGB"
 
             # Important! Set the view settings to raw otherwise result is tonemapped
-            debug_seg_path.format.color_management = "OVERRIDE"
+            if bpy.app.version >= (3, 2, 0):
+                debug_seg_path.format.color_management = "OVERRIDE"
             debug_seg_path.format.view_settings.view_transform = "Raw"
             debug_seg_path.format.view_settings.look = "None"
             debug_seg_path.format.view_settings.gamma = 0
             debug_seg_path.format.view_settings.exposure = 1
             debug_seg_path.format.view_settings.use_curve_mapping = False
-            debug_seg_path.format.view_settings.use_white_balance = False
+
+            if bpy.app.version >= (4, 3, 0):
+                debug_seg_path.format.view_settings.use_white_balance = False
 
             self.tree.links.new(self.render_layers.outputs["IndexOB"], seg_group.inputs["Value"])
             self.tree.links.new(seg_group.outputs["Image"], debug_seg_path.inputs[0])
 
         self.segmentation_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
         self.segmentation_path.label = "Segmentation Output"
+
+        if bpy.app.version >= (3, 2, 0):
+            self.segmentation_path.format.color_management = "OVERRIDE"
+            self.segmentation_path.format.linear_colorspace_settings.name = "Non-Color"
         self.segmentation_path.format.file_format = "OPEN_EXR"
         self.segmentation_path.format.exr_codec = exr_codec
-        self.segmentation_path.format.color_mode = "BW"
-        self.segmentation_path.format.color_management = "OVERRIDE"
-        self.segmentation_path.format.linear_colorspace_settings.name = "Non-Color"
+
+        if bpy.app.version < (4, 3, 0):
+            self.segmentation_path.format.color_mode = "RGB"
+        else:
+            self.segmentation_path.format.color_mode = "BW"
+
         self.tree.links.new(self.render_layers.outputs["IndexOB"], self.segmentation_path.inputs[0])
         self.segmentation_path.base_path = str(self.root_path / "segmentations")
         self.segmentation_path.file_slots[0].path = f"segmentation_{'#' * 6}"
@@ -1806,7 +1840,7 @@ if __name__ == "__main__":
     except ValueError:
         index = len(sys.argv)
 
-    parser = argparse.ArgumentParser("Install dependencies into blender's runtime.")
+    parser = argparse.ArgumentParser("Startup a BlenderServer on a given port.")
     parser.add_argument("-p", "--port", type=int, default=0)
     args, unknown = parser.parse_known_args(sys.argv[index:])
 

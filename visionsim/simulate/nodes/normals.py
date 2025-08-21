@@ -6,29 +6,27 @@
 
 import bpy  # type: ignore
 
+from .common import new_socket
+
 
 # initialize NormalDebug node group
 def normaldebug_node_group():
     normaldebug = bpy.data.node_groups.new(type="CompositorNodeTree", name="NormalDebug")
 
-    normaldebug.color_tag = "NONE"
-    normaldebug.description = ""
-    normaldebug.default_group_node_width = 140
+    if bpy.app.version >= (4, 3, 0):
+        normaldebug.default_group_node_width = 140
 
     # normaldebug interface
     # Socket RGBA
-    rgba_socket = normaldebug.interface.new_socket(name="RGBA", in_out="OUTPUT", socket_type="NodeSocketColor")
-    rgba_socket.attribute_domain = "POINT"
+    new_socket(normaldebug, name="RGBA", in_out="OUTPUT", socket_type="NodeSocketColor")
 
     # Socket Vector
-    vector_socket = normaldebug.interface.new_socket(name="Vector", in_out="OUTPUT", socket_type="NodeSocketVector")
-    vector_socket.subtype = "NONE"
-    vector_socket.attribute_domain = "POINT"
+    new_socket(normaldebug, name="Vector", in_out="OUTPUT", socket_type="NodeSocketVector")
 
     # Socket Normal
-    normal_socket = normaldebug.interface.new_socket(name="Normal", in_out="INPUT", socket_type="NodeSocketVector")
-    normal_socket.subtype = "DIRECTION"
-    normal_socket.attribute_domain = "POINT"
+    new_socket(
+        normaldebug, name="Normal", in_out="INPUT", socket_type="NodeSocketVector", subtype="DIRECTION"
+    )
 
     # initialize normaldebug nodes
     # node Group Output
@@ -90,10 +88,12 @@ def normaldebug_node_group():
     remapz.inputs[2].default_value = 0.5
 
     # node Combine Color
-    combine_color = normaldebug.nodes.new("CompositorNodeCombineColor")
+    if bpy.app.version >= (3, 3, 0):
+        combine_color = normaldebug.nodes.new("CompositorNodeCombineColor")
+        combine_color.mode = "RGB"
+    else:
+        combine_color = normaldebug.nodes.new("CompositorNodeCombRGBA")
     combine_color.name = "Combine Color"
-    combine_color.mode = "RGB"
-    combine_color.ycc_mode = "ITUBT709"
     # Alpha
     combine_color.inputs[3].default_value = 1.0
 
@@ -105,21 +105,25 @@ def normaldebug_node_group():
     debugnormal.shrink = True
 
     # node Separate XYZ
-    separate_xyz = normaldebug.nodes.new("CompositorNodeSeparateXYZ")
+    if bpy.app.version >= (3, 2, 0):
+        separate_xyz = normaldebug.nodes.new("CompositorNodeSeparateXYZ")
+    else:
+        separate_xyz = normaldebug.nodes.new("CompositorNodeSepRGBA")
     separate_xyz.name = "Separate XYZ"
 
     # node Combine XYZ.002
-    combine_xyz = normaldebug.nodes.new("CompositorNodeCombineXYZ")
+    if bpy.app.version >= (3, 2, 0):
+        combine_xyz = normaldebug.nodes.new("CompositorNodeCombineXYZ")
+    else:
+        combine_xyz = normaldebug.nodes.new("CompositorNodeCombRGBA")
     combine_xyz.name = "Combine XYZ.002"
 
     # node Reroute
     reroute_1 = normaldebug.nodes.new("NodeReroute")
     reroute_1.name = "Reroute"
-    reroute_1.socket_idname = "NodeSocketVector"
     # node Reroute.001
     reroute_2 = normaldebug.nodes.new("NodeReroute")
     reroute_2.name = "Reroute.001"
-    reroute_2.socket_idname = "NodeSocketVector"
     # Set parents
     rotrow1.parent = rotation
     rotrow2.parent = rotation
