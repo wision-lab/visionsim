@@ -29,7 +29,6 @@ jobs:
       - name: Install Blender
         run: |
           sudo snap install blender --classic --channel=3.3lts/stable
-          echo -n "BLENDER_PY=$(blender --background --python-expr 'import sys; print(sys.executable, file=sys.stderr)' 2>&1 >/dev/null)" >> $GITHUB_ENV
           blender --version
       - name: Install VisionSim and dependencies
         run: |
