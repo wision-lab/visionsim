@@ -1,9 +1,9 @@
 # NOTE: This needs to be imported by blender to work properly.
 
-import bpy
+import bpy  # type: ignore
 
 
-def new_socket(nodegroup, *, name, in_out, socket_type, attribute_domain = "POINT", subtype=None):
+def new_socket(nodegroup, *, name, in_out, socket_type, attribute_domain="POINT", subtype=None):
     if bpy.app.version < (4, 0, 0):
         if in_out == "INPUT":
             socket = nodegroup.inputs.new(name=name, type=socket_type)

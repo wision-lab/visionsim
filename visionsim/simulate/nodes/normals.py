@@ -24,9 +24,7 @@ def normaldebug_node_group():
     new_socket(normaldebug, name="Vector", in_out="OUTPUT", socket_type="NodeSocketVector")
 
     # Socket Normal
-    new_socket(
-        normaldebug, name="Normal", in_out="INPUT", socket_type="NodeSocketVector", subtype="DIRECTION"
-    )
+    new_socket(normaldebug, name="Normal", in_out="INPUT", socket_type="NodeSocketVector", subtype="DIRECTION")
 
     # initialize normaldebug nodes
     # node Group Output
