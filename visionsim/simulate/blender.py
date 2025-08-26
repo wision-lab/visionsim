@@ -24,12 +24,13 @@ import rpyc.utils.registry  # type: ignore
 if TYPE_CHECKING:
     # Import only when type checking as to not introduce
     # dependency for blender. Block module typechecking.
-    from collections.abc import Callable, Iterable, Iterator
+    from collections.abc import Callable, Collection, Iterable, Iterator
+    from types import TracebackType
 
     import multiprocess  # type: ignore
     import multiprocess.pool  # type: ignore
     import numpy.typing as npt
-    from typing_extensions import Any, Concatenate, ParamSpec, Self, TypeVar
+    from typing_extensions import Any, Concatenate, ParamSpec, Self, TypeVar, cast
 
     from visionsim.types import UpdateFn
 
@@ -52,21 +53,23 @@ try:
         segmentationdebug_node_group,
         vec2rgba_node_group,
     )
-
-    # Enable server-side logging
-    logging.basicConfig(
-        level=logging.WARNING,
-        format="%(message)s",
-        datefmt="[%X]",
-    )
-    server_log = logging.getLogger(__name__)
-    server_log.setLevel(logging.INFO)
 except ImportError:
     addon_utils = None
     bpy = None
     mathutils = None
 
-REGISTRY = None
+
+# Enable server-side logging
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(message)s",
+    datefmt="[%X]",
+)
+server_log: logging.Logger = logging.getLogger(__name__)
+server_log.setLevel(logging.INFO)
+
+EXPOSED_PREFIX: str = "exposed_"
+REGISTRY: tuple[Process, rpyc.utils.registry.UDPRegistryClient] | None = None
 
 
 def require_connected_client(
@@ -74,7 +77,7 @@ def require_connected_client(
 ) -> Callable[Concatenate[BlenderClient, P], T]:
     @functools.wraps(func)
     def _decorator(self: BlenderClient, *args: P.args, **kwargs: P.kwargs) -> T:
-        if not self.conn:
+        if self.conn is None:
             raise RuntimeError(
                 f"'BlenderClient' must be connected to a server instance before calling '{func.__name__}'"
             )
@@ -88,7 +91,7 @@ def require_connected_clients(
 ) -> Callable[Concatenate[BlenderClients, P], T]:
     @functools.wraps(func)
     def _decorator(self: BlenderClients, *args: P.args, **kwargs: P.kwargs):
-        if not all(c.conn for c in self):
+        if any(c.conn is None for c in self):
             raise RuntimeError(
                 f"All client instances in 'BlenderClients' must be connected before calling '{func.__name__}'"
             )
@@ -190,8 +193,8 @@ class BlenderServer(rpyc.utils.server.Server):
     ) -> Iterator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:
         """Spawn one or more blender instances and start a `BlenderServer` in each.
 
-        This is roughly equivalent to calling `blender -b --python render.py` in many subprocesses,
-        where `render.py` initializes and `start`s a server instance. Proper logging and termination of
+        This is roughly equivalent to calling `blender -b --python blender.py` in many subprocesses,
+        where `blender.py` initializes and `start`s a server instance. Proper logging and termination of
         these processes is also taken care of.
 
         Note: The returned processes and connection settings are not guaranteed to be in the same order.
@@ -331,442 +334,6 @@ class BlenderServer(rpyc.utils.server.Server):
         self._authenticate_and_serve_client(sock)
 
 
-class BlenderClient:
-    """Client-side API to interact with blender and render novel views.
-
-    The `BlenderClient` is responsible for communicating with (and potentially spawning)
-    separate `BlenderServer`s that will actually perform the rendering via a `BlenderService`.
-
-    The client acts as a context manager, it will connect to it's server when the context is
-    entered and cleanly disconnect and close the connection in case of errors or when exiting
-    the with-block.
-
-    Many useful methods to interact with blender are provided, such as `set_resolution` or
-    `render_animation`. These methods are dynamically generated when the client connects to
-    the server. Available methods are directly inherited from `BlenderService` (or whichever
-    service the server is exposing), specifically any service method starting with `exposed_`
-    will be accessible to the client at runtime. for example, `BlenderClient.include_depths`
-    is a remote procedure call to `BlenderService.exposed_include_depths`.
-    """
-
-    def __init__(self, addr: tuple[str, int], timeout: float = 10.0) -> None:
-        """Initialize a client with known address of server.
-        Note: Using `auto_connect` or `spawn` is often more convenient.
-
-        Args:
-            addr (tuple[str, int]): Connection tuple containing the hostname and port
-            timeout (float, optional): Maximum time in seconds the client will attempt
-                to connect to the server for before an error is thrown. Only used when
-                entering context manager. Defaults to 10 seconds.
-        """
-        self.addr: tuple[str, int] = addr
-        self.conn: rpyc.Connection = None
-        self.awaitable: rpyc.AsyncResult = None
-        self.process: subprocess.Popen | None = None
-        self.timeout: float = timeout
-
-    @classmethod
-    def auto_connect(cls, timeout: float = 10.0) -> Self:
-        """Automatically connect to available server.
-
-        Use `BlenderServer.discover` to find available server within `timeout`.
-
-        Note: This doesn't actually connect to the server instance, the connection happens
-            when the context manager is entered. This simply creates a client instance with
-            the connection settings (i.e: hostname, port) of an existing server. The connection
-            might still fail when entering the with-block.
-
-        Args:
-            timeout (float, optional): try to discover server instance for `timeout`
-                (in seconds) before giving up. Defaults to 10.0 seconds.
-
-        Raises:
-            TimeoutError: raise if unable to discover server in `timeout` seconds.
-
-        Returns:
-            client: client instance initialized with connection settings of existing server.
-        """
-        start = time.time()
-
-        while True:
-            if (time.time() - start) > timeout:
-                raise TimeoutError("Unable to discover server in alloted time.")
-            if conns := set(BlenderServer.discover()):
-                break
-            time.sleep(0.1)
-        return cls(conns.pop())
-
-    @classmethod
-    @contextmanager
-    def spawn(
-        cls,
-        timeout: float = -1.0,
-        log_dir: str | os.PathLike | None = None,
-        autoexec: bool = False,
-        executable: str | os.PathLike | None = None,
-    ) -> Iterator[Self]:
-        """Spawn and connect to a blender server.
-        The spawned process is accessible through the client's `process` attribute.
-
-        Args:
-            Same as `BlenderServer.spawn`.
-
-        Returns:
-            client: the connected client
-        """
-        with BlenderServer.spawn(jobs=1, timeout=timeout, log_dir=log_dir, autoexec=autoexec, executable=executable) as (
-            procs,
-            conns,
-        ):
-            with cls(conns.pop()) as client:
-                client.process = procs[0]
-                yield client
-                client.process = None
-
-    @require_connected_client
-    def render_animation_async(self, *args, **kwargs) -> rpyc.AsyncResult:
-        """Asynchronously call `render_animation` and return an rpyc.AsyncResult.
-
-        Parameters:
-            Same as `BlendService.exposed_render_animation`
-
-        Returns:
-            result: AsyncResult encapsulating the return value of `render_animation`.
-                After `wait`ing for the render to finish, it can be accessed using
-                the `.value` attribute.
-        """
-        render_animation_async = rpyc.async_(self.conn.root.render_animation)
-        async_result = render_animation_async(*args, **kwargs)
-        self.awaitable = async_result
-        async_result.add_callback(lambda _: setattr(self, "awaitables", None))
-        return async_result
-
-    @require_connected_client
-    def render_frames_async(self, *args, **kwargs) -> rpyc.AsyncResult:
-        """Asynchronously call `render_frames` and return an rpyc.AsyncResult.
-
-        Parameters:
-            Same as `BlendService.exposed_render_frames`
-
-        Returns:
-            result: AsyncResult encapsulating the return value of `render_frames`.
-                After `wait`ing for the render to finish, it can be accessed using
-                the `.value` attribute.
-        """
-        render_frames_async = rpyc.async_(self.conn.root.render_frames)
-        async_result = render_frames_async(*args, **kwargs)
-        self.awaitable = async_result
-        async_result.add_callback(lambda _: setattr(self, "awaitables", None))
-        return async_result
-
-    def wait(self) -> None:
-        """Block and await any async results."""
-        if self.awaitable:
-            self.awaitable.wait()
-
-    def __enter__(self) -> Self:
-        # Loop until we connect or timeout
-        start = time.time()
-
-        while True:
-            try:
-                self.conn = rpyc.connect(*self.addr, config={"sync_request_timeout": -1, "allow_all_attrs": True})
-                break
-            except ConnectionRefusedError:
-                pass
-
-            if (time.time() - start) > self.timeout:
-                raise TimeoutError("Unable to connect to server in alloted time.")
-            time.sleep(0.1)
-
-        # Spoof all `exposed_` methods from the service
-        for method_name in dir(self.conn.root):
-            if method_name.startswith("exposed_"):
-                name = method_name.replace("exposed_", "")
-                method = getattr(self.conn.root, method_name)
-                setattr(self, name, method)
-
-        # Setup default logger for client, otherwise warnings
-        # in the render service won't propagate to the client
-        logger = logging.getLogger(__name__ + str(self.addr))
-        logger.setLevel(logging.INFO)
-        self.with_logger(logger)
-        return self
-
-    def __exit__(self, type, value, traceback) -> None:
-        if self.conn is not None:
-            self.conn.close()
-
-
-class BlenderClients(tuple):
-    """Collection of `BlenderClient` instances.
-
-    Most methods in this class simply call the equivalent method of each client, that is,
-    calling `clients.set_resolution` is equivalent to calling `set_resolution` for each
-    client in clients. Some special methods, namely the `render_frames` and `render_animation`
-    methods will instead distribute the rendering load to all clients.
-
-    Finally, entering each client's context-manager, and closing each client connection
-    is ensured by using this class' context-manager.
-    """
-
-    def __new__(cls, *objs: Iterator[BlenderClient | tuple[str, int]]) -> Self:
-        clients = [BlenderClient(o) if isinstance(o, tuple) else o for o in objs]
-        if not all(isinstance(o, BlenderClient) for o in clients):
-            raise TypeError("'BlenderClients' can only contain 'BlenderClient' instances or their hostnames and ports.")
-        return super().__new__(cls, clients)
-
-    def __init__(self, *objs) -> None:
-        """Initialize collection of `BlenderClient` from iterable of clients, or their connection settings.
-
-        Args:
-            *objs (Iterator[BlenderClient | tuple[str, int]]): `BlenderClient` instances or their hostnames and ports.
-        """
-        # Note: At this point the tuple is already initialized because of __new__, i.e: objs == list(self)
-        self.stack = ExitStack()
-
-    def _method_dispatch_factory(self, name, method):
-        @functools.wraps(method)
-        def inner(*args, **kwargs):
-            # Call method for each client, collect results into tuple
-            return tuple(getattr(client, name)(*args, **kwargs) for client in self)
-
-        return inner
-
-    def __enter__(self) -> Self:
-        self.stack.__enter__()
-        for client in self:
-            # Enter each client's context, connecting them all to servers
-            self.stack.enter_context(client)
-
-            # Dynamically generate methods that dispatch to all clients
-            # TODO: We currently assume all clients use `BlenderService`.
-            for method_name in dir(BlenderService):
-                if method_name.startswith("exposed_"):
-                    name = method_name.replace("exposed_", "")
-
-                    if name not in dir(self):
-                        method = getattr(BlenderService, method_name)
-                        multicall = self._method_dispatch_factory(name, method)
-                        setattr(self, name, multicall)
-        return self
-
-    def __exit__(self, type, value, traceback) -> None:
-        self.stack.__exit__(type, value, traceback)
-
-    @classmethod
-    @contextmanager
-    def spawn(
-        cls,
-        jobs: int = 1,
-        timeout: float = -1.0,
-        log_dir: str | os.PathLike | None = None,
-        autoexec: bool = False,
-        executable: str | os.PathLike | None = None,
-    ) -> Iterator[Self]:
-        """Spawn and connect to one or more blender servers.
-        The spawned processes are accessible through the client's `process` attribute.
-
-        Args:
-            Same as `BlenderServer.spawn`.
-
-        Returns:
-            clients: the connected clients
-        """
-        with BlenderServer.spawn(
-            jobs=jobs, timeout=timeout, log_dir=log_dir, autoexec=autoexec, executable=executable
-        ) as (procs, conns):
-            with cls(*conns) as clients:
-                for client, p in zip(clients, procs):
-                    client.process = p
-
-                yield clients
-
-                for client in clients:
-                    client.process = None
-
-    @staticmethod
-    @contextmanager
-    def pool(
-        jobs: int = 1,
-        timeout: float = -1.0,
-        log_dir: str | os.PathLike | None = None,
-        autoexec: bool = False,
-        executable: str | os.PathLike | None = None,
-        conns: list[tuple[str, int]] | None = None,
-    ) -> multiprocess.Pool:
-        """Spawns a multiprocessing-like worker pool, each with their own `BlenderClient` instance.
-        The function supplied to pool.map/imap/starmap and their async variants will be automagically
-        passed a client instance as their first argument that they can use for rendering.
-
-        Example:
-            .. code-block:: python
-
-                def render(client, blend_file):
-                    root = Path("renders") / Path(blend_file).stem
-                    client.initialize(blend_file, root)
-                    client.render_animation()
-
-                if __name__ == "__main__":
-                    with BlenderClients.pool(2) as pool:
-                        pool.map(render, ["monkey.blend", "cube.blend", "metaballs.blend"])
-
-        Note:
-            Here we use `multiprocess` instead of the builtin multiprocessing library to take
-            advantage of the more advanced dill serialization (as opposed to the standard pickling).
-
-        Args:
-            conns: List of connection tuples containing the hostnames and ports of existing servers.
-                If specified, the pool will use these servers (and `jobs` and other spawn arguments will
-                be ignored) instead of spawning new ones.
-
-            For other arguments, see `BlenderServer.spawn`
-
-        Returns:
-            A `multiprocess.Pool` instance which has had it's applicator methods (map/imap/starmap/etc)
-            monkey-patched to inject a client instance as first argument.
-        """
-        # Note import here as this is a dependency only on the client-side
-        import multiprocess
-        import multiprocess.pool
-
-        def inject_client(func, conns):
-            # Note: Usually it's good practice to add `@functools.wraps(func)`
-            # here, but it makes dill freak out with a rather cryptic
-            # "disallowed for security reasons" error... Works fine otherwise.
-            def inner(*args, **kwargs):
-                conn = conns.get()
-
-                try:
-                    with BlenderClient(conn) as client:
-                        retval = func(client, *args, **kwargs)
-                finally:
-                    conns.put(conn)
-                return retval
-
-            return inner
-
-        def modify_applicator(applicator, conns):
-            @functools.wraps(applicator)
-            def inner(func, *args, **kwargs):
-                func = inject_client(func, conns)
-                return applicator(func, *args, **kwargs)
-
-            return inner
-
-        context_manager = (
-            BlenderServer.spawn(jobs=jobs, timeout=timeout, log_dir=log_dir, autoexec=autoexec, executable=executable)
-            if conns is None
-            else nullcontext(enter_result=(None, conns))
-        )
-
-        with multiprocess.Manager() as manager:
-            with context_manager as (_, conns):
-                q = manager.Queue()
-
-                for conn in conns:
-                    q.put(conn)
-
-                with multiprocess.Pool(len(conns)) as pool:
-                    for name, method in inspect.getmembers(pool, predicate=inspect.ismethod):
-                        params = list(inspect.signature(method).parameters.keys())
-
-                        # Get all map/starmap/apply/etc variants
-                        if not name.startswith("_") and next(iter(params), None) == "func":
-                            setattr(pool, name, modify_applicator(method, q))
-                    yield pool
-
-    @require_connected_clients
-    def common_animation_range(self) -> range:
-        """Get animation range shared by all clients as range(start, end+1, step).
-
-        Raises:
-            RuntimeError: animation ranges for all clients are expected to be the same.
-        """
-        start, end, step = self.common_animation_range_tuple()
-        return range(start, end + 1, step)
-
-    @require_connected_clients
-    def common_animation_range_tuple(self) -> tuple[int, int, int]:
-        """Get animation range shared by all clients as a tuple of (start, end, step).
-
-        Raises:
-            RuntimeError: animation ranges for all clients are expected to be the same.
-        """
-        if len(ranges := set(self.animation_range_tuple())) != 1:  # type: ignore
-            raise RuntimeError("Found different animation ranges. All connected servers should be in the same state.")
-        return ranges.pop()
-
-    @require_connected_clients
-    def render_frames(self, frame_numbers, allow_skips=True, dry_run=False, update_fn=None):
-        # Set total number of steps, disable updates of total from child processes
-        def ignore_total(*args, total=None, **kwargs):
-            if update_fn is not None:
-                return update_fn(*args, **kwargs)
-
-        if update_fn is not None:
-            update_fn(total=len(frame_numbers))
-
-        # Equivalent to more-itertools' distribute
-        children = itertools.tee(frame_numbers, len(self))
-        frame_chunks = [itertools.islice(it, index, None, len(self)) for index, it in enumerate(children)]
-
-        transforms = [
-            client.render_frames_async(frames, allow_skips=allow_skips, dry_run=dry_run, update_fn=ignore_total)
-            for client, frames in zip(self, frame_chunks)
-        ]
-        self.wait()
-
-        # Equivalent to more-itertools' interleave_longest
-        _marker = object()
-        frames = [
-            frame
-            for frame in itertools.chain.from_iterable(
-                itertools.zip_longest(*[t.value["frames"] for t in transforms], fillvalue=_marker)
-            )
-            if frame is not _marker
-        ]
-        transforms = transforms.pop().value
-        transforms["frames"] = frames
-        return transforms
-
-    @require_connected_clients
-    def render_animation(
-        self, frame_start=None, frame_end=None, frame_step=None, allow_skips=True, dry_run=False, update_fn=None
-    ):
-        start, end, step = self.common_animation_range_tuple()
-        frame_start = start if frame_start is None else frame_start
-        frame_end = end if frame_end is None else frame_end
-        frame_step = step if frame_step is None else frame_step
-        frame_range = range(frame_start, frame_end + 1, frame_step)
-
-        return self.render_frames(frame_range, allow_skips=allow_skips, dry_run=dry_run, update_fn=update_fn)
-
-    @require_connected_clients
-    def save_file(self, path: str | os.PathLike) -> None:
-        """Save opened blender file. This is useful for introspecting the state of the compositor/scene/etc.
-
-        Note: Only saves file once (from a single connected client), assumes all clients have
-        been initialized in the same manner.
-        """
-        client, *_ = self
-        client.save_file(path)
-
-    def wait(self) -> None:
-        """Wait for all clients at once."""
-        awaitables = [client.awaitable for client in self]
-
-        while awaitables:
-            awaitables = [a for a in awaitables if a._waiting()]
-
-            for awaitable in awaitables:
-                # Here we query the property `awaitable.ready` which enables
-                # the underlying connection to poll and serve any incoming events.
-                # Roughly equivalent to the following (but does not rely on private API):
-                #     awaitable._conn.serve(awaitable._ttl, waiting=awaitable._waiting)
-                awaitable.ready
-
-
 class BlenderService(rpyc.Service):
     """Server-side API to interact with blender and render novel views.
 
@@ -778,14 +345,14 @@ class BlenderService(rpyc.Service):
     #   By default the service name is extracted from the class name, so here
     #   it would be `blender` anyways, but we define an alias here to support
     #   subclasses which might be named differently and not discovered.
-    ALIASES = ["BLENDER"]
+    ALIASES: list[str] = ["BLENDER"]
 
     def __init__(self) -> None:
         if bpy is None:
             raise RuntimeError(f"{type(self).__name__} needs to be instantiated from within blender's python runtime.")
+        self._conn: rpyc.Connection | None = None
+        self.log: logging.Logger = server_log
         self.initialized = False
-        self.log = server_log
-        self._conn = None
 
     def _clear_cached_properties(self) -> None:
         # Based on: https://stackoverflow.com/a/71579485
@@ -883,7 +450,7 @@ class BlenderService(rpyc.Service):
             return [obj.parent] + self.get_parents(obj.parent)
         return []
 
-    def exposed_with_logger(self, log: logging.Logger):
+    def exposed_with_logger(self, log: logging.Logger) -> None:
         """Use supplied logger, if logger is initialized in client, messages will log to the client.
 
         Args:
@@ -891,7 +458,7 @@ class BlenderService(rpyc.Service):
         """
         self.log = log
 
-    def exposed_initialize(self, blend_file: str | os.PathLike, root_path: str | os.PathLike, **kwargs):
+    def exposed_initialize(self, blend_file: str | os.PathLike, root_path: str | os.PathLike, **kwargs) -> None:
         """Initialize BlenderService and load blendfile.
 
         Args:
@@ -904,12 +471,12 @@ class BlenderService(rpyc.Service):
             self.reset()
 
         # Load blendfile
-        self.blend_file = blend_file
+        self.blend_file: Path = Path(str(blend_file))
         bpy.ops.wm.open_mainfile(filepath=str(blend_file), **kwargs)
         self.log.info(f"Successfully loaded {blend_file}")
 
         # Ensure root paths exist
-        self.root_path = Path(str(root_path)).resolve()
+        self.root_path: Path = Path(str(root_path)).resolve()
         self.root_path.mkdir(parents=True, exist_ok=True)
         (self.root_path / "frames").mkdir(parents=True, exist_ok=True)
 
@@ -938,7 +505,7 @@ class BlenderService(rpyc.Service):
 
         # Catalogue any animations that are already disabled, otherwise
         # disabling and re-enabling animations would enable them.
-        self.disabled_fcurves = set(
+        self.disabled_fcurves: set[bpy.types.Action] = set(
             [fcurve for action in bpy.data.actions for fcurve in (action.fcurves or []) if fcurve.mute]
         )
 
@@ -1825,6 +1392,464 @@ class BlenderService(rpyc.Service):
         self.log.info(f"Saving scene to {path}...")
         path.parent.mkdir(exist_ok=True, parents=True)
         bpy.ops.wm.save_as_mainfile(filepath=str(path))
+
+
+class BlenderClient:
+    """Client-side API to interact with blender and render novel views.
+
+    The `BlenderClient` is responsible for communicating with (and potentially spawning)
+    separate `BlenderServer`s that will actually perform the rendering via a `BlenderService`.
+
+    The client acts as a context manager, it will connect to it's server when the context is
+    entered and cleanly disconnect and close the connection in case of errors or when exiting
+    the with-block.
+
+    Many useful methods to interact with blender are provided, such as `set_resolution` or
+    `render_animation`. These methods are dynamically generated when the client connects to
+    the server. Available methods are directly inherited from `BlenderService` (or whichever
+    service the server is exposing), specifically any service method starting with `exposed_`
+    will be accessible to the client at runtime. for example, `BlenderClient.include_depths`
+    is a remote procedure call to `BlenderService.exposed_include_depths`.
+    """
+
+    def __init__(self, addr: tuple[str, int], timeout: float = 10.0) -> None:
+        """Initialize a client with known address of server.
+        Note: Using `auto_connect` or `spawn` is often more convenient.
+
+        Args:
+            addr (tuple[str, int]): Connection tuple containing the hostname and port
+            timeout (float, optional): Maximum time in seconds the client will attempt
+                to connect to the server for before an error is thrown. Only used when
+                entering context manager. Defaults to 10 seconds.
+        """
+        self.addr: tuple[str, int] = addr
+        self.conn: rpyc.Connection | None = None
+        self.awaitable: rpyc.AsyncResult | None = None
+        self.process: subprocess.Popen | None = None
+        self.timeout: float = timeout
+
+    @classmethod
+    def auto_connect(cls, timeout: float = 10.0) -> Self:
+        """Automatically connect to available server.
+
+        Use `BlenderServer.discover` to find available server within `timeout`.
+
+        Note: This doesn't actually connect to the server instance, the connection happens
+            when the context manager is entered. This simply creates a client instance with
+            the connection settings (i.e: hostname, port) of an existing server. The connection
+            might still fail when entering the with-block.
+
+        Args:
+            timeout (float, optional): try to discover server instance for `timeout`
+                (in seconds) before giving up. Defaults to 10.0 seconds.
+
+        Raises:
+            TimeoutError: raise if unable to discover server in `timeout` seconds.
+
+        Returns:
+            client: client instance initialized with connection settings of existing server.
+        """
+        start = time.time()
+
+        while True:
+            if (time.time() - start) > timeout:
+                raise TimeoutError("Unable to discover server in alloted time.")
+            if conns := set(BlenderServer.discover()):
+                break
+            time.sleep(0.1)
+        return cls(conns.pop())
+
+    @classmethod
+    @contextmanager
+    def spawn(
+        cls,
+        timeout: float = -1.0,
+        log_dir: str | os.PathLike | None = None,
+        autoexec: bool = False,
+        executable: str | os.PathLike | None = None,
+    ) -> Iterator[Self]:
+        """Spawn and connect to a blender server.
+        The spawned process is accessible through the client's `process` attribute.
+
+        Args:
+            Same as `BlenderServer.spawn`.
+
+        Returns:
+            client: the connected client
+        """
+        with BlenderServer.spawn(jobs=1, timeout=timeout, log_dir=log_dir, autoexec=autoexec, executable=executable) as (
+            procs,
+            conns,
+        ):
+            with cls(conns.pop()) as client:
+                client.process = procs[0]
+                yield client
+                client.process = None
+
+    @require_connected_client
+    def render_animation_async(self, *args, **kwargs) -> rpyc.AsyncResult:
+        """Asynchronously call `render_animation` and return an rpyc.AsyncResult.
+
+        Parameters:
+            Same as `BlendService.exposed_render_animation`
+
+        Returns:
+            result: AsyncResult encapsulating the return value of `render_animation`.
+                After `wait`ing for the render to finish, it can be accessed using
+                the `.value` attribute.
+        """
+        self.conn = cast(rpyc.Connection, self.conn)
+        render_animation_async = rpyc.async_(self.conn.root.render_animation)
+        async_result = render_animation_async(*args, **kwargs)
+        self.awaitable = async_result
+        async_result.add_callback(lambda _: setattr(self, "awaitables", None))
+        return async_result
+
+    @require_connected_client
+    def render_frames_async(self, *args, **kwargs) -> rpyc.AsyncResult:
+        """Asynchronously call `render_frames` and return an rpyc.AsyncResult.
+
+        Parameters:
+            Same as `BlendService.exposed_render_frames`
+
+        Returns:
+            result: AsyncResult encapsulating the return value of `render_frames`.
+                After `wait`ing for the render to finish, it can be accessed using
+                the `.value` attribute.
+        """
+        self.conn = cast(rpyc.Connection, self.conn)
+        render_frames_async = rpyc.async_(self.conn.root.render_frames)
+        async_result = render_frames_async(*args, **kwargs)
+        self.awaitable = async_result
+        async_result.add_callback(lambda _: setattr(self, "awaitables", None))
+        return async_result
+
+    def wait(self) -> None:
+        """Block and await any async results."""
+        if self.awaitable:
+            self.awaitable.wait()
+
+    def __enter__(self) -> Self:
+        # Loop until we connect or timeout
+        start = time.time()
+
+        while True:
+            try:
+                self.conn = rpyc.connect(*self.addr, config={"sync_request_timeout": -1, "allow_all_attrs": True})
+                break
+            except ConnectionRefusedError:
+                pass
+
+            if (time.time() - start) > self.timeout:
+                raise TimeoutError("Unable to connect to server in alloted time.")
+            time.sleep(0.1)
+
+        # Setup default logger for client, otherwise warnings
+        # in the render service won't propagate to the client
+        logger = logging.getLogger(__name__ + str(self.addr))
+        logger.setLevel(logging.INFO)
+        self.with_logger(logger)
+        return self
+
+    def __getattr__(self, name: str) -> Any:
+        # Spoof all `exposed_` methods from the service
+        if self.conn is not None and EXPOSED_PREFIX + name in dir(self.conn.root):
+            return getattr(self.conn.root, EXPOSED_PREFIX + name)
+        raise AttributeError
+
+    def __exit__(
+        self, type: type[BaseException] | None, value: BaseException | None, traceback: TracebackType | None
+    ) -> None:
+        if self.conn is not None:
+            self.conn.close()
+
+
+class BlenderClients(tuple):
+    """Collection of `BlenderClient` instances.
+
+    Most methods in this class simply call the equivalent method of each client, that is,
+    calling `clients.set_resolution` is equivalent to calling `set_resolution` for each
+    client in clients. Some special methods, namely the `render_frames` and `render_animation`
+    methods will instead distribute the rendering load to all clients.
+
+    Finally, entering each client's context-manager, and closing each client connection
+    is ensured by using this class' context-manager.
+    """
+
+    def __new__(cls, *objs: Iterator[BlenderClient | tuple[str, int]]) -> Self:
+        clients = [BlenderClient(o) if isinstance(o, tuple) else o for o in objs]
+        if not all(isinstance(o, BlenderClient) for o in clients):
+            raise TypeError("'BlenderClients' can only contain 'BlenderClient' instances or their hostnames and ports.")
+        return super().__new__(cls, clients)
+
+    def __init__(self, *objs) -> None:
+        """Initialize collection of `BlenderClient` from iterable of clients, or their connection settings.
+
+        Args:
+            *objs (Iterator[BlenderClient | tuple[str, int]]): `BlenderClient` instances or their hostnames and ports.
+        """
+        # Note: At this point the tuple is already initialized because of __new__, i.e: objs == list(self)
+        # Not sure why mypy can't resolve the following...
+        self.stack: ExitStack = ExitStack()
+
+    def _method_dispatch_factory(self, name: str, method: Callable) -> Callable:
+        @functools.wraps(method)
+        def inner(*args, **kwargs):
+            # Call method for each client, collect results into tuple
+            retval = tuple(getattr(client, name)(*args, **kwargs) for client in self)
+            return None if all(i is None for i in retval) else retval
+
+        return inner
+
+    def __enter__(self) -> Self:
+        self.stack.__enter__()
+        for client in self:
+            # Enter each client's context, connecting them all to servers
+            self.stack.enter_context(client)
+
+            # Dynamically generate methods that dispatch to all clients
+            # TODO: We currently assume all clients use `BlenderService`.
+            for method_name in dir(BlenderService):
+                if method_name.startswith("exposed_"):
+                    name = method_name.replace("exposed_", "")
+
+                    if name not in dir(self):
+                        method = getattr(BlenderService, method_name)
+                        multicall = self._method_dispatch_factory(name, method)
+                        setattr(self, name, multicall)
+        return self
+
+    def __exit__(
+        self,
+        type: type[BaseException] | None,
+        value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None:
+        return self.stack.__exit__(type, value, traceback)
+
+    @classmethod
+    @contextmanager
+    def spawn(
+        cls,
+        jobs: int = 1,
+        timeout: float = -1.0,
+        log_dir: str | os.PathLike | None = None,
+        autoexec: bool = False,
+        executable: str | os.PathLike | None = None,
+    ) -> Iterator[Self]:
+        """Spawn and connect to one or more blender servers.
+        The spawned processes are accessible through the client's `process` attribute.
+
+        Args:
+            Same as `BlenderServer.spawn`.
+
+        Returns:
+            clients: the connected clients
+        """
+        with BlenderServer.spawn(
+            jobs=jobs, timeout=timeout, log_dir=log_dir, autoexec=autoexec, executable=executable
+        ) as (procs, conns):
+            with cls(*conns) as clients:
+                for client, p in zip(clients, procs):
+                    client.process = p
+
+                yield clients
+
+                for client in clients:
+                    client.process = None
+
+    @staticmethod
+    @contextmanager
+    def pool(
+        jobs: int = 1,
+        timeout: float = -1.0,
+        log_dir: str | os.PathLike | None = None,
+        autoexec: bool = False,
+        executable: str | os.PathLike | None = None,
+        conns: list[tuple[str, int]] | None = None,
+    ) -> multiprocess.Pool:
+        """Spawns a multiprocessing-like worker pool, each with their own `BlenderClient` instance.
+        The function supplied to pool.map/imap/starmap and their async variants will be automagically
+        passed a client instance as their first argument that they can use for rendering.
+
+        Example:
+            .. code-block:: python
+
+                def render(client, blend_file):
+                    root = Path("renders") / Path(blend_file).stem
+                    client.initialize(blend_file, root)
+                    client.render_animation()
+
+                if __name__ == "__main__":
+                    with BlenderClients.pool(2) as pool:
+                        pool.map(render, ["monkey.blend", "cube.blend", "metaballs.blend"])
+
+        Note:
+            Here we use `multiprocess` instead of the builtin multiprocessing library to take
+            advantage of the more advanced dill serialization (as opposed to the standard pickling).
+
+        Args:
+            conns: List of connection tuples containing the hostnames and ports of existing servers.
+                If specified, the pool will use these servers (and `jobs` and other spawn arguments will
+                be ignored) instead of spawning new ones.
+
+            For other arguments, see `BlenderServer.spawn`
+
+        Returns:
+            A `multiprocess.Pool` instance which has had it's applicator methods (map/imap/starmap/etc)
+            monkey-patched to inject a client instance as first argument.
+        """
+        # Note import here as this is a dependency only on the client-side
+        import multiprocess
+        import multiprocess.pool
+
+        def inject_client(func, conns):
+            # Note: Usually it's good practice to add `@functools.wraps(func)`
+            # here, but it makes dill freak out with a rather cryptic
+            # "disallowed for security reasons" error... Works fine otherwise.
+            def inner(*args, **kwargs):
+                conn = conns.get()
+
+                try:
+                    with BlenderClient(conn) as client:
+                        retval = func(client, *args, **kwargs)
+                finally:
+                    conns.put(conn)
+                return retval
+
+            return inner
+
+        def modify_applicator(applicator, conns):
+            @functools.wraps(applicator)
+            def inner(func, *args, **kwargs):
+                func = inject_client(func, conns)
+                return applicator(func, *args, **kwargs)
+
+            return inner
+
+        context_manager = (
+            BlenderServer.spawn(jobs=jobs, timeout=timeout, log_dir=log_dir, autoexec=autoexec, executable=executable)
+            if conns is None
+            else nullcontext(enter_result=(None, conns))
+        )
+
+        with multiprocess.Manager() as manager:
+            with context_manager as (_, conns):
+                q = manager.Queue()
+
+                for conn in conns:
+                    q.put(conn)
+
+                with multiprocess.Pool(len(conns)) as pool:
+                    for name, method in inspect.getmembers(pool, predicate=inspect.ismethod):
+                        params = list(inspect.signature(method).parameters.keys())
+
+                        # Get all map/starmap/apply/etc variants
+                        if not name.startswith("_") and next(iter(params), None) == "func":
+                            setattr(pool, name, modify_applicator(method, q))
+                    yield pool
+
+    @require_connected_clients
+    def common_animation_range(self) -> range:
+        """Get animation range shared by all clients as range(start, end+1, step).
+
+        Raises:
+            RuntimeError: animation ranges for all clients are expected to be the same.
+        """
+        start, end, step = self.common_animation_range_tuple()
+        return range(start, end + 1, step)
+
+    @require_connected_clients
+    def common_animation_range_tuple(self) -> tuple[int, int, int]:
+        """Get animation range shared by all clients as a tuple of (start, end, step).
+
+        Raises:
+            RuntimeError: animation ranges for all clients are expected to be the same.
+        """
+        if len(ranges := set(self.animation_range_tuple())) != 1:  # type: ignore
+            raise RuntimeError("Found different animation ranges. All connected servers should be in the same state.")
+        return ranges.pop()
+
+    @require_connected_clients
+    def render_frames(
+        self,
+        frame_numbers: Collection[int],
+        allow_skips: bool = True,
+        dry_run: bool = False,
+        update_fn: UpdateFn | None = None,
+    ) -> dict[str, Any]:
+        # Set total number of steps, disable updates of total from child processes
+        def ignore_total(*args, total=None, **kwargs):
+            if update_fn is not None:
+                return update_fn(*args, **kwargs)
+
+        if update_fn is not None:
+            update_fn(total=len(frame_numbers))
+
+        # Equivalent to more-itertools' distribute
+        children = itertools.tee(frame_numbers, len(self))
+        frame_chunks = [itertools.islice(it, index, None, len(self)) for index, it in enumerate(children)]
+
+        transforms_dicts = [
+            client.render_frames_async(frames, allow_skips=allow_skips, dry_run=dry_run, update_fn=ignore_total)
+            for client, frames in zip(self, frame_chunks)
+        ]
+        self.wait()
+
+        # Equivalent to more-itertools' interleave_longest
+        _marker = object()
+        frames = [
+            frame
+            for frame in itertools.chain.from_iterable(
+                itertools.zip_longest(*[t.value["frames"] for t in transforms_dicts], fillvalue=_marker)
+            )
+            if frame is not _marker
+        ]
+        transforms: dict[str, Any] = transforms_dicts.pop().value
+        transforms["frames"] = frames
+        return transforms
+
+    @require_connected_clients
+    def render_animation(
+        self,
+        frame_start: int | None = None,
+        frame_end: int | None = None,
+        frame_step: int | None = None,
+        allow_skips=True,
+        dry_run=False,
+        update_fn: UpdateFn | None = None,
+    ) -> dict[str, Any]:
+        start, end, step = self.common_animation_range_tuple()
+        frame_start = start if frame_start is None else frame_start
+        frame_end = end if frame_end is None else frame_end
+        frame_step = step if frame_step is None else frame_step
+        frame_range = range(frame_start, frame_end + 1, frame_step)
+
+        return self.render_frames(frame_range, allow_skips=allow_skips, dry_run=dry_run, update_fn=update_fn)
+
+    @require_connected_clients
+    def save_file(self, path: str | os.PathLike) -> None:
+        """Save opened blender file. This is useful for introspecting the state of the compositor/scene/etc.
+
+        Note: Only saves file once (from a single connected client), assumes all clients have
+        been initialized in the same manner.
+        """
+        client, *_ = self
+        client.save_file(path)
+
+    def wait(self) -> None:
+        """Wait for all clients at once."""
+        awaitables = [client.awaitable for client in self]
+
+        while awaitables:
+            awaitables = [a for a in awaitables if a._waiting()]
+
+            for awaitable in awaitables:
+                # Here we query the property `awaitable.ready` which enables
+                # the underlying connection to poll and serve any incoming events.
+                # Roughly equivalent to the following (but does not rely on private API):
+                #     awaitable._conn.serve(awaitable._ttl, waiting=awaitable._waiting)
+                awaitable.ready
 
 
 if __name__ == "__main__":
