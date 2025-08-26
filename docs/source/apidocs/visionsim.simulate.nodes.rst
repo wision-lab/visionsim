@@ -4,6 +4,14 @@ visionsim.simulate.nodes package
 Submodules
 ----------
 
+visionsim.simulate.nodes.common module
+--------------------------------------
+
+.. automodule:: visionsim.simulate.nodes.common
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 visionsim.simulate.nodes.flow module
 ------------------------------------
 
