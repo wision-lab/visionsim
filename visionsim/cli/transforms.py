@@ -77,7 +77,7 @@ def colorize_depths(
     import matplotlib as mpl
     import matplotlib.cm as cm
 
-    from visionsim.cli import _validate_directories
+    from visionsim.cli import _log, _validate_directories
 
     DEPTH_CUTOFF = 10000000000
 
@@ -95,8 +95,8 @@ def colorize_depths(
         vmin_, vmax_ = digest.quantile(quantile), digest.quantile(1 - quantile)
         vmin = vmin_ if vmin is None else vmin
         vmax = vmax_ if vmax is None else vmax
-        print(f"Found depth range [{vmin_:0.2f}, {vmax_:0.2f}]")
-        print(f"Using depth range [{vmin:0.2f}, {vmax:0.2f}]\n")
+        _log.info(f"Found depth range [{vmin_:0.2f}, {vmax_:0.2f}]")
+        _log.info(f"Using depth range [{vmin:0.2f}, {vmax:0.2f}]\n")
 
     colormap = getattr(cm, cmap)
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
@@ -139,7 +139,7 @@ def colorize_flows(
 
     import imageio.v3 as iio
 
-    from visionsim.cli import _validate_directories
+    from visionsim.cli import _log, _validate_directories
 
     if direction.lower() not in ("forward", "backward"):
         raise ValueError("Direction needs to be either 'forward' or 'backwards'.")
@@ -157,7 +157,7 @@ def colorize_flows(
     if vmax is None:
         digest = _estimate_distribution(in_files, transform=magnitude)
         vmax = digest.quantile(1 - quantile)
-        print(f"Using a maximum magnitude of {vmax:0.2f}\n")
+        _log.info(f"Using a maximum magnitude of {vmax:0.2f}\n")
 
     for in_file in track(in_files):
         fx, fy, bx, by = _read_exr(in_file)
@@ -230,7 +230,7 @@ def colorize_segmentations(
 
     import imageio.v3 as iio
 
-    from visionsim.cli import _validate_directories
+    from visionsim.cli import _log, _validate_directories
 
     input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
     in_files = in_files[::step]
@@ -238,7 +238,7 @@ def colorize_segmentations(
     if num_objects is None:
         digest = _estimate_distribution(in_files, transform=np.unique)
         num_objects = int(digest.max())
-        print(f"Found {num_objects} objects.\n")
+        _log.info(f"Found {num_objects} objects.\n")
 
     indices = np.arange(num_objects)
 
@@ -280,7 +280,7 @@ def tonemap_exrs(
     """
     from torch.utils.data import DataLoader
 
-    from visionsim.cli import _validate_directories
+    from visionsim.cli import _log, _validate_directories
     from visionsim.dataset import Dataset, ImgDatasetWriter
 
     input_path, output_path, *_ = _validate_directories(input_dir, output_dir)
@@ -306,4 +306,4 @@ def tonemap_exrs(
                 progress.update(pbar, advance=len(idxs))
 
     hdrs_ = np.array(hdrs)
-    print(f"Mean dynamic range is {hdrs_.mean():0.2f}, with range ({hdrs_.min():0.2f}, {hdrs_.max():0.2f})")
+    _log.info(f"Mean dynamic range is {hdrs_.mean():0.2f}, with range ({hdrs_.min():0.2f}, {hdrs_.max():0.2f})")

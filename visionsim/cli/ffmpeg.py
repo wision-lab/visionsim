@@ -113,7 +113,7 @@ def combine(
 
     import numpy as np
 
-    from visionsim.cli import _run
+    from visionsim.cli import _log, _run
 
     if Path(outfile).is_file() and not force:
         raise RuntimeError("Output file already exists, either specify different output path or `--force` to override.")
@@ -149,7 +149,7 @@ def combine(
             max_duration = max(duration(path) for path in flat_mat)
 
             for path in flat_mat:
-                print(f"\n\nPadding {path}...")
+                _log.info(f"Padding {path}...")
                 out_path = Path(tmpdir) / Path(path).name
                 out_path = out_path.with_name(f"{out_path.stem}_padded{out_path.suffix}")
                 cmd = f"ffmpeg -i {path} -vf tpad=stop=-1=color={color},trim=end={max_duration} {out_path} -y"
@@ -181,7 +181,7 @@ def combine(
             max_height = max(sizes[path][1] for path in row)
             for path in row:
                 if sizes[path][1] != max_height:
-                    print(f"\n\nResizing {path}...")
+                    _log.info(f"Resizing {path}...")
                     in_path = mapping.get(path, path)
                     out_path = Path(tmpdir) / Path(path).name
                     out_path = out_path.with_name(f"{out_path.stem}_height_resize{out_path.suffix}")
@@ -190,7 +190,7 @@ def combine(
 
             # Combine all videos in the row
             if len(row) >= 2:
-                print("\n\nStacking rows...")
+                _log.info("Stacking rows...")
                 paths = " -i ".join(str(mapping.get(p, p)) for p in row)
                 out_file = Path(tmpdir) / f"row_{i:04}.mp4"
                 row_paths.append(out_file)
@@ -212,7 +212,7 @@ def combine(
 
             for path in row_paths:
                 if row_sizes[path][0] != max_width:
-                    print(f"\n\nResizing {path}...")
+                    _log.info(f"Resizing {path}...")
                     out_path = Path(tmpdir) / Path(path).name
                     out_path = out_path.with_name(f"{out_path.stem}_width_resize{out_path.suffix}")
                     _run(f"ffmpeg -i {path} -vf scale={max_width}:-{multiple} {out_path} -y")
@@ -286,7 +286,7 @@ def count_frames(input_file: str | os.PathLike):
     Args:
         input_file: video file input
     """
-    from visionsim.cli import _run
+    from visionsim.cli import _log, _run
 
     # See: https://stackoverflow.com/questions/2017843
     if _run("ffprobe -version").returncode != 0:
@@ -297,7 +297,7 @@ def count_frames(input_file: str | os.PathLike):
         f"stream=nb_read_packets -of csv=p=0 {input_file}"
     )
     result = _run(cmd)
-    print(f"Video contains {int(result.stdout.strip())} frames.")
+    _log.info(f"Video contains {int(result.stdout.strip())} frames.")
     return int(result.stdout.strip())
 
 
@@ -308,7 +308,7 @@ def duration(input_file: str | os.PathLike, /):
     Args:
         input_file: video file input
     """
-    from visionsim.cli import _run
+    from visionsim.cli import _log, _run
 
     # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
     if _run("ffprobe -version").returncode != 0:
@@ -319,7 +319,7 @@ def duration(input_file: str | os.PathLike, /):
         f"-of default=noprint_wrappers=1:nokey=1 {input_file}"
     )
     result = _run(cmd)
-    print(f"Video lasts {float(result.stdout.strip())} seconds.")
+    _log.info(f"Video lasts {float(result.stdout.strip())} seconds.")
     return float(result.stdout.strip())
 
 
@@ -329,7 +329,7 @@ def dimensions(input_file: str | os.PathLike):
     Args:
         input_file: video file input
     """
-    from visionsim.cli import _run
+    from visionsim.cli import _log, _run
 
     # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
     if _run("ffprobe -version").returncode != 0:
@@ -337,7 +337,7 @@ def dimensions(input_file: str | os.PathLike):
 
     cmd = f"ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 {input_file}"
     result = _run(cmd)
-    print(f"Video has size {result.stdout.strip()}.")
+    _log.info(f"Video has size {result.stdout.strip()}.")
     return tuple(int(dim) for dim in result.stdout.strip().split("x"))
 
 

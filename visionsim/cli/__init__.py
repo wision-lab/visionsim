@@ -92,7 +92,7 @@ def _run(
     """Execute a command and return an object with the result and failure status."""
 
     if echo:
-        print(command)
+        _log.debug(f"Running command: {command}")
 
     # shlex the command if we don't want to run in shell
     if not shell and isinstance(command, str):
