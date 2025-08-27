@@ -4,6 +4,8 @@ Tasks for maintaining the project.
 Execute 'inv[oke] --list' for a list of dev tasks.
 """
 
+from __future__ import annotations
+
 import ast
 import copy
 import fnmatch

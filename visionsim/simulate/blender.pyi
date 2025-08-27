@@ -3,7 +3,7 @@ import logging
 import os
 import subprocess
 from collections.abc import Callable, Collection, Iterable, Iterator
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack
 from multiprocessing import Process
 from pathlib import Path
 from types import TracebackType
@@ -27,29 +27,73 @@ REGISTRY: tuple[Process, rpyc.utils.registry.UDPRegistryClient] | None
 
 def require_connected_client(
     func: Callable[Concatenate[BlenderClient, P], T],
-) -> Callable[Concatenate[BlenderClient, P], T]: ...
+) -> Callable[Concatenate[BlenderClient, P], T]:
+    """Decorator which ensures a client is connected.
+
+    Args:
+        func (Callable[Concatenate[BlenderClient, P], T]): Function to decorate
+
+    Raises:
+        RuntimeError: raised if client is not connected.
+
+    Returns:
+        Callable[Concatenate[BlenderClient, P], T]: Decorated function.
+    """
+
 def require_connected_clients(
     func: Callable[Concatenate[BlenderClients, P], T],
-) -> Callable[Concatenate[BlenderClients, P], T]: ...
+) -> Callable[Concatenate[BlenderClients, P], T]:
+    """Decorator which ensures all clients are connected.
+
+    Args:
+        func (Callable[Concatenate[BlenderClients, P], T]): Function to decorate
+
+    Raises:
+        RuntimeError: raised if at least one client is not connected.
+
+    Returns:
+        Callable[Concatenate[BlenderClients, P], T]: Decorated function.
+    """
+
 def require_initialized_service(
     func: Callable[Concatenate[BlenderService, P], T],
-) -> Callable[Concatenate[BlenderService, P], T]: ...
+) -> Callable[Concatenate[BlenderService, P], T]:
+    """Decorator which ensures the render service was initialized.
+
+    Args:
+        func (Callable[Concatenate[BlenderService, P], T]): Function to decorate
+
+    Raises:
+        RuntimeError: raised if :meth:`client.initialize <BlenderService.exposed_initialize>` has not been previously called.
+
+    Returns:
+        Callable[Concatenate[BlenderService, P], T]: Decorated function.
+    """
+
 def validate_camera_moved(
     func: Callable[Concatenate[BlenderService, P], T],
-) -> Callable[Concatenate[BlenderService, P], T]: ...
+) -> Callable[Concatenate[BlenderService, P], T]:
+    """Decorator which emits a warning if the camera was not moved.
+
+    Args:
+        func (Callable[Concatenate[BlenderService, P], T]): Function to decorate
+
+    Returns:
+        Callable[Concatenate[BlenderService, P], T]: Decorated function.
+    """
 
 class BlenderServer(rpyc.utils.server.Server):
-    """Expose a `BlenderService` to the outside world via RPCs.
+    """Expose a :class:`BlenderService` to the outside world via RPCs.
 
     Example:
-        Once created, it can be started, which will block and await for an external connection from a `BlenderClient`:
+        Once created, it can be started, which will block and await for an external connection from a :class:`BlenderClient`:
 
         .. code-block:: python
 
             server = BlenderServer()
             server.start()
 
-        However, this needs to be called within blender's runtime. Instead one can use `BlenderServer.spawn`
+        However, this needs to be called within blender's runtime. Instead one can use :meth:`BlenderServer.spawn`
         to spawn one or more blender instances, each with their own server.
 
     """
@@ -62,24 +106,25 @@ class BlenderServer(rpyc.utils.server.Server):
         extra_config: dict | None = None,
         **kwargs,
     ) -> None:
-        """Initialize a `BlenderServer` instance
+        """Initialize a :class:`BlenderServer` instance
 
         Args:
             hostname (bytes | str | None, optional): the host to bind to. By default, the 'wildcard address' is used
                 to listen on all interfaces. If not properly secured, the server can receive traffic from
                 unintended or even malicious sources. Defaults to None (wildcard).
             port (bytes | str | int | None, optional): the TCP port to bind to. Defaults to 0 (bind to a random open port).
-            service (type[BlenderService], optional): the service to expose, must be a `BlenderService` subclass. Defaults to `BlenderService`.
+            service (type[BlenderService], optional): the service to expose, must be a :class:`BlenderService` subclass. Defaults to :class:`BlenderService`.
             extra_config (dict, optional): the configuration dictionary that is passed to the RPyC connection.
-                Defaults to `{"allow_all_attrs": True, "allow_setattr": True}`.
+                Defaults to ``{"allow_all_attrs": True, "allow_setattr": True}``.
+            **kwargs: Additional keyword arguments which are passed to the
+                `rpyc.utils.server.Server <https://rpyc.readthedocs.io/en/latest/api/utils_server.html#rpyc.utils.server.Server>`_ constructor.
 
         Raises:
-            RuntimeError: a `BlenderServer` needs to be instantiated from within a blender instance.
-            ValueError: the exposed service must be `BlenderService` or subclass.
+            RuntimeError: a :class:`BlenderServer` needs to be instantiated from within a blender instance.
+            ValueError: the exposed service must be :class:`BlenderService` or subclass.
         """
 
     @staticmethod
-    @contextmanager
     def spawn(
         jobs: int = 1,
         timeout: float = -1.0,
@@ -87,17 +132,17 @@ class BlenderServer(rpyc.utils.server.Server):
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
     ) -> Iterator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:
-        """Spawn one or more blender instances and start a `BlenderServer` in each.
+        """Spawn one or more blender instances and start a :class:`BlenderServer` in each.
 
-        This is roughly equivalent to calling `blender -b --python blender.py` in many subprocesses,
-        where `blender.py` initializes and `start`s a server instance. Proper logging and termination of
+        This is roughly equivalent to calling ``blender -b --python blender.py`` in many subprocesses,
+        where ``blender.py`` initializes and ``start``s a server instance. Proper logging and termination of
         these processes is also taken care of.
 
         Note: The returned processes and connection settings are not guaranteed to be in the same order.
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
-            timeout (float, optional): try to discover spawned instances for `timeout`
+            timeout (float, optional): try to discover spawned instances for ``timeout``
                 (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
                 spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
                 this context manager will immediately yield, even if the server is not yet ready to accept
@@ -113,44 +158,54 @@ class BlenderServer(rpyc.utils.server.Server):
                 might be required when using flatpaks. Defaults to None (system PATH).
 
         Raises:
-            TimeoutError: raise if unable to discover spawned servers in `timeout` seconds and kill any spawned processes.
+            TimeoutError: raise if unable to discover spawned servers in ``timeout`` seconds and kill any spawned processes.
 
         Returns:
-            procs: List of `subprocess.Popen` corresponding to all spawned servers.
-            conns: List of connection setting for each server, where each element is a (hostname, port) tuple.
+            tuple[list[subprocess.Popen], list[tuple[str, int]]]:  A tuple containing:
+                - list[subprocess.Popen]: List of ``subprocess.Popen`` corresponding to all spawned servers.
+                - list[tuple[str, int]]: List of connection setting for each server, where each element is a (hostname, port) tuple.
         """
 
     @staticmethod
     def spawn_registry() -> tuple[Process, rpyc.utils.registry.UDPRegistryClient]:
         """Spawn a registry server and client to aid in server discovery, or return cached result.
-        While this method can be called directly, it will be invoked automatically by `discover` and `spawn`.
+        While this method can be called directly, it will be invoked automatically by :meth:`discover` and :meth:`spawn`.
 
         Returns:
-            registry: global registry server,
-            client: global registry client
+            tuple[Process, rpyc.utils.registry.UDPRegistryClient]: A tuple containing:
+                - Process: process running the global registry server,
+                - rpyc.utils.registry.UDPRegistryClient: global registry client
         """
 
     @staticmethod
     def discover() -> list[tuple[str, int]]:
-        """Discover any `BlenderServer`s that are already running and return their connection parameters.
-        Note: A discoverable server might already be in use and can refuse connection attempts.
+        """Discover any :class:`BlenderServer`s that are already running and return their connection parameters.
+
+        Note:
+            A discoverable server might already be in use and can refuse connection attempts.
 
         Returns:
-            conns: List of connection setting for each server, where each element is a (hostname, port) tuple.
+            list[tuple[str, int]]: List of connection setting for each server, where each element is a (hostname, port) tuple.
         """
 
 class BlenderService(rpyc.Service):
     """Server-side API to interact with blender and render novel views.
 
-    Most of the methods of a `BlenderClient` instance are remote procedure calls to
-    a connected blender service. These methods are prefixed by `exposed_`.
+    Most of the methods of a :class:`BlenderClient` instance are remote procedure calls to
+    a connected blender service. These methods are prefixed by ``exposed_``.
     """
 
     ALIASES: list[str]
     log: logging.Logger
     initialized: bool
 
-    def __init__(self) -> None: ...
+    def __init__(self) -> None:
+        """Initialize render service.
+
+        Raises:
+            RuntimeError: raised if not within blender's runtime.
+        """
+
     def on_connect(self, conn: rpyc.Connection) -> None:
         """Called when the connection is established
 
@@ -175,39 +230,33 @@ class BlenderService(rpyc.Service):
         """
 
     @property
-    @require_initialized_service
     def scene(self) -> bpy.types.Scene:
         """Get current blender scene"""
 
     @property
-    @require_initialized_service
     def tree(self) -> bpy.types.CompositorNodeTree:
         """Get current scene's node tree"""
 
     @functools.cached_property
-    @require_initialized_service
     def render_layers(self) -> bpy.types.CompositorNodeRLayers:
         """Get and cache render layers node, create one if needed."""
 
     @property
-    @require_initialized_service
     def view_layer(self) -> bpy.types.ViewLayer:
         """Get current view layer"""
 
     @functools.cached_property
-    @require_initialized_service
     def camera(self) -> bpy.types.Camera:
         """Get and cache active camera"""
 
-    @require_initialized_service
     def get_parents(self, obj: bpy.types.Object) -> list[bpy.types.Object]:
         """Recursively retrieves parent objects of a given object in Blender
 
         Args:
             obj: Object to find parent of.
 
-        Return:
-            List of parent objects of obj.
+        Returns:
+            list[bpy.types.Object]: Parent objects of obj.
         """
 
     def exposed_with_logger(self, log: logging.Logger) -> None:
@@ -233,28 +282,39 @@ class BlenderService(rpyc.Service):
         Args:
             blend_file (str | os.PathLike): path of scene file to load.
             root_path (str | os.PathLike): path at which to save rendered results.
+            **kwargs: Additional keyword arguments to be passed to
+                `bpy.ops.wm.open_mainfile <https://docs.blender.org/api/current/bpy.ops.wm.html#bpy.ops.wm.open_mainfile>`_.
         """
 
-    @require_initialized_service
     def exposed_empty_transforms(self) -> dict[str, Any]:
         """Return a dictionary with camera intrinsics. Forms the basis of
-        a `transforms.json` file, but contains no frame data.
+        a ``transforms.json`` file, but contains no frame data.
 
         Returns:
-            empty_transforms: mapping containing camera parameters.
+            dict[str, Any]: empty transforms dictionary containing only camera parameters.
         """
 
-    @require_initialized_service
-    def exposed_original_fps(self) -> int: ...
-    @require_initialized_service
+    def exposed_original_fps(self) -> int:
+        """Get effective framerate (fps/fps_base).
+
+        Returns:
+            int: Frame rate of scene.
+        """
+
     def exposed_animation_range(self) -> range:
-        """Get animation range of current scene as range(start, end+1, step)."""
+        """Get animation range of current scene as range(start, end+1, step).
 
-    @require_initialized_service
+        Returns:
+            range: Range of frames in animation.
+        """
+
     def exposed_animation_range_tuple(self) -> tuple[int, int, int]:
-        """Get animation range of current scene as a tuple of (start, end, step)."""
+        """Get animation range of current scene as a tuple of (start, end, step).
 
-    @require_initialized_service
+        Returns:
+            tuple[int, int, int]: Frame start, end, and step of animation.
+        """
+
     def exposed_include_depths(self, debug: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include depth map for rendered images.
 
@@ -264,7 +324,7 @@ class BlenderService(rpyc.Service):
             file_format (str, optional): format of depth maps, one of "OPEN_EXR" or "HDR". The former
                 is lossless, but can require significant storage, the later is lossy and more compressed.
                 If depth is needed to compute scene-flow, use open-exr. Defaults to "OPEN_EXR".
-            exr_codec (str, optional): codec used to compress exr file. Only used when `file_format="OPEN_EXR"`,
+            exr_codec (str, optional): codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
                 options vary depending on the version of Blender, with the following being broadly available:
                 ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "ZIP".
 
@@ -276,7 +336,6 @@ class BlenderService(rpyc.Service):
             ValueError: raise if file-format nor understood.
         """
 
-    @require_initialized_service
     def exposed_include_normals(self, debug: bool = True, exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
@@ -288,7 +347,6 @@ class BlenderService(rpyc.Service):
                 Defaults to "ZIP".
         """
 
-    @require_initialized_service
     def exposed_include_flows(self, direction: str = "forward", debug: bool = True, exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
@@ -306,11 +364,10 @@ class BlenderService(rpyc.Service):
             compare across frames, apply colorization after rendering using the CLI.
 
         Raises:
-            ValueError: raised when `direction` is not understood.
+            ValueError: raised when ``direction`` is not understood.
             RuntimeError: raised when motion blur is enabled as flow cannot be computed.
         """
 
-    @require_initialized_service
     def exposed_include_segmentations(
         self, shuffle: bool = True, debug: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
     ) -> None:
@@ -332,36 +389,59 @@ class BlenderService(rpyc.Service):
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
         """
 
-    @require_initialized_service
     def exposed_load_addons(self, *addons: str) -> None:
-        """Load blender addons by name (case-insensitive)"""
+        """Load blender addons by name (case-insensitive).
 
-    @require_initialized_service
+        Args:
+            *addons (str): name of addons to load.
+        """
+
     def exposed_set_resolution(
         self, height: tuple[int] | list[int] | int | None = None, width: int | None = None
     ) -> None:
         """Set frame resolution (height, width) in pixels.
-
         If a single tuple is passed, instead of using keyword arguments, it will be parsed as (height, width).
+
+        Args:
+            height (tuple[int] | list[int] | int | None, optional): Height of render in pixels. Defaults to value from file.
+            width (int | None, optional): Width of render in pixels. Defaults to value from file.
+
+        Raises:
+            ValueError: raised if resolution is not understood.
         """
 
-    @require_initialized_service
     def exposed_image_settings(
         self, file_format: str | None = None, bit_depth: int | None = None, color_mode: str | None = None
     ) -> None:
         """Set the render's output format and bit-depth.
         Useful for linear intensity renders, using "OPEN_EXR" and 32 or 16 bits.
+
+        Note: A default arguments of ``None`` means do not change setting inherited from blendfile.
+
+        Args:
+            file_format (str | None, optional): Format to save render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR_MULTILAYER', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP', 'AVI_JPEG', 'AVI_RAW', 'FFMPEG').
+                Defaults to None.
+            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
+            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
         """
 
-    @require_initialized_service
     def exposed_use_motion_blur(self, enable: bool) -> None:
-        """Enable/disable motion blur."""
+        """Enable/disable motion blur.
 
-    @require_initialized_service
+        Args:
+            enable (bool): If true, enable motion blur.
+        """
+
     def exposed_use_animations(self, enable: bool) -> None:
-        """Enable/disable all animations."""
+        """Enable/disable all animations.
 
-    @require_initialized_service
+        Args:
+            enable (bool): If true, enable animations.
+        """
+
     def exposed_cycles_settings(
         self,
         device_type: str | None = None,
@@ -372,7 +452,7 @@ class BlenderService(rpyc.Service):
     ) -> list[str]:
         """Enables/activates cycles render devices and settings.
 
-        Note: A default arguments of `None` means do not change setting inherited from blendfile.
+        Note: A default arguments of ``None`` means do not change setting inherited from blendfile.
 
         Args:
             device_type (str, optional): Name of device to use, one of "cpu", "cuda", "optix", "metal", etc.
@@ -385,20 +465,18 @@ class BlenderService(rpyc.Service):
 
         Raises:
             RuntimeError: raised when no devices are found.
-            ValueError: raised when setting `use_cpu` is required.
+            ValueError: raised when setting ``use_cpu`` is required.
 
         Returns:
-            devices: List of activated devices.
+            list[str]: Name of activated devices.
         """
 
-    @require_initialized_service
     def exposed_unbind_camera(self) -> None:
         """Remove constraints, animations and parents from main camera.
 
         Note: In order to undo this, you'll need to re-initialize.
         """
 
-    @require_initialized_service
     def exposed_move_keyframes(self, scale: float = 1.0, shift: float = 0.0) -> None:
         """Adjusts keyframes in Blender animations, keypoints are first scaled then shifted.
 
@@ -410,15 +488,20 @@ class BlenderService(rpyc.Service):
             RuntimeError: raised if trying to move keyframes beyond blender's limits.
         """
 
-    @require_initialized_service
     def exposed_set_current_frame(self, frame_number: int) -> None:
-        """Set current frame number. This might advance any animations."""
+        """Set current frame number. This might advance any animations.
 
-    @require_initialized_service
+        Args:
+            frame_number (int): index of frame to skip to.
+        """
+
     def exposed_camera_extrinsics(self) -> npt.NDArray[np.floating]:
-        """Get the 4x4 transform matrix encoding the current camera pose."""
+        """Get the 4x4 transform matrix encoding the current camera pose.
 
-    @require_initialized_service
+        Returns:
+            npt.NDArray[np.floating]: Current camera pose in matrix form.
+        """
+
     def exposed_camera_intrinsics(self) -> npt.NDArray[np.floating]:
         """Get the 3x3 camera intrinsics matrix for active camera,
         which defines how 3D points are projected onto 2D.
@@ -426,11 +509,9 @@ class BlenderService(rpyc.Service):
         Note: Assumes pinhole camera model.
 
         Returns:
-            Camera intrinsics matrix based on camera properties.
+            npt.NDArray[np.floating]: Camera intrinsics matrix based on camera properties.
         """
 
-    @require_initialized_service
-    @validate_camera_moved
     def exposed_position_camera(
         self,
         location: npt.ArrayLike | None = None,
@@ -440,23 +521,21 @@ class BlenderService(rpyc.Service):
     ) -> None:
         """Positions and orients camera in Blender scene according to specified parameters.
 
-        Note: Only one of `look_at` or `rotation` can be set at once.
+        Note: Only one of ``look_at`` or ``rotation`` can be set at once.
 
         Args:
             location (npt.ArrayLike, optional): Location to place camera in 3D space. Defaults to none.
             rotation (npt.ArrayLike, optional): Rotation matrix for camera. Defaults to none.
             look_at (npt.ArrayLike, optional): Location to point camera. Defaults to none.
             in_order (bool, optional): If set, assume current camera pose is from previous/next
-                frame and ensure new rotation set by `look_at` is compatible with current position.
+                frame and ensure new rotation set by ``look_at`` is compatible with current position.
                 Without this, a rotations will stay in the [-pi, pi] range and this wrapping will
-                mess up interpolations. Only used when `look_at` is set. Defaults to True.
+                mess up interpolations. Only used when ``look_at`` is set. Defaults to True.
 
         Raises:
             ValueError: raised if camera orientation is over-defined.
         """
 
-    @require_initialized_service
-    @validate_camera_moved
     def exposed_rotate_camera(self, angle: float) -> None:
         """Rotate camera around it's optical axis, relative to current orientation.
 
@@ -464,11 +543,11 @@ class BlenderService(rpyc.Service):
             angle: Relative amount to rotate by (clockwise, in radians).
         """
 
-    @require_initialized_service
     def exposed_set_camera_keyframe(self, frame_num: int, matrix: npt.ArrayLike | None = None) -> None:
         """Set camera keyframe at given frame number.
         If camera matrix is not supplied, currently set camera position/rotation/scale will be used,
-        this allows users to set camera position using `position_camera` and `rotate_camera`.
+        this allows users to set camera position using :meth:`position_camera <exposed_position_camera>`
+        and :meth:`rotate_camera <exposed_rotate_camera>`.
 
         Args:
             frame_num (int): index of frame to set keyframe for.
@@ -476,7 +555,6 @@ class BlenderService(rpyc.Service):
                 use current camera matrix. Defaults to None.
         """
 
-    @require_initialized_service
     def exposed_set_animation_range(
         self, start: int | None = None, stop: int | None = None, step: int | None = None
     ) -> None:
@@ -488,7 +566,6 @@ class BlenderService(rpyc.Service):
             step (int | None, optional): frame interval. Defaults to None.
         """
 
-    @require_initialized_service
     def exposed_render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> dict[str, Any]:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
@@ -499,18 +576,25 @@ class BlenderService(rpyc.Service):
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
 
         Returns:
-            dictionary containing paths to rendered frames for this index and camera pose.
+            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
 
-    @require_initialized_service
     def exposed_render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> dict[str, Any]:
         """Same as first setting current frame then rendering it.
 
         Warning:
             Calling this has the side-effect of changing the current frame.
+
+        Args:
+            frame_number (int): frame to render
+            allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
+                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+            dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
+
+        Returns:
+            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
 
-    @require_initialized_service
     def exposed_render_frames(
         self,
         frame_numbers: Iterable[int],
@@ -522,20 +606,21 @@ class BlenderService(rpyc.Service):
 
         Args:
             frame_numbers (Iterable[int]): frames to render.
-            update_fn (UpdateFn, optional): callback function to track render progress. Will first be called with `total` kwarg,
-                indicating number of steps to be taken, then will be called with `advance=1` at every step. Closely mirrors the
+            allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
+                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+            dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
+            update_fn (UpdateFn, optional): callback function to track render progress. Will first be called with ``total`` kwarg,
+                indicating number of steps to be taken, then will be called with ``advance=1`` at every step. Closely mirrors the
                 `rich.Progress API <https://rich.readthedocs.io/en/stable/reference/progress.html#rich.progress.Progress.update>`_.
                 Defaults to None.
-            See `exposed_render_current_frame` for other arguments.
 
         Raises:
             RuntimeError: raised if trying to render frames beyond blender's limits.
 
         Returns:
-            transforms dictionary
+            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
-    @require_initialized_service
     def exposed_render_animation(
         self,
         frame_start: int | None = None,
@@ -548,45 +633,54 @@ class BlenderService(rpyc.Service):
         """Determines frame range to render, sets camera positions and orientations, and renders all frames in animation range.
 
         Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
-              If the animation is from (1-100) and you've scaled it by calling `move_keyframes(scale=2.0)`
-              then calling `render_animation(frame_start=1, frame_end=100)` will only render half of the animation.
+              If the animation is from (1-100) and you've scaled it by calling :meth:`move_keyframes(scale=2.0) <exposed_move_keyframes>`
+              then calling :meth:`render_animation(frame_start=1, frame_end=100) <exposed_render_animation>` will only render half of the animation.
               By default the whole animation will render when no start/end and step values are set.
 
         Args:
-            frame_start (int, optional): Starting index (inclusive) of frames to render as seen in blender. Defaults to None, meaning value from `.blend` file.
-            frame_end (int, optional): Ending index (inclusive) of frames to render as seen in blender. Defaults to None, meaning value from `.blend` file.
-            frame_step (int, optional): Skip every nth frame. Defaults to None, meaning value from `.blend` file.
-            allow_skips (bool, optional): Same as `(exposed_)render_frame_here`.
-            dry_run (bool, optional): Same as `(exposed_)render_frame_here`.
-            update_fn (UpdateFn, optional): Same as `(exposed_)render_frames`.
+            frame_start (int, optional): Starting index (inclusive) of frames to render as seen in blender. Defaults to None, meaning value from ``.blend`` file.
+            frame_end (int, optional): Ending index (inclusive) of frames to render as seen in blender. Defaults to None, meaning value from ``.blend`` file.
+            frame_step (int, optional): Skip every nth frame. Defaults to None, meaning value from ``.blend`` file.
+            allow_skips (bool, optional): Same as :meth:`render_current_frame <exposed_render_current_frame>`.
+            dry_run (bool, optional): Same as :meth:`render_current_frame <exposed_render_current_frame>`.
+            update_fn (UpdateFn, optional): Same as :meth:`render_frames <exposed_render_frames>`.
 
         Raises:
             ValueError: raised if scene and camera are entirely static.
 
         Returns:
-            transforms dictionary
+            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
-    @require_initialized_service
     def exposed_save_file(self, path: str | os.PathLike) -> None:
-        """Save opened blender file. This is useful for introspecting the state of the compositor/scene/etc."""
+        """Save the opened blender file. This is useful for introspecting the state of the compositor/scene/etc.
+
+        Args:
+            path (str | os.PathLike): path where to save blendfile.
+
+        Raises:
+            ValueError: raised if file already exists.
+        """
 
 class BlenderClient:
     """Client-side API to interact with blender and render novel views.
 
-    The `BlenderClient` is responsible for communicating with (and potentially spawning)
-    separate `BlenderServer`s that will actually perform the rendering via a `BlenderService`.
+    The :class:`BlenderClient` is responsible for communicating with (and potentially spawning)
+    separate :class:`BlenderServer`s that will actually perform the rendering via a :class:`BlenderService`.
 
     The client acts as a context manager, it will connect to it's server when the context is
     entered and cleanly disconnect and close the connection in case of errors or when exiting
     the with-block.
 
-    Many useful methods to interact with blender are provided, such as `set_resolution` or
-    `render_animation`. These methods are dynamically generated when the client connects to
-    the server. Available methods are directly inherited from `BlenderService` (or whichever
-    service the server is exposing), specifically any service method starting with `exposed_`
-    will be accessible to the client at runtime. for example, `BlenderClient.include_depths`
-    is a remote procedure call to `BlenderService.exposed_include_depths`.
+    Many useful methods to interact with blender are provided, such as
+    :meth:`set_resolution <BlenderService.exposed_set_resolution>` or
+    :meth:`render_animation <BlenderService.exposed_render_animation>`.
+    These methods are dynamically generated when the client connects to
+    the server. Available methods are directly inherited from :class:`BlenderService`
+    (or whichever service the server is exposing), specifically any service method
+    starting with ``exposed_`` will be accessible to the client at runtime.
+    For example, ``BlenderClient.include_depths`` is a remote procedure call
+    to :meth:`BlenderService.exposed_include_depths`.
     """
 
     addr: tuple[str, int]
@@ -597,7 +691,7 @@ class BlenderClient:
 
     def __init__(self, addr: tuple[str, int], timeout: float = 10.0) -> None:
         """Initialize a client with known address of server.
-        Note: Using `auto_connect` or `spawn` is often more convenient.
+        Note: Using :meth:`auto_connect` or :meth:`spawn` is often more convenient.
 
         Args:
             addr (tuple[str, int]): Connection tuple containing the hostname and port
@@ -610,7 +704,7 @@ class BlenderClient:
     def auto_connect(cls, timeout: float = 10.0) -> Self:
         """Automatically connect to available server.
 
-        Use `BlenderServer.discover` to find available server within `timeout`.
+        Use :meth:`BlenderServer.discover` to find available server within ``timeout``.
 
         Note: This doesn't actually connect to the server instance, the connection happens
             when the context manager is entered. This simply creates a client instance with
@@ -618,18 +712,17 @@ class BlenderClient:
             might still fail when entering the with-block.
 
         Args:
-            timeout (float, optional): try to discover server instance for `timeout`
+            timeout (float, optional): try to discover server instance for ``timeout``
                 (in seconds) before giving up. Defaults to 10.0 seconds.
 
         Raises:
-            TimeoutError: raise if unable to discover server in `timeout` seconds.
+            TimeoutError: raise if unable to discover server in ``timeout`` seconds.
 
         Returns:
-            client: client instance initialized with connection settings of existing server.
+            Self: client instance initialized with connection settings of existing server.
         """
 
     @classmethod
-    @contextmanager
     def spawn(
         cls,
         timeout: float = -1.0,
@@ -638,49 +731,91 @@ class BlenderClient:
         executable: str | os.PathLike | None = None,
     ) -> Iterator[Self]:
         """Spawn and connect to a blender server.
-        The spawned process is accessible through the client's `process` attribute.
+        The spawned process is accessible through the client's ``process`` attribute.
 
         Args:
-            Same as `BlenderServer.spawn`.
+            timeout (float, optional): try to discover spawned instances for ``timeout``
+                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
+                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
+                this context manager will immediately yield, even if the server is not yet ready to accept
+                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            log_dir (str | os.PathLike | None, optional): path to log directory,
+                stdout/err will be captured if set, otherwise outputs will go to os.devnull.
+                Defaults to None (devnull).
+            autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
+                For more, see blender's CLI documentation. Defaults to False.
+            executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
+                for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
+                via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
+                might be required when using flatpaks. Defaults to None (system PATH).
 
         Returns:
-            client: the connected client
+            Self: the connected client
         """
 
-    @require_connected_client
     def render_animation_async(self, *args, **kwargs) -> rpyc.AsyncResult:
-        """Asynchronously call `render_animation` and return an rpyc.AsyncResult.
+        """Asynchronously call :meth:`render_animation <BlenderService.exposed_render_animation>`
+        and return an rpyc.AsyncResult.
 
-        Parameters:
-            Same as `BlendService.exposed_render_animation`
+        Args:
+            *args: Same as :meth:`BlendService.exposed_render_animation`
+            *kwargs: Same as :meth:`BlendService.exposed_render_animation`
 
         Returns:
-            result: AsyncResult encapsulating the return value of `render_animation`.
-                After `wait`ing for the render to finish, it can be accessed using
-                the `.value` attribute.
+            rpyc.AsyncResult: Result encapsulating the return value of ``render_animation``.
+                After ``wait``ing for the render to finish, it can be accessed using
+                the ``.value`` attribute.
         """
 
-    @require_connected_client
     def render_frames_async(self, *args, **kwargs) -> rpyc.AsyncResult:
-        """Asynchronously call `render_frames` and return an rpyc.AsyncResult.
+        """Asynchronously call :meth:`render_frames <BlenderService.exposed_render_frames>`
+        and return an rpyc.AsyncResult.
 
-        Parameters:
-            Same as `BlendService.exposed_render_frames`
+        Args:
+            *args: Same as :meth:`BlendService.exposed_render_frames`
+            *kwargs: Same as :meth:`BlendService.exposed_render_frames`
 
         Returns:
-            result: AsyncResult encapsulating the return value of `render_frames`.
-                After `wait`ing for the render to finish, it can be accessed using
-                the `.value` attribute.
+            rpyc.AsyncResult: Result encapsulating the return value of ``render_frames``.
+                After ``wait``ing for the render to finish, it can be accessed using
+                the ``.value`` attribute.
         """
 
     def wait(self) -> None:
         """Block and await any async results."""
 
-    def __enter__(self) -> Self: ...
-    def __getattr__(self, name: str) -> Any: ...
+    def __enter__(self) -> Self:
+        """Connect to the render server via a context manager.
+
+        Raises:
+            TimeoutError: raised if unable to connect to server in time.
+        """
+
+    def __getattr__(self, name: str) -> rpyc.BaseNetref:
+        """Retrieve remote attribute if client is connected.
+        This will be called when local attribute is not found.
+
+        Args:
+            name (str): Name of attribute.
+
+        Raises:
+            AttributeError: raised if attribute is not found.
+
+        Returns:
+            rpyc.BaseNetref: remote proxy object.
+        """
+
     def __exit__(
         self, type: type[BaseException] | None, value: BaseException | None, traceback: TracebackType | None
-    ) -> None: ...
+    ) -> None:
+        """Disconnect to the render server via a context manager.
+
+        Args:
+            type (type[BaseException] | None): Type of exception that was caught, if any.
+            value (BaseException | None): Value of exception if any.
+            traceback (TracebackType | None): Traceback of exception if any.
+        """
+
     def with_logger(self, log: logging.Logger) -> None:
         """Use supplied logger, if logger is initialized in client, messages will log to the client.
 
@@ -694,28 +829,39 @@ class BlenderClient:
         Args:
             blend_file (str | os.PathLike): path of scene file to load.
             root_path (str | os.PathLike): path at which to save rendered results.
+            **kwargs: Additional keyword arguments to be passed to
+                `bpy.ops.wm.open_mainfile <https://docs.blender.org/api/current/bpy.ops.wm.html#bpy.ops.wm.open_mainfile>`_.
         """
 
-    @require_initialized_service
     def empty_transforms(self) -> dict[str, Any]:
         """Return a dictionary with camera intrinsics. Forms the basis of
-        a `transforms.json` file, but contains no frame data.
+        a ``transforms.json`` file, but contains no frame data.
 
         Returns:
-            empty_transforms: mapping containing camera parameters.
+            dict[str, Any]: empty transforms dictionary containing only camera parameters.
         """
 
-    @require_initialized_service
-    def original_fps(self) -> int: ...
-    @require_initialized_service
+    def original_fps(self) -> int:
+        """Get effective framerate (fps/fps_base).
+
+        Returns:
+            int: Frame rate of scene.
+        """
+
     def animation_range(self) -> range:
-        """Get animation range of current scene as range(start, end+1, step)."""
+        """Get animation range of current scene as range(start, end+1, step).
 
-    @require_initialized_service
+        Returns:
+            range: Range of frames in animation.
+        """
+
     def animation_range_tuple(self) -> tuple[int, int, int]:
-        """Get animation range of current scene as a tuple of (start, end, step)."""
+        """Get animation range of current scene as a tuple of (start, end, step).
 
-    @require_initialized_service
+        Returns:
+            tuple[int, int, int]: Frame start, end, and step of animation.
+        """
+
     def include_depths(self, debug: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include depth map for rendered images.
 
@@ -725,7 +871,7 @@ class BlenderClient:
             file_format (str, optional): format of depth maps, one of "OPEN_EXR" or "HDR". The former
                 is lossless, but can require significant storage, the later is lossy and more compressed.
                 If depth is needed to compute scene-flow, use open-exr. Defaults to "OPEN_EXR".
-            exr_codec (str, optional): codec used to compress exr file. Only used when `file_format="OPEN_EXR"`,
+            exr_codec (str, optional): codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
                 options vary depending on the version of Blender, with the following being broadly available:
                 ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "ZIP".
 
@@ -737,7 +883,6 @@ class BlenderClient:
             ValueError: raise if file-format nor understood.
         """
 
-    @require_initialized_service
     def include_normals(self, debug: bool = True, exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
@@ -749,7 +894,6 @@ class BlenderClient:
                 Defaults to "ZIP".
         """
 
-    @require_initialized_service
     def include_flows(self, direction: str = "forward", debug: bool = True, exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
@@ -767,11 +911,10 @@ class BlenderClient:
             compare across frames, apply colorization after rendering using the CLI.
 
         Raises:
-            ValueError: raised when `direction` is not understood.
+            ValueError: raised when ``direction`` is not understood.
             RuntimeError: raised when motion blur is enabled as flow cannot be computed.
         """
 
-    @require_initialized_service
     def include_segmentations(
         self, shuffle: bool = True, debug: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
     ) -> None:
@@ -793,34 +936,57 @@ class BlenderClient:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
         """
 
-    @require_initialized_service
     def load_addons(self, *addons: str) -> None:
-        """Load blender addons by name (case-insensitive)"""
+        """Load blender addons by name (case-insensitive).
 
-    @require_initialized_service
-    def set_resolution(self, height: tuple[int] | list[int] | int | None = None, width: int | None = None) -> None:
-        """Set frame resolution (height, width) in pixels.
-
-        If a single tuple is passed, instead of using keyword arguments, it will be parsed as (height, width).
+        Args:
+            *addons (str): name of addons to load.
         """
 
-    @require_initialized_service
+    def set_resolution(self, height: tuple[int] | list[int] | int | None = None, width: int | None = None) -> None:
+        """Set frame resolution (height, width) in pixels.
+        If a single tuple is passed, instead of using keyword arguments, it will be parsed as (height, width).
+
+        Args:
+            height (tuple[int] | list[int] | int | None, optional): Height of render in pixels. Defaults to value from file.
+            width (int | None, optional): Width of render in pixels. Defaults to value from file.
+
+        Raises:
+            ValueError: raised if resolution is not understood.
+        """
+
     def image_settings(
         self, file_format: str | None = None, bit_depth: int | None = None, color_mode: str | None = None
     ) -> None:
         """Set the render's output format and bit-depth.
         Useful for linear intensity renders, using "OPEN_EXR" and 32 or 16 bits.
+
+        Note: A default arguments of ``None`` means do not change setting inherited from blendfile.
+
+        Args:
+            file_format (str | None, optional): Format to save render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR_MULTILAYER', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP', 'AVI_JPEG', 'AVI_RAW', 'FFMPEG').
+                Defaults to None.
+            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
+            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
         """
 
-    @require_initialized_service
     def use_motion_blur(self, enable: bool) -> None:
-        """Enable/disable motion blur."""
+        """Enable/disable motion blur.
 
-    @require_initialized_service
+        Args:
+            enable (bool): If true, enable motion blur.
+        """
+
     def use_animations(self, enable: bool) -> None:
-        """Enable/disable all animations."""
+        """Enable/disable all animations.
 
-    @require_initialized_service
+        Args:
+            enable (bool): If true, enable animations.
+        """
+
     def cycles_settings(
         self,
         device_type: str | None = None,
@@ -831,7 +997,7 @@ class BlenderClient:
     ) -> list[str]:
         """Enables/activates cycles render devices and settings.
 
-        Note: A default arguments of `None` means do not change setting inherited from blendfile.
+        Note: A default arguments of ``None`` means do not change setting inherited from blendfile.
 
         Args:
             device_type (str, optional): Name of device to use, one of "cpu", "cuda", "optix", "metal", etc.
@@ -844,20 +1010,18 @@ class BlenderClient:
 
         Raises:
             RuntimeError: raised when no devices are found.
-            ValueError: raised when setting `use_cpu` is required.
+            ValueError: raised when setting ``use_cpu`` is required.
 
         Returns:
-            devices: List of activated devices.
+            list[str]: Name of activated devices.
         """
 
-    @require_initialized_service
     def unbind_camera(self) -> None:
         """Remove constraints, animations and parents from main camera.
 
         Note: In order to undo this, you'll need to re-initialize.
         """
 
-    @require_initialized_service
     def move_keyframes(self, scale: float = 1.0, shift: float = 0.0) -> None:
         """Adjusts keyframes in Blender animations, keypoints are first scaled then shifted.
 
@@ -869,15 +1033,20 @@ class BlenderClient:
             RuntimeError: raised if trying to move keyframes beyond blender's limits.
         """
 
-    @require_initialized_service
     def set_current_frame(self, frame_number: int) -> None:
-        """Set current frame number. This might advance any animations."""
+        """Set current frame number. This might advance any animations.
 
-    @require_initialized_service
+        Args:
+            frame_number (int): index of frame to skip to.
+        """
+
     def camera_extrinsics(self) -> npt.NDArray[np.floating]:
-        """Get the 4x4 transform matrix encoding the current camera pose."""
+        """Get the 4x4 transform matrix encoding the current camera pose.
 
-    @require_initialized_service
+        Returns:
+            npt.NDArray[np.floating]: Current camera pose in matrix form.
+        """
+
     def camera_intrinsics(self) -> npt.NDArray[np.floating]:
         """Get the 3x3 camera intrinsics matrix for active camera,
         which defines how 3D points are projected onto 2D.
@@ -885,11 +1054,9 @@ class BlenderClient:
         Note: Assumes pinhole camera model.
 
         Returns:
-            Camera intrinsics matrix based on camera properties.
+            npt.NDArray[np.floating]: Camera intrinsics matrix based on camera properties.
         """
 
-    @require_initialized_service
-    @validate_camera_moved
     def position_camera(
         self,
         location: npt.ArrayLike | None = None,
@@ -899,23 +1066,21 @@ class BlenderClient:
     ) -> None:
         """Positions and orients camera in Blender scene according to specified parameters.
 
-        Note: Only one of `look_at` or `rotation` can be set at once.
+        Note: Only one of ``look_at`` or ``rotation`` can be set at once.
 
         Args:
             location (npt.ArrayLike, optional): Location to place camera in 3D space. Defaults to none.
             rotation (npt.ArrayLike, optional): Rotation matrix for camera. Defaults to none.
             look_at (npt.ArrayLike, optional): Location to point camera. Defaults to none.
             in_order (bool, optional): If set, assume current camera pose is from previous/next
-                frame and ensure new rotation set by `look_at` is compatible with current position.
+                frame and ensure new rotation set by ``look_at`` is compatible with current position.
                 Without this, a rotations will stay in the [-pi, pi] range and this wrapping will
-                mess up interpolations. Only used when `look_at` is set. Defaults to True.
+                mess up interpolations. Only used when ``look_at`` is set. Defaults to True.
 
         Raises:
             ValueError: raised if camera orientation is over-defined.
         """
 
-    @require_initialized_service
-    @validate_camera_moved
     def rotate_camera(self, angle: float) -> None:
         """Rotate camera around it's optical axis, relative to current orientation.
 
@@ -923,11 +1088,11 @@ class BlenderClient:
             angle: Relative amount to rotate by (clockwise, in radians).
         """
 
-    @require_initialized_service
     def set_camera_keyframe(self, frame_num: int, matrix: npt.ArrayLike | None = None) -> None:
         """Set camera keyframe at given frame number.
         If camera matrix is not supplied, currently set camera position/rotation/scale will be used,
-        this allows users to set camera position using `position_camera` and `rotate_camera`.
+        this allows users to set camera position using :meth:`position_camera <exposed_position_camera>`
+        and :meth:`rotate_camera <exposed_rotate_camera>`.
 
         Args:
             frame_num (int): index of frame to set keyframe for.
@@ -935,7 +1100,6 @@ class BlenderClient:
                 use current camera matrix. Defaults to None.
         """
 
-    @require_initialized_service
     def set_animation_range(self, start: int | None = None, stop: int | None = None, step: int | None = None) -> None:
         """Set animation range for scene.
 
@@ -945,7 +1109,6 @@ class BlenderClient:
             step (int | None, optional): frame interval. Defaults to None.
         """
 
-    @require_initialized_service
     def render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> dict[str, Any]:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
@@ -956,18 +1119,25 @@ class BlenderClient:
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
 
         Returns:
-            dictionary containing paths to rendered frames for this index and camera pose.
+            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
 
-    @require_initialized_service
     def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> dict[str, Any]:
         """Same as first setting current frame then rendering it.
 
         Warning:
             Calling this has the side-effect of changing the current frame.
+
+        Args:
+            frame_number (int): frame to render
+            allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
+                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+            dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
+
+        Returns:
+            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
 
-    @require_initialized_service
     def render_frames(
         self,
         frame_numbers: Iterable[int],
@@ -979,20 +1149,21 @@ class BlenderClient:
 
         Args:
             frame_numbers (Iterable[int]): frames to render.
-            update_fn (UpdateFn, optional): callback function to track render progress. Will first be called with `total` kwarg,
-                indicating number of steps to be taken, then will be called with `advance=1` at every step. Closely mirrors the
+            allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
+                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+            dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
+            update_fn (UpdateFn, optional): callback function to track render progress. Will first be called with ``total`` kwarg,
+                indicating number of steps to be taken, then will be called with ``advance=1`` at every step. Closely mirrors the
                 `rich.Progress API <https://rich.readthedocs.io/en/stable/reference/progress.html#rich.progress.Progress.update>`_.
                 Defaults to None.
-            See `exposed_render_current_frame` for other arguments.
 
         Raises:
             RuntimeError: raised if trying to render frames beyond blender's limits.
 
         Returns:
-            transforms dictionary
+            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
-    @require_initialized_service
     def render_animation(
         self,
         frame_start: int | None = None,
@@ -1005,57 +1176,84 @@ class BlenderClient:
         """Determines frame range to render, sets camera positions and orientations, and renders all frames in animation range.
 
         Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
-              If the animation is from (1-100) and you've scaled it by calling `move_keyframes(scale=2.0)`
-              then calling `render_animation(frame_start=1, frame_end=100)` will only render half of the animation.
+              If the animation is from (1-100) and you've scaled it by calling :meth:`move_keyframes(scale=2.0) <exposed_move_keyframes>`
+              then calling :meth:`render_animation(frame_start=1, frame_end=100) <exposed_render_animation>` will only render half of the animation.
               By default the whole animation will render when no start/end and step values are set.
 
         Args:
-            frame_start (int, optional): Starting index (inclusive) of frames to render as seen in blender. Defaults to None, meaning value from `.blend` file.
-            frame_end (int, optional): Ending index (inclusive) of frames to render as seen in blender. Defaults to None, meaning value from `.blend` file.
-            frame_step (int, optional): Skip every nth frame. Defaults to None, meaning value from `.blend` file.
-            allow_skips (bool, optional): Same as `(exposed_)render_frame_here`.
-            dry_run (bool, optional): Same as `(exposed_)render_frame_here`.
-            update_fn (UpdateFn, optional): Same as `(exposed_)render_frames`.
+            frame_start (int, optional): Starting index (inclusive) of frames to render as seen in blender. Defaults to None, meaning value from ``.blend`` file.
+            frame_end (int, optional): Ending index (inclusive) of frames to render as seen in blender. Defaults to None, meaning value from ``.blend`` file.
+            frame_step (int, optional): Skip every nth frame. Defaults to None, meaning value from ``.blend`` file.
+            allow_skips (bool, optional): Same as :meth:`render_current_frame <exposed_render_current_frame>`.
+            dry_run (bool, optional): Same as :meth:`render_current_frame <exposed_render_current_frame>`.
+            update_fn (UpdateFn, optional): Same as :meth:`render_frames <exposed_render_frames>`.
 
         Raises:
             ValueError: raised if scene and camera are entirely static.
 
         Returns:
-            transforms dictionary
+            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
-    @require_initialized_service
     def save_file(self, path: str | os.PathLike) -> None:
-        """Save opened blender file. This is useful for introspecting the state of the compositor/scene/etc."""
+        """Save the opened blender file. This is useful for introspecting the state of the compositor/scene/etc.
+
+        Args:
+            path (str | os.PathLike): path where to save blendfile.
+
+        Raises:
+            ValueError: raised if file already exists.
+        """
 
 class BlenderClients(tuple):
-    """Collection of `BlenderClient` instances.
+    """Collection of :class:`BlenderClient` instances.
 
     Most methods in this class simply call the equivalent method of each client, that is,
-    calling `clients.set_resolution` is equivalent to calling `set_resolution` for each
-    client in clients. Some special methods, namely the `render_frames` and `render_animation`
+    calling ``clients.set_resolution`` is equivalent to calling :meth:`set_resolution <BlenderService.exposed_set_resolution>`
+    for each client in clients. Some special methods, namely the :meth:`render_frames` and :meth:`render_animation`
     methods will instead distribute the rendering load to all clients.
 
     Finally, entering each client's context-manager, and closing each client connection
     is ensured by using this class' context-manager.
     """
 
-    def __new__(cls, *objs: Iterator[BlenderClient | tuple[str, int]]) -> Self: ...
+    def __new__(cls, *objs: Iterator[BlenderClient | tuple[str, int]]) -> Self:
+        """Create a new instance from iterable of clients, or their connection settings.
+
+        Args:
+            *objs (Iterator[BlenderClient | tuple[str, int]]): :class:`BlenderClient` instances or their hostnames and ports.
+
+        Raises:
+            TypeError: raised when input objects are of incorrect type.
+        """
     stack: ExitStack
 
     def __init__(self, *objs) -> None:
-        """Initialize collection of `BlenderClient` from iterable of clients, or their connection settings.
+        """Initialize collection of :class:`BlenderClient` from iterable of clients, or their connection settings.
 
         Args:
-            *objs (Iterator[BlenderClient | tuple[str, int]]): `BlenderClient` instances or their hostnames and ports.
+            *objs (Iterator[BlenderClient | tuple[str, int]]): :class:`BlenderClient` instances or their hostnames and ports.
         """
 
-    def __enter__(self) -> Self: ...
+    def __enter__(self) -> Self:
+        """Connect all clients to their render servers via a context manager.
+
+        Raises:
+            TimeoutError: raised if unable to connect to servers in time.
+        """
+
     def __exit__(
         self, type: type[BaseException] | None, value: BaseException | None, traceback: TracebackType | None
-    ) -> bool | None: ...
+    ) -> None:
+        """Disconnect from each render server via a context manager.
+
+        Args:
+            type (type[BaseException] | None): Type of exception that was caught, if any.
+            value (BaseException | None): Value of exception if any.
+            traceback (TracebackType | None): Traceback of exception if any.
+        """
+
     @classmethod
-    @contextmanager
     def spawn(
         cls,
         jobs: int = 1,
@@ -1065,17 +1263,30 @@ class BlenderClients(tuple):
         executable: str | os.PathLike | None = None,
     ) -> Iterator[Self]:
         """Spawn and connect to one or more blender servers.
-        The spawned processes are accessible through the client's `process` attribute.
+        The spawned processes are accessible through the client's ``process`` attribute.
 
         Args:
-            Same as `BlenderServer.spawn`.
+            jobs (int, optional): number of jobs to spawn. Defaults to 1.
+            timeout (float, optional): try to discover spawned instances for ``timeout``
+                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
+                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
+                this context manager will immediately yield, even if the server is not yet ready to accept
+                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            log_dir (str | os.PathLike | None, optional): path to log directory,
+                stdout/err will be captured if set, otherwise outputs will go to os.devnull.
+                Defaults to None (devnull).
+            autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
+                For more, see blender's CLI documentation. Defaults to False.
+            executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
+                for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
+                via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
+                might be required when using flatpaks. Defaults to None (system PATH).
 
         Returns:
-            clients: the connected clients
+            Self: the connected clients
         """
 
     @staticmethod
-    @contextmanager
     def pool(
         jobs: int = 1,
         timeout: float = -1.0,
@@ -1083,8 +1294,8 @@ class BlenderClients(tuple):
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
         conns: list[tuple[str, int]] | None = None,
-    ) -> multiprocess.Pool:
-        """Spawns a multiprocessing-like worker pool, each with their own `BlenderClient` instance.
+    ) -> Iterator[multiprocess.Pool]:
+        """Spawns a multiprocessing-like worker pool, each with their own :class:`BlenderClient` instance.
         The function supplied to pool.map/imap/starmap and their async variants will be automagically
         passed a client instance as their first argument that they can use for rendering.
 
@@ -1101,46 +1312,84 @@ class BlenderClients(tuple):
                         pool.map(render, ["monkey.blend", "cube.blend", "metaballs.blend"])
 
         Note:
-            Here we use `multiprocess` instead of the builtin multiprocessing library to take
+            Here we use ``multiprocess`` instead of the builtin multiprocessing library to take
             advantage of the more advanced dill serialization (as opposed to the standard pickling).
 
         Args:
+            jobs (int, optional): number of jobs to spawn. Defaults to 1.
+            timeout (float, optional): try to discover spawned instances for ``timeout``
+                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
+                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
+                this context manager will immediately yield, even if the server is not yet ready to accept
+                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            log_dir (str | os.PathLike | None, optional): path to log directory,
+                stdout/err will be captured if set, otherwise outputs will go to os.devnull.
+                Defaults to None (devnull).
+            autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
+                For more, see blender's CLI documentation. Defaults to False.
+            executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
+                for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
+                via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
+                might be required when using flatpaks. Defaults to None (system PATH).
             conns: List of connection tuples containing the hostnames and ports of existing servers.
-                If specified, the pool will use these servers (and `jobs` and other spawn arguments will
+                If specified, the pool will use these servers (and ``jobs`` and other spawn arguments will
                 be ignored) instead of spawning new ones.
 
-            For other arguments, see `BlenderServer.spawn`
-
         Returns:
-            A `multiprocess.Pool` instance which has had it's applicator methods (map/imap/starmap/etc)
-            monkey-patched to inject a client instance as first argument.
+            multiprocess.Pool: A ``multiprocess.Pool`` instance which has had it's applicator methods
+                (map/imap/starmap/etc) monkey-patched to inject a client instance as first argument.
         """
 
-    @require_connected_clients
     def common_animation_range(self) -> range:
         """Get animation range shared by all clients as range(start, end+1, step).
 
         Raises:
             RuntimeError: animation ranges for all clients are expected to be the same.
+
+        Returns:
+            range: Range of frames in animation.
         """
 
-    @require_connected_clients
     def common_animation_range_tuple(self) -> tuple[int, int, int]:
         """Get animation range shared by all clients as a tuple of (start, end, step).
 
         Raises:
             RuntimeError: animation ranges for all clients are expected to be the same.
+
+        Returns:
+            tuple[int, int, int]: Frame start, end, and step of animation.
         """
 
-    @require_connected_clients
     def render_frames(
         self,
         frame_numbers: Collection[int],
         allow_skips: bool = True,
         dry_run: bool = False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]: ...
-    @require_connected_clients
+    ) -> dict[str, Any]:
+        """Render all requested frames by distributing workload across connected clients and return associated transforms dictionary.
+
+        Warning:
+            Assumes all clients are initialized in the same manner, that is, to the same blendfile, with the same animation range,
+            render settings, etc.
+
+        Args:
+            frame_numbers (Collection[int]): frames to render.
+            allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
+                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+            dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
+            update_fn (UpdateFn, optional): callback function to track render progress. Will first be called with ``total`` kwarg,
+                indicating number of steps to be taken, then will be called with ``advance=1`` at every step. Closely mirrors the
+                `rich.Progress API <https://rich.readthedocs.io/en/stable/reference/progress.html#rich.progress.Progress.update>`_.
+                Defaults to None.
+
+        Raises:
+            RuntimeError: raised if trying to render frames beyond blender's limits.
+
+        Returns:
+            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
+        """
+
     def render_animation(
         self,
         frame_start: int | None = None,
@@ -1149,13 +1398,41 @@ class BlenderClients(tuple):
         allow_skips: bool = True,
         dry_run: bool = False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]: ...
-    @require_connected_clients
+    ) -> dict[str, Any]:
+        """Determines frame range to render, sets camera positions and orientations, and renders all frames in animation range by distributing
+        workload onto all connected clients.
+
+        Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
+              If the animation is from (1-100) and you've scaled it by calling :meth:`move_keyframes(scale=2.0) <exposed_move_keyframes>`
+              then calling :meth:`render_animation(frame_start=1, frame_end=100) <exposed_render_animation>` will only render half of the animation.
+              By default the whole animation will render when no start/end and step values are set.
+
+        Args:
+            frame_start (int, optional): Starting index (inclusive) of frames to render as seen in blender. Defaults to None, meaning value from ``.blend`` file.
+            frame_end (int, optional): Ending index (inclusive) of frames to render as seen in blender. Defaults to None, meaning value from ``.blend`` file.
+            frame_step (int, optional): Skip every nth frame. Defaults to None, meaning value from ``.blend`` file.
+            allow_skips (bool, optional): Same as :meth:`render_current_frame <exposed_render_current_frame>`.
+            dry_run (bool, optional): Same as :meth:`render_current_frame <exposed_render_current_frame>`.
+            update_fn (UpdateFn, optional): Same as :meth:`render_frames <exposed_render_frames>`.
+
+        Raises:
+            ValueError: raised if scene and camera are entirely static.
+
+        Returns:
+            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
+        """
+
     def save_file(self, path: str | os.PathLike) -> None:
         """Save opened blender file. This is useful for introspecting the state of the compositor/scene/etc.
 
         Note: Only saves file once (from a single connected client), assumes all clients have
-        been initialized in the same manner.
+            been initialized in the same manner.
+
+        Args:
+            path (str | os.PathLike): path where to save blendfile.
+
+        Raises:
+            ValueError: raised if file already exists.
         """
 
     def wait(self) -> None:
@@ -1174,28 +1451,39 @@ class BlenderClients(tuple):
         Args:
             blend_file (str | os.PathLike): path of scene file to load.
             root_path (str | os.PathLike): path at which to save rendered results.
+            **kwargs: Additional keyword arguments to be passed to
+                `bpy.ops.wm.open_mainfile <https://docs.blender.org/api/current/bpy.ops.wm.html#bpy.ops.wm.open_mainfile>`_.
         """
 
-    @require_initialized_service
     def empty_transforms(self) -> tuple[dict[str, Any],]:
         """Return a dictionary with camera intrinsics. Forms the basis of
-        a `transforms.json` file, but contains no frame data.
+        a ``transforms.json`` file, but contains no frame data.
 
         Returns:
-            empty_transforms: mapping containing camera parameters.
+            dict[str, Any]: empty transforms dictionary containing only camera parameters.
         """
 
-    @require_initialized_service
-    def original_fps(self) -> tuple[int,]: ...
-    @require_initialized_service
+    def original_fps(self) -> tuple[int,]:
+        """Get effective framerate (fps/fps_base).
+
+        Returns:
+            int: Frame rate of scene.
+        """
+
     def animation_range(self) -> tuple[range,]:
-        """Get animation range of current scene as range(start, end+1, step)."""
+        """Get animation range of current scene as range(start, end+1, step).
 
-    @require_initialized_service
+        Returns:
+            range: Range of frames in animation.
+        """
+
     def animation_range_tuple(self) -> tuple[tuple[int, int, int],]:
-        """Get animation range of current scene as a tuple of (start, end, step)."""
+        """Get animation range of current scene as a tuple of (start, end, step).
 
-    @require_initialized_service
+        Returns:
+            tuple[int, int, int]: Frame start, end, and step of animation.
+        """
+
     def include_depths(self, debug: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include depth map for rendered images.
 
@@ -1205,7 +1493,7 @@ class BlenderClients(tuple):
             file_format (str, optional): format of depth maps, one of "OPEN_EXR" or "HDR". The former
                 is lossless, but can require significant storage, the later is lossy and more compressed.
                 If depth is needed to compute scene-flow, use open-exr. Defaults to "OPEN_EXR".
-            exr_codec (str, optional): codec used to compress exr file. Only used when `file_format="OPEN_EXR"`,
+            exr_codec (str, optional): codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
                 options vary depending on the version of Blender, with the following being broadly available:
                 ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "ZIP".
 
@@ -1217,7 +1505,6 @@ class BlenderClients(tuple):
             ValueError: raise if file-format nor understood.
         """
 
-    @require_initialized_service
     def include_normals(self, debug: bool = True, exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
@@ -1229,7 +1516,6 @@ class BlenderClients(tuple):
                 Defaults to "ZIP".
         """
 
-    @require_initialized_service
     def include_flows(self, direction: str = "forward", debug: bool = True, exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
@@ -1247,11 +1533,10 @@ class BlenderClients(tuple):
             compare across frames, apply colorization after rendering using the CLI.
 
         Raises:
-            ValueError: raised when `direction` is not understood.
+            ValueError: raised when ``direction`` is not understood.
             RuntimeError: raised when motion blur is enabled as flow cannot be computed.
         """
 
-    @require_initialized_service
     def include_segmentations(
         self, shuffle: bool = True, debug: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
     ) -> None:
@@ -1273,34 +1558,57 @@ class BlenderClients(tuple):
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
         """
 
-    @require_initialized_service
     def load_addons(self, *addons: str) -> None:
-        """Load blender addons by name (case-insensitive)"""
+        """Load blender addons by name (case-insensitive).
 
-    @require_initialized_service
-    def set_resolution(self, height: tuple[int] | list[int] | int | None = None, width: int | None = None) -> None:
-        """Set frame resolution (height, width) in pixels.
-
-        If a single tuple is passed, instead of using keyword arguments, it will be parsed as (height, width).
+        Args:
+            *addons (str): name of addons to load.
         """
 
-    @require_initialized_service
+    def set_resolution(self, height: tuple[int] | list[int] | int | None = None, width: int | None = None) -> None:
+        """Set frame resolution (height, width) in pixels.
+        If a single tuple is passed, instead of using keyword arguments, it will be parsed as (height, width).
+
+        Args:
+            height (tuple[int] | list[int] | int | None, optional): Height of render in pixels. Defaults to value from file.
+            width (int | None, optional): Width of render in pixels. Defaults to value from file.
+
+        Raises:
+            ValueError: raised if resolution is not understood.
+        """
+
     def image_settings(
         self, file_format: str | None = None, bit_depth: int | None = None, color_mode: str | None = None
     ) -> None:
         """Set the render's output format and bit-depth.
         Useful for linear intensity renders, using "OPEN_EXR" and 32 or 16 bits.
+
+        Note: A default arguments of ``None`` means do not change setting inherited from blendfile.
+
+        Args:
+            file_format (str | None, optional): Format to save render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR_MULTILAYER', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP', 'AVI_JPEG', 'AVI_RAW', 'FFMPEG').
+                Defaults to None.
+            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
+            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
         """
 
-    @require_initialized_service
     def use_motion_blur(self, enable: bool) -> None:
-        """Enable/disable motion blur."""
+        """Enable/disable motion blur.
 
-    @require_initialized_service
+        Args:
+            enable (bool): If true, enable motion blur.
+        """
+
     def use_animations(self, enable: bool) -> None:
-        """Enable/disable all animations."""
+        """Enable/disable all animations.
 
-    @require_initialized_service
+        Args:
+            enable (bool): If true, enable animations.
+        """
+
     def cycles_settings(
         self,
         device_type: str | None = None,
@@ -1311,7 +1619,7 @@ class BlenderClients(tuple):
     ) -> tuple[list[str],]:
         """Enables/activates cycles render devices and settings.
 
-        Note: A default arguments of `None` means do not change setting inherited from blendfile.
+        Note: A default arguments of ``None`` means do not change setting inherited from blendfile.
 
         Args:
             device_type (str, optional): Name of device to use, one of "cpu", "cuda", "optix", "metal", etc.
@@ -1324,20 +1632,18 @@ class BlenderClients(tuple):
 
         Raises:
             RuntimeError: raised when no devices are found.
-            ValueError: raised when setting `use_cpu` is required.
+            ValueError: raised when setting ``use_cpu`` is required.
 
         Returns:
-            devices: List of activated devices.
+            list[str]: Name of activated devices.
         """
 
-    @require_initialized_service
     def unbind_camera(self) -> None:
         """Remove constraints, animations and parents from main camera.
 
         Note: In order to undo this, you'll need to re-initialize.
         """
 
-    @require_initialized_service
     def move_keyframes(self, scale: float = 1.0, shift: float = 0.0) -> None:
         """Adjusts keyframes in Blender animations, keypoints are first scaled then shifted.
 
@@ -1349,15 +1655,20 @@ class BlenderClients(tuple):
             RuntimeError: raised if trying to move keyframes beyond blender's limits.
         """
 
-    @require_initialized_service
     def set_current_frame(self, frame_number: int) -> None:
-        """Set current frame number. This might advance any animations."""
+        """Set current frame number. This might advance any animations.
 
-    @require_initialized_service
+        Args:
+            frame_number (int): index of frame to skip to.
+        """
+
     def camera_extrinsics(self) -> tuple[npt.NDArray[np.floating],]:
-        """Get the 4x4 transform matrix encoding the current camera pose."""
+        """Get the 4x4 transform matrix encoding the current camera pose.
 
-    @require_initialized_service
+        Returns:
+            npt.NDArray[np.floating]: Current camera pose in matrix form.
+        """
+
     def camera_intrinsics(self) -> tuple[npt.NDArray[np.floating],]:
         """Get the 3x3 camera intrinsics matrix for active camera,
         which defines how 3D points are projected onto 2D.
@@ -1365,11 +1676,9 @@ class BlenderClients(tuple):
         Note: Assumes pinhole camera model.
 
         Returns:
-            Camera intrinsics matrix based on camera properties.
+            npt.NDArray[np.floating]: Camera intrinsics matrix based on camera properties.
         """
 
-    @require_initialized_service
-    @validate_camera_moved
     def position_camera(
         self,
         location: npt.ArrayLike | None = None,
@@ -1379,23 +1688,21 @@ class BlenderClients(tuple):
     ) -> None:
         """Positions and orients camera in Blender scene according to specified parameters.
 
-        Note: Only one of `look_at` or `rotation` can be set at once.
+        Note: Only one of ``look_at`` or ``rotation`` can be set at once.
 
         Args:
             location (npt.ArrayLike, optional): Location to place camera in 3D space. Defaults to none.
             rotation (npt.ArrayLike, optional): Rotation matrix for camera. Defaults to none.
             look_at (npt.ArrayLike, optional): Location to point camera. Defaults to none.
             in_order (bool, optional): If set, assume current camera pose is from previous/next
-                frame and ensure new rotation set by `look_at` is compatible with current position.
+                frame and ensure new rotation set by ``look_at`` is compatible with current position.
                 Without this, a rotations will stay in the [-pi, pi] range and this wrapping will
-                mess up interpolations. Only used when `look_at` is set. Defaults to True.
+                mess up interpolations. Only used when ``look_at`` is set. Defaults to True.
 
         Raises:
             ValueError: raised if camera orientation is over-defined.
         """
 
-    @require_initialized_service
-    @validate_camera_moved
     def rotate_camera(self, angle: float) -> None:
         """Rotate camera around it's optical axis, relative to current orientation.
 
@@ -1403,11 +1710,11 @@ class BlenderClients(tuple):
             angle: Relative amount to rotate by (clockwise, in radians).
         """
 
-    @require_initialized_service
     def set_camera_keyframe(self, frame_num: int, matrix: npt.ArrayLike | None = None) -> None:
         """Set camera keyframe at given frame number.
         If camera matrix is not supplied, currently set camera position/rotation/scale will be used,
-        this allows users to set camera position using `position_camera` and `rotate_camera`.
+        this allows users to set camera position using :meth:`position_camera <exposed_position_camera>`
+        and :meth:`rotate_camera <exposed_rotate_camera>`.
 
         Args:
             frame_num (int): index of frame to set keyframe for.
@@ -1415,7 +1722,6 @@ class BlenderClients(tuple):
                 use current camera matrix. Defaults to None.
         """
 
-    @require_initialized_service
     def set_animation_range(self, start: int | None = None, stop: int | None = None, step: int | None = None) -> None:
         """Set animation range for scene.
 
@@ -1425,7 +1731,6 @@ class BlenderClients(tuple):
             step (int | None, optional): frame interval. Defaults to None.
         """
 
-    @require_initialized_service
     def render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> tuple[dict[str, Any],]:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
@@ -1436,13 +1741,21 @@ class BlenderClients(tuple):
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
 
         Returns:
-            dictionary containing paths to rendered frames for this index and camera pose.
+            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
 
-    @require_initialized_service
     def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> tuple[dict[str, Any],]:
         """Same as first setting current frame then rendering it.
 
         Warning:
             Calling this has the side-effect of changing the current frame.
+
+        Args:
+            frame_number (int): frame to render
+            allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
+                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+            dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
+
+        Returns:
+            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
