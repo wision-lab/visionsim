@@ -234,7 +234,7 @@ def _apply_non_pr_deadtime(buffer: torch.Tensor, dead_time_bins: int, n_tbins: i
 def simulate_pixel_ewh(phi_bar: torch.Tensor, n_pulses: int, n_hist_bins: int,
                        free_running: bool, dead_time_bins: int) -> torch.Tensor:
     """
-    Simulates the Early-Window Histogram (EWH) for a single pixel.
+    Simulates the Equi-Width Histogram (EWH) for a single pixel.
 
     Args:
         phi_bar (torch.Tensor): Expected photon arrival rates for one pixel across time bins.
@@ -275,7 +275,7 @@ def simulate_pixel_ewh(phi_bar: torch.Tensor, n_pulses: int, n_hist_bins: int,
 def simulate_ewh(arrival_rates: torch.Tensor, n_pulses: int, n_hist_bins: int,
                  free_running: bool = False, dead_time_bins: int = 0) -> list[torch.Tensor]:
     """
-    Simulates the Early-Window Histogram (EWH) for all pixels/FOVs.
+    Simulates the Equi-Width Histogram (EWH) for all pixels/FOVs.
 
     Args:
         arrival_rates (torch.Tensor): Tensor of photon arrival rates for all FOVs.
