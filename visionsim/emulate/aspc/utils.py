@@ -2,6 +2,14 @@ from pint import UnitRegistry, set_application_registry
 from scipy.constants import Wien, c, h, k, sigma
 import numpy as np
 import cv2
+import torch
+from visionsim.dataset import ( 
+    Dataset,
+    ImgDataset, 
+    NpyDataset)
+
+from typing import Optional
+
 
 ureg = UnitRegistry()
 ureg.setup_matplotlib(True)
@@ -78,3 +86,87 @@ def resize_to(img, shape):
     img_h, img_w, *_ = img.shape
     interp = cv2.INTER_AREA if img_h * img_w >= h * w else cv2.INTER_CUBIC
     return cv2.resize(img, (w, h), interpolation=interp)
+
+#############################################
+#              Data loader utils            #
+#############################################
+
+
+def preproc_albedo_intensity_depth_frames(root: str,
+                                          device: str,
+                                          config: dict,
+                                          start_idx: int,
+                                          num_frames: Optional[int] = 1,
+                                          requires_grad: Optional[bool] = False):# -> List[Tensor]:
+    """Function to convert the rgb and depth frames read using data loaders to tensors"
+
+    Args:
+        root (str): Path to the root folder containing the rendered RGB images and depth maps 
+        device (str): Choose the compute device, cpu or cuda device
+        start_idx (int): Index of the first rgb-d to be used generate active SPC frame  
+        num_frames (int): Number of rgb-d frames used to generate an active SPC frame
+        config (dict): Dictionary containing all the simulation parameters
+        requires_grad (bool): Set to True to enable gradient computations for differentiable pipelines
+    Returns:
+        List[Tensor]: Tensors corresponding to albedo, intensity and depth frames
+    """
+
+    frames = Dataset.from_path(root / "frames")
+    depths = Dataset.from_path(root / "depths")
+    assert len(depths) == len(frames), "Different number of depth and RGB frames"
+    assert start_idx + num_frames < len(frames), "start_idx + num_frames must not exceed total rendered frames"
+
+    # Get config parameters
+    Nr,Nc = config["sensor"]["resolution"]
+    tmax = float(1.0/float(config['active_source']['pulsed_laser']['frequency']))*ureg.second
+    
+    # Compute max depth
+    max_depth = ((tmax*((c)*ureg.meter/ureg.second)/2)*1000)/ureg.meter
+
+    print("Max depth in meters",max_depth)
+    print("c",c)
+    print("tmax", tmax)
+
+    # tmax = 100  # Laser period in nano seconds
+    
+    rgb_img_list = list(frames[start_idx : start_idx + num_frames][1])
+    depth_img_list = list(depths[start_idx : start_idx + num_frames][1])
+
+    print("Inside rgb_imgs.shape",len(rgb_img_list))
+    print("Inside depth_imgs.shape",len(depth_img_list))
+
+    albedo_frames_list = []
+    intensity_frames_list = []
+    depth_frames_list = []
+
+    for idx in range(len(rgb_img_list)):
+        rgb_img = rgb_img_list[idx]
+        depth_img = depth_img_list[idx][:,:,0]
+
+        depth_img = cv2.inpaint(depth_img, (depth_img > max_depth).astype(np.uint8), 3, cv2.INPAINT_TELEA)
+
+        # Resize and transform to tensor, scale RGB to [0-1] range
+        rgb_img = cv2.resize(rgb_img, (Nc, Nr))
+        rgb = torch.tensor(rgb_img.astype(float), device=device, requires_grad = requires_grad) / 255.0
+        depth_img = cv2.resize(depth_img, (Nc, Nr))
+        
+        # Filter out depths that might be out-of-range
+        depth = torch.tensor(depth_img, device=device, requires_grad = requires_grad).unsqueeze(0)
+
+        # Using the red channel as albedo and intensity
+        albedo = intensity = rgb[..., 0].unsqueeze(0)
+
+        # print("Idx: ",idx, "depth: ", depth.shape, depth.min(), depth.max(), depth.mean())
+        # print("Idx: ",idx, "albedo: ", albedo.shape, albedo.min(), albedo.max(), albedo.mean())
+        # print("Idx: ",idx, "intensity: ", intensity.shape, intensity.min(), intensity.max(), intensity.mean())
+
+        albedo_frames_list.append(albedo)
+        intensity_frames_list.append(intensity)
+        depth_frames_list.append(depth)
+
+    albedo_frames = torch.concat(albedo_frames_list)
+    intensity_frames = torch.concat(intensity_frames_list)
+    depth_frames = torch.concat(depth_frames_list) 
+
+    return albedo_frames, intensity_frames, depth_frames
+    

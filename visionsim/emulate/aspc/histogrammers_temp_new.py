@@ -134,6 +134,7 @@ def calculate_transients(irradiance_frames: torch.Tensor,
                              requires_grad=irradiance_frames.requires_grad)
 
     print("Calculating transients...")
+    transient_list = []
     for mask_idx, fov_mask in enumerate(tqdm(fov_masks, desc="Processing FOV masks")):
         # Get values only within the current FOV mask for the first frame
         # Assuming albedo/depth don't change much across frames for transient calculation within an FOV
@@ -157,9 +158,11 @@ def calculate_transients(irradiance_frames: torch.Tensor,
 
             # Normalize the transient to sum to 1
             t2 += t1 / (torch.sum(t1) + 1e-9)
-        transients[mask_idx] = t2
-
-    return transients
+        # transients[mask_idx] = t2
+        transient_list.append(t2.unsqueeze(0))
+    
+    final_transients = torch.concat(transient_list)
+    return final_transients
 
 def get_laser_irf(sigma_bins: int, device: torch.device = torch.device("cpu")) -> torch.Tensor:
     """
@@ -234,7 +237,7 @@ def _apply_non_pr_deadtime(buffer: torch.Tensor, dead_time_bins: int, n_tbins: i
 def simulate_pixel_ewh(phi_bar: torch.Tensor, n_pulses: int, n_hist_bins: int,
                        free_running: bool, dead_time_bins: int) -> torch.Tensor:
     """
-    Simulates the Early-Window Histogram (EWH) for a single pixel.
+    Simulates the Equi-Width Histogram (EWH) for a single pixel.
 
     Args:
         phi_bar (torch.Tensor): Expected photon arrival rates for one pixel across time bins.
@@ -275,7 +278,7 @@ def simulate_pixel_ewh(phi_bar: torch.Tensor, n_pulses: int, n_hist_bins: int,
 def simulate_ewh(arrival_rates: torch.Tensor, n_pulses: int, n_hist_bins: int,
                  free_running: bool = False, dead_time_bins: int = 0) -> list[torch.Tensor]:
     """
-    Simulates the Early-Window Histogram (EWH) for all pixels/FOVs.
+    Simulates the Equi-Width Histogram (EWH) for all pixels/FOVs.
 
     Args:
         arrival_rates (torch.Tensor): Tensor of photon arrival rates for all FOVs.
