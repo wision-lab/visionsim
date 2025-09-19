@@ -3,6 +3,7 @@ from scipy.constants import Wien, c, h, k, sigma
 import numpy as np
 import cv2
 import torch
+from ruamel.yaml.nodes import ScalarNode
 from visionsim.dataset import ( 
     Dataset,
     ImgDataset, 
@@ -170,3 +171,28 @@ def preproc_albedo_intensity_depth_frames(root: str,
 
     return albedo_frames, intensity_frames, depth_frames
     
+
+#############################################
+#              Helper utils                 #
+#############################################
+
+
+def from_yaml_constructor(cls, safe_builtins=None):
+    def from_yaml(loader, node):
+        tag = node.tag
+        if isinstance(node, ScalarNode):
+            value = loader.construct_scalar(node)
+            if tag == "!Quantity":
+                return cls(value) if value else cls()
+            elif tag == "!expr":
+                return eval(value, safe_builtins)
+            else:   
+                raise NotImplementedError
+    return from_yaml
+
+def get_masked_fov(sensor_config, pixel_fov_list):
+    fov_x, fov_y = sensor_config['fov']
+    for fov in pixel_fov_list:
+        w_ratio, h_ratio = fov[3] - fov[2], fov[1] - fov[0]
+        fov_x, fov_y = fov_x * w_ratio, fov_y * h_ratio
+    return fov_x, fov_y
