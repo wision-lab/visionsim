@@ -11,12 +11,11 @@ from histogrammers_temp_new import (
     get_albedo_intensity_depth_frames, get_perpixel_fov_masks, 
     calculate_transients, calculate_arrival_rates, simulate_ewh
 )
-from utils import tof2depth, ureg    
+from utils import tof2depth, ureg, load_config    
 
 def get_light_conditions_from_string(condition_str: str) -> LightConditions:
     """Convert string to LightConditions enum value."""
     return getattr(LightConditions, condition_str)
-
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -33,25 +32,31 @@ if __name__ == "__main__":
 
     # Active source
     active_config = config['active_source']['pulsed_laser']
-    active_source = PulsedLaser(
-        wavelength=float(active_config['wavelength']) * ureg.nanometer,
-        frequency=float(active_config['frequency']) * ureg.hertz,
-        pulse_width=float(active_config['pulse_width']) * ureg.second,
-        avg_watts=float(active_config['avg_watts']) * ureg.watt,
-        pulse_shape=active_config['pulse_shape'],
-        pulse_shape_custom=active_config['pulse_shape_custom']
-    )
+    # active_config_units = active_config['units']
+    # active_source = PulsedLaser(
+    #     wavelength=float(active_config['wavelength']) * ureg(active_config_units['wavelength']),
+    #     frequency=float(active_config['frequency']) * ureg(active_config_units['frequency']),
+    #     pulse_width=float(active_config['pulse_width']) * ureg(active_config_units['pulse_width']),
+    #     avg_watts=float(active_config['avg_watts']) * ureg(active_config_units['avg_watts']),
+    #     pulse_shape=active_config['pulse_shape'],
+    #     pulse_shape_custom=active_config['pulse_shape_custom']
+    # )
+    active_source = PulsedLaser(**load_config(config['active_source']['pulsed_laser'], ureg))
 
     # Ambient source
+    # ambient_config = config['ambient_source']['sun']
+    # ambient_source = Sun(
+    #     intensity=float(ambient_config['intensity']) * ureg.watt / ureg.meter**2,
+    #     stability_factor=float(ambient_config['stability_factor']) * ureg.dimensionless,
+    #     temperature=float(ambient_config['temperature']) * ureg.kelvin,
+    #     lambda_pass=float(ambient_config['lambda_pass']) * ureg.nanometer,
+    #     delta_lambda=float(ambient_config['delta_lambda']) * ureg.nanometer,
+    #     light_conditions=get_light_conditions_from_string(ambient_config['light_conditions'])
+    # )
     ambient_config = config['ambient_source']['sun']
-    ambient_source = Sun(
-        intensity=float(ambient_config['intensity']) * ureg.watt / ureg.meter**2,
-        stability_factor=float(ambient_config['stability_factor']) * ureg.dimensionless,
-        temperature=float(ambient_config['temperature']) * ureg.kelvin,
-        lambda_pass=float(ambient_config['lambda_pass']) * ureg.nanometer,
-        delta_lambda=float(ambient_config['delta_lambda']) * ureg.nanometer,
-        light_conditions=get_light_conditions_from_string(ambient_config['light_conditions'])
-    )
+    kwargs = load_config(ambient_config, ureg)
+    kwargs['light_conditions'] = get_light_conditions_from_string(kwargs['light_conditions'])
+    ambient_source = Sun(**kwargs)
 
     # FOV masks
     _, img_rows, img_cols = depth_frames.shape
@@ -67,23 +72,27 @@ if __name__ == "__main__":
     depth_quantity = depth_frames.cpu().numpy() * ureg.meter 
     radiance = active_source.get_scene_radiance(albedo_quantity, depth_quantity, num_pixels, float(sensor_config['omega']) * ureg.steradian)
     irradiance = (radiance * np.pi / 4 * (1 / sensor_config['f_number']) ** 2) * float(sensor_config['pixel_pitch']**2)
+    # print(f"irradiance[0]: {irradiance[0][0][0]}")
     irradiance_tensor = torch.tensor(np.array(irradiance.magnitude), dtype=torch.float32, device=device)
+    # print(f"irradiance_tensor[0]: {irradiance_tensor[0][0][0]}")
+    # print(f"irradiance_tensor[0].sum(): {irradiance_tensor[0].sum()}")
     # Get ambient offset
     ambient_radiance = ambient_source.get_scene_radiance(float(sensor_config['omega']) * ureg.steradian, albedo_quantity, active_source.frequency)
     ambient_irradiance = (ambient_radiance * np.pi / 4 * (1 / sensor_config['f_number']) ** 2) * float(sensor_config['pixel_pitch']**2)
-    offset = torch.tensor(np.array(ambient_irradiance.magnitude), dtype=torch.float32, device=device)
-    transients = calculate_transients(irradiance_tensor, depth_frames, fov_masks, hist_config['n_bins'], active_source.max_resolvable_depth.magnitude)
+    offsets = torch.tensor(np.array(ambient_irradiance.magnitude), dtype=torch.float32, device=device)
+    transients, masked_offsets = calculate_transients(irradiance_tensor, depth_frames, offsets, fov_masks, hist_config['n_bins'], active_source.max_resolvable_depth.magnitude)
+    # print(f"transients[0].sum(): {transients[0].sum()}")
 
     # Calculate arrival rates
     # bin_width = hist_config['bin_width'] * ureg.meter
     bin_width = (2 * tof2depth(1 / active_source.frequency) / hist_config['n_bins'])
-    _, irf = active_source.get_kernel(bin_width)
+    _, irf = active_source.get_kernel(bin_width, None)
     irf_tensor = torch.tensor(irf, dtype=torch.float32, device=device)
-    arrival_rates = calculate_arrival_rates(irf_tensor, transients, offset, hist_config['n_bins'])
+    arrival_rates = calculate_arrival_rates(irf_tensor, transients, masked_offsets, hist_config['n_bins'])
     active_source.plot_kernel(bin_width)
 
     # Simulate EWH
-    ewh_list = simulate_ewh(arrival_rates, hist_config['n_pulses'], hist_config['n_bins'], hist_config['free_running'], float(hist_config['dead_time_s']))
+    # ewh_list = simulate_ewh(arrival_rates, hist_config['n_pulses'], hist_config['n_bins'], hist_config['free_running'], float(hist_config['dead_time_s']))
 
     # Plots
     num_fovs = len(config['histogrammer']['pixel_fov_list'])
@@ -149,16 +158,16 @@ if __name__ == "__main__":
     plt.show()
 
     # Time Stamp Histograms (EWH)
-    fig6, ax6 = plt.subplots(num_fovs, 1, figsize=(8, 2.5 * num_fovs))
-    fig6.suptitle("Simulated Time Stamp Histograms (EWH)", fontsize=16)
-    for i in range(num_fovs):
-        current_ax = ax6 if num_fovs == 1 else ax6[i]
-        current_ax.plot(ewh_list[i].cpu().numpy())
-        current_ax.set_ylim(bottom=0) # Ensure y-axis starts at 0
-        current_ax.set_title(f"FOV {i+1}")
-        current_ax.set_xlabel("Time Bins")
-        current_ax.set_ylabel("Photon Counts")
-        current_ax.grid(True)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.show()
+    # fig6, ax6 = plt.subplots(num_fovs, 1, figsize=(8, 2.5 * num_fovs))
+    # fig6.suptitle("Simulated Time Stamp Histograms (EWH)", fontsize=16)
+    # for i in range(num_fovs):
+    #     current_ax = ax6 if num_fovs == 1 else ax6[i]
+    #     current_ax.plot(ewh_list[i].cpu().numpy())
+    #     current_ax.set_ylim(bottom=0) # Ensure y-axis starts at 0
+    #     current_ax.set_title(f"FOV {i+1}")
+    #     current_ax.set_xlabel("Time Bins")
+    #     current_ax.set_ylabel("Photon Counts")
+    #     current_ax.grid(True)
+    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    # plt.show()
     

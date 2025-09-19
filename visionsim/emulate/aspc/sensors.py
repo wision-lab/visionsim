@@ -7,16 +7,6 @@ from typing import Union, Tuple
 from scipy.constants import c, h, k, sigma
 import numpy as np
 
-from sources import PulsedLaser, Sun, FlickeringLamp, CombinedSource
-from histogrammer import Histogrammer
-
-# Define Frame class if not imported
-class Frame:
-    def __init__(self, sensor, rgb, depth):
-        self.sensor = sensor
-        self.rgb = rgb
-        self.depth = depth
-
 class SensorBase:
     """Base class for all sensors"""
 
@@ -30,8 +20,7 @@ class SensorBase:
         fov=(66 * ureg.degree, 44 * ureg.degree),
         aperture: float = None,
         f_number: float = 1.4,
-        pixel_pitch=6.6667 * ureg.micrometer,
-        fov_list=None,
+        pixel_pitch=6.6667 * ureg.micrometer
     ):
         """Class that represents a sensor with perspective camera functionality. It builds the intrinsic
         camera matrix using the following parameters.
@@ -72,7 +61,6 @@ class SensorBase:
         self.num_pixels = self.h * self.w
         self.diagonal = np.sqrt(self.h**2 + self.w**2)
         self.pixel_pitch = pixel_pitch
-        self.fov_list = fov_list
         
         if not (f is not None) ^ (fov is not None):
             raise ValueError("Only one of focal length or FOV is required.")
@@ -216,9 +204,3 @@ class SPADSensor(SensorBase):
     ):
         super().__init__(**sensor_base_kwargs)
         self._sensor_base_kwargs = sensor_base_kwargs
-        self.fov_list = sensor_base_kwargs.get('fov_list', None)
-
-    @classmethod
-    def from_params(cls, params):
-        params.update(**params.pop("sensor_base_kwargs", {}))
-        return cls(**params, reset_on_init=False)
