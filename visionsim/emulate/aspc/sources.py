@@ -544,3 +544,8 @@ class CombinedSource:
             else:
                 result += source_result
         return result
+
+
+def get_light_conditions_from_string(condition_str: str) -> LightConditions:
+    """Convert string to LightConditions enum value."""
+    return getattr(LightConditions, condition_str)
