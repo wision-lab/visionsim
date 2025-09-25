@@ -197,6 +197,7 @@ def preview_datasets(
         clean (bool, optional): If true, clean all colorized depth and flow frames. Ignored if `colorize` is False. Defaults to False.
         jobs (int, optional): Allow multiple previews to be built in parallel. Defaults to 1.
     """
+    # TODO: This should just import the relevant functions from visionsim instead of calling the CLI.
     previews_dir = Path(previews_dir)
     previews_dir.mkdir(exist_ok=True, parents=True)
     (previews_dir / "grids").mkdir(exist_ok=True, parents=True)

@@ -14,7 +14,7 @@ Then you can **install the latest stable release** via `pip <https://pip.pypa.io
     $ pip install visionsim
 
 
-Finally, to install additional dependencies into Blender's runtime, you can run the following:
+Finally, to install additional dependencies into Blender's runtime, you can run the following::
 
     $ visionsim post-install
 

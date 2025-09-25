@@ -15,7 +15,7 @@ import time
 from contextlib import ExitStack, contextmanager, nullcontext
 from multiprocessing import Process
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import rpyc  # type: ignore
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     import multiprocess  # type: ignore
     import multiprocess.pool  # type: ignore
     import numpy.typing as npt
-    from typing_extensions import Any, Concatenate, ParamSpec, Self, TypeVar, cast
+    from typing_extensions import Any, Concatenate, ParamSpec, Self, TypeVar
 
     from visionsim.types import UpdateFn
 
