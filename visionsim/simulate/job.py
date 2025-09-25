@@ -12,7 +12,7 @@ def render_job(
     blend_file: str | os.PathLike,
     root: str | os.PathLike,
     *,
-    config: RenderConfig,
+    config: RenderConfig = RenderConfig(),
     frame_start: int | None = None,
     frame_end: int | None = None,
     frame_step: int | None = None,

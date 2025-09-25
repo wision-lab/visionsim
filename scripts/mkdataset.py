@@ -158,7 +158,7 @@ def create_datasets(
                         frame_end=frame_start + num_frames,
                         config=render_config,
                         dry_run=dry_run,
-                        tick=tick,
+                        update_fn=tick,
                     ),
                 )
             else:
