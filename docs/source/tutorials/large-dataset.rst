@@ -38,7 +38,7 @@ For clarity, we'll refer to a single blend-file as a scene, and a sequence will 
 
 To enable easy configuration and CLI parsing, we re-use the render configuration class used in the :func:`render-animation <visionsim.cli.blender.render_animation>` CLI which stores all important parameters such as render device, dimensions, and types of ground truth to use:
 
-.. literalinclude:: ../../../visionsim/cli/blender.py
+.. literalinclude:: ../../../visionsim/simulate/config.py
    :pyobject: RenderConfig
 
 | 

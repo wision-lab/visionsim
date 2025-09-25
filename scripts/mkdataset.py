@@ -23,8 +23,10 @@ from rich.progress import track
 from rich.traceback import install
 
 from visionsim.cli import ffmpeg
-from visionsim.cli.blender import RenderConfig, _render_job, sequence_info
+from visionsim.cli.blender import sequence_info
 from visionsim.simulate.blender import BlenderClients
+from visionsim.simulate.config import RenderConfig
+from visionsim.simulate.job import render_job
 from visionsim.utils.progress import PoolProgress
 
 logging.basicConfig(
@@ -149,7 +151,7 @@ def create_datasets(
                 # Note: The client will be automagically passed to `render` here.
                 tick = progress.add_task(f"{blend_file.stem} ({frame_start}-{frame_start + num_frames})")
                 pool.apply_async(
-                    _render_job,
+                    render_job,
                     args=(blend_file, sequence_dir),
                     kwds=dict(
                         frame_start=frame_start,
