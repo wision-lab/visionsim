@@ -22,6 +22,7 @@ classifiers = [
 dependencies = [
     "opencv-python",
     "imageio",
+	"scikit-image",
     "more_itertools",
     "numpy",
     "torch",
