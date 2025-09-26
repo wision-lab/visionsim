@@ -139,13 +139,13 @@ class DynamicSource(LightSource):
                     x = np.arange(-2 * pulse_bins, 2 * pulse_bins + 1) * bin_width
                     x_magnitude = x.magnitude if hasattr(x, 'magnitude') else x
                     kernel = pulse_shape_eval(x_magnitude)
-                elif isinstance(pulse_shape_eval, np.ndarray):
+                elif isinstance(pulse_shape_eval, list) or isinstance(pulse_shape_eval, np.ndarray):
                     x = np.arange(- len(pulse_shape_eval)//2, len(pulse_shape_eval)//2) * bin_width
-                    kernel = pulse_shape_eval
+                    kernel = np.array(pulse_shape_eval)
                 else:
-                    raise ValueError("Custom pulse_shape string did not evaluate to a callable or ndarray.")
+                    raise ValueError("Custom pulse_shape string did not evaluate to a callable or list or numpy array.")
         else:
-            raise TypeError("pulse_shape must be a string ('gaussian', 'square'), a callable, or a numpy array.")
+            raise TypeError("pulse_shape must be a string ('gaussian', 'square'), a callable, or a list.")
     
         if normalize:
             if normalize.lower() in ("max", "sum"):

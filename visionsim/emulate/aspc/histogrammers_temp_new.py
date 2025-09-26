@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import os # Import os for path checking
 from torch import Tensor
+from utils import get_irradiance_with_fov
 
 def get_pixel_fov_mask(empty_mask: Tensor, row1: float, row2: float, col1: float, col2: float) -> Tensor:
     """
@@ -56,7 +57,10 @@ def calculate_transients(irradiance_frames: torch.Tensor,
                          depth_frames: torch.Tensor,
                          offsets: torch.Tensor,
                          fov_masks: torch.Tensor, 
-                         gt_ntime_bins: int, max_depth: float) -> torch.Tensor:
+                         gt_ntime_bins: int, max_depth: float,
+                         sensor_fov: list,
+                         pixel_fov_list: list,
+                         omega: float) -> torch.Tensor:
     """
     Calculates the transient signal for each defined pixel FOV.
 
@@ -86,19 +90,20 @@ def calculate_transients(irradiance_frames: torch.Tensor,
 
         for mask_idx, fov_mask in enumerate(fov_masks):
             current_irradiance_vals = irradiance_frames[frame_idx][torch.nonzero(fov_mask,as_tuple=True)]
+            fov_irradiance_vals = get_irradiance_with_fov(current_irradiance_vals, sensor_fov, pixel_fov_list[mask_idx], omega)
             current_depth_vals = depth_frames[frame_idx][torch.nonzero(fov_mask,as_tuple=True)]
             masked_offsets = offsets[frame_idx][torch.nonzero(fov_mask,as_tuple=True)]
             ambient_offsets.append(masked_offsets.sum() / gt_ntime_bins)
 
             # Convert depth values to time bin locations
             # Handle Pint Quantity objects by extracting magnitude
-            if hasattr(current_depth_vals, 'magnitude'):
-                current_depth_vals = current_depth_vals.magnitude
+            current_depth_vals = current_depth_vals.magnitude
+            fov_irradiance_vals = fov_irradiance_vals.magnitude
             transient_idx1 = torch.floor(current_depth_vals * gt_ntime_bins / max_depth).to(torch.long)
             transient_idx = torch.clamp(transient_idx1, 0, gt_ntime_bins - 1) # Ensure indices are within bounds
             
             # Use torch.scatter_add for efficient accumulation into transients
-            transients[mask_idx].scatter_add(0, transient_idx, current_irradiance_vals)
+            transients[mask_idx].scatter_add(0, transient_idx, fov_irradiance_vals)
     
     return transients.float(), ambient_offsets
 

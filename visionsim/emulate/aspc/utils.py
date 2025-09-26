@@ -197,11 +197,18 @@ def eval_constructor(cls, safe_builtins=None):
             raise NotImplementedError
     return eval_yaml
 
-def get_masked_fov(sensor_config, pixel_fov_list):
-    print(f"sensor_config: {sensor_config}")
-    fov_x, fov_y = sensor_config['fov'][0], sensor_config['fov'][1]
-    # print(f"fov_x: {fov_x}, fov_y: {fov_y}")
-    for fov in pixel_fov_list:
-        w_ratio, h_ratio = fov[3] - fov[2], fov[1] - fov[0]
-        fov_x, fov_y = fov_x * w_ratio, fov_y * h_ratio
-    return fov_x, fov_y
+def file_constructor(cls):
+    def file_yaml(loader, node):
+        if isinstance(node, ScalarNode):
+            value = loader.construct_scalar(node)
+            return np.loadtxt(value)
+        else:
+            raise NotImplementedError
+    return file_yaml
+
+def get_irradiance_with_fov(irradiance, sensor_fov, pixel_fov, omega):
+    fov_x, fov_y = sensor_fov[0], sensor_fov[1]
+    w_ratio, h_ratio = pixel_fov[3] - pixel_fov[2], pixel_fov[1] - pixel_fov[0]
+    fov_x, fov_y = fov_x * w_ratio, fov_y * h_ratio
+    omega_new = pyramid_solid_angle(fov_x, fov_y)
+    return irradiance * omega_new / omega
