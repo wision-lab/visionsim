@@ -196,12 +196,15 @@ def rgb(
     input_dir: str | os.PathLike,
     output_dir: str | os.PathLike,
     chunk_size: int = 10,
-    frac_shutter_angle: float = 1.0,
-    readout_std: float = 20.0,
+    shutr_angl: float = 360.0,
+    rdout_std: float = 0.3,
     fwc: float | None = None,
-    duplicate: float = 1.0,
     scale_flux: float = 1.0,
-    gain_ISO: float = 1.0,
+    g_ISO: float = 1.0,
+    bitdepth: int = 12,
+    demosaic: Literal["off", "bilinear", "MHC04"] = "bilinear",
+    dnois_sigma: float = 0.0,
+    sharpn_wt: float = 0.0,
     pattern: str = "frame_{:06}.png",
     mode: Literal["npy", "img"] = "npy",
     force: bool = False,
@@ -212,14 +215,17 @@ def rgb(
         input_dir: directory in which to look for frames
         output_dir: directory in which to save binary frames
         chunk_size: number of consecutive frames to average together
-        frac_shutter_angle: fraction of inter-frame duration shutter is active
-        readout_std: standard deviation of gaussian read noise
-        fwc: full well capacity of sensor in arbitrary units (relative to factor & chunk_size)
-        duplicate: when chunk size is too small, this model is ill-suited and creates unrealistic noise. This parameter artificially increases the chunk size by using each input image `duplicate` number of times
+        shutr_angl: fraction of inter-frame duration shutter is active (0-360 deg)
+        rdout_std: standard deviation of gaussian read noise in photoelectrons
+        fwc: full well capacity of sensor in photoelectrons
         scale_flux: factor to scale the input images before Poisson simulation
-        gain_ISO: gain for photo-electron reading after Poisson rng
+        g_ISO: gain for photo-electron reading after Poisson rng
+        bitdepth: ADC bitdepth
+        demosaic: demosaicing method (default bilinear)
+        dnois_sigma: Gaussian blur with this sigma will be used (default 0.0 disables this)
+        sharpn_wt: weight used in sharpening (default 0.0 disables this)
         pattern: filenames of frames should match this
-        mode: how to save binary frames
+        mode: how to save generated frames
         force: if true, overwrite output file(s) if present
     """
     import copy
@@ -267,23 +273,28 @@ def rgb(
             # Assume images have been tonemapped and undo mapping
             imgs = srgb_to_linearrgb(imgs)
 
+            # batch_size is not relevant here
+            imgs = imgs[:,0,...]
+
             rgb_img = emulate_rgb_from_sequence(
-                imgs * duplicate,
-                readout_std=readout_std,
+                imgs,
+                readout_std=rdout_std,
                 fwc=fwc or np.inf,
-                frac_shutter_angle=frac_shutter_angle,
+                shutter_angle_degrees=shutr_angl,
                 scale_flux=scale_flux,
-                gain_ISO=gain_ISO,
+                gain_ISO=g_ISO,
+                bitdepth=bitdepth,
+                demosaic_method=demosaic,
+                denoise_sigma=dnois_sigma,
+                sharpen_weight=sharpn_wt,
             )
+
             if transforms_new:
-                pose = pose_interp(poses)(0.5) if chunk_size != 1 else poses[0]
+                pose = pose_interp(poses)(0.5) if len(poses) != 1 else poses[0]
             else:
                 pose = None
 
-            if rgb_img.shape[-1] == 1:
-                rgb_img = np.repeat(rgb_img, 3, axis=-1)
-
-            writer[i] = ((rgb_img * 255).astype(np.uint8), pose)
+            writer[i] = (rgb_img, pose)
             progress.update(task, advance=len(idxs))
 
 
