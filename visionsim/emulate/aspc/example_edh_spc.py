@@ -12,14 +12,14 @@ from histogrammers import (
     get_perpixel_fov_masks, 
     calculate_transients, 
     calculate_arrival_rates, 
-    simulate_ewh,
-    simulate_ewh_diff
+    simulate_edh
 )
 
 from utils import tof2depth, ureg, preproc_albedo_intensity_depth_frames 
 
-from ascp_plot_utils import plot_ewh_per_pixel
+from ascp_plot_utils import plot_edh_per_pixel
 
+import matplotlib.pyplot as plt
 
 if __name__ == "__main__":
     ## Setting simulation parameters 
@@ -31,7 +31,7 @@ if __name__ == "__main__":
     start_idx = 0
     num_frames = 1
     data_dir = "data"
-    config_path = "config_ewh.yaml"
+    config_path = "config_edh.yaml"
     
     # Load config
     with open(config_path, "r") as f:
@@ -44,6 +44,7 @@ if __name__ == "__main__":
         start_idx,
         num_frames = num_frames, 
         requires_grad = requires_grad)
+
 
     # Active source
     active_config = config['active_source']['pulsed_laser']
@@ -118,16 +119,19 @@ if __name__ == "__main__":
     
     active_source.plot_kernel(bin_width)
 
-    # Simulate EWH with dead time
-    ewh_list = simulate_ewh(arrival_rates, hist_config['n_pulses'], hist_config['n_bins'], hist_config['free_running'], float(hist_config['dead_time_s']))
+    # Simulate EDH with dead time
+    assert hist_config['type'] == "edh", "Incorrect SPC type mentioned in config file"
 
-    plot_ewh_per_pixel(config,
+    photon_hist_list, edh_list = simulate_edh(arrival_rates, hist_config['n_pulses'], hist_config['n_hist_bins'], hist_config['free_running'], float(hist_config['dead_time_s']))
+    
+
+    plot_edh_per_pixel(config,
                     fov_masks,
                     albedo_frames[0],
                     depth_frames[0],
                     transients,
                     arrival_rates,
-                    ewh_list)
-
+                    photon_hist_list,
+                    edh_list)
 
 

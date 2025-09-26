@@ -93,7 +93,7 @@ if __name__ == "__main__":
     start_idx = 0
     num_frames = 1
     data_dir = "data"
-    config_path = "config_diffewh.yaml"
+    config_path = "config_diff_ewh.yaml"
     
     # Load config
     with open(config_path, "r") as f:
@@ -167,7 +167,55 @@ if __name__ == "__main__":
 
     # ewh_list_measurement = [torch.tensor(ewh1.detach().cpu().numpy(), device=device, requires_grad=True) for ewh1 in ewh_list_gt]
     ewh_list_measurement = ewh_list_gt
-    #############################################
+    ########################################################################
+    requires_grad = True
+    
+
+    albedo_frames2, intensity_frames2, depth_frames2 = preproc_albedo_intensity_depth_frames(
+        root,
+        device,
+        config, 
+        start_idx,
+        num_frames = num_frames, 
+        requires_grad = requires_grad)
+
+    # Active source
+    active_config = config['active_source']['pulsed_laser']
+    active_source2 = PulsedLaser(
+        wavelength=float(active_config['wavelength']) * ureg.nanometer,
+        frequency=float(active_config['frequency']) * ureg.hertz,
+        pulse_width=float(active_config['pulse_width']) * ureg.second,
+        avg_watts=float(active_config['avg_watts']) * ureg.watt,
+        pulse_shape=active_config['pulse_shape'],
+        pulse_shape_custom=active_config['pulse_shape_custom']
+    )
+
+    bin_width = (2 * tof2depth(1 / active_source2.frequency) / config['histogrammer']['n_bins'])
+    _, irf = active_source2.get_kernel(bin_width)
+    print("irf",irf)
+    irf_tensor_gt = torch.tensor(irf, dtype=float, device=device)
+
+    # Ambient source
+    ambient_config = config['ambient_source']['sun']
+    ambient_source2 = Sun(
+        intensity=float(ambient_config['intensity']) * ureg.watt / ureg.meter**2,
+        stability_factor=float(ambient_config['stability_factor']) * ureg.dimensionless,
+        temperature=float(ambient_config['temperature']) * ureg.kelvin,
+        lambda_pass=float(ambient_config['lambda_pass']) * ureg.nanometer,
+        delta_lambda=float(ambient_config['delta_lambda']) * ureg.nanometer,
+        light_conditions=get_light_conditions_from_string(ambient_config['light_conditions'])
+    )
+
+    # FOV masks
+    _, img_rows, img_cols = depth_frames.shape
+    empty_mask = torch.zeros((img_rows, img_cols), dtype=bool)
+    fov_masks2 = get_perpixel_fov_masks(
+        empty_mask, 
+        config['histogrammer']['pixel_fov_list'], 
+        device=device)
+    # print("fov_masks", fov_masks.shape)
+
+
     irf_init = [0.1,0.1,0.1,0.4,0.8,0.9,0.9,0.9,0.8,0.4,0.1,0.1,0.1]
 
     irf_tensor_estim = nn.Parameter(torch.tensor(irf_init, 
@@ -181,34 +229,23 @@ if __name__ == "__main__":
     # plt.plot(irf_tensor_estim.detach().cpu().numpy())
     # plt.show()
 
-    for epoch in range(1000):
+    for epoch in range(100):
         optimizer.zero_grad()
-        transients, arrival_rates, ewh_list_pred = forward_pass_ewh_diff(albedo_frames, 
-                          intensity_frames, 
-                          depth_frames,
-                          active_source,
-                          ambient_source,
-                          fov_masks,
+        transients_pred, arrival_rates_pred, ewh_list_pred = forward_pass_ewh_diff(albedo_frames2, 
+                          intensity_frames2, 
+                          depth_frames2,
+                          active_source2,
+                          ambient_source2,
+                          fov_masks2,
                           config,
                           F.relu(irf_tensor_estim))
 
         err1 = compute_rmse(ewh_list_pred, ewh_list_measurement)
-        err1.backward()
-        
+        err1.backward(retain_graph=True)
         optimizer.step()
         print("Error :", err1)
         print("Gradient:", irf_tensor_estim.grad.abs().mean(), irf_tensor_estim.grad.abs().max())
-
-        dot = make_dot(err1, params={"param":irf_tensor_estim})
-
-        # Display the graph (this will open a window or save a file depending on your environment)
-        dot.render("computational_graph", format="png", cleanup=True)
     
     plt.plot(irf_tensor_estim.detach().cpu().numpy())
     plt.show()
-
-    
-
-    
-
 
