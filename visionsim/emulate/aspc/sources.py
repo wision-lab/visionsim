@@ -134,8 +134,7 @@ class DynamicSource(LightSource):
                 x = np.arange(-pulse_bins, 2 * pulse_bins) * bin_width
                 kernel = np.repeat([0, 1, 0], pulse_bins)
             elif self.pulse_shape == "custom":
-                # Remove surrounding quotes if present
-                pulse_shape_eval = eval(self.pulse_shape_custom)
+                pulse_shape_eval = self.pulse_shape_custom
                 if callable(pulse_shape_eval):
                     x = np.arange(-2 * pulse_bins, 2 * pulse_bins + 1) * bin_width
                     x_magnitude = x.magnitude if hasattr(x, 'magnitude') else x

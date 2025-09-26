@@ -9,20 +9,20 @@ from tqdm import tqdm
 import os # Import os for path checking
 from torch import Tensor
 
-def get_pixel_fov_mask(empty_mask: Tensor, row1: float, row2: float, col1: float, col2: float) -> np.ndarray:
+def get_pixel_fov_mask(empty_mask: Tensor, row1: float, row2: float, col1: float, col2: float) -> Tensor:
     """
     Generates a rectangular FOV mask for each pixel based on row,column parameters.
     (Placeholder function which can be added as a builder method to sensor class)
 
     Args:
-        empty_mask (np.ndarray): Passing empty array which can be reused to create fov masks.
+        empty_mask (Tensor): Passing empty array which can be reused to create fov masks.
         row1 (float): Normalized start row (0.0 to 1.0).
         row2 (float): Normalized end row (0.0 to 1.0).
         col1 (float): Normalized start column (0.0 to 1.0).
         col2 (float): Normalized end column (0.0 to 1.0).
 
     Returns:
-        np.ndarray: A boolean mask where the specified region is True.
+        Tensor: A boolean mask where the specified region is True.
         
     """
     img_rows, img_cols = empty_mask.shape
@@ -33,7 +33,7 @@ def get_pixel_fov_mask(empty_mask: Tensor, row1: float, row2: float, col1: float
 
     return empty_mask
 
-def get_perpixel_fov_masks(empty_mask: Tensor, pixel_fov_list: list, device: torch.device = torch.device("cpu")) -> torch.Tensor:
+def get_perpixel_fov_masks(empty_mask: Tensor, pixel_fov_list: list, device: torch.device = torch.device("cpu")) -> Tensor:
     """
     Generates a list of FOV masks based on `pixel_fov_list`.
     (Placeholder function which can be added as a builder method to sensor class)
@@ -54,6 +54,7 @@ def get_perpixel_fov_masks(empty_mask: Tensor, pixel_fov_list: list, device: tor
 
 def calculate_transients(irradiance_frames: torch.Tensor, 
                          depth_frames: torch.Tensor,
+                         offsets: torch.Tensor,
                          fov_masks: torch.Tensor, 
                          gt_ntime_bins: int, max_depth: float) -> torch.Tensor:
     """
@@ -86,7 +87,8 @@ def calculate_transients(irradiance_frames: torch.Tensor,
         for frame_idx in range(irradiance_frames.shape[0]):
             current_irradiance_vals = irradiance_frames[frame_idx][torch.nonzero(fov_mask,as_tuple=True)]
             current_depth_vals = depth_frames[frame_idx][torch.nonzero(fov_mask,as_tuple=True)]
-            
+            masked_offsets = offsets[frame_idx][torch.nonzero(fov_mask,as_tuple=True)]
+
             # if not frame_idx:
             #     print("current_irradiance_vals",current_irradiance_vals.min(),current_irradiance_vals.max())
             #     print("current_depth_vals",current_depth_vals.min(),current_depth_vals.max())
@@ -100,7 +102,60 @@ def calculate_transients(irradiance_frames: torch.Tensor,
         transient_list.append(t1.unsqueeze(0))
     
     final_transients = torch.concat(transient_list)
+    print("final_transients.shape: ", final_transients.shape)
     return final_transients
+
+# def calculate_transients(irradiance_frames: torch.Tensor, depth_frames: torch.Tensor, offsets: torch.Tensor,
+#                          fov_masks: torch.Tensor, gt_ntime_bins: int, max_depth: float) -> torch.Tensor:
+#     """
+#     Calculates the transient signal for each defined pixel FOV.
+
+#     Args:
+#         irradiance_frames (torch.Tensor): Tensor of irradiance images.
+#         depth_frames (torch.Tensor): Tensor of depth images.
+#         fov_masks (torch.Tensor): Tensor of boolean FOV masks.
+#         gt_ntime_bins (int): Total number of time bins for the transient.
+#         max_depth (float): Maximum depth corresponding to the last time bin.
+
+#     Returns:
+#         torch.Tensor: A tensor containing the calculated transients.
+#     """
+#     num_transients = fov_masks.shape[0] # Number of FOVs
+#     transients = torch.zeros((num_transients, gt_ntime_bins), dtype=torch.float32, device=fov_masks.device)
+
+#     print("Calculating transients...")
+#     for mask_idx, fov_mask in enumerate(tqdm(fov_masks, desc="Processing FOV masks")):
+#         # Get values only within the current FOV mask for the first frame
+#         # Assuming albedo/depth don't change much across frames for transient calculation within an FOV
+#         # If transients should be frame-specific, this loop needs to be nested over frames.
+#         # For simplicity, using albedo_frames[0] and depth_frames[0]
+#         current_irradiance_vals = irradiance_frames[0][fov_mask]
+#         # print(f"current_irradiance_vals.sum(): {current_irradiance_vals.sum()}")
+#         current_depth_vals = depth_frames[0][fov_mask]
+#         masked_offsets = offsets[0][fov_mask]
+#         print(f"offsets.shape: {offsets.shape}")
+#         print(f"masked_offsets.shape: {masked_offsets.shape}")
+
+#         # Convert depth values to time bin locations
+#         transient_idx = torch.floor(current_depth_vals * gt_ntime_bins / max_depth).to(torch.long)
+#         transient_idx = torch.clamp(transient_idx, 0, gt_ntime_bins - 1) # Ensure indices are within bounds
+        
+#         # Debug prints to understand tensor shapes
+#         print(f"transient_idx.shape: {transient_idx.shape}")
+#         print(f"current_irradiance_vals.shape: {current_irradiance_vals.shape}")
+#         print(f"transients[mask_idx].shape: {transients[mask_idx].shape}")
+        
+#         # Use torch.scatter_add for efficient accumulation into transients
+#         # print(f"current_irradiance_vals.sum(): {current_irradiance_vals.sum()}")
+#         transients[mask_idx].scatter_add_(0, transient_idx, current_irradiance_vals)
+#         # print(f"transients[mask_idx].sum(): {transients[mask_idx].sum()}")
+#         # print(f"Difference: {transients[mask_idx].sum() - current_irradiance_vals.sum()}")
+
+
+#         # Normalize the transient to sum to 1
+#         # transients[mask_idx] = transients[mask_idx] / (torch.sum(transients[mask_idx]) + 1e-9)
+
+#     return transients.float(), masked_offsets
 
 def calculate_arrival_rates(irf: torch.Tensor, transients: torch.Tensor, offset: torch.Tensor, gt_ntime_bins: int) -> torch.Tensor:
     """

@@ -13,7 +13,7 @@ from histogrammers_temp_new import (
     calculate_transients, calculate_arrival_rates, simulate_ewh
 )
 from sensors import SPADSensor
-from utils import tof2depth, ureg, load_config, from_yaml_constructor, get_masked_fov, irradiance_photons    
+from utils import tof2depth, ureg, ureg_constructor, eval_constructor, get_masked_fov, irradiance_photons    
 
 def get_light_conditions_from_string(condition_str: str) -> LightConditions:
     """Convert string to LightConditions enum value."""
@@ -22,15 +22,15 @@ def get_light_conditions_from_string(condition_str: str) -> LightConditions:
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    data_dir = "./data"
-    config_path = "./config.yaml"
+    data_dir = "visionsim/emulate/aspc/data"
+    config_path = "visionsim/emulate/aspc/config.yaml"
 
     # Load config
     yaml = YAML()
     safe_builtins = {'__builtins__': {'list': list, 'dict': dict, 'tuple': tuple}, 'np': np, 'math': math}
-    yaml.Constructor.add_constructor(tag="!Quantity", constructor=from_yaml_constructor(ureg.Quantity))
-    yaml.Constructor.add_constructor(tag="!expr", constructor=from_yaml_constructor(eval, safe_builtins))
-    config = yaml.load(open("sample_config.yaml"))
+    yaml.Constructor.add_constructor(tag="!Quantity", constructor=ureg_constructor(ureg.Quantity))
+    yaml.Constructor.add_constructor(tag="!expr", constructor=eval_constructor(eval, safe_builtins))
+    config = yaml.load(open(config_path))
 
     # Load data
     albedo_frames, intensity_frames, depth_frames = get_albedo_intensity_depth_frames(data_dir, device=device)
@@ -58,7 +58,7 @@ if __name__ == "__main__":
 
     # Sensor
     sensor_config = config['sensor']
-    sensor_config['fov'] = get_masked_fov(sensor_config, hist_config['pixel_fov_list'])
+    # sensor_config['fov'] = get_masked_fov(sensor_config, hist_config['pixel_fov_list'])
     sensor = SPADSensor(**sensor_config)
 
     # Get transients

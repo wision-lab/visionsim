@@ -3,7 +3,7 @@ from scipy.constants import Wien, c, h, k, sigma
 import numpy as np
 import cv2
 import torch
-from ruamel.yaml.nodes import ScalarNode
+from ruamel.yaml.nodes import ScalarNode, SequenceNode
 from visionsim.dataset import ( 
     Dataset,
     ImgDataset, 
@@ -115,11 +115,11 @@ def preproc_albedo_intensity_depth_frames(root: str,
     frames = Dataset.from_path(root / "frames")
     depths = Dataset.from_path(root / "depths")
     assert len(depths) == len(frames), "Different number of depth and RGB frames"
-    assert start_idx + num_frames < len(frames), "start_idx + num_frames must not exceed total rendered frames"
+    assert start_idx + num_frames <= len(frames), "start_idx + num_frames must not exceed total rendered frames"
 
     # Get config parameters
-    Nr,Nc = config["sensor"]["resolution"]
-    tmax = float(1.0/float(config['active_source']['pulsed_laser']['frequency']))*ureg.second
+    Nr,Nc = config["sensor"]["size"]
+    tmax = (1.0/config['active_source']['pulsed_laser']['frequency']).to(ureg.second)
     
     # Compute max depth
     max_depth = ((tmax*((c)*ureg.meter/ureg.second)/2)*1000)/ureg.meter
@@ -152,7 +152,7 @@ def preproc_albedo_intensity_depth_frames(root: str,
         depth_img = cv2.resize(depth_img, (Nc, Nr))
         
         # Filter out depths that might be out-of-range
-        depth = torch.tensor(depth_img, device=device, requires_grad = requires_grad).unsqueeze(0)
+        depth = torch.tensor(depth_img.astype(float), device=device, requires_grad = requires_grad).unsqueeze(0)
 
         # Using the red channel as albedo and intensity
         albedo = intensity = rgb[..., 0].unsqueeze(0)
@@ -167,7 +167,7 @@ def preproc_albedo_intensity_depth_frames(root: str,
 
     albedo_frames = torch.concat(albedo_frames_list)
     intensity_frames = torch.concat(intensity_frames_list)
-    depth_frames = torch.concat(depth_frames_list) 
+    depth_frames = torch.concat(depth_frames_list) * ureg.meter
 
     return albedo_frames, intensity_frames, depth_frames
     
@@ -176,22 +176,31 @@ def preproc_albedo_intensity_depth_frames(root: str,
 #              Helper utils                 #
 #############################################
 
-
-def from_yaml_constructor(cls, safe_builtins=None):
-    def from_yaml(loader, node):
-        tag = node.tag
+def ureg_constructor(cls):
+    def ureg_yaml(loader, node):
         if isinstance(node, ScalarNode):
             value = loader.construct_scalar(node)
-            if tag == "!Quantity":
-                return cls(value) if value else cls()
-            elif tag == "!expr":
-                return eval(value, safe_builtins)
-            else:   
-                raise NotImplementedError
-    return from_yaml
+            return cls(value) if value else cls()
+        elif isinstance(node, SequenceNode):
+            value = loader.construct_sequence(node)
+            return [cls(v) for v in value]
+        else:
+            raise NotImplementedError
+    return ureg_yaml
+
+def eval_constructor(cls, safe_builtins=None):
+    def eval_yaml(loader, node):
+        if isinstance(node, ScalarNode):
+            value = loader.construct_scalar(node)
+            return cls(value, safe_builtins)
+        else:
+            raise NotImplementedError
+    return eval_yaml
 
 def get_masked_fov(sensor_config, pixel_fov_list):
-    fov_x, fov_y = sensor_config['fov']
+    print(f"sensor_config: {sensor_config}")
+    fov_x, fov_y = sensor_config['fov'][0], sensor_config['fov'][1]
+    # print(f"fov_x: {fov_x}, fov_y: {fov_y}")
     for fov in pixel_fov_list:
         w_ratio, h_ratio = fov[3] - fov[2], fov[1] - fov[0]
         fov_x, fov_y = fov_x * w_ratio, fov_y * h_ratio
