@@ -227,7 +227,7 @@ def calculate_transients(irradiance_frames: torch.Tensor,
             # Convert depth values to time bin locations
             current_depth_vals = current_depth_vals.magnitude
             fov_irradiance_vals = fov_irradiance_vals.magnitude
-            factor = 1000.0 # factor that controls the occurance and spread of the distribution
+            factor = 1.0 # factor that controls the occurance and spread of the distribution
             transient_idx = torch.floor(current_depth_vals * gt_ntime_bins / max_depth * factor).to(torch.long)   
             transient_idx = torch.clamp(transient_idx, 0, gt_ntime_bins - 1) # Ensure indices are within bounds
             

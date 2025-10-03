@@ -168,7 +168,7 @@ def preproc_albedo_intensity_depth_frames(root: str,
         print("Idx: ",idx, "depth: ", depth_img.shape, depth_img.min(), depth_img.max(), depth_img.mean(),depth_img.std())
 
         # Filter out depths that might be out-of-range
-        depth_img = cv2.inpaint(depth_img, (depth_img > max_depth).astype(np.uint8), 3, cv2.INPAINT_TELEA)
+        # depth_img = cv2.inpaint(depth_img, (depth_img > max_depth).astype(np.uint8), 3, cv2.INPAINT_TELEA)
 
         print("Idx: ",idx, "depth: ", depth_img.shape, depth_img.min(), depth_img.max(), depth_img.mean(),depth_img.std())
         print("Idx: ",idx, "albedo: ", rgb_img.shape, rgb_img.min(), rgb_img.max(), rgb_img.mean(),rgb_img.std())

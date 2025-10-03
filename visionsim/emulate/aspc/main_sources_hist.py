@@ -23,8 +23,8 @@ def get_light_conditions_from_string(condition_str: str) -> LightConditions:
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    data_dir = Path("examples/renders/scene1/")
-    # data_dir = Path("visionsim/emulate/aspc/data")
+    # data_dir = Path("examples/renders/scene1/")
+    data_dir = Path("visionsim/emulate/aspc/data")
     config_path = "visionsim/emulate/aspc/sample_config.yaml"
 
     # Load config
@@ -36,14 +36,14 @@ if __name__ == "__main__":
     config = yaml.load(open(config_path))
 
     # Load data
-    albedo_frames, intensity_frames, depth_frames = preproc_albedo_intensity_depth_frames(
-        root=data_dir,
-        device=device,
-        config=config,
-        start_idx=0,
-        num_frames=1,
-        requires_grad=False)
-    # albedo_frames, intensity_frames, depth_frames = get_albedo_intensity_depth_frames(data_dir, device=device)
+    # albedo_frames, intensity_frames, depth_frames = preproc_albedo_intensity_depth_frames(
+    #     root=data_dir,
+    #     device=device,
+    #     config=config,
+    #     start_idx=0,
+    #     num_frames=1,
+    #     requires_grad=False)
+    albedo_frames, intensity_frames, depth_frames = get_albedo_intensity_depth_frames(data_dir, device=device)
 
     # Active source
     active_config = config['active_source']['pulsed_laser']
