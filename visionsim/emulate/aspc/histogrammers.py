@@ -296,3 +296,105 @@ def simulate_ewh_diff(arrival_rates: torch.Tensor, n_pulses: int, n_hist_bins: i
     ewh_pixel_list = torch.poisson(arrival_rates*n_pulses)
 
     return ewh_pixel_list
+
+def photon_hist2edh(photon_hist, n_edh_bins):
+
+    gt_ntime_bins = photon_hist.shape[-1]
+
+    tr_img = photon_hist + torch.max(photon_hist)*0.0000000001/gt_ntime_bins
+    bins = tr_img.shape
+    tr_cs = torch.cumsum(tr_img, axis=-1)
+    tr_sum = torch.sum(tr_img, axis=-1)
+    edh_bins = torch.zeros(n_edh_bins+1)
+    edh_bins[-1] = gt_ntime_bins
+
+    for idx in range(edh_bins.shape[-1]-2):
+      e1_ori = tr_cs - tr_sum*(idx+1.0)/n_edh_bins
+      e1 = e1_ori*1.0
+      e2 = e1_ori*1.0
+      e1[e1_ori > 0] = -1000000000000.0
+      e2[e1_ori < 0] = 1000000000000.0
+
+      neg_max_val_, neg_max_idx_ = torch.max(e1, axis=-1)
+      pos_min_val_, pos_min_idx_ = torch.min(e2, axis=-1)
+      k1 = 1# pos_min_idx_ - neg_max_idx_
+      a1 = torch.abs(neg_max_val_)
+      b1 = pos_min_val_
+      edh_bins[idx+1] = (neg_max_idx_ + a1*k1*1.0/(a1+b1+0.00000000000001))
+
+    edh_bins[1:-1]+=1
+
+    return edh_bins
+
+def simulate_pixel_edh(phi_bar: torch.Tensor, n_pulses: int, n_hist_bins: int,
+                       free_running: bool, dead_time_bins: int) -> torch.Tensor:
+    """
+    Simulates the Equi-Depth Histogram (EDH) for a single pixel.
+
+    Args:
+        phi_bar (torch.Tensor): Expected photon arrival rates for one pixel across time bins.
+        n_pulses (int): Number of laser pulses to simulate.
+        n_hist_bins (int): Number of histogram bins.
+        free_running (bool): True for free-running mode, False for gated mode.
+        dead_time_bins (int): Number of time bins for dead time.
+
+    Returns:
+        torch.Tensor: A tensor representing the accumulated photon histogram for the pixel.
+    """
+    n_tbins = phi_bar.shape[-1]
+    photon_hist = torch.zeros(n_tbins, dtype=torch.float32, device=phi_bar.device)
+    
+    # Buffer to store arrivals for dead-time checking
+    # First half for previous pulse arrivals, second half for current pulse arrivals
+    buffer = torch.zeros((n_tbins * 2), dtype=torch.bool, device=phi_bar.device)
+
+    for n_ in range(n_pulses):
+        # Generate photon arrivals using Poisson distribution
+        photon_vec = torch.poisson(phi_bar)
+        buffer[n_tbins:] = photon_vec > 0 # Mark where photons arrived in current pulse
+
+        # Apply non-paralyzable dead time
+        if dead_time_bins > 0:
+            _apply_non_pr_deadtime(buffer, dead_time_bins, n_tbins)
+
+        # Accumulate detected photons into the histogram
+        photon_hist += buffer[n_tbins:].float()
+
+        # Update buffer for next pulse based on free-running or gated mode
+        if free_running:
+            buffer[:n_tbins] = buffer[n_tbins:] # Carry over current arrivals to previous for next iteration
+        else:
+            buffer[:n_tbins] = 0 # Clear previous buffer (gated mode)
+    
+    photon_edh = photon_hist2edh(photon_hist, n_hist_bins)
+    
+    return photon_hist, photon_edh
+
+def simulate_edh(arrival_rates: torch.Tensor, n_pulses: int, n_hist_bins: int,
+                 free_running: bool = False, dead_time_bins: int = 0) -> list[torch.Tensor]:
+    """
+    Simulates the Equi-Depth Histogram (EDH) for all pixels/FOVs.
+
+    Args:
+        arrival_rates (torch.Tensor): Tensor of photon arrival rates for all FOVs.
+        n_pulses (int): Number of laser pulses to simulate.
+        n_hist_bins (int): Number of histogram bins.
+        free_running (bool): True for free-running mode, False for gated mode.
+        dead_time_bins (int): Number of time bins for dead time.
+
+    Returns:
+        list[torch.Tensor]: A list of tensors, where each tensor is the EDH for a pixel.
+    """
+    edh_pixel_list = []
+    photon_hist_pixel_list = []
+
+    print("Simulating EDH for pixels...")
+    for p_idx in tqdm(range(arrival_rates.shape[0]), desc="Simulating EDH"):
+        pixel_photon_hist, pixel_edh = simulate_pixel_edh(arrival_rates[p_idx],
+                                                 n_pulses,
+                                                 n_hist_bins,
+                                                 free_running,
+                                                 dead_time_bins)
+        photon_hist_pixel_list.append(pixel_photon_hist)
+        edh_pixel_list.append(pixel_edh)
+    return photon_hist_pixel_list, edh_pixel_list

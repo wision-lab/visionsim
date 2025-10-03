@@ -36,7 +36,7 @@ if __name__ == "__main__":
     start_idx = 0
     num_frames = 1
     data_dir = "data"
-    config_path = "visionsim/emulate/aspc/config.yaml"
+    config_path = "visionsim/emulate/aspc/config_ewh.yaml"
     
     # Load config
     yaml = YAML()
@@ -154,19 +154,6 @@ if __name__ == "__main__":
                     transients,
                     arrival_rates,
                     ewh_list)
-
-    # Simulate Differentiable EWH (Does not support dead time)
-    hist_config['dead_time_s'] = 0
-    ewh_list_gt = simulate_ewh_diff(arrival_rates, hist_config['n_pulses'], hist_config['n_bins'], hist_config['free_running'], float(hist_config['dead_time_s']))
-
-    plot_ewh_per_pixel(config,
-                    fov_masks,
-                    albedo_frames[0],
-                    depth_frames[0],
-                    transients,
-                    arrival_rates,
-                    ewh_list_gt)
-    
 
 
 
