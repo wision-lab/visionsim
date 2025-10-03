@@ -111,7 +111,7 @@ def preproc_albedo_intensity_depth_frames(root: str,
     Returns:
         List[Tensor]: Tensors corresponding to albedo, intensity and depth frames
     """
-
+    
     frames = Dataset.from_path(root / "frames")
     depths = Dataset.from_path(root / "depths")
     assert len(depths) == len(frames), "Different number of depth and RGB frames"
@@ -122,7 +122,7 @@ def preproc_albedo_intensity_depth_frames(root: str,
     tmax = (1.0/config['active_source']['pulsed_laser']['frequency']).to(ureg.second)
     
     # Compute max depth
-    max_depth = ((tmax*((c)*ureg.meter/ureg.second)/2)*1000)/ureg.meter
+    max_depth = ((tmax*((c)*ureg.meter/ureg.second)/2))/ureg.meter
 
     print("Max depth in meters",max_depth)
     print("c",c)
@@ -140,26 +140,58 @@ def preproc_albedo_intensity_depth_frames(root: str,
     intensity_frames_list = []
     depth_frames_list = []
 
+    # Testing depth image
+    import os
+    import imageio.v3 as iio
+    print("root", root)
+    depth_dir = os.path.join(root, "depths")
+    print("depth_dir", depth_dir)
+    depth_files = sorted([f for f in os.listdir(depth_dir) if f.lower().endswith(('.png','.hdr'))])
+
     for idx in range(len(rgb_img_list)):
         rgb_img = rgb_img_list[idx]
-        depth_img = depth_img_list[idx][:,:,0]
+        if depth_img_list[idx].ndim == 3:
+            depth_img = depth_img_list[idx][:,:,0]
+        else:
+            depth_img = depth_img_list[idx]
 
+        # Diagnose depth image
+        # iio
+        # depth_img = iio.imread(os.path.join(depth_dir, depth_files[idx]))
+        # depth_img = (depth_img - depth_img.min()) / (depth_img.max() - depth_img.min())
+        # cv2
+        # depth_img = cv2.imread(os.path.join(depth_dir, depth_files[idx]), cv2.IMREAD_ANYDEPTH | cv2.IMREAD_COLOR)
+        # depth_img = np.clip(depth_img, 0, max_depth)
+        # depth_img = (depth_img - depth_img.min()) / (depth_img.max() - depth_img.min())
+        # depth_img = (depth_img * 255).astype(np.uint8)
+
+        print("Idx: ",idx, "depth: ", depth_img.shape, depth_img.min(), depth_img.max(), depth_img.mean(),depth_img.std())
+
+        # Filter out depths that might be out-of-range
         depth_img = cv2.inpaint(depth_img, (depth_img > max_depth).astype(np.uint8), 3, cv2.INPAINT_TELEA)
+
+        print("Idx: ",idx, "depth: ", depth_img.shape, depth_img.min(), depth_img.max(), depth_img.mean(),depth_img.std())
+        print("Idx: ",idx, "albedo: ", rgb_img.shape, rgb_img.min(), rgb_img.max(), rgb_img.mean(),rgb_img.std())
+
+        import matplotlib.pyplot as plt
+        plt.figure()
+        plt.title(f"Depth Image {idx}")
+        plt.imshow(depth_img)
+        plt.colorbar(label="Depth")
+        plt.show()
 
         # Resize and transform to tensor, scale RGB to [0-1] range
         rgb_img = cv2.resize(rgb_img, (Nc, Nr))
         rgb = torch.tensor(rgb_img.astype(float), device=device, requires_grad = requires_grad) / 255.0
         depth_img = cv2.resize(depth_img, (Nc, Nr))
-        
-        # Filter out depths that might be out-of-range
         depth = torch.tensor(depth_img.astype(float), device=device, requires_grad = requires_grad).unsqueeze(0)
 
         # Using the red channel as albedo and intensity
         albedo = intensity = rgb[..., 0].unsqueeze(0)
 
-        # print("Idx: ",idx, "depth: ", depth.shape, depth.min(), depth.max(), depth.mean())
-        # print("Idx: ",idx, "albedo: ", albedo.shape, albedo.min(), albedo.max(), albedo.mean())
-        # print("Idx: ",idx, "intensity: ", intensity.shape, intensity.min(), intensity.max(), intensity.mean())
+        print("Idx: ",idx, "depth: ", depth.shape, depth.min(), depth.max(), depth.mean(), depth.median(),depth.std())
+        print("Idx: ",idx, "albedo: ", albedo.shape, albedo.min(), albedo.max(), albedo.mean())
+        print("Idx: ",idx, "intensity: ", intensity.shape, intensity.min(), intensity.max(), intensity.mean())
 
         albedo_frames_list.append(albedo)
         intensity_frames_list.append(intensity)

@@ -3,17 +3,18 @@ import math
 import matplotlib.pyplot as plt
 import torch
 from ruamel.yaml import YAML
+from pathlib import Path
 
-# Import from local modules
 from sources import (
     PulsedLaser, Sun, LightConditions
 )
-from histogrammers_temp_new import (
-    get_albedo_intensity_depth_frames, get_perpixel_fov_masks, 
-    calculate_transients, calculate_arrival_rates, simulate_ewh
+from histogrammers_temp import (
+    get_perpixel_fov_masks, 
+    calculate_transients, calculate_arrival_rates, simulate_ewh,
+    get_albedo_intensity_depth_frames
 )
 from sensors import SPADSensor
-from utils import tof2depth, ureg, ureg_constructor, eval_constructor, get_masked_fov, irradiance_photons    
+from utils import tof2depth, ureg, ureg_constructor, eval_constructor, irradiance_photons, preproc_albedo_intensity_depth_frames, file_constructor
 
 def get_light_conditions_from_string(condition_str: str) -> LightConditions:
     """Convert string to LightConditions enum value."""
@@ -22,18 +23,27 @@ def get_light_conditions_from_string(condition_str: str) -> LightConditions:
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    data_dir = "visionsim/emulate/aspc/data"
-    config_path = "visionsim/emulate/aspc/config.yaml"
+    data_dir = Path("examples/renders/scene1/")
+    # data_dir = Path("visionsim/emulate/aspc/data")
+    config_path = "visionsim/emulate/aspc/sample_config.yaml"
 
     # Load config
     yaml = YAML()
     safe_builtins = {'__builtins__': {'list': list, 'dict': dict, 'tuple': tuple}, 'np': np, 'math': math}
     yaml.Constructor.add_constructor(tag="!Quantity", constructor=ureg_constructor(ureg.Quantity))
     yaml.Constructor.add_constructor(tag="!expr", constructor=eval_constructor(eval, safe_builtins))
+    yaml.Constructor.add_constructor(tag="!file", constructor=file_constructor(None))
     config = yaml.load(open(config_path))
 
     # Load data
-    albedo_frames, intensity_frames, depth_frames = get_albedo_intensity_depth_frames(data_dir, device=device)
+    albedo_frames, intensity_frames, depth_frames = preproc_albedo_intensity_depth_frames(
+        root=data_dir,
+        device=device,
+        config=config,
+        start_idx=0,
+        num_frames=1,
+        requires_grad=False)
+    # albedo_frames, intensity_frames, depth_frames = get_albedo_intensity_depth_frames(data_dir, device=device)
 
     # Active source
     active_config = config['active_source']['pulsed_laser']
@@ -46,48 +56,49 @@ if __name__ == "__main__":
     ambient_config['light_conditions'] = get_light_conditions_from_string(ambient_config['light_conditions'])
     ambient_enable = ambient_config.pop('enabled')
     if ambient_enable:
-        ambient_source = Sun(**ambient_config)
-
-    # FOV masks
-    _, img_rows, img_cols = depth_frames.shape
-    empty_mask = np.zeros((img_rows, img_cols), dtype=float)
-    fov_masks = get_perpixel_fov_masks(empty_mask, config['histogrammer']['pixel_fov_list'], device=device)    
+        ambient_source = Sun(**ambient_config)  
 
     # Histogrammer
     hist_config = config['histogrammer']
 
     # Sensor
     sensor_config = config['sensor']
-    # sensor_config['fov'] = get_masked_fov(sensor_config, hist_config['pixel_fov_list'])
     sensor = SPADSensor(**sensor_config)
+
+    # FOV masks
+    print("depth_frames.shape",depth_frames.shape)
+    _, img_rows, img_cols = depth_frames.shape
+    empty_mask = torch.zeros((img_rows, img_cols), dtype=torch.float32, device=device)
+    # empty_mask = np.zeros((img_rows, img_cols))
+    fov_masks = get_perpixel_fov_masks(empty_mask, hist_config['pixel_fov_list'], device=device) 
 
     # Get transients
     num_pixels = sensor.w * sensor.h
-    # Convert tensors to Pint quantities for active source
-    albedo_quantity = albedo_frames.cpu().numpy() * ureg.dimensionless
-    depth_quantity = depth_frames.cpu().numpy() * ureg.meter 
-    radiance = active_source.get_scene_radiance(albedo_quantity, depth_quantity, num_pixels, sensor.omega)
-    irradiance = (radiance * np.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (sensor.pixel_pitch.to(ureg.meter))**2
-    print(f"pixel_pitch: {sensor.pixel_pitch}")
-    print(f"radiance[0][0][0]: {radiance[0][0][0]}")
-    print(f"irradiance[0][0][0]: {irradiance[0][0][0]}")
-    irradiance_tensor = torch.tensor(np.array(irradiance.magnitude), dtype=torch.float32, device=device)
-    # print(f"irradiance_tensor[0]: {irradiance_tensor[0][0][0]}")
-    # print(f"irradiance_tensor[0].sum(): {irradiance_tensor[0].sum()}")
+    radiance = active_source.get_scene_radiance(albedo_frames, depth_frames, num_pixels, sensor.omega)
+    irradiance = (radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (sensor.pixel_pitch.to(ureg.meter))**2
+    irradiance = torch.tensor(irradiance.magnitude, dtype=torch.float32, device=device) #TODO: remove for hist_temp_new
     # Get ambient offset
-    ambient_radiance = ambient_source.get_scene_radiance(sensor.omega, albedo_quantity, active_source.frequency)
-    ambient_irradiance = (ambient_radiance * np.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (sensor.pixel_pitch.to(ureg.meter))**2
-    offsets = torch.tensor(np.array(ambient_irradiance.magnitude), dtype=torch.float32, device=device)
-    transients, masked_offsets = calculate_transients(irradiance_tensor, depth_frames, offsets, fov_masks, hist_config['n_bins'], active_source.max_resolvable_depth.magnitude)
-    # print(f"transients[0].sum(): {transients[0].sum()}")
+    ambient_radiance = ambient_source.get_scene_radiance(sensor.omega, albedo_frames, active_source.frequency)
+    ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (sensor.pixel_pitch.to(ureg.meter))**2
+    offsets = torch.tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=device)
+    transients, ambient_offsets = calculate_transients(
+                                    irradiance, 
+                                    depth_frames, 
+                                    offsets, 
+                                    fov_masks, 
+                                    hist_config['n_bins'], 
+                                    active_source.max_resolvable_depth.magnitude,
+                                    sensor_config['fov'],
+                                    hist_config['pixel_fov_list'],
+                                    sensor.omega
+                                    )
 
     # Calculate arrival rates
     # bin_width = hist_config['bin_width'] * ureg.meter
     bin_width = (2 * tof2depth(1 / active_source.frequency) / hist_config['n_bins'])
-    print(f"bin_width: {bin_width}")
     _, irf = active_source.get_kernel(bin_width, None)
     irf_tensor = torch.tensor(irf, dtype=torch.float32, device=device)
-    arrival_rates = calculate_arrival_rates(irf_tensor, transients, masked_offsets, hist_config['n_bins'])
+    arrival_rates = calculate_arrival_rates(irf_tensor, transients, ambient_offsets, hist_config['n_bins'])
     active_source.plot_kernel(bin_width)
 
     # Simulate EWH
@@ -134,7 +145,7 @@ if __name__ == "__main__":
     fig4.suptitle("Transients", fontsize=16)
     for i in range(num_fovs):
         current_ax = ax4 if num_fovs == 1 else ax4[i]
-        current_ax.plot(transients[i].cpu().numpy())
+        current_ax.plot(transients[i].detach().cpu().numpy())
         current_ax.set_title(f"FOV {i+1}")
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Normalized Amplitude")
@@ -147,7 +158,7 @@ if __name__ == "__main__":
     fig5.suptitle(r'Photon Arrival Rates ($\overline{\Phi}$)', fontsize=16)
     for i in range(num_fovs):
         current_ax = ax5 if num_fovs == 1 else ax5[i]
-        current_ax.plot(arrival_rates[i].cpu().numpy())
+        current_ax.plot(arrival_rates[i].detach().cpu().numpy())
         current_ax.set_ylim(bottom=0) # Ensure y-axis starts at 0
         current_ax.set_title(f"FOV {i+1}")
         current_ax.set_xlabel("Time Bins")

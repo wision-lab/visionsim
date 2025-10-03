@@ -8,7 +8,64 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import os # Import os for path checking
 from torch import Tensor
-from utils import get_irradiance_with_fov
+from utils import get_irradiance_with_fov, ureg
+
+def get_albedo_intensity_depth_frames(data_dir: str, Nr: int = 0, Nc: int = 0, device: torch.device = torch.device("cpu")):
+    """
+    Loads RGB and depth frames, processes them, and returns them as tensors.
+    (Placeholder function which will be replaced by the RGBD dataloader)
+
+    Args:
+        data_dir (str): Path to the directory containing image files.
+        num_frames (int): Number of frames to load.
+        Nr (int): Target number of rows for resizing. If 0, no resizing.
+        Nc (int): Target number of columns for resizing. If 0, no resizing.
+        device (torch.device): The device to load tensors onto ('cpu' or 'cuda').
+
+    Returns:
+        tuple: Tensors of albedo frames, intensity frames, and depth frames.
+    """
+    albedo_frames, intensity_frames, depth_frames = [], [], []
+
+    print(f"Loading frames from {data_dir}...")
+    rgb_dir = os.path.join(data_dir, "frames")
+    depth_dir = os.path.join(data_dir, "depths")
+    rgb_files = sorted([f for f in os.listdir(rgb_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+    depth_files = sorted([f for f in os.listdir(depth_dir) if f.lower().endswith('.png')])
+
+    # Use the minimum number of frames available in both folders
+    num_frames = min(len(rgb_files), len(depth_files))
+    for idx in tqdm(range(num_frames), desc="Loading frames"):
+        i = idx + 1  # Frame index (1-based, to match original naming)
+        rgb_img_pth = os.path.join(data_dir, "frames", f"{i}.jpg")
+        depth_img_pth = os.path.join(data_dir, "depths", f"{i}.png")
+
+        if not os.path.exists(rgb_img_pth) or not os.path.exists(depth_img_pth):
+            print(f"Warning: Missing files for frame {i}. Skipping.")
+            continue
+
+        rgb_img = cv2.imread(rgb_img_pth, 1)[50:-50, 50:-50, ::-1] # Remove border, BGR to RGB
+        depth_img = cv2.imread(depth_img_pth, -1).astype(float)[50:-50, 50:-50] # Remove border, unchanged
+
+        if Nr and Nc:
+            rgb_img = cv2.resize(rgb_img, (Nc, Nr))
+            depth_img = cv2.resize(depth_img, (Nc, Nr))
+
+        # Normalize depth to meters, assuming 255 max value maps to 10.0 meters
+        depth_img = depth_img * 10.0 / 255.0
+
+        # Assuming laser wavelength is close to infrared (red channel for albedo)
+        albedo_frames.append(rgb_img[:, :, 0] / 255.0)
+        # Convert RGB to grayscale for intensity
+        intensity_frames.append(cv2.cvtColor(rgb_img, cv2.COLOR_RGB2GRAY) / 255.0)
+        depth_frames.append(depth_img)
+
+    # Convert lists of numpy arrays to torch tensors
+    albedo_frames_tensor = torch.tensor(np.array(albedo_frames), dtype=torch.float32, device=device)
+    intensity_frames_tensor = torch.tensor(np.array(intensity_frames), dtype=torch.float32, device=device)
+    depth_frames_tensor = torch.tensor(np.array(depth_frames), dtype=torch.float32, device=device) * ureg.meter
+
+    return albedo_frames_tensor, intensity_frames_tensor, depth_frames_tensor
 
 def get_pixel_fov_mask(empty_mask: Tensor, row1: float, row2: float, col1: float, col2: float) -> Tensor:
     """
@@ -50,7 +107,7 @@ def get_perpixel_fov_masks(empty_mask: Tensor, pixel_fov_list: list, device: tor
     mask_list = []
     for r1, r2, c1, c2 in pixel_fov_list:
         mask_list.append(get_pixel_fov_mask(empty_mask, r1, r2, c1, c2).unsqueeze(0))
-    
+
     return torch.concat(mask_list)
 
 def calculate_transients(irradiance_frames: torch.Tensor, 
