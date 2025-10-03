@@ -1,0 +1,56 @@
+# Histogrammer 
+histogrammer:
+  min_depth: 0.0
+  max_depth: 50.0
+  n_bins: 1000
+  shape: [300, 400]  # [height, width] to match sensor size
+  strict_units: true
+  strict_range: false
+  bin_width: 0.03  # meters per bin
+  # pixel_fov_list: [[0, 0.4, 0.3, 0.6], [0.7, 0.95, 0.6, 0.9],[0,0.999,0,0.999]] # [row1, row2, col1, col2]
+  pixel_fov_list: !file "visionsim/emulate/aspc/pixel_fov_list.txt"
+  n_pulses: 1000   # number of laser pulses
+  dead_time_s: 10e-9 # Dead time in seconds
+  free_running: False # Free-running mode (True) or gated mode (False) 
+
+# Active Light Source 
+active_source:
+  pulsed_laser:
+    enabled: true
+    wavelength: !Quantity 550.0 nanometers            # nanometers
+    frequency: !Quantity 10.0 megahertz               # hertz
+    pulse_width: !Quantity 0.2 nanoseconds            # seconds
+    avg_watts: !Quantity 1.0 watts                    # watts
+    pulse_shape: "custom"                             # "gaussian", "square", or "custom" 
+    # pulse_shape_custom: !expr "lambda x: np.sinc(x / 3)"
+    # pulse_shape_custom: [0,1,2,3,4,5,6,5,4,3,2,1,0]
+    pulse_shape_custom: !file "visionsim/emulate/aspc/pulse_shape_custom.txt"
+    
+# Ambient Light Sources 
+ambient_source:
+  sun:
+    enabled: true
+    temperature: !Quantity 5778.0 kelvin            # kelvin
+    light_conditions: "BRIGHT_SUNLIGHT"  # from LightConditions enum
+    lambda_pass: !Quantity 550.0 nanometers             # nanometers
+    delta_lambda: !Quantity 10.0 nanometers             # nanometers
+    intensity: !Quantity 3.828e26 watts / meter**2            # watts per square meter
+    stability_factor: !Quantity 0.01         # dimensionless
+    
+  flickering_lamp:
+    enabled: true
+    temperature: !Quantity 2700.0 kelvin           # kelvin (typical incandescent bulb)
+    illuminance: !Quantity 800.0 lux            # lux (typical room lighting)
+    modulation_frequency: !Quantity 120.0 hertz   # hertz (AC power frequency)
+    modulation_amplitude: !Quantity 0.1     # dimensionless (10% flicker)
+    phase: !Quantity 0.0 radians                    # radians
+    pulse_width: !Quantity 0.001 seconds            # seconds
+    pulse_shape: "gaussian"
+    emissivity: !Quantity 0.9              # dimensionless
+
+# Sensor
+sensor:
+  size: [300, 400]          # [height, width]
+  pixel_pitch: !Quantity 20.0 micrometer              # meters
+  f_number: !Quantity 1.4         # dimensionless
+  fov: !Quantity [66 degree, 44 degree]
