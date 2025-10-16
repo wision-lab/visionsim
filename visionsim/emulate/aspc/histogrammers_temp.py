@@ -185,6 +185,8 @@ def calculate_transients(irradiance_frames: torch.Tensor,
                          max_depth: float,
                          sensor_fov: list,
                          pixel_fov_list: list,
+                         w: int,
+                         h: int,
                          omega: float) -> torch.Tensor:
     """
     Calculates the transient signal for each defined pixel FOV.
@@ -217,18 +219,23 @@ def calculate_transients(irradiance_frames: torch.Tensor,
         for mask_idx, fov_mask in enumerate(tqdm(fov_masks, desc="Processing FOV masks")):
             index_mask = fov_mask > 0
             current_irradiance_vals = irradiance_frames[frame_idx][torch.nonzero(fov_mask,as_tuple=True)]
-            fov_irradiance_vals = get_irradiance_with_fov(current_irradiance_vals, sensor_fov, pixel_fov_list[mask_idx], omega)
+            # print(f"current_irradiance_vals: {current_irradiance_vals}")
+            fov_irradiance_vals = get_irradiance_with_fov(current_irradiance_vals, sensor_fov, pixel_fov_list[mask_idx], omega, w, h)
             # Apply vignette weights to irradiance
             current_irradiance_vals = current_irradiance_vals * fov_mask[index_mask]
             current_depth_vals = depth_frames[frame_idx][torch.nonzero(fov_mask,as_tuple=True)]
             masked_offsets = offsets[frame_idx][torch.nonzero(fov_mask,as_tuple=True)]
             ambient_offsets.append(masked_offsets.sum() / gt_ntime_bins)
+            # print(f"offset: {offsets}")
+            # print(f"ambient_offsets: {ambient_offsets}")
 
             # Convert depth values to time bin locations
             current_depth_vals = current_depth_vals.magnitude
             fov_irradiance_vals = fov_irradiance_vals.magnitude
-            factor = 1.0 # factor that controls the occurance and spread of the distribution
-            transient_idx = torch.floor(current_depth_vals * gt_ntime_bins / max_depth * factor).to(torch.long)   
+            # print(f"fov_irradiance_vals: {fov_irradiance_vals}")
+            # print("current_depth_vals",current_depth_vals.min(),current_depth_vals.max())
+            # print("max_depth",max_depth)
+            transient_idx = torch.floor(current_depth_vals * gt_ntime_bins / max_depth).to(torch.long)   
             transient_idx = torch.clamp(transient_idx, 0, gt_ntime_bins - 1) # Ensure indices are within bounds
             
             # Use torch.scatter_add for efficient accumulation into transients
@@ -265,6 +272,11 @@ def calculate_arrival_rates(irf: torch.Tensor, transients: torch.Tensor, offset:
         background = offset[i]
         background_extended = background.expand_as(convolved_signal)
         arrival_rates[i, :] = convolved_signal + background_extended
+        # print(f"transients[i]: {transients[i]}")
+        # print(f"convolved_signal: {convolved_signal}")
+        # print(f"background: {background}")
+        # print(f"background_extended: {background_extended}")
+        # print(f"arrival_rates[i, :]: {arrival_rates[i, :]}")
         # arrival_rates[i, :] = (convolved_signal)
     return arrival_rates
 

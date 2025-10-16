@@ -36,14 +36,14 @@ if __name__ == "__main__":
     config = yaml.load(open(config_path))
 
     # Load data
-    # albedo_frames, intensity_frames, depth_frames = preproc_albedo_intensity_depth_frames(
-    #     root=data_dir,
-    #     device=device,
-    #     config=config,
-    #     start_idx=0,
-    #     num_frames=1,
-    #     requires_grad=False)
-    albedo_frames, intensity_frames, depth_frames = get_albedo_intensity_depth_frames(data_dir, device=device)
+    albedo_frames, intensity_frames, depth_frames = preproc_albedo_intensity_depth_frames(
+        root=data_dir,
+        device=device,
+        config=config,
+        start_idx=0,
+        num_frames=1,
+        requires_grad=False)
+    # albedo_frames, intensity_frames, depth_frames = get_albedo_intensity_depth_frames(data_dir, device=device)
 
     # Active source
     active_config = config['active_source']['pulsed_laser']
@@ -66,7 +66,8 @@ if __name__ == "__main__":
     sensor = SPADSensor(**sensor_config)
 
     # FOV masks
-    print("depth_frames.shape",depth_frames.shape)
+    # print("depth_frames.shape",depth_frames.shape)      # (1, 300, 400)
+    # print("albedo_frames.shape",albedo_frames.shape)    # (1, 300, 400)
     _, img_rows, img_cols = depth_frames.shape
     empty_mask = torch.zeros((img_rows, img_cols), dtype=torch.float32, device=device)
     # empty_mask = np.zeros((img_rows, img_cols))
@@ -76,10 +77,13 @@ if __name__ == "__main__":
     num_pixels = sensor.w * sensor.h
     radiance = active_source.get_scene_radiance(albedo_frames, depth_frames, num_pixels, sensor.omega)
     irradiance = (radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (sensor.pixel_pitch.to(ureg.meter))**2
+    # print("irradiance",irradiance)
     irradiance = torch.tensor(irradiance.magnitude, dtype=torch.float32, device=device) #TODO: remove for hist_temp_new
     # Get ambient offset
     ambient_radiance = ambient_source.get_scene_radiance(sensor.omega, albedo_frames, active_source.frequency)
+    # print("ambient_radiance",ambient_radiance)
     ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (sensor.pixel_pitch.to(ureg.meter))**2
+    # print("ambient_irradiance",ambient_irradiance)
     offsets = torch.tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=device)
     transients, ambient_offsets = calculate_transients(
                                     irradiance, 
@@ -90,6 +94,8 @@ if __name__ == "__main__":
                                     active_source.max_resolvable_depth.magnitude,
                                     sensor_config['fov'],
                                     hist_config['pixel_fov_list'],
+                                    sensor.w,
+                                    sensor.h,
                                     sensor.omega
                                     )
 

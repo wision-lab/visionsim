@@ -1,7 +1,7 @@
 # Histogrammer 
 histogrammer:
   min_depth: 0.0
-  max_depth: 50.0
+  max_depth: 20.0
   n_bins: 1000
   shape: [300, 400]  # [height, width] to match sensor size
   strict_units: true
@@ -19,9 +19,11 @@ active_source:
     enabled: true
     wavelength: !Quantity 550.0 nanometers            # nanometers
     frequency: !Quantity 10.0 megahertz               # hertz
+    # frequency: !Quantity 100.0 kilohertz               # hertz
     pulse_width: !Quantity 0.2 nanoseconds            # seconds
     avg_watts: !Quantity 1.0 watts                    # watts
-    pulse_shape: "custom"                             # "gaussian", "square", or "custom" 
+    # avg_watts: !Quantity 2.0 milliwatts                    # watts
+    pulse_shape: "gaussian"                             # "gaussian", "square", or "custom" 
     # pulse_shape_custom: !expr "lambda x: np.sinc(x / 3)"
     # pulse_shape_custom: [0,1,2,3,4,5,6,5,4,3,2,1,0]
     pulse_shape_custom: !file "visionsim/emulate/aspc/pulse_shape_custom.txt"

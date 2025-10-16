@@ -109,7 +109,13 @@ class SensorBase:
 
         # Solid angle per pixel
         self.omega = pyramid_solid_angle(self.fov_x, self.fov_y)
+        print("omega",self.omega)
         self.omega = self.omega / (self.w * self.h)
+        print("fov_x",self.fov_x)
+        print("fov_y",self.fov_y)
+        print("w",self.w)
+        print("h",self.h)
+        print("omega",self.omega)
 
         # Set _param_names
         self._param_names = [

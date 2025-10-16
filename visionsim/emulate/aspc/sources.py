@@ -317,6 +317,16 @@ class PulsedLaser(DynamicSource, CoherentSource):
         self.peak_watts = (self.avg_watts / (pulse_width * frequency)).to_reduced_units().to_compact()
         self.peak_watts = 2 * np.sqrt(np.log(2) / np.pi) * self.peak_watts if self.gaussian else self.peak_watts
         self.num_photons_per_cycle = watts2photons(self.avg_watts, self.pulse_width, self.wavelength)
+        # self.num_photons_per_cycle = watts2photons(self.avg_watts, 1 / self.frequency, self.wavelength)   # flamingo way
+        # print("frequency",self.frequency)
+        # print("pulse_width",self.pulse_width)
+        # print("avg_watts",self.avg_watts)
+        # print("wavelength",self.wavelength)
+        # print("peak_watts",self.peak_watts)
+        # print("num_photons_per_cycle",self.num_photons_per_cycle)
+        # print("gaussian",self.gaussian)
+        # print("peak_watts",self.peak_watts)
+        # print("num_photons_per_cycle",self.num_photons_per_cycle)
 
     @ureg.check(None, None, ureg.meter, None, ureg.steradian, ureg.meter)
     def get_scene_radiance(self, rho_hat, depth_map, num_pixels, omega, epsilon=1e-12 * ureg.meters):
@@ -325,6 +335,14 @@ class PulsedLaser(DynamicSource, CoherentSource):
         # Note: this assumes a lambertian BRDF as we have rho/pi.
         num_photons_per_solid_angle = self.num_photons_per_cycle / (num_pixels * omega)
         radiance = rho_hat / np.pi * num_photons_per_solid_angle / (depth_map + epsilon) ** 2
+        # print("radiance",radiance)
+        # print("radiance.to(radiance_photons)",radiance.to(radiance_photons))
+        # print("num_photons_per_solid_angle",num_photons_per_solid_angle)
+        # print("num_pixels",num_pixels)
+        # print("omega",omega)
+        # print("depth_map",depth_map)
+        # print("epsilon",epsilon)
+        # print("rho_hat",rho_hat)
         return radiance.to(radiance_photons)
     
     def sigma(self, as_depth=False):
