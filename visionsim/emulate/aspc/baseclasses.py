@@ -1,8 +1,8 @@
 """
 This is a temporary module which contains all the base classes for the active spc emulator support.
-The classes will be modified/moved to different sub-packages as required. 
+The classes will be modified/moved to different sub-packages as required.
 
-General NOTE: When implementing all the functions ensure that they support differentiable pipelines. 
+General NOTE: When implementing all the functions ensure that they support differentiable pipelines.
 
 """
 
@@ -11,29 +11,35 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
-
 #######################################
 # Classes related to scene properties #
 #######################################
 
+
 class LightSource:
-    """Base class for any type of light source, active, passive, constant, time varying etc.    
+    """Base class for any type of light source, active, passive, constant, time varying etc.
     Any type of light source must inherit this class"""
+
     def __init__(self):
         pass
+
 
 class ConstantSource(LightSource):
     """
     Base class for any light source which has constant light intensity over time."""
+
     def __init__(self):
         pass
+
 
 class DynamicSource(LightSource):
     """
     Base class for any time varying light source. Can model flicker or AC light sources?
     """
+
     def __init__(self):
         pass
+
 
 # Encode scene geometry #
 #########################
@@ -41,18 +47,19 @@ class DynamicSource(LightSource):
 
 class RGBDStream:
     """Base class to load an RGBD stream from existing datasets."""
+
     def __init__(self: int):
         """_summary_
-        Use RGBStream to extract instances and avoid the sense of absolute time right now. 
+        Use RGBStream to extract instances and avoid the sense of absolute time right now.
         The data loader will decide the batch size based on the required FPS.
         Args:
-                    
-        ..note:: Can add 
+
+        ..note:: Can add
             - Undistortion method? One option is to assume that the RGBD images are already undistorted?
             - Dictionary to pass all the camera parameters?
         """
 
-    def batch_frames(self,batch_size: int):
+    def batch_frames(self, batch_size: int):
         """_summary_
         Needs to be moved to a dataloader class to decide the number of frames.
 
@@ -61,21 +68,21 @@ class RGBDStream:
         """
 
 
-
 ########################
 # Single Photon Camera #
 ########################
+
 
 class Sensor:
     """A high-level sensor class which will act like a driver that glues all the components, like the active source,
     detector, histogrammer etc.
 
     This base class will be inherited by other sensor classes that might treat different elements in a unique way.
-    
+
     """
+
     def __init__(self):
         pass
-    
 
 
 class Detector:
@@ -95,15 +102,17 @@ class Detector:
         * Pitch/Area
         * Photon detection efficiency
         * Detector dead time/ Sensor dead time Td
-        * Fill factor 
+        * Fill factor
         * dark current
     """
+
     def __init__(self):
         pass
 
+
 class ActiveSource(LightSource):
     """Base class for active illumination source used by the SPAD camera
-    
+
     Includes:
         * pulse wavelength
         * Laser power
@@ -114,18 +123,20 @@ class ActiveSource(LightSource):
         * Assume a gaussian pulse with known sigma
         * Use a custom IRF (Allows better hardware emulation)
     """
+
     def __init__(self):
         pass
+
 
 class Histogrammer:
     """Base class for all types of histogrammers.
 
-    NOTE: The user must decide using interpolation/ rendering parameters to first generate all the RGBD frames first 
-    
+    NOTE: The user must decide using interpolation/ rendering parameters to first generate all the RGBD frames first
+
     Includes:
         * Synchronization details (Synchronous, Free running, Asynchronous with deterministic shift)
         * Will act as the main code that controls the interaction between the ActiveSource and Detector instances.
-        * Takes a dictionary or param file that contains all the properties of the Active source, 
+        * Takes a dictionary or param file that contains all the properties of the Active source,
             detector instances, TDC resolution etc.
         * Timing circuit details:
             - TDC resolution
@@ -138,14 +149,14 @@ class Histogrammer:
     def generate_transient(self, fov_masks: npt.NDArray[np.floating]):
         """Takes input FOV mask to generate intermediate transients for desired pixels based on fov masks.
 
-        ..note:: Design some uniform method of passing RGB, Depth, Scene albedo, Scene Reflectance etc. 
+        ..note:: Design some uniform method of passing RGB, Depth, Scene albedo, Scene Reflectance etc.
 
         This class interacts with the RGBDStream class, to get RGB, and depth data, and illumination sources.
 
         Args:
-            fov_masks (npt.NDArray[np.floating]): 3D or 4D mask that determines the which pixels of which 
-                    frame number are used to compute the transient and the SPC data. 3D mask for a single RGB-D 
-                    frame for desired K pixels and a 4D mask to include the temporal aspect if we want to use multiple 
+            fov_masks (npt.NDArray[np.floating]): 3D or 4D mask that determines the which pixels of which
+                    frame number are used to compute the transient and the SPC data. 3D mask for a single RGB-D
+                    frame for desired K pixels and a 4D mask to include the temporal aspect if we want to use multiple
                     RGB-D frames to generate the transient and histograms (simulate motion artifacts).
         """
 
@@ -158,7 +169,7 @@ class Histogrammer:
 
 
 class BaseEWH:
-    """Base class for SPCs using equi-width histogrammers. 
+    """Base class for SPCs using equi-width histogrammers.
 
     Includes:
         * Number of EWH bins

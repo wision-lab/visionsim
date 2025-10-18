@@ -67,15 +67,27 @@ def _run(c, command, **kwargs):
 @task
 def format(c):
     """Format code (and sort imports)"""
-    python_dirs_string = " ".join(PYTHON_DIRS + glob.glob(os.path.join(ROOT_DIR, "*.py")))
-    _run(c, f"ruff check --select I --fix {python_dirs_string} {__file__}")
-    _run(c, f"ruff format {python_dirs_string}")
+    # print(ROOT_DIR)
+    # print(PYTHON_DIRS)
+    # python_dirs_string = " ".join(PYTHON_DIRS + glob.glob(os.path.join(ROOT_DIR, "*.py")))
+    # _run(c, f"ruff check --select I --fix {python_dirs_string} {__file__}")
+    # _run(c, f"ruff format {python_dirs_string}")
+    for p in PYTHON_DIRS:
+        _run(c, f'ruff check --select I --fix "{p}"')
+        _run(c, f'ruff format "{p}"')
+    _run(c, f'ruff check --select I --fix "{__file__}"')
+    _run(c, f'ruff format "{__file__}"')
 
 
 @task
 def lint(c):
     """Lint code with ruff"""
-    _run(c, f"ruff check --extend-select I {' '.join(PYTHON_DIRS)} {__file__}")
+    # _run(c, f"ruff check --extend-select I {' '.join(PYTHON_DIRS)} {__file__}")
+    # print(ROOT_DIR)
+    # print(PYTHON_DIRS)
+    for p in PYTHON_DIRS:
+        _run(c, f'ruff check --extend-select I "{p}"')
+    _run(c, f'ruff check --extend-select I "{__file__}"')
 
 
 @task
@@ -129,7 +141,7 @@ def build_docs(c, preview=False, full=False):
             # Create interpolation examples
             for i, n in enumerate((25, 50, 100, 200)):
                 for cmd in (
-                    f"visionsim blender.render-animation lego.blend interpolation/lego-{n:04}/ --keyframe-multiplier={n/100} --width=320 --height=320",
+                    f"visionsim blender.render-animation lego.blend interpolation/lego-{n:04}/ --keyframe-multiplier={n / 100} --width=320 --height=320",
                     f"visionsim interpolate.frames interpolation/lego-{n:04}/ -o interpolation/lego{n:04}-interp/ -n={int(64 / 2**i)}",
                     f"gifski $(ls -1a interpolation/lego{n:04}-interp/frames/*.png | sed -n '1~8p') --fps 25 -o {DOCS_STATIC}/lego{n:04}-interp.gif",
                 ):

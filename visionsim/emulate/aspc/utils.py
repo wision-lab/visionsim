@@ -1,17 +1,14 @@
-from pint import UnitRegistry, set_application_registry
-from scipy.constants import Wien, c, h, k, sigma
-import matplotlib.pyplot as plt
-import numpy as np
-import cv2
-import torch
-from ruamel.yaml.nodes import ScalarNode, SequenceNode
-from visionsim.dataset import ( 
-    Dataset,
-    ImgDataset, 
-    NpyDataset)
-
 from typing import Optional
 
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from pint import UnitRegistry, set_application_registry
+from ruamel.yaml.nodes import ScalarNode, SequenceNode
+from scipy.constants import c, h
+
+from visionsim.dataset import Dataset
 
 ureg = UnitRegistry()
 ureg.setup_matplotlib(True)
@@ -28,15 +25,18 @@ irradiance_photons = ureg.count / ureg.meter**2
 #              Physical laws                #
 #############################################
 
+
 @ureg.wraps(ureg.meter, ureg.second)
 def tof2depth(t):
     return c * t / 2
+
 
 @ureg.wraps(ureg.count, (ureg.watt, ureg.second, ureg.meter))
 def watts2photons(watts, t, wavelength):
     energy = watts * t
     photon_energy = h * c / wavelength
     return energy / photon_energy
+
 
 #############################################
 #          Optics Modeling Utils            #
@@ -61,6 +61,7 @@ def fov_from_focal_length(fl, d):
     """
     return 2 * np.arctan2(d, 2 * fl)
 
+
 @ureg.wraps(ureg.meter, (ureg.radian, ureg.meter))
 def focal_length_from_fov(fov, d):
     """
@@ -70,6 +71,7 @@ def focal_length_from_fov(fov, d):
     # Here FOV is twice the apex angle
     return d / (2 * np.tan(fov / 2))
 
+
 @ureg.wraps(ureg.steradian, (ureg.radian, ureg.radian))
 def pyramid_solid_angle(a, b):
     """
@@ -77,6 +79,7 @@ def pyramid_solid_angle(a, b):
     See: https://en.wikipedia.org/wiki/Solid_angle#Pyramid
     """
     return 4 * np.arcsin(np.sin(a / 2) * np.sin(b / 2))
+
 
 def resize_like(src, target):
     return resize_to(src, target.shape)
@@ -89,48 +92,51 @@ def resize_to(img, shape):
     interp = cv2.INTER_AREA if img_h * img_w >= h * w else cv2.INTER_CUBIC
     return cv2.resize(img, (w, h), interpolation=interp)
 
+
 #############################################
 #              Data loader utils            #
 #############################################
 
 
-def preproc_albedo_intensity_depth_frames(root: str,
-                                          device: str,
-                                          config: dict,
-                                          start_idx: int,
-                                          num_frames: Optional[int] = 1,
-                                          requires_grad: Optional[bool] = False):# -> List[Tensor]:
+def preproc_albedo_intensity_depth_frames(
+    root: str,
+    device: str,
+    config: dict,
+    start_idx: int,
+    num_frames: Optional[int] = 1,
+    requires_grad: Optional[bool] = False,
+):  # -> List[Tensor]:
     """Function to convert the rgb and depth frames read using data loaders to tensors"
 
     Args:
-        root (str): Path to the root folder containing the rendered RGB images and depth maps 
+        root (str): Path to the root folder containing the rendered RGB images and depth maps
         device (str): Choose the compute device, cpu or cuda device
-        start_idx (int): Index of the first rgb-d to be used generate active SPC frame  
+        start_idx (int): Index of the first rgb-d to be used generate active SPC frame
         num_frames (int): Number of rgb-d frames used to generate an active SPC frame
         config (dict): Dictionary containing all the simulation parameters
         requires_grad (bool): Set to True to enable gradient computations for differentiable pipelines
     Returns:
         List[Tensor]: Tensors corresponding to albedo, intensity and depth frames
     """
-    
+
     frames = Dataset.from_path(root / "frames")
     depths = Dataset.from_path(root / "depths")
     assert len(depths) == len(frames), "Different number of depth and RGB frames"
     assert start_idx + num_frames <= len(frames), "start_idx + num_frames must not exceed total rendered frames"
 
     # Get config parameters
-    Nr,Nc = config["sensor"]["size"]
-    tmax = (1.0/config['active_source']['pulsed_laser']['frequency']).to(ureg.second)
-    
+    Nr, Nc = config["sensor"]["size"]
+    tmax = (1.0 / config["active_source"]["pulsed_laser"]["frequency"]).to(ureg.second)
+
     # Compute max depth
-    max_depth = ((tmax*((c)*ureg.meter/ureg.second)/2))/ureg.meter
+    max_depth = (tmax * ((c) * ureg.meter / ureg.second) / 2) / ureg.meter
 
     # print("Max depth in meters",max_depth)
     # print("c",c)
     # print("tmax", tmax)
 
     # tmax = 100  # Laser period in nano seconds
-    
+
     rgb_img_list = list(frames[start_idx : start_idx + num_frames][1])
     depth_img_list = list(depths[start_idx : start_idx + num_frames][1])
 
@@ -142,20 +148,29 @@ def preproc_albedo_intensity_depth_frames(root: str,
     depth_frames_list = []
 
     # # Testing depth image
-    # import os
-    # import imageio.v3 as iio
-    # print("root", root)
-    # depth_dir = os.path.join(root, "depths")
-    # print("depth_dir", depth_dir)
-    # depth_files = sorted([f for f in os.listdir(depth_dir) if f.lower().endswith(('.png','.hdr'))])
+    import os
+
+    import imageio.v3 as iio
+
+    print("root", root)
+    depth_dir = os.path.join(root, "depths")
+    print("depth_dir", depth_dir)
+    depth_files = sorted([f for f in os.listdir(depth_dir) if f.lower().endswith((".png", ".hdr"))])
+    depth_img = iio.imread(os.path.join(depth_dir, depth_files[0]))
+    print(depth_img)
+    print("depth_img", depth_img.shape)
+    plt.figure()
+    plt.imshow(depth_img)
+    plt.colorbar(label="Depth")
+    plt.show()
 
     for idx in range(len(rgb_img_list)):
         rgb_img = rgb_img_list[idx]
         if depth_img_list[idx].ndim == 3:
             # print("at ndim depth: ", depth_img_list[idx].shape, depth_img_list[idx].min(), depth_img_list[idx].max(), depth_img_list[idx].mean(),depth_img_list[idx].std())
-            depth_img = depth_img_list[idx][:,:,0] / 1000.0
+            depth_img = depth_img_list[idx][:, :, 0]
         else:
-            depth_img = depth_img_list[idx] / 255.0 * config['histogrammer']['max_depth']  
+            depth_img = depth_img_list[idx] / 255.0 * config["histogrammer"]["max_depth"]
 
         # Diagnose depth image
         # iio
@@ -170,7 +185,9 @@ def preproc_albedo_intensity_depth_frames(root: str,
         # print("before inpaint depth: ", depth_img.shape, depth_img.min(), depth_img.max(), depth_img.mean(),depth_img.std())
 
         # Filter out depths that might be out-of-range
-        depth_img = cv2.inpaint(depth_img.astype(np.float32), (depth_img > max_depth).astype(np.uint8), 3, cv2.INPAINT_TELEA)
+        depth_img = cv2.inpaint(
+            depth_img.astype(np.float32), (depth_img > max_depth).astype(np.uint8), 3, cv2.INPAINT_TELEA
+        )
 
         # print("after inpaint depth: ", depth_img.shape, depth_img.min(), depth_img.max(), depth_img.mean(),depth_img.std())
 
@@ -183,9 +200,9 @@ def preproc_albedo_intensity_depth_frames(root: str,
 
         # Resize and transform to tensor, scale RGB to [0-1] range
         rgb_img = cv2.resize(rgb_img, (Nc, Nr))
-        rgb = torch.tensor(rgb_img.astype(float), device=device, requires_grad = requires_grad) / 255.0
+        rgb = torch.tensor(rgb_img.astype(float), device=device, requires_grad=requires_grad) / 255.0
         depth_img = cv2.resize(depth_img, (Nc, Nr))
-        depth = torch.tensor(depth_img.astype(float), device=device, requires_grad = requires_grad).unsqueeze(0)
+        depth = torch.tensor(depth_img.astype(float), device=device, requires_grad=requires_grad).unsqueeze(0)
 
         # Using the red channel as albedo and intensity
         albedo = intensity = rgb[..., 0].unsqueeze(0)
@@ -203,6 +220,7 @@ def preproc_albedo_intensity_depth_frames(root: str,
     depth_frames = torch.concat(depth_frames_list) * ureg.meter
 
     return albedo_frames, intensity_frames, depth_frames
+
 
 # def preproc_albedo_intensity_depth_frames(root: str,
 #                                           device: str,
@@ -265,11 +283,12 @@ def preproc_albedo_intensity_depth_frames(root: str,
 #     albedo_frames = torch.concat(albedo_frames_list)
 #     intensity_frames = torch.concat(intensity_frames_list)
 #     depth_frames = torch.concat(depth_frames_list)
-#     return albedo_frames, intensity_frames, depth_frames 
+#     return albedo_frames, intensity_frames, depth_frames
 
 #############################################
 #              Helper utils                 #
 #############################################
+
 
 def ureg_constructor(cls):
     def ureg_yaml(loader, node):
@@ -281,7 +300,9 @@ def ureg_constructor(cls):
             return [cls(v) for v in value]
         else:
             raise NotImplementedError
+
     return ureg_yaml
+
 
 def eval_constructor(cls, safe_builtins=None):
     def eval_yaml(loader, node):
@@ -290,7 +311,9 @@ def eval_constructor(cls, safe_builtins=None):
             return cls(value, safe_builtins)
         else:
             raise NotImplementedError
+
     return eval_yaml
+
 
 def file_constructor(cls):
     def file_yaml(loader, node):
@@ -299,7 +322,9 @@ def file_constructor(cls):
             return np.loadtxt(value)
         else:
             raise NotImplementedError
+
     return file_yaml
+
 
 def get_irradiance_with_fov(irradiance, sensor_fov, pixel_fov, omega, w, h):
     fov_x, fov_y = sensor_fov[0], sensor_fov[1]

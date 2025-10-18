@@ -1,11 +1,22 @@
-from collections import OrderedDict, defaultdict
-from pint import Quantity
 import textwrap
-from units import validate_units
-from utils import focal_length_from_fov, fov_from_focal_length, ureg, pyramid_solid_angle, radiance_photons, irradiance_photons, resize_like
-from typing import Union, Tuple
-from scipy.constants import c, h, k, sigma
+from collections import OrderedDict
+from typing import Tuple, Union
+
 import numpy as np
+from pint import Quantity
+
+# from scipy.constants import c, h, k, sigma
+from units import validate_units
+from utils import (
+    focal_length_from_fov,
+    fov_from_focal_length,
+    irradiance_photons,
+    pyramid_solid_angle,
+    radiance_photons,
+    # resize_like,
+    ureg,
+)
+
 
 class SensorBase:
     """Base class for all sensors"""
@@ -20,7 +31,7 @@ class SensorBase:
         fov=(66 * ureg.degree, 44 * ureg.degree),
         aperture: float = None,
         f_number: float = 1.4,
-        pixel_pitch=6.6667 * ureg.micrometer
+        pixel_pitch=6.6667 * ureg.micrometer,
     ):
         """Class that represents a sensor with perspective camera functionality. It builds the intrinsic
         camera matrix using the following parameters.
@@ -48,7 +59,7 @@ class SensorBase:
         self.aperture = aperture
         self.f_number = f_number
         self.pixel_pitch = pixel_pitch
-        
+
         if self.size is None:
             self.size = 1
         if isinstance(self.size, int):
@@ -61,7 +72,7 @@ class SensorBase:
         self.num_pixels = self.h * self.w
         self.diagonal = np.sqrt(self.h**2 + self.w**2)
         self.pixel_pitch = pixel_pitch
-        
+
         if not (f is not None) ^ (fov is not None):
             raise ValueError("Only one of focal length or FOV is required.")
         if f is None:
@@ -109,13 +120,13 @@ class SensorBase:
 
         # Solid angle per pixel
         self.omega = pyramid_solid_angle(self.fov_x, self.fov_y)
-        print("omega",self.omega)
+        print("omega", self.omega)
         self.omega = self.omega / (self.w * self.h)
-        print("fov_x",self.fov_x)
-        print("fov_y",self.fov_y)
-        print("w",self.w)
-        print("h",self.h)
-        print("omega",self.omega)
+        print("fov_x", self.fov_x)
+        print("fov_y", self.fov_y)
+        print("w", self.w)
+        print("h", self.h)
+        print("omega", self.omega)
 
         # Set _param_names
         self._param_names = [
@@ -202,7 +213,6 @@ class SensorBase:
 
 
 class SPADSensor(SensorBase):
-
     @validate_units()
     def __init__(
         self,

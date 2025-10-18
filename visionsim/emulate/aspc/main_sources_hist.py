@@ -1,35 +1,45 @@
-import numpy as np
 import math
-import matplotlib.pyplot as plt
-import torch
-from ruamel.yaml import YAML
 from pathlib import Path
 
-from sources import (
-    PulsedLaser, Sun, LightConditions
-)
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
 from histogrammers_temp import (
-    get_perpixel_fov_masks, 
-    calculate_transients, calculate_arrival_rates, simulate_ewh,
-    get_albedo_intensity_depth_frames
+    calculate_arrival_rates,
+    calculate_transients,
+    # get_albedo_intensity_depth_frames,
+    get_perpixel_fov_masks,
+    # simulate_ewh,
 )
+from ruamel.yaml import YAML
 from sensors import SPADSensor
-from utils import tof2depth, ureg, ureg_constructor, eval_constructor, irradiance_photons, preproc_albedo_intensity_depth_frames, file_constructor
+from sources import LightConditions, PulsedLaser, Sun
+from utils import (
+    eval_constructor,
+    file_constructor,
+    irradiance_photons,
+    preproc_albedo_intensity_depth_frames,
+    tof2depth,
+    ureg,
+    ureg_constructor,
+)
+
 
 def get_light_conditions_from_string(condition_str: str) -> LightConditions:
     """Convert string to LightConditions enum value."""
     return getattr(LightConditions, condition_str)
 
+
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # data_dir = Path("examples/renders/scene1/")
-    data_dir = Path("visionsim/emulate/aspc/data")
+    data_dir = Path("examples/renders/scene1/")
+    # data_dir = Path("visionsim/emulate/aspc/data")
     config_path = "visionsim/emulate/aspc/sample_config.yaml"
 
     # Load config
     yaml = YAML()
-    safe_builtins = {'__builtins__': {'list': list, 'dict': dict, 'tuple': tuple}, 'np': np, 'math': math}
+    safe_builtins = {"__builtins__": {"list": list, "dict": dict, "tuple": tuple}, "np": np, "math": math}
     yaml.Constructor.add_constructor(tag="!Quantity", constructor=ureg_constructor(ureg.Quantity))
     yaml.Constructor.add_constructor(tag="!expr", constructor=eval_constructor(eval, safe_builtins))
     yaml.Constructor.add_constructor(tag="!file", constructor=file_constructor(None))
@@ -37,32 +47,28 @@ if __name__ == "__main__":
 
     # Load data
     albedo_frames, intensity_frames, depth_frames = preproc_albedo_intensity_depth_frames(
-        root=data_dir,
-        device=device,
-        config=config,
-        start_idx=0,
-        num_frames=1,
-        requires_grad=False)
+        root=data_dir, device=device, config=config, start_idx=0, num_frames=1, requires_grad=False
+    )
     # albedo_frames, intensity_frames, depth_frames = get_albedo_intensity_depth_frames(data_dir, device=device)
 
     # Active source
-    active_config = config['active_source']['pulsed_laser']
-    active_enable = active_config.pop('enabled')
+    active_config = config["active_source"]["pulsed_laser"]
+    active_enable = active_config.pop("enabled")
     if active_enable:
         active_source = PulsedLaser(**active_config)
 
     # Ambient source
-    ambient_config = config['ambient_source']['sun']
-    ambient_config['light_conditions'] = get_light_conditions_from_string(ambient_config['light_conditions'])
-    ambient_enable = ambient_config.pop('enabled')
+    ambient_config = config["ambient_source"]["sun"]
+    ambient_config["light_conditions"] = get_light_conditions_from_string(ambient_config["light_conditions"])
+    ambient_enable = ambient_config.pop("enabled")
     if ambient_enable:
-        ambient_source = Sun(**ambient_config)  
+        ambient_source = Sun(**ambient_config)
 
     # Histogrammer
-    hist_config = config['histogrammer']
+    hist_config = config["histogrammer"]
 
     # Sensor
-    sensor_config = config['sensor']
+    sensor_config = config["sensor"]
     sensor = SPADSensor(**sensor_config)
 
     # FOV masks
@@ -71,47 +77,51 @@ if __name__ == "__main__":
     _, img_rows, img_cols = depth_frames.shape
     empty_mask = torch.zeros((img_rows, img_cols), dtype=torch.float32, device=device)
     # empty_mask = np.zeros((img_rows, img_cols))
-    fov_masks = get_perpixel_fov_masks(empty_mask, hist_config['pixel_fov_list'], device=device) 
+    fov_masks = get_perpixel_fov_masks(empty_mask, hist_config["pixel_fov_list"], device=device)
 
     # Get transients
     num_pixels = sensor.w * sensor.h
     radiance = active_source.get_scene_radiance(albedo_frames, depth_frames, num_pixels, sensor.omega)
-    irradiance = (radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (sensor.pixel_pitch.to(ureg.meter))**2
+    irradiance = (radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (
+        sensor.pixel_pitch.to(ureg.meter)
+    ) ** 2
     # print("irradiance",irradiance)
-    irradiance = torch.tensor(irradiance.magnitude, dtype=torch.float32, device=device) #TODO: remove for hist_temp_new
+    irradiance = torch.tensor(irradiance.magnitude, dtype=torch.float32, device=device)  # TODO: remove for hist_temp_new
     # Get ambient offset
     ambient_radiance = ambient_source.get_scene_radiance(sensor.omega, albedo_frames, active_source.frequency)
     # print("ambient_radiance",ambient_radiance)
-    ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (sensor.pixel_pitch.to(ureg.meter))**2
+    ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (
+        sensor.pixel_pitch.to(ureg.meter)
+    ) ** 2
     # print("ambient_irradiance",ambient_irradiance)
     offsets = torch.tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=device)
     transients, ambient_offsets = calculate_transients(
-                                    irradiance, 
-                                    depth_frames, 
-                                    offsets, 
-                                    fov_masks, 
-                                    hist_config['n_bins'], 
-                                    active_source.max_resolvable_depth.magnitude,
-                                    sensor_config['fov'],
-                                    hist_config['pixel_fov_list'],
-                                    sensor.w,
-                                    sensor.h,
-                                    sensor.omega
-                                    )
+        irradiance,
+        depth_frames,
+        offsets,
+        fov_masks,
+        hist_config["n_bins"],
+        active_source.max_resolvable_depth.magnitude,
+        sensor_config["fov"],
+        hist_config["pixel_fov_list"],
+        sensor.w,
+        sensor.h,
+        sensor.omega,
+    )
 
     # Calculate arrival rates
     # bin_width = hist_config['bin_width'] * ureg.meter
-    bin_width = (2 * tof2depth(1 / active_source.frequency) / hist_config['n_bins'])
+    bin_width = 2 * tof2depth(1 / active_source.frequency) / hist_config["n_bins"]
     _, irf = active_source.get_kernel(bin_width, None)
     irf_tensor = torch.tensor(irf, dtype=torch.float32, device=device)
-    arrival_rates = calculate_arrival_rates(irf_tensor, transients, ambient_offsets, hist_config['n_bins'])
+    arrival_rates = calculate_arrival_rates(irf_tensor, transients, ambient_offsets, hist_config["n_bins"])
     active_source.plot_kernel(bin_width)
 
     # Simulate EWH
     # ewh_list = simulate_ewh(arrival_rates, hist_config['n_pulses'], hist_config['n_bins'], hist_config['free_running'], float(hist_config['dead_time_s']))
 
     # Plots
-    num_fovs = len(config['histogrammer']['pixel_fov_list'])
+    num_fovs = len(config["histogrammer"]["pixel_fov_list"])
 
     # # FOV Masks
     # fig1, ax1 = plt.subplots(1, num_fovs, figsize=(3 * num_fovs, 3))
@@ -152,7 +162,7 @@ if __name__ == "__main__":
     for i in range(num_fovs):
         current_ax = ax4 if num_fovs == 1 else ax4[i]
         current_ax.plot(transients[i].detach().cpu().numpy())
-        current_ax.set_title(f"FOV {i+1}")
+        current_ax.set_title(f"FOV {i + 1}")
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Normalized Amplitude")
         current_ax.grid(True)
@@ -161,12 +171,12 @@ if __name__ == "__main__":
 
     # Arrival Rates
     fig5, ax5 = plt.subplots(num_fovs, 1, figsize=(8, 2.5 * num_fovs))
-    fig5.suptitle(r'Photon Arrival Rates ($\overline{\Phi}$)', fontsize=16)
+    fig5.suptitle(r"Photon Arrival Rates ($\overline{\Phi}$)", fontsize=16)
     for i in range(num_fovs):
         current_ax = ax5 if num_fovs == 1 else ax5[i]
         current_ax.plot(arrival_rates[i].detach().cpu().numpy())
-        current_ax.set_ylim(bottom=0) # Ensure y-axis starts at 0
-        current_ax.set_title(f"FOV {i+1}")
+        current_ax.set_ylim(bottom=0)  # Ensure y-axis starts at 0
+        current_ax.set_title(f"FOV {i + 1}")
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Rate (photons/bin)")
         current_ax.grid(True)
@@ -186,4 +196,3 @@ if __name__ == "__main__":
     #     current_ax.grid(True)
     # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     # plt.show()
-    

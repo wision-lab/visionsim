@@ -26,7 +26,7 @@ active_source:
     pulse_shape: "gaussian"                             # "gaussian", "square", or "custom" 
     # pulse_shape_custom: !expr "lambda x: np.sinc(x / 3)"
     # pulse_shape_custom: [0,1,2,3,4,5,6,5,4,3,2,1,0]
-    pulse_shape_custom: !file "visionsim/emulate/aspc/pulse_shape_custom.txt"
+    pulse_shape_custom: !file "visionsim/emulate/aspc/pulse_shape_custom.txt" # should be sum normalized by user
     
 # Ambient Light Sources 
 ambient_source:
