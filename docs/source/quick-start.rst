@@ -4,16 +4,7 @@ Quick Start
 Installation & Dependencies 
 ---------------------------
 
-The recommended way to get visionsim is to **install the latest stable release** via `pip <https://pip.pypa.io>`_::
-    
-    $ pip install visionsim
-
-
-We currently support **Python 3.9+**. Users still on Python 3.8 or older are urged to upgrade.
-
-
-
-You'll also need:
+First, you'll need:
 
 * `Blender <https://www.blender.org/download/>`_ >= 3.3.1, to render new views. 
 * `FFmpeg <https://ffmpeg.org/download.html>`_, for visualizations. 
@@ -21,7 +12,10 @@ You'll also need:
 
 Make sure Blender and ffmpeg are on your PATH.
 
-The first time you use the renderer, it may ask you to install additional packages into blender's runtime. 
+Then you can **install the latest stable release** via `pip <https://pip.pypa.io>`_::
+    
+    $ pip install visionsim
+    $ visionsim post-install
 
 |
 
@@ -51,9 +45,9 @@ To create the lego dataset, we'll slow down the camera movement by a factor of 5
 .. note::
     The ``blender.render-animation`` CLI has a lot of options which enable changing render settings and resolution, parallelization, and for generating different types of ground truth annotations such as depth and segmentation maps. You can see all options by running the following::
 
-        $ visionsim --help blender.render-animation
+        $ visionsim blender.render-animation --help
 
-    If the above command does not work, you might have to change some settings, notably the ``device`` type.
+    If the above command does not work, you might have to change some settings, notably the ``device-type``. For instance on older GPUs that do not support Optix you can do ``--render-config.device-type=cuda`` to use CUDA.
     
     Finer grain control can be had using the :class:`BlenderClient API <visionsim.simulate.blender.BlenderClient>`.
 

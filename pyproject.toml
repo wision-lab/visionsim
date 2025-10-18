@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "visionsim"
 description = "Towards a Sensor-Realistic World Simulator"
-version = "0.1.0alpha1"
+dynamic = ["version"]
 requires-python = ">=3.9"
 readme = "README.md"
 classifiers = [
@@ -36,8 +36,9 @@ dependencies = [
     "OpenEXR",
     "multiprocess",
     "rpyc",
-    "tdigest",
-    "tyro"
+    "fastdigest",
+    "tyro",
+    "ephemeral-port-reserve"
 ]
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
@@ -47,9 +48,7 @@ license-files = ["LICEN[CS]E*"]
 
 [project.scripts]
 visionsim = "visionsim.cli:main"
-
-[tool.setuptools.packages.find]
-include = ["visionsim*"]
+vsim = "visionsim.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -67,8 +66,15 @@ dev = [
     "sphinxcontrib-napoleon",
     "furo",
     "types-jsonschema",
-    'scipy-stubs; python_version >= "3.10"'
+    'scipy-stubs; python_version >= "3.10"',
+    "psutil"
 ]
+
+[tool.setuptools.packages.find]
+include = ["visionsim*"]
+
+[tool.hatch.version]
+path = "visionsim/__init__.py"
 
 [tool.ruff]
 line-length = 121

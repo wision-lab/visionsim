@@ -183,8 +183,8 @@ def events(
                 viz = np.ones_like(frame) * 255
                 _, px, py, _ = events[events[:, -1] == 1].T.astype(int)
                 _, nx, ny, _ = events[events[:, -1] == -1].T.astype(int)
-                viz[ny, nx] = [255, 0, 0]
-                viz[py, px] = [0, 0, 255]
+                viz[ny, nx, :3] = [255, 0, 0]
+                viz[py, px, :3] = [0, 0, 255]
                 iio.imwrite(output_path / "frames" / f"event_{idx:06}.png", viz)
             else:
                 rate = 0

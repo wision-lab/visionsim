@@ -4,6 +4,10 @@ Tasks for maintaining the project.
 Execute 'inv[oke] --list' for a list of dev tasks.
 """
 
+from __future__ import annotations
+
+import ast
+import copy
 import fnmatch
 import glob
 import os
@@ -165,6 +169,98 @@ def build_docs(c, preview=False, full=False):
 
     if preview:
         webbrowser.open(DOCS_INDEX.as_uri())
+
+
+@task
+def generate_stubs(c):
+    """Generate .pyi files to enable autocomplete of dynamic attributes (eg for BlenderClients)."""
+    # Stubgen/stubtest is provided by mypy
+    source_path = "visionsim/simulate/blender.py"
+    stub_path = "visionsim/simulate/blender.pyi"
+    _run(c, f"stubgen {source_path} --include-docstrings -o .")
+
+    class FixStub(ast.NodeTransformer):
+        def __init__(self, path, ignores_from: str | None = None):
+            with open(ignores_from) as f:
+                root = ast.parse(f.read(), ignores_from, type_comments=True)
+
+            self.type_ignored_mods = set(
+                n.name.split(".")[0]
+                for node in ast.walk(root)
+                if isinstance(node, (ast.Import, ast.ImportFrom))
+                for n in node.names
+                if any(ignore.lineno in range(node.lineno, node.end_lineno + 1) for ignore in root.type_ignores)
+            )
+            self.type_ignores = set()
+            self.classes = {}
+
+            with open(path) as f:
+                self.root = ast.parse(code := f.read(), path, type_comments=True)
+                self.code = code
+            super().__init__()
+
+        def visit_Import(self, node):
+            self.generic_visit(node)
+
+            if any(ignored in n.name for ignored in self.type_ignored_mods for n in node.names):
+                self.type_ignores.add(node.lineno - 1)
+
+            # Remove redundant (from Y) import X as X
+            # Convert to (from Y) import X
+            for name in node.names:
+                if name.asname and name.asname == name.name:
+                    name.asname = None
+            return node
+
+        def visit_ImportFrom(self, node):
+            return self.visit_Import(node)
+
+        def visit_ClassDef(self, node):
+            self.generic_visit(node)
+
+            # Note: Relies on BlenderService being defined before BlenderClient(s)
+            if "BlenderClient" in node.name and "BlenderService" in self.classes:
+                methods = set(n.name for n in ast.walk(node) if isinstance(n, ast.FunctionDef))
+
+                for child in ast.walk(self.classes["BlenderService"]):
+                    if isinstance(child, ast.FunctionDef) and child.name.startswith("exposed_"):
+                        name = child.name.replace("exposed_", "")
+
+                        if name not in methods:
+                            child = copy.deepcopy(child)
+                            child.name = name
+
+                            if node.name == "BlenderClients":
+                                # Switch out returntype to tuple[returntype] iff rettype != None
+                                if child.returns is not None and not (
+                                    isinstance(child.returns, ast.Constant) and child.returns.value is None
+                                ):
+                                    child.returns = ast.Subscript(
+                                        value=ast.Name(id="tuple", ctx=ast.Load()),
+                                        slice=ast.Tuple(elts=[child.returns]),
+                                        ctx=ast.Load(),
+                                    )
+                            node.body.append(child)
+
+            self.classes[node.name] = node
+            return node
+
+        def transform(self):
+            tree = self.visit(self.root)
+            code = ast.unparse(tree).splitlines()
+
+            for ignore in self.type_ignores:
+                code[ignore] += "  #type: ignore"
+            return "\n".join(code)
+
+    code = FixStub(stub_path, ignores_from=source_path).transform()
+
+    with open(stub_path, "w") as f:
+        f.write(code)
+
+    _run(c, f"ruff check --select I --fix {stub_path}")
+    _run(c, f"ruff format {stub_path}")
+    # _run(c, "stubtest visionsim.simulate.blender --concise")
 
 
 @task

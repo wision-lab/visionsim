@@ -23,6 +23,7 @@ def video(input_file: str | os.PathLike, output_file: str | os.PathLike, method:
 
     from natsort import natsorted
 
+    from visionsim.cli import _log
     from visionsim.interpolate import rife
 
     from .ffmpeg import animate, count_frames, duration, extract
@@ -33,7 +34,7 @@ def video(input_file: str | os.PathLike, output_file: str | os.PathLike, method:
         raise ValueError(f"Can only interpolate by a power of 2, greater or equal to 2, not {n}.")
 
     avg_fps = count_frames(input_file) / duration(input_file)
-    print(f"Video has average frame rate of {avg_fps}")
+    _log.info(f"Video has average frame rate of {avg_fps}")
 
     with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as dst_dir:
         # Extract all frames
@@ -63,17 +64,17 @@ def frames(
         file_name: name of file containing transforms, default: 'transforms.json',
         n: interpolation factor, must be a multiple of 2, default: 2,
     """
-    from visionsim.cli import _validate_directories
+    from visionsim.cli import _log, _validate_directories
 
     # Extract transforms from transforms.json file
     input_path, output_path, *_ = _validate_directories(input_dir, output_dir)
     transforms = read_and_validate(path=input_path / file_name, schema=IMG_SCHEMA)
 
-    print("Interpolating poses")
+    _log.info("Interpolating poses...")
     interpolated_poses = interpolate_poses(transforms, n=n)
 
-    print("Interpolating frames")
+    _log.info("Interpolating frames...")
     interpolate_frames(input_path, output_path, method, n)
 
-    print(f"Generating {file_name}")
+    _log.info(f"Generating {file_name}")
     poses_and_frames_to_json(transforms, interpolated_poses, output_path, file_name="transforms.json")

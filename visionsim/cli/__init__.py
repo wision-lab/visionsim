@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import glob
 import inspect
+import logging
 import os
 import re
 import shlex
@@ -11,9 +12,22 @@ from pathlib import Path
 
 import tyro
 from natsort import natsorted
+from rich.logging import RichHandler
+from rich.traceback import install
 from typing_extensions import overload
 
 from . import blender, dataset, emulate, ffmpeg, interpolate, transforms
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[RichHandler(rich_tracebacks=True)],
+)
+logging.getLogger("PIL").setLevel(logging.WARNING)
+_log = logging.getLogger("rich")
+install(suppress=[tyro])
+
 
 # Exposed for tests
 _cli_modules = [blender, dataset, emulate, ffmpeg, interpolate, transforms]
@@ -78,7 +92,7 @@ def _run(
     """Execute a command and return an object with the result and failure status."""
 
     if echo:
-        print(command)
+        _log.debug(f"Running command: {command}")
 
     # shlex the command if we don't want to run in shell
     if not shell and isinstance(command, str):
@@ -111,15 +125,32 @@ def _run(
         )
 
 
+def post_install(executable: str | os.PathLike | None = None, editable: bool = False):
+    """Install additional dependencies
+
+    Args:
+        executable (str | os.PathLike | None, optional): Path to Blender executable. Defaults to one found on $PATH.
+        editable: (bool, optional): If set, install current visionsim as editable in blender. Only works if
+            visionsim is already installed as editable locally.
+    """
+    from visionsim.simulate import install_dependencies
+
+    if _run(f"{executable or 'blender'} --version", shell=True).returncode != 0:
+        raise RuntimeError(
+            "No blender installation found on path! Please make sure it is discoverable, or specify executable."
+        )
+    install_dependencies(executable, editable=editable)
+
+
 def main():
-    cli_dict = {}
+    cli_dict = {"post-install": post_install}
 
     for module in _cli_modules:
         current_module = sys.modules[module.__name__]
         module_name = current_module.__name__.split(".")[-1]
         cli_dict.update(
             {
-                f"{module_name}.{func_name}": func
+                f"{module_name}.{func_name}".replace("_", "-"): func
                 for func_name, func in inspect.getmembers(current_module, inspect.isfunction)
                 if func.__module__ == module.__name__ and not func_name.startswith("_")
             }
