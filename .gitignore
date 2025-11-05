@@ -118,3 +118,8 @@ cache/
 examples/logs/
 examples/renders/
 examples/*.blend*
+examples/quickstart/
+condor/
+condor*
+poster/
+poolexample.py 

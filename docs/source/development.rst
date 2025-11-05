@@ -52,3 +52,18 @@ installed (via pip) and then install the pre-hooks with::
     $ pre-commit install
 
 See `pre-commit <https://pre-commit.com/#intro>`_ for more.
+
+| 
+
+Release Process
+---------------
+
+To prepare for a new release, first ensure all tests, linting, formatting and typing checks pass, and update the documentation and version numbers accordingly. Then you'll need to build the new source distribution and push it to PyPI using twine. 
+
+The up-to-date source on this is the `python package authority <https://packaging.python.org/en/latest/tutorials/packaging-projects>`_, but you'll have to first build the source distribution using::
+
+    $ python -m build
+
+Then upload it to PyPI with twine::
+
+    $ python -m twine upload dist/*
