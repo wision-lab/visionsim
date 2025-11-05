@@ -6,7 +6,7 @@ Editable Install
 
 To install visionsim locally in an editable state with all required development dependencies, clone the repository, navigate to it and run::
     
-    $ pip install -e ".[dev]"
+    $ pip install -e . --group dev
 
 Similarly, to install visionsim in an editable manner within Blender's runtime, you can do the following::
 

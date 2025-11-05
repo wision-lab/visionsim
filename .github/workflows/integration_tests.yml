@@ -32,7 +32,7 @@ jobs:
           blender --version
       - name: Install VisionSim and dependencies
         run: |
-          pip install .[dev]
+          pip install . --group dev
           vsim post-install --editable
       - name: Build Docs
         run : |
