@@ -7,38 +7,8 @@ import numpy.typing as npt
 from scipy.spatial.transform import Rotation as R
 
 from visionsim.interpolate.pose import pose_interp
+from visionsim.utils.pose import tform_camcoord_gl2bl
 
-
-def _fix_coord_convention(T_bl_gl: npt.NDArray) -> npt.NDArray:
-    """Fix the coordinate convention in the camera pose matrix in transforms.json.
-
-    The coordinate convention for the camera view seems to be the OpenGL one:
-        +x  = right
-        +y  = up
-        +z  = out from the scene,
-    while the coordinate convention in Blender seems to be:
-        +x  = right
-        +y  = into the scene/viewing direction
-        +z  = up,
-    and the matrix in transforms.json appears to directly map from OpenGL coordinate system
-    to Blender's, so we can not treat it as an [R | t] form. In turn, this also probably 
-    invalidates the pose derivatives we get from directly using that matrix, and the simulated
-    IMU data too.
-    It is not clear if this causes problems elsewhere as well, so this function is kept within
-    the IMU section of the code for now. Can be moved up to a more general space if needed.
-
-    Args:
-        T_bl_gl (np.NDArray): 4 x 4 matrix representing camera pose, but also mapping directly
-                            from OpenGL coordinate system to Blender
-
-    Returns:
-        T_bl_bl (np.NDArray): also 4 x 4, but represents only pose in Blender's convention
-    """
-    M_gl_bl = np.array([[1.0, 0.0, 0.0, 0.0],
-                        [0.0, 0.0, 1.0, 0.0],
-                        [0.0, -1.0, 0.0, 0.0],
-                        [0.0, 0.0, 0.0, 1.0]])
-    return T_bl_gl @ M_gl_bl
 
 def imu_integration(
     acc_pos: Iterable[npt.ArrayLike],
@@ -183,7 +153,7 @@ def emulate_imu(
     std_bias_gyro_discrete = std_bias_gyro * (dt**0.5)
 
     # fix coordinate convention in the pose matrices
-    poses = [_fix_coord_convention(p) for p in poses]
+    poses = [tform_camcoord_gl2bl(p) for p in poses]
 
     # get angular velocity (in world coords) and positional acceleration (in camera space)
     times = np.arange(len(poses)) * dt
