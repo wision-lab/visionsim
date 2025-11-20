@@ -6,7 +6,7 @@
 
 import bpy  # type: ignore
 
-from .common import new_socket
+from .common import MAPRANGE_NODE, MATH_NODE, new_socket, set_clamp
 
 
 # initialize Cartesian2Polar node group
@@ -40,36 +40,36 @@ def cartesian2polar_node_group():
     group_input.name = "Group Input"
 
     # node Arctan2
-    arctan2 = cartesian2polar.nodes.new("CompositorNodeMath")
+    arctan2 = cartesian2polar.nodes.new(MATH_NODE)
     arctan2.name = "Arctan2"
     arctan2.operation = "ARCTAN2"
-    arctan2.use_clamp = False
+    set_clamp(arctan2, False)
 
     # node Sqrt
-    sqrt = cartesian2polar.nodes.new("CompositorNodeMath")
+    sqrt = cartesian2polar.nodes.new(MATH_NODE)
     sqrt.name = "Sqrt"
     sqrt.operation = "SQRT"
-    sqrt.use_clamp = False
+    set_clamp(sqrt, False)
 
     # node Sum
-    sum = cartesian2polar.nodes.new("CompositorNodeMath")
+    sum = cartesian2polar.nodes.new(MATH_NODE)
     sum.name = "Sum"
     sum.operation = "ADD"
-    sum.use_clamp = False
+    set_clamp(sum, False)
 
     # node SquareX
-    squarex = cartesian2polar.nodes.new("CompositorNodeMath")
+    squarex = cartesian2polar.nodes.new(MATH_NODE)
     squarex.name = "SquareX"
     squarex.operation = "POWER"
-    squarex.use_clamp = False
+    set_clamp(squarex, False)
     # Value_001
     squarex.inputs[1].default_value = 2.0
 
     # node SquareY
-    squarey = cartesian2polar.nodes.new("CompositorNodeMath")
+    squarey = cartesian2polar.nodes.new(MATH_NODE)
     squarey.name = "SquareY"
     squarey.operation = "POWER"
-    squarey.use_clamp = False
+    set_clamp(squarey, False)
     # Value_001
     squarey.inputs[1].default_value = 2.0
 
@@ -152,9 +152,9 @@ def flowdebug_node_group():
     normalize.name = "Normalize"
 
     # node Map Range
-    map_range = flowdebug.nodes.new("CompositorNodeMapRange")
+    map_range = flowdebug.nodes.new(MAPRANGE_NODE)
     map_range.name = "Map Range"
-    map_range.use_clamp = False
+    set_clamp(map_range, False)
     # From Min
     map_range.inputs[1].default_value = -3.1415927410125732
     # From Max
@@ -177,23 +177,23 @@ def flowdebug_node_group():
     combine_color.inputs[3].default_value = 1.0
 
     # node Orientation offset
-    orientation_offset = flowdebug.nodes.new("CompositorNodeMath")
+    orientation_offset = flowdebug.nodes.new(MATH_NODE)
     orientation_offset.name = "Orientation offset"
     orientation_offset.operation = "ADD"
-    orientation_offset.use_clamp = False
+    set_clamp(orientation_offset, False)
 
     # node Mod2pi
-    mod2pi = flowdebug.nodes.new("CompositorNodeMath")
+    mod2pi = flowdebug.nodes.new(MATH_NODE)
     mod2pi.name = "Mod2pi"
     mod2pi.operation = "MODULO"
-    mod2pi.use_clamp = False
+    set_clamp(mod2pi, False)
     # Value_001
     mod2pi.inputs[1].default_value = 6.2831854820251465
 
     # node HueNorm
-    huenorm = flowdebug.nodes.new("CompositorNodeMapRange")
+    huenorm = flowdebug.nodes.new(MAPRANGE_NODE)
     huenorm.name = "HueNorm"
-    huenorm.use_clamp = False
+    set_clamp(huenorm, False)
     # From Min
     huenorm.inputs[1].default_value = 0.0
     # From Max

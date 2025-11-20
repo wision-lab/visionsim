@@ -43,11 +43,13 @@ try:
     import addon_utils  # type: ignore
     import bpy  # type: ignore
     import mathutils  # type: ignore
+    from bpy_extras import anim_utils  # type: ignore
 
     # Allow relative imports to this file without forcing the user to
     # install visionsim into their blender install
     sys.path.insert(0, str(Path(__file__).parent.resolve()))
-    from nodes import (  # type: ignore
+    from .compat import file_output_node
+    from .nodes import (  # type: ignore
         flowdebug_node_group,
         normaldebug_node_group,
         segmentationdebug_node_group,
@@ -266,7 +268,7 @@ class BlenderServer(rpyc.utils.server.Server):
         Raises:
             TimeoutError: raise if unable to discover spawned servers in ``timeout`` seconds and kill any spawned processes.
 
-        Returns:
+        Yields:
             tuple[list[subprocess.Popen], list[tuple[str, int]]]:  A tuple containing:
                 - list[subprocess.Popen]: List of ``subprocess.Popen`` corresponding to all spawned servers.
                 - list[tuple[str, int]]: List of connection setting for each server, where each element is a (hostname, port) tuple.
@@ -458,7 +460,10 @@ class BlenderService(rpyc.Service):
     @require_initialized_service
     def tree(self) -> bpy.types.CompositorNodeTree:
         """Get current scene's node tree"""
-        return self.scene.node_tree
+        if bpy.app.version >= (5, 0, 0):
+            return self.scene.compositing_node_group
+        else:
+            return self.scene.node_tree
 
     @functools.cached_property
     @require_initialized_service
@@ -549,7 +554,11 @@ class BlenderService(rpyc.Service):
         self.initialized = True
 
         # Ensure we are using the compositor, and node tree.
-        self.scene.use_nodes = True
+        if bpy.app.version >= (5, 0, 0):
+            tree = bpy.data.node_groups.new("My new comp", "CompositorNodeTree")
+            self.scene.compositing_node_group = tree
+        else:
+            self.scene.use_nodes = True
         self.scene.render.use_compositing = True
 
         # Set default render settings
@@ -562,10 +571,35 @@ class BlenderService(rpyc.Service):
                 self.log.warning(f"Found unexpected output node {n}")
 
         # Catalogue any animations that are already disabled, otherwise
-        # disabling and re-enabling animations would enable them.
         self.disabled_fcurves: set[bpy.types.Action] = set(
-            [fcurve for action in bpy.data.actions for fcurve in (action.fcurves or []) if fcurve.mute]
+            fcurve for fcurve in self.exposed_iter_fcurves() if fcurve.mute
         )
+
+    @require_initialized_service
+    def exposed_iter_fcurves(self, actions: list[bpy.types.Action] | None = None) -> Iterator[bpy.types.FCurve]:
+        """Yield fcurves of all actions.
+
+        This abstracts away the API for accessing fcurves which changed to using channelbags in v4.4, see
+        `release notes here <https://developer.blender.org/docs/release_notes/4.4/upgrading/slotted_actions/>`_.
+
+        Args:
+            actions (list[bpy.types.Action] | None, optional): Only yield fcurves from these actions if specified,
+                otherwise use all actions. Defaults to None.
+
+        Yields:
+            Iterator[bpy.types.FCurve]: an fcurve object from the scene or action
+        """
+        if bpy.app.version >= (4, 4, 0):
+            for action in actions or bpy.data.actions:
+                for slot in action.slots:
+                    channelbag = anim_utils.action_get_channelbag_for_slot(action, slot)
+
+                    for fcurve in channelbag.fcurves or []:
+                        yield fcurve
+        else:
+            for action in actions or bpy.data.actions:
+                for fcurve in action.fcurves or []:
+                    yield fcurve
 
     @require_initialized_service
     def exposed_empty_transforms(self) -> dict[str, Any]:
@@ -664,10 +698,9 @@ class BlenderService(rpyc.Service):
             raise ValueError(f"Expected one of OPEN_EXR/HDR for file_format, got {file_format}.")
 
         if debug:
-            debug_depth_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
-            debug_depth_path.base_path = str(self.root_path / "depths")
-            debug_depth_path.label = "Debug Depth Output"
-            debug_depth_path.file_slots[0].path = f"debug_depth_{'#' * 6}"
+            debug_depth_path, (debug_depth_slot,) = file_output_node(
+                self.tree, self.root_path / "depths", slots=[f"debug_depth_{'#' * 6}"], label="Debug Depth Output"
+            )
             debug_depth_path.format.file_format = "PNG"
             debug_depth_path.format.compression = 90
             debug_depth_path.format.color_depth = "8"
@@ -687,11 +720,11 @@ class BlenderService(rpyc.Service):
 
             normalize = self.tree.nodes.new("CompositorNodeNormalize")
             self.tree.links.new(self.render_layers.outputs["Depth"], normalize.inputs[0])
-            self.tree.links.new(normalize.outputs[0], debug_depth_path.inputs[0])
+            self.tree.links.new(normalize.outputs[0], debug_depth_slot)
 
-        self.depth_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
-        self.depth_path.label = "Depth Output"
-        self.depth_path.file_slots[0].path = f"depth_{'#' * 6}"
+        self.depth_path, (depth_slot,) = file_output_node(
+            self.tree, self.root_path / "depths", slots=[f"depth_{'#' * 6}"], label="Depth Output"
+        )
 
         if bpy.app.version >= (3, 2, 0):
             self.depth_path.format.color_management = "OVERRIDE"
@@ -711,8 +744,7 @@ class BlenderService(rpyc.Service):
             self.depth_path.format.color_mode = "RGB"
             self.depth_extension = ".hdr"
 
-        self.tree.links.new(self.render_layers.outputs["Depth"], self.depth_path.inputs[0])
-        self.depth_path.base_path = str(self.root_path / "depths")
+        self.tree.links.new(self.render_layers.outputs["Depth"], depth_slot)
 
     @require_initialized_service
     def exposed_include_normals(self, debug=True, exr_codec="ZIP") -> None:
@@ -736,10 +768,9 @@ class BlenderService(rpyc.Service):
         self.tree.links.new(self.render_layers.outputs["Normal"], normal_group.inputs[0])
 
         if debug:
-            debug_normal_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
-            debug_normal_path.base_path = str(self.root_path / "normals")
-            debug_normal_path.label = "Normals Debug Output"
-            debug_normal_path.file_slots[0].path = f"debug_normal_{'#' * 6}"
+            debug_normal_path, (debug_normal_slot,) = file_output_node(
+                self.tree, self.root_path / "normals", slots=[f"debug_normal_{'#' * 6}"], label="Normals Debug Output"
+            )
             debug_normal_path.format.file_format = "PNG"
             debug_normal_path.format.compression = 90
             debug_normal_path.format.color_depth = "8"
@@ -757,10 +788,11 @@ class BlenderService(rpyc.Service):
             if bpy.app.version >= (4, 3, 0):
                 debug_normal_path.format.view_settings.use_white_balance = False
 
-            self.tree.links.new(normal_group.outputs["RGBA"], debug_normal_path.inputs[0])
+            self.tree.links.new(normal_group.outputs["RGBA"], debug_normal_slot)
 
-        self.normal_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
-        self.normal_path.label = "Normal Output"
+        self.normal_path, (normal_slot,) = file_output_node(
+            self.tree, self.root_path / "normals", slots=[f"normal_{'#' * 6}"], label="Normals Output"
+        )
 
         if bpy.app.version >= (3, 2, 0):
             self.normal_path.format.color_management = "OVERRIDE"
@@ -774,10 +806,7 @@ class BlenderService(rpyc.Service):
         vec2rgba.node_tree = vec2rgba_node_group()
 
         self.tree.links.new(normal_group.outputs["Vector"], vec2rgba.inputs["Image"])
-        self.tree.links.new(vec2rgba.outputs["Image"], self.normal_path.inputs[0])
-
-        self.normal_path.base_path = str(self.root_path / "normals")
-        self.normal_path.file_slots[0].path = f"normal_{'#' * 6}"
+        self.tree.links.new(vec2rgba.outputs["Image"], normal_slot)
 
     @require_initialized_service
     def exposed_include_flows(self, direction="forward", debug=True, exr_codec="ZIP") -> None:
@@ -818,10 +847,12 @@ class BlenderService(rpyc.Service):
             self.tree.links.new(self.render_layers.outputs["Vector"], split_flow.inputs["Image"])
 
             # Create output node
-            debug_flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
-            debug_flow_path.base_path = str(self.root_path / "flows")
-            debug_flow_path.label = "Flow Debug Output"
-            debug_flow_path.file_slots.clear()
+            debug_flow_path, (debug_fwd_flow_slot, debug_bwd_flow_slot) = file_output_node(
+                self.tree,
+                self.root_path / "flows",
+                slots=[f"debug_fwd_flow_{'#' * 6}", f"debug_bwd_flow_{'#' * 6}"],
+                label="Flow Debug Output",
+            )
             debug_flow_path.format.file_format = "PNG"
             debug_flow_path.format.compression = 90
             debug_flow_path.format.color_depth = "8"
@@ -842,31 +873,28 @@ class BlenderService(rpyc.Service):
             # Instantiate flow debug node group(s) and connect them
             if direction.lower() in ("forward", "both"):
                 flow_group = self.tree.nodes.new("CompositorNodeGroup")
-                flow_group.label = "Forward FlowDebug"
                 flow_group.node_tree = flowdebug_node_group()
+                flow_group.label = "FlowDebug Forward"
 
                 self.tree.links.new(split_flow.outputs[0], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs[1], flow_group.inputs["y"])
-
-                slot = debug_flow_path.file_slots.new(f"debug_fwd_flow_{'#' * 6}")
-                self.tree.links.new(flow_group.outputs["Image"], slot)
+                self.tree.links.new(flow_group.outputs["Image"], debug_fwd_flow_slot)
             if direction.lower() in ("backward", "both"):
                 flow_group = self.tree.nodes.new("CompositorNodeGroup")
-                flow_group.label = "Backward FlowDebug"
                 flow_group.node_tree = flowdebug_node_group()
+                flow_group.label = "FlowDebug Backward"
 
                 self.tree.links.new(split_flow.outputs[2], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs[3], flow_group.inputs["y"])
-
-                slot = debug_flow_path.file_slots.new(f"debug_bwd_flow_{'#' * 6}")
-                self.tree.links.new(flow_group.outputs["Image"], slot)
+                self.tree.links.new(flow_group.outputs["Image"], debug_bwd_flow_slot)
 
         # Save flows as EXRs, flows are a 4-vec of forward flows x/y then backwards flows x/y
         # before blender 4.3, saving a vector as an image saved only 3 channels even if `color_mode`
         # is set to RGBA. So we add a dummy vec2rgba node to trick blender into treating the
         # vector as an image with 4 channels. This dummy node just splits and recombines channels.
-        self.flow_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
-        self.flow_path.label = "Flow Debug Output"
+        self.flow_path, (flow_path_slot,) = file_output_node(
+            self.tree, self.root_path / "flows", slots=[f"flow_{'#' * 6}"], label="Flow Output"
+        )
 
         if bpy.app.version >= (3, 2, 0):
             self.flow_path.format.color_management = "OVERRIDE"
@@ -874,15 +902,13 @@ class BlenderService(rpyc.Service):
         self.flow_path.format.file_format = "OPEN_EXR"
         self.flow_path.format.exr_codec = exr_codec
         self.flow_path.format.color_mode = "RGBA"
-        self.flow_path.base_path = str(self.root_path / "flows")
-        self.flow_path.file_slots[0].path = f"flow_{'#' * 6}"
 
         vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
         vec2rgba.label = "Vector2RGBA"
         vec2rgba.node_tree = vec2rgba_node_group()
 
         self.tree.links.new(self.render_layers.outputs["Vector"], vec2rgba.inputs["Image"])
-        self.tree.links.new(vec2rgba.outputs["Image"], self.flow_path.inputs["Image"])
+        self.tree.links.new(vec2rgba.outputs["Image"], flow_path_slot)
 
     @require_initialized_service
     def exposed_include_segmentations(self, shuffle=True, debug=True, seed=1234, exr_codec="ZIP") -> None:
@@ -910,6 +936,7 @@ class BlenderService(rpyc.Service):
 
         self.view_layer.use_pass_object_index = True
         (self.root_path / "segmentations").mkdir(parents=True, exist_ok=True)
+        object_index_name = "Object Index" if bpy.app.version >= (5, 0, 0) else "IndexOB"
 
         # Assign IDs to every object (background will be 0)
         indices = np.arange(len(bpy.data.objects))
@@ -927,10 +954,12 @@ class BlenderService(rpyc.Service):
             seg_group.node_tree = segmentationdebug_node_group()
             seg_group.node_tree.nodes["NormalizeIdx"].inputs["From Max"].default_value = len(bpy.data.objects)
 
-            debug_seg_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
-            debug_seg_path.base_path = str(self.root_path / "segmentations")
-            debug_seg_path.label = "Segmentations Debug Output"
-            debug_seg_path.file_slots[0].path = f"debug_segmentation_{'#' * 6}"
+            debug_seg_path, (debug_seg_slot,) = file_output_node(
+                self.tree,
+                self.root_path / "segmentations",
+                slots=[f"debug_segmentation_{'#' * 6}"],
+                label="Segmentations Debug Output",
+            )
             debug_seg_path.format.file_format = "PNG"
             debug_seg_path.format.compression = 90
             debug_seg_path.format.color_depth = "8"
@@ -948,11 +977,12 @@ class BlenderService(rpyc.Service):
             if bpy.app.version >= (4, 3, 0):
                 debug_seg_path.format.view_settings.use_white_balance = False
 
-            self.tree.links.new(self.render_layers.outputs["IndexOB"], seg_group.inputs["Value"])
-            self.tree.links.new(seg_group.outputs["Image"], debug_seg_path.inputs[0])
+            self.tree.links.new(self.render_layers.outputs[object_index_name], seg_group.inputs["Value"])
+            self.tree.links.new(seg_group.outputs["Image"], debug_seg_slot)
 
-        self.segmentation_path = self.tree.nodes.new(type="CompositorNodeOutputFile")
-        self.segmentation_path.label = "Segmentation Output"
+        self.segmentation_path, (segmentation_slot,) = file_output_node(
+            self.tree, self.root_path / "segmentations", slots=[f"segmentation_{'#' * 6}"], label="Segmentations Output"
+        )
 
         if bpy.app.version >= (3, 2, 0):
             self.segmentation_path.format.color_management = "OVERRIDE"
@@ -965,9 +995,7 @@ class BlenderService(rpyc.Service):
         else:
             self.segmentation_path.format.color_mode = "BW"
 
-        self.tree.links.new(self.render_layers.outputs["IndexOB"], self.segmentation_path.inputs[0])
-        self.segmentation_path.base_path = str(self.root_path / "segmentations")
-        self.segmentation_path.file_slots[0].path = f"segmentation_{'#' * 6}"
+        self.tree.links.new(self.render_layers.outputs[object_index_name], segmentation_slot)
 
     @require_initialized_service
     def exposed_load_addons(self, *addons: str) -> None:
@@ -1049,10 +1077,9 @@ class BlenderService(rpyc.Service):
         Args:
             enable (bool): If true, enable animations.
         """
-        for action in bpy.data.actions:
-            for fcurve in action.fcurves or []:
-                if fcurve not in self.disabled_fcurves:
-                    fcurve.mute = not enable
+        for fcurve in self.exposed_iter_fcurves():
+            if fcurve not in self.disabled_fcurves:
+                fcurve.mute = not enable
         self.use_animation = enable
 
     @require_initialized_service
@@ -1126,16 +1153,23 @@ class BlenderService(rpyc.Service):
         return []
 
     @require_initialized_service
-    def exposed_unbind_camera(self) -> None:
+    def exposed_unbind_camera(self, clear_animations: bool = True) -> None:
         """Remove constraints, animations and parents from main camera.
 
         Note: In order to undo this, you'll need to re-initialize.
+
+        Args:
+            clear_animations (bool, optional): If true clear animation data for camera.
         """
         for c in self.camera.constraints:
             self.camera.constraints.remove(c)
-        self.camera.animation_data_clear()
+
+        with bpy.context.temp_override(selected_editable_objects=[self.camera]):
+            bpy.ops.object.parent_clear(type="CLEAR_KEEP_TRANSFORM")
+
+        if clear_animations:
+            self.camera.animation_data_clear()
         self.unbind_camera = True
-        self.camera.parent = None
 
     @require_initialized_service
     def exposed_move_keyframes(self, scale=1.0, shift=0.0) -> None:
@@ -1172,14 +1206,13 @@ class BlenderService(rpyc.Service):
         self.scene.frame_start = start
         self.scene.frame_end = end
 
-        for action in bpy.data.actions:
-            for fcurve in action.fcurves or []:
-                for kfp in fcurve.keyframe_points or []:
-                    # Note: Updating `co_ui` does not move the handles properly!!!
-                    kfp.co.x = kfp.co.x * scale + shift
-                    kfp.handle_left.x = kfp.handle_left.x * scale + shift
-                    kfp.handle_right.x = kfp.handle_right.x * scale + shift
-                    kfp.period *= scale
+        for fcurve in self.exposed_iter_fcurves():
+            for kfp in fcurve.keyframe_points or []:
+                # Note: Updating `co_ui` does not move the handles properly!!!
+                kfp.co.x = kfp.co.x * scale + shift
+                kfp.handle_left.x = kfp.handle_left.x * scale + shift
+                kfp.handle_right.x = kfp.handle_right.x * scale + shift
+                kfp.period *= scale
         self.scene.render.motion_blur_shutter /= scale
 
     @require_initialized_service
@@ -1234,7 +1267,8 @@ class BlenderService(rpyc.Service):
         look_at: npt.ArrayLike | None = None,
         in_order: bool = True,
     ) -> None:
-        """Positions and orients camera in Blender scene according to specified parameters.
+        """Positions and orients camera according to specified parameters. All transformations are local,
+        use :meth:`unbind_camera <exposed_unbind_camera>` to ensure position is set in world coordinates.
 
         Note: Only one of ``look_at`` or ``rotation`` can be set at once.
 
@@ -1274,7 +1308,8 @@ class BlenderService(rpyc.Service):
     @require_initialized_service
     @validate_camera_moved
     def exposed_rotate_camera(self, angle: float) -> None:
-        """Rotate camera around it's optical axis, relative to current orientation.
+        """Rotate camera around it's optical axis, relative to current orientation. All transformations are local,
+        use :meth:`unbind_camera <exposed_unbind_camera>` to ensure position is set in world coordinates.
 
         Args:
             angle: Relative amount to rotate by (clockwise, in radians).
@@ -1616,7 +1651,7 @@ class BlenderClient:
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
 
-        Returns:
+        Yields:
             Self: the connected client
         """
         with BlenderServer.spawn(jobs=1, timeout=timeout, log_dir=log_dir, autoexec=autoexec, executable=executable) as (
@@ -1848,7 +1883,7 @@ class BlenderClients(tuple):
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
 
-        Returns:
+        Yields:
             Self: the connected clients
         """
         with BlenderServer.spawn(
@@ -1913,7 +1948,7 @@ class BlenderClients(tuple):
                 If specified, the pool will use these servers (and ``jobs`` and other spawn arguments will
                 be ignored) instead of spawning new ones.
 
-        Returns:
+        Yields:
             multiprocess.Pool: A ``multiprocess.Pool`` instance which has had it's applicator methods
                 (map/imap/starmap/etc) monkey-patched to inject a client instance as first argument.
         """

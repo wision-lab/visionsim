@@ -2,6 +2,27 @@
 
 import bpy  # type: ignore
 
+MATH_NODE = "ShaderNodeMath" if bpy.app.version >= (5, 0, 0) else "CompositorNodeMath"
+MAPRANGE_NODE = "ShaderNodeMapRange" if bpy.app.version >= (5, 0, 0) else "CompositorNodeMapRange"
+
+if bpy.app.version >= (5, 0, 0):
+    SEPXYZ_NODE = "ShaderNodeSeparateXYZ"
+    COMBXYZ_NODE = "ShaderNodeCombineXYZ"
+elif bpy.app.version >= (3, 2, 0):
+    SEPXYZ_NODE = "CompositorNodeSeparateXYZ"
+    COMBXYZ_NODE = "CompositorNodeCombineXYZ"
+else:
+    SEPXYZ_NODE = "CompositorNodeSepRGBA"
+    COMBXYZ_NODE = "CompositorNodeCombRGBA"
+
+
+def set_clamp(node, enable):
+    # Can't just test for v5+ because some nodes still use `use_clamp`!!
+    if hasattr(node, "clamp"):
+        node.clamp = enable
+    else:
+        node.use_clamp = enable
+
 
 def new_socket(nodegroup, *, name, in_out, socket_type, attribute_domain="POINT", subtype=None):
     if bpy.app.version < (4, 0, 0):
