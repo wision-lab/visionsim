@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import yaml
-from histogrammers import (
+from histogrammers_temp import (    # changed by BHUYASHI
     calculate_arrival_rates,
     calculate_transients,
     get_perpixel_fov_masks,
@@ -18,9 +18,10 @@ from ruamel.yaml import YAML
 
 # Import from local modules
 from sources import PulsedLaser, Sun, get_light_conditions_from_string
+from sensors import SPADSensor  # added by BHUYASHI
 
 # from utils import tof2depth, ureg, preproc_albedo_intensity_depth_frames
-from utils import eval_constructor, preproc_albedo_intensity_depth_frames, tof2depth, ureg, ureg_constructor
+from utils import eval_constructor, preproc_albedo_intensity_depth_frames, tof2depth, ureg, ureg_constructor, irradiance_photons
 
 
 def forward_pass_ewh_diff(
@@ -29,6 +30,10 @@ def forward_pass_ewh_diff(
     sensor_config = config["sensor"]
     hist_config = config["histogrammer"]
     num_pixels = sensor_config["size"][0] * sensor_config["size"][1]  # changed by BHUYASHI
+    sensor = SPADSensor(**sensor_config)    # added by BHUYASHI
+    
+    # Get device from input tensors
+    device = albedo_frames.device
 
     assert hist_config["dead_time_s"] == 0, "Current differentiable EWH does not support non-zero dead time"
 
@@ -39,26 +44,52 @@ def forward_pass_ewh_diff(
     depth_quantity = depth_frames  # added by BHUYASHI
 
     radiance = active_source.get_scene_radiance(
-        albedo_quantity, depth_quantity, num_pixels, float(sensor_config["omega"]) * ureg.steradian
+        albedo_quantity, depth_quantity, num_pixels, sensor.omega
     )
-    irradiance = (radiance * torch.pi / 4 * (1 / sensor_config["f_number"]) ** 2) * float(
-        sensor_config["pixel_pitch"] ** 2
-    )
+    # print("radiance.dtype", radiance.dtype)
+    # irradiance = (radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2) *  sensor.pixel_pitch ** 2   
+    irradiance = (radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (  # added by BHUYASHI
+        sensor.pixel_pitch.to(ureg.meter)
+    ) ** 2
+    # Convert to tensor while preserving gradient flow
+    # CRITICAL: irf_tensor_estim gradients come through irf_tensor in calculate_arrival_rates
+    # The irradiance computation above breaks gradients due to Pint operations
+    # We need to preserve tensor operations through the pipeline
     irradiance_tensor = irradiance.magnitude
+    # irradiance_tensor = torch.as_tensor(irradiance.magnitude, dtype=torch.float32, device=device)
+    # Ensure this tensor requires grad to propagate gradients from upstream
+    # if irradiance_tensor.requires_grad == False:
+    #     irradiance_tensor.requires_grad = True
 
     # print("Number of photons per cycle: ", active_source.num_photons_per_cycle)
     # exit(-1)
 
     # Get ambient offset
-    ambient_radiance = ambient_source.get_scene_radiance(
-        float(sensor_config["omega"]) * ureg.steradian, albedo_quantity, active_source.frequency
-    )
-    ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / sensor_config["f_number"]) ** 2) * float(
-        sensor_config["pixel_pitch"] ** 2
-    )
-    offset = ambient_irradiance.magnitude
-    transients = calculate_transients(
-        irradiance_tensor, depth_frames, fov_masks, hist_config["n_bins"], active_source.max_resolvable_depth.magnitude
+    # ambient_radiance = ambient_source.get_scene_radiance(
+    #     float(sensor_config["omega"]) * ureg.steradian, albedo_quantity, active_source.frequency
+    # )
+    # ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / sensor_config["f_number"]) ** 2) * float(
+    #     sensor_config["pixel_pitch"] ** 2
+    # )
+    ambient_radiance = ambient_source.get_scene_radiance(sensor.omega, albedo_quantity, active_source.frequency)
+    ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (
+        sensor.pixel_pitch.to(ureg.meter)
+    ) ** 2
+    # Convert to tensor while preserving gradient flow
+    offsets = ambient_irradiance.magnitude
+    # offsets = torch.as_tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=device)
+    transients, ambient_offsets = calculate_transients(
+        irradiance_tensor,
+        depth_frames,
+        offsets,
+        fov_masks,
+        hist_config["n_bins"],
+        active_source.max_resolvable_depth.magnitude,
+        sensor_config["fov"],
+        hist_config["pixel_fov_list"],
+        sensor.w,
+        sensor.h,
+        sensor.omega,
     )
 
     # Calculate arrival rates
@@ -66,7 +97,8 @@ def forward_pass_ewh_diff(
     # _, irf = active_source.get_kernel(bin_width)
     # print("irf",irf)
     # irf_tensor = torch.tensor(irf, dtype=float, device=device)
-    arrival_rates = calculate_arrival_rates(irf_tensor, transients, offset, hist_config["n_bins"])
+    # arrival_rates = calculate_arrival_rates(irf_tensor, transients, offset, hist_config["n_bins"])
+    arrival_rates = calculate_arrival_rates(irf_tensor, transients, ambient_offsets, hist_config["n_bins"])
 
     ewh_list = simulate_ewh_diff(
         arrival_rates,
@@ -99,6 +131,7 @@ if __name__ == "__main__":
     # Load config
     # with open(config_path, "r") as f:
     #     config = yaml.safe_load(f)
+    # added by BHUYASHI
     yaml = YAML()
     safe_builtins = {"__builtins__": {"list": list, "dict": dict, "tuple": tuple}, "np": np, "math": math}
     yaml.Constructor.add_constructor(tag="!Quantity", constructor=ureg_constructor(ureg.Quantity))
@@ -126,8 +159,9 @@ if __name__ == "__main__":
 
     bin_width = 2 * tof2depth(1 / active_source.frequency) / config["histogrammer"]["n_bins"]
     _, irf = active_source.get_kernel(bin_width)
-    print("irf", irf)
+    # print("irf", irf)
     irf_tensor_gt = torch.tensor(irf, dtype=float, device=device)
+    # irf_tensor_gt = torch.tensor(irf, dtype=torch.float32, device=device)
 
     active_source.plot_kernel(bin_width)
 
@@ -175,31 +209,40 @@ if __name__ == "__main__":
     )
 
     # Active source
-    active_config = config["active_source"]["pulsed_laser"]
-    active_source2 = PulsedLaser(
-        wavelength=float(active_config["wavelength"]) * ureg.nanometer,
-        frequency=float(active_config["frequency"]) * ureg.hertz,
-        pulse_width=float(active_config["pulse_width"]) * ureg.second,
-        avg_watts=float(active_config["avg_watts"]) * ureg.watt,
-        pulse_shape=active_config["pulse_shape"],
-        pulse_shape_custom=active_config["pulse_shape_custom"],
-    )
+    # active_config = config["active_source"]["pulsed_laser"]
+    # active_source2 = PulsedLaser(
+    #     wavelength=float(active_config["wavelength"]) * ureg.nanometer,
+    #     frequency=float(active_config["frequency"]) * ureg.hertz,
+    #     pulse_width=float(active_config["pulse_width"]) * ureg.second,
+    #     avg_watts=float(active_config["avg_watts"]) * ureg.watt,
+    #     pulse_shape=active_config["pulse_shape"],
+    #     pulse_shape_custom=active_config["pulse_shape_custom"],
+    # )
+    # active_enable = active_config.pop("enabled")
+    if active_enable:
+        active_source2 = PulsedLaser(**active_config)
 
     bin_width = 2 * tof2depth(1 / active_source2.frequency) / config["histogrammer"]["n_bins"]
     _, irf = active_source2.get_kernel(bin_width)
-    print("irf", irf)
+    # print("irf", irf)
     irf_tensor_gt = torch.tensor(irf, dtype=float, device=device)
+    # irf_tensor_gt = torch.tensor(irf, dtype=torch.float32, device=device)
+    # print("irf_tensor_gt.dtype", irf_tensor_gt.dtype)
 
     # Ambient source
-    ambient_config = config["ambient_source"]["sun"]
-    ambient_source2 = Sun(
-        intensity=float(ambient_config["intensity"]) * ureg.watt / ureg.meter**2,
-        stability_factor=float(ambient_config["stability_factor"]) * ureg.dimensionless,
-        temperature=float(ambient_config["temperature"]) * ureg.kelvin,
-        lambda_pass=float(ambient_config["lambda_pass"]) * ureg.nanometer,
-        delta_lambda=float(ambient_config["delta_lambda"]) * ureg.nanometer,
-        light_conditions=get_light_conditions_from_string(ambient_config["light_conditions"]),
-    )
+    # ambient_config = config["ambient_source"]["sun"]
+    # ambient_source2 = Sun(
+    #     intensity=float(ambient_config["intensity"]) * ureg.watt / ureg.meter**2,
+    #     stability_factor=float(ambient_config["stability_factor"]) * ureg.dimensionless,
+    #     temperature=float(ambient_config["temperature"]) * ureg.kelvin,
+    #     lambda_pass=float(ambient_config["lambda_pass"]) * ureg.nanometer,
+    #     delta_lambda=float(ambient_config["delta_lambda"]) * ureg.nanometer,
+    #     light_conditions=get_light_conditions_from_string(ambient_config["light_conditions"]),
+    # )
+    # ambient_config["light_conditions"] = get_light_conditions_from_string(ambient_config["light_conditions"])
+    # ambient_enable = ambient_config.pop("enabled")
+    if ambient_enable:
+        ambient_source2 = Sun(**ambient_config)
 
     # FOV masks
     _, img_rows, img_cols = depth_frames.shape

@@ -4,15 +4,11 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from histogrammers_temp import (
-    calculate_arrival_rates,
-    calculate_transients,
-    get_perpixel_fov_masks,
-    simulate_ewh,
-)
 from ruamel.yaml import YAML
+
 from sensors import SPADSensor
 from sources import LightConditions, PulsedLaser, Sun
+from histogrammers import Histogrammer, HistConfig
 from utils import (
     eval_constructor,
     file_constructor,
@@ -61,7 +57,8 @@ if __name__ == "__main__":
         ambient_source = Sun(**ambient_config)
 
     # Histogrammer
-    hist_config = config["histogrammer"]
+    hist_config = HistConfig(**config["histogrammer"])
+    histogrammer = Histogrammer(hist_config)
 
     # Sensor
     sensor_config = config["sensor"]
@@ -70,7 +67,7 @@ if __name__ == "__main__":
     # FOV masks
     _, img_rows, img_cols = depth_frames.shape
     empty_mask = torch.zeros((img_rows, img_cols), dtype=torch.float32, device=device)
-    fov_masks = get_perpixel_fov_masks(empty_mask, hist_config["pixel_fov_list"], device=device)
+    fov_masks = histogrammer.get_perpixel_fov_masks(empty_mask, histogrammer.pixel_fov_list, device=device)
 
     # Get signal
     num_pixels = sensor.w * sensor.h
@@ -86,32 +83,32 @@ if __name__ == "__main__":
     ) ** 2
     offsets = torch.tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=device)
     # Get transients
-    transients, ambient_offsets = calculate_transients(
+    transients, ambient_offsets = histogrammer.calculate_transients(
         irradiance,
         depth_frames,
         offsets,
         fov_masks,
-        hist_config["n_bins"],
+        histogrammer.n_bins,
         active_source.max_resolvable_depth.magnitude,
         sensor_config["fov"],
-        hist_config["pixel_fov_list"],
+        histogrammer.pixel_fov_list,
         sensor.w,
         sensor.h,
         sensor.omega,
     )
 
     # Calculate arrival rates
-    bin_width = 2 * tof2depth(1 / active_source.frequency) / hist_config["n_bins"]
+    bin_width = 2 * tof2depth(1 / active_source.frequency) / histogrammer.n_bins
     _, irf = active_source.get_kernel(bin_width, None)
     irf_tensor = torch.tensor(irf, dtype=torch.float32, device=device)
-    arrival_rates = calculate_arrival_rates(irf_tensor, transients, ambient_offsets, hist_config["n_bins"])
+    arrival_rates = histogrammer.calculate_arrival_rates(irf_tensor, transients, ambient_offsets, histogrammer.n_bins)
     active_source.plot_kernel(bin_width)
 
     # Simulate EWH
-    ewh_list = simulate_ewh(arrival_rates, hist_config['n_pulses'], hist_config['n_bins'], hist_config['free_running'], float(hist_config['dead_time_s']))
+    ewh_list = histogrammer.simulate_ewh(arrival_rates, histogrammer.n_pulses, histogrammer.n_bins, histogrammer.free_running, histogrammer.dead_time_s)
 
     # Plots
-    num_fovs = len(config["histogrammer"]["pixel_fov_list"])
+    num_fovs = len(histogrammer.pixel_fov_list)
 
     # # FOV Masks
     # fig1, ax1 = plt.subplots(1, num_fovs, figsize=(3 * num_fovs, 3))

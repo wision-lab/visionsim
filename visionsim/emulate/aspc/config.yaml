@@ -7,7 +7,8 @@ histogrammer:
   strict_units: true
   strict_range: false
   bin_width: 0.03  # meters per bin
-  pixel_fov_list: [[0, 0.4, 0.3, 0.6], [0.2, 0.6, 0.6, 0.9]]
+  # pixel_fov_list: [[0, 0.4, 0.3, 0.6], [0.2, 0.6, 0.6, 0.9]]
+  pixel_fov_list: !file "visionsim/emulate/aspc/pixel_fov_list.txt"
   n_pulses: 10000   # number of laser pulses
   dead_time_s: 75e-9 # Dead time in seconds
   free_running: False # Free-running mode (True) or gated mode (False) 
@@ -22,7 +23,8 @@ active_source:
     avg_watts: !Quantity 1.0 watts                  # watts
     pulse_shape: "gaussian"         # "gaussian", "square", or "custom" 
     # pulse_shape_custom: "lambda x: np.sinc(x / 3)"
-    pulse_shape_custom: "np.array([0,1,2,3,4,5,6,5,4,3,2,1,0])"
+    # pulse_shape_custom: "np.array([0,1,2,3,4,5,6,5,4,3,2,1,0])"
+    pulse_shape_custom: !file "visionsim/emulate/aspc/pulse_shape_custom.txt" # should be sum normalized by user
     
 # Ambient Light Sources 
 ambient_source:
