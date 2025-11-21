@@ -8,20 +8,27 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import yaml
-from histogrammers_temp import (    # changed by BHUYASHI
+from histogrammers_temp import (  # changed by BHUYASHI
     calculate_arrival_rates,
     calculate_transients,
     get_perpixel_fov_masks,
     simulate_ewh_diff,
 )
 from ruamel.yaml import YAML
+from sensors import SPADSensor  # added by BHUYASHI
 
 # Import from local modules
 from sources import PulsedLaser, Sun, get_light_conditions_from_string
-from sensors import SPADSensor  # added by BHUYASHI
 
 # from utils import tof2depth, ureg, preproc_albedo_intensity_depth_frames
-from utils import eval_constructor, preproc_albedo_intensity_depth_frames, tof2depth, ureg, ureg_constructor, irradiance_photons
+from utils import (
+    eval_constructor,
+    irradiance_photons,
+    preproc_albedo_intensity_depth_frames,
+    tof2depth,
+    ureg,
+    ureg_constructor,
+)
 
 
 def forward_pass_ewh_diff(
@@ -30,8 +37,8 @@ def forward_pass_ewh_diff(
     sensor_config = config["sensor"]
     hist_config = config["histogrammer"]
     num_pixels = sensor_config["size"][0] * sensor_config["size"][1]  # changed by BHUYASHI
-    sensor = SPADSensor(**sensor_config)    # added by BHUYASHI
-    
+    sensor = SPADSensor(**sensor_config)  # added by BHUYASHI
+
     # Get device from input tensors
     device = albedo_frames.device
 
@@ -43,11 +50,9 @@ def forward_pass_ewh_diff(
     # depth_quantity = depth_frames * ureg.meter
     depth_quantity = depth_frames  # added by BHUYASHI
 
-    radiance = active_source.get_scene_radiance(
-        albedo_quantity, depth_quantity, num_pixels, sensor.omega
-    )
+    radiance = active_source.get_scene_radiance(albedo_quantity, depth_quantity, num_pixels, sensor.omega)
     # print("radiance.dtype", radiance.dtype)
-    # irradiance = (radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2) *  sensor.pixel_pitch ** 2   
+    # irradiance = (radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2) *  sensor.pixel_pitch ** 2
     irradiance = (radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (  # added by BHUYASHI
         sensor.pixel_pitch.to(ureg.meter)
     ) ** 2

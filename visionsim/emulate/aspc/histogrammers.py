@@ -1,12 +1,11 @@
-from typing import List, Union, Tuple
+from dataclasses import dataclass, field
+from typing import List, Tuple, Union
 
 import torch
 import torch.nn.functional as F
+from pint import Quantity
 from torch import Tensor
 from tqdm import tqdm
-from dataclasses import dataclass, field
-from pint import Quantity
-
 from utils import get_irradiance_with_fov, ureg
 
 
@@ -152,15 +151,21 @@ class HistogrammerBase:
             for mask_idx, fov_mask in enumerate(tqdm(fov_masks, desc="Processing FOV masks", disable=True)):
                 index_mask = fov_mask > 0
                 current_irradiance_vals = irradiance_frames[frame_idx][torch.nonzero(fov_mask, as_tuple=True)]
-                
+
                 # Apply FOV correction if parameters are provided
-                if sensor_fov is not None and pixel_fov_list is not None and w is not None and h is not None and omega is not None:
+                if (
+                    sensor_fov is not None
+                    and pixel_fov_list is not None
+                    and w is not None
+                    and h is not None
+                    and omega is not None
+                ):
                     fov_irradiance_vals = get_irradiance_with_fov(
                         current_irradiance_vals, sensor_fov, pixel_fov_list[mask_idx], omega, w, h
                     )
                 else:
                     fov_irradiance_vals = current_irradiance_vals
-                
+
                 # Apply vignette weights to irradiance
                 current_irradiance_vals = current_irradiance_vals * fov_mask[index_mask]
                 current_depth_vals = depth_frames[frame_idx][torch.nonzero(fov_mask, as_tuple=True)]
@@ -168,9 +173,9 @@ class HistogrammerBase:
                 ambient_offsets.append(masked_offsets.sum() / gt_ntime_bins)
 
                 # Extract magnitude only if these are Pint Quantity objects, otherwise use as-is
-                if hasattr(current_depth_vals, 'magnitude'):
+                if hasattr(current_depth_vals, "magnitude"):
                     current_depth_vals = current_depth_vals.magnitude
-                if hasattr(fov_irradiance_vals, 'magnitude'):
+                if hasattr(fov_irradiance_vals, "magnitude"):
                     fov_irradiance_vals = fov_irradiance_vals.magnitude
 
                 # Convert depth values to time bin locations
@@ -212,14 +217,15 @@ class HistogrammerBase:
                 background = offset[i] if offset.dim() > 0 and i < offset.shape[0] else offset
             else:
                 background = offset
-            
+
             # Convert to tensor if needed
             if not isinstance(background, torch.Tensor):
                 background = torch.tensor(background, dtype=torch.float32, device=transients.device)
-            
+
             background_extended = background.expand_as(convolved_signal) if background.dim() == 0 else background
             arrival_rates[i, :] = convolved_signal + background_extended
         return arrival_rates
+
 
 @dataclass
 class HistConfig:
@@ -257,11 +263,13 @@ class HistConfig:
         if self.dead_time_s <= 0:
             raise ValueError("dead_time_s must be > 0")
 
+
 class Histogrammer(HistogrammerBase):
     """
     Equi-Width Histogrammer class
     """
-    def __init__(self,config: HistConfig=HistConfig()):
+
+    def __init__(self, config: HistConfig = HistConfig()):
         super().__init__()
         config.validate()
         for k, v in config.__dict__.items():
@@ -362,12 +370,12 @@ class Histogrammer(HistogrammerBase):
     def gumbel_poisson(self, rate, K=50, tau=0.5):
         """
         Differentiable relaxation of Poisson sampling using Gumbel-softmax.
-        
+
         Args:
             rate: (B, ...) Poisson rate λ
             K: Maximum value in support
             tau: Temperature parameter for Gumbel-softmax
-            
+
         Returns:
             relaxed sample with same shape as rate
         """
@@ -419,11 +427,13 @@ class Histogrammer(HistogrammerBase):
 
         return ewh_pixel_list
 
+
 class HistogrammerEDH(HistogrammerBase):
     """
     Equi-Depth Histogrammer class
     """
-    def __init__(self,config: HistConfig=HistConfig()):
+
+    def __init__(self, config: HistConfig = HistConfig()):
         super().__init__()
         config.validate()
         for k, v in config.__dict__.items():

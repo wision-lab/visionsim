@@ -4,11 +4,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from histogrammers import HistConfig, Histogrammer
 from ruamel.yaml import YAML
-
 from sensors import SPADSensor
 from sources import LightConditions, PulsedLaser, Sun
-from histogrammers import Histogrammer, HistConfig
 from utils import (
     eval_constructor,
     file_constructor,
@@ -18,6 +17,7 @@ from utils import (
     ureg,
     ureg_constructor,
 )
+
 
 def get_light_conditions_from_string(condition_str: str) -> LightConditions:
     """Convert string to LightConditions enum value."""
@@ -105,7 +105,9 @@ if __name__ == "__main__":
     active_source.plot_kernel(bin_width)
 
     # Simulate EWH
-    ewh_list = histogrammer.simulate_ewh(arrival_rates, histogrammer.n_pulses, histogrammer.n_bins, histogrammer.free_running, histogrammer.dead_time_s)
+    ewh_list = histogrammer.simulate_ewh(
+        arrival_rates, histogrammer.n_pulses, histogrammer.n_bins, histogrammer.free_running, histogrammer.dead_time_s
+    )
 
     # Plots
     num_fovs = len(histogrammer.pixel_fov_list)
@@ -176,8 +178,8 @@ if __name__ == "__main__":
     for i in range(num_fovs):
         current_ax = ax6 if num_fovs == 1 else ax6[i]
         current_ax.plot(ewh_list[i].cpu().numpy())
-        current_ax.set_ylim(bottom=0) # Ensure y-axis starts at 0
-        current_ax.set_title(f"FOV {i+1}")
+        current_ax.set_ylim(bottom=0)  # Ensure y-axis starts at 0
+        current_ax.set_title(f"FOV {i + 1}")
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Photon Counts")
         current_ax.grid(True)

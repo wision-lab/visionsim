@@ -10,7 +10,6 @@ from torch import Tensor
 from tqdm import tqdm
 from utils import get_irradiance_with_fov, ureg
 
-
 # def get_albedo_intensity_depth_frames(
 #     data_dir: str, Nr: int = 0, Nc: int = 0, device: torch.device = torch.device("cpu")
 # ):
@@ -129,7 +128,9 @@ from utils import get_irradiance_with_fov, ureg
 #     return albedo_frames_tensor, intensity_frames_tensor, depth_frames_tensor
 
 
-def get_pixel_fov_mask(empty_mask: Tensor, row1: float, row2: float, col1: float, col2: float, vignette: bool = True) -> Tensor:
+def get_pixel_fov_mask(
+    empty_mask: Tensor, row1: float, row2: float, col1: float, col2: float, vignette: bool = True
+) -> Tensor:
     """
     Generates a rectangular FOV mask with optional smooth vignette (weights in [0, 1]).
     If vignette=True: 1.0 at the rectangle center, smoothly decreasing to 0.0 at the rectangle edges.
@@ -187,7 +188,7 @@ def get_pixel_fov_mask(empty_mask: Tensor, row1: float, row2: float, col1: float
     else:
         # Rectangular FOV: set all pixels inside rectangle to 1.0
         mask[r1:r2, c1:c2] = 1.0
-    
+
     return mask
 
 
@@ -282,13 +283,13 @@ def calculate_transients(
             #     current_depth_vals = current_depth_vals.magnitude
             # if hasattr(fov_irradiance_vals, 'magnitude'):
             #     fov_irradiance_vals = fov_irradiance_vals.magnitude
-            
+
             # # Ensure they are PyTorch tensors for indexing operations
             # if not isinstance(current_depth_vals, torch.Tensor):
             #     current_depth_vals = torch.as_tensor(current_depth_vals, dtype=torch.float32, device=transients.device)
             # if not isinstance(fov_irradiance_vals, torch.Tensor):
             #     fov_irradiance_vals = torch.as_tensor(fov_irradiance_vals, dtype=torch.float32, device=transients.device)
-            
+
             # print(f"fov_irradiance_vals: {fov_irradiance_vals}")
             # print("current_depth_vals",current_depth_vals.min(),current_depth_vals.max())
             # print("max_depth",max_depth)
@@ -432,6 +433,7 @@ def simulate_ewh(
         )
     return ewh_pixel_list
 
+
 def gumbel_poisson(rate, K=50, tau=0.5):
     """
     Differentiable relaxation of Poisson sampling using Gumbel-softmax.
@@ -439,12 +441,11 @@ def gumbel_poisson(rate, K=50, tau=0.5):
     Returns: relaxed sample with same shape as rate
     """
     # Build support [0..K]
-    ks = torch.arange(K+1, device=rate.device).view(1, -1)
+    ks = torch.arange(K + 1, device=rate.device).view(1, -1)
 
     # Compute unnormalized logits = log p(k | rate)
     # log p = -rate + k log rate - log(k!)
-    log_probs = -rate.unsqueeze(-1) + ks * torch.log(rate.unsqueeze(-1) + 1e-9) \
-                - torch.lgamma(ks + 1)
+    log_probs = -rate.unsqueeze(-1) + ks * torch.log(rate.unsqueeze(-1) + 1e-9) - torch.lgamma(ks + 1)
 
     # Sample Gumbel noise
     gumbel_noise = -torch.log(-torch.log(torch.rand_like(log_probs)))
@@ -456,7 +457,6 @@ def gumbel_poisson(rate, K=50, tau=0.5):
     relaxed_sample = (y * ks).sum(dim=-1)
 
     return relaxed_sample
-
 
 
 def simulate_ewh_diff(
@@ -485,7 +485,6 @@ def simulate_ewh_diff(
     # For Poisson distribution, E[X] = lambda = arrival_rates * n_pulses
     ewh_pixel_list = arrival_rates * n_pulses
     # ewh_pixel_list = gumbel_poisson(arrival_rates * n_pulses, K=40, tau=0.3)
-
 
     return ewh_pixel_list
 

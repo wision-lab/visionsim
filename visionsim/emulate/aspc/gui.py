@@ -1,16 +1,14 @@
-import sys
 import math
+import sys
 from pathlib import Path
 
 import numpy as np
 import torch
-from ruamel.yaml import YAML
-
-from PyQt5 import QtCore, QtWidgets
+from histogrammers_temp import calculate_arrival_rates, calculate_transients, get_perpixel_fov_masks
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-
-from histogrammers_temp import calculate_arrival_rates, calculate_transients, get_perpixel_fov_masks
+from PyQt5 import QtCore, QtWidgets
+from ruamel.yaml import YAML
 from sensors import SPADSensor
 from sources import LightConditions, PulsedLaser, Sun
 from utils import (
@@ -295,20 +293,22 @@ class MainWindow(QtWidgets.QMainWindow):
                 radiance = active_source.get_scene_radiance(
                     self.albedo_frames, self.depth_frames, num_pixels, self.sensor.omega
                 )
-                irradiance = (
-                    radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2
-                ).to(irradiance_photons) * (self.sensor.pixel_pitch.to(ureg.meter)) ** 2
+                irradiance = (radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(irradiance_photons) * (
+                    self.sensor.pixel_pitch.to(ureg.meter)
+                ) ** 2
                 irradiance = torch.tensor(irradiance.magnitude, dtype=torch.float32, device=self.device)
             else:
                 irradiance = torch.zeros_like(self.depth_frames, dtype=torch.float32, device=self.device)
 
             if ambient_enabled:
                 ambient_radiance = ambient_source.get_scene_radiance(
-                    self.sensor.omega, self.albedo_frames, active_source.frequency if active_source else 10.0 * ureg.megahertz
+                    self.sensor.omega,
+                    self.albedo_frames,
+                    active_source.frequency if active_source else 10.0 * ureg.megahertz,
                 )
-                ambient_irradiance = (
-                    ambient_radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2
-                ).to(irradiance_photons) * (self.sensor.pixel_pitch.to(ureg.meter)) ** 2
+                ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(
+                    irradiance_photons
+                ) * (self.sensor.pixel_pitch.to(ureg.meter)) ** 2
                 offsets = torch.tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=self.device)
             else:
                 offsets = torch.zeros_like(self.depth_frames, dtype=torch.float32, device=self.device)
@@ -359,13 +359,13 @@ class MainWindow(QtWidgets.QMainWindow):
             # Select FOV
             idx = max(0, min(params["fov_index"], len(arrival_rates) - 1))
             y = arrival_rates[idx].detach().cpu().numpy()
-            self.canvas.plot_series(y, title=f"Photon Arrival Rates (FOV {idx+1})", ylabel="Rate (photons/bin)")
+            self.canvas.plot_series(y, title=f"Photon Arrival Rates (FOV {idx + 1})", ylabel="Rate (photons/bin)")
 
             # FOV image (albedo masked)
             fov_mask_np = self.fov_masks[idx].detach().cpu().numpy()
             albedo_np = self.albedo_frames[0].detach().cpu().numpy()
             img = albedo_np * fov_mask_np
-            self.img_canvas.show_image(img, title=f"Albedo × FOV Mask (FOV {idx+1})")
+            self.img_canvas.show_image(img, title=f"Albedo × FOV Mask (FOV {idx + 1})")
 
             self.status_label.setText(
                 f"n_bins={n_bins} | freq={params['frequency_mhz']} MHz | Pavg={params['avg_watts']} W | pulse={params['pulse_width_ns']} ns | "
@@ -386,5 +386,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

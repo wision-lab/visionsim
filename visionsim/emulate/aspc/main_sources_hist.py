@@ -23,6 +23,7 @@ from utils import (
     ureg_constructor,
 )
 
+
 def get_light_conditions_from_string(condition_str: str) -> LightConditions:
     """Convert string to LightConditions enum value."""
     return getattr(LightConditions, condition_str)
@@ -108,7 +109,13 @@ if __name__ == "__main__":
     active_source.plot_kernel(bin_width)
 
     # Simulate EWH
-    ewh_list = simulate_ewh(arrival_rates, hist_config['n_pulses'], hist_config['n_bins'], hist_config['free_running'], float(hist_config['dead_time_s']))
+    ewh_list = simulate_ewh(
+        arrival_rates,
+        hist_config["n_pulses"],
+        hist_config["n_bins"],
+        hist_config["free_running"],
+        float(hist_config["dead_time_s"]),
+    )
 
     # Plots
     num_fovs = len(config["histogrammer"]["pixel_fov_list"])
@@ -179,8 +186,8 @@ if __name__ == "__main__":
     for i in range(num_fovs):
         current_ax = ax6 if num_fovs == 1 else ax6[i]
         current_ax.plot(ewh_list[i].cpu().numpy())
-        current_ax.set_ylim(bottom=0) # Ensure y-axis starts at 0
-        current_ax.set_title(f"FOV {i+1}")
+        current_ax.set_ylim(bottom=0)  # Ensure y-axis starts at 0
+        current_ax.set_title(f"FOV {i + 1}")
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Photon Counts")
         current_ax.grid(True)
