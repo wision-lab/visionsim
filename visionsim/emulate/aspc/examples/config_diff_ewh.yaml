@@ -16,11 +16,11 @@ histogrammer:
 active_source:
   pulsed_laser:
     enabled: true
-    wavelength: 550.0               # nanometers
-    frequency: 10.0e6              # hertz
-    pulse_width: 0.5e-9           # seconds
-    avg_watts: 1.0                  # watts
-    pulse_shape: "custom"         # "gaussian", "square", or "custom" 
+    wavelength: !Quantity 550.0 nanometers            # nanometers
+    frequency: !Quantity 10.0 megahertz               # hertz
+    pulse_width: !Quantity 2.5 nanoseconds            # seconds
+    avg_watts: !Quantity 1.0 watts                    # watts
+    pulse_shape: "gaussian"         # "gaussian", "square", or "custom" 
     # pulse_shape_custom: "lambda x: np.sinc(x / 3)"
     pulse_shape_custom: "np.array([0,0,0.0,0.0,0.1,0.3,1,0.9,0.8,0.4,0.1,0,0])"
     
@@ -28,28 +28,27 @@ active_source:
 ambient_source:
   sun:
     enabled: true
-    temperature: 5778.0            # kelvin
-    light_conditions: "BRIGHTEST_SUNLIGHT"  # from LightConditions enum
-    lambda_pass: 550.0             # nanometers
-    delta_lambda: 10.0             # nanometers
-    intensity: 3.828e26            # watts per square meter
-    stability_factor: 0.01         # dimensionless
-    emissivity: 1.0                # dimensionless
+    temperature: !Quantity 5778.0 kelvin            # kelvin
+    light_conditions: "OVERCAST"  # from LightConditions enum
+    lambda_pass: !Quantity 550.0 nanometers             # nanometers
+    delta_lambda: !Quantity 10.0 nanometers             # nanometers
+    intensity: !Quantity 3.828e26 watts / meter**2      # watts per square meter
+    stability_factor: !Quantity 0.01                    # dimensionless
     
   flickering_lamp:
     enabled: true
-    temperature: 2700.0           # kelvin (typical incandescent bulb)
-    illuminance: 800.0            # lux (typical room lighting)
-    modulation_frequency: 120.0   # hertz (AC power frequency)
-    modulation_amplitude: 0.1     # dimensionless (10% flicker)
-    phase: 0.0                    # radians
-    pulse_width: 0.001            # seconds
+    temperature: !Quantity 2700.0 kelvin           # kelvin (typical incandescent bulb)
+    illuminance: !Quantity 800.0 lux               # lux (typical room lighting)
+    modulation_frequency: !Quantity 120.0 hertz    # hertz (AC power frequency)
+    modulation_amplitude: !Quantity 0.1            # dimensionless (10% flicker)
+    phase: !Quantity 0.0 radians                   # radians
+    pulse_width: !Quantity 0.001 seconds           # seconds
     pulse_shape: "gaussian"
     emissivity: 0.9              # dimensionless
 
 # Sensor
 sensor:
-  omega: 0.001                    # steradians
-  resolution: [300, 400]          # [height, width]
-  pixel_pitch: 10.0e-6               # meters
-  f_number: 1.4
+  size: [300, 400]          # [height, width]
+  pixel_pitch: !Quantity 10.0 micrometer           # meters
+  f_number: !Quantity 1.4         # dimensionless
+  fov: !Quantity [66 degree, 44 degree]

@@ -28,7 +28,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     data_dir = Path("examples/renders/scene1/")
-    config_path = "visionsim/emulate/aspc/sample_config.yaml"
+    config_path = "visionsim/emulate/aspc/config.yaml"
 
     # Load config
     yaml = YAML()

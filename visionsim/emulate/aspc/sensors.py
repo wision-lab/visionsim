@@ -13,7 +13,6 @@ from utils import (
     irradiance_photons,
     pyramid_solid_angle,
     radiance_photons,
-    # resize_like,
     ureg,
 )
 

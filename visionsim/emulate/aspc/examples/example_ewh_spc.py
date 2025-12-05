@@ -1,10 +1,15 @@
 import math
+import os
+import sys
 from pathlib import Path
 
 import numpy as np
 import torch
-from ascp_plot_utils import plot_ewh_per_pixel
-from histogrammers import calculate_arrival_rates, calculate_transients, get_perpixel_fov_masks, simulate_ewh
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from examples.ascp_plot_utils import plot_ewh_per_pixel
+from histogrammers import HistConfig, Histogrammer
 from ruamel.yaml import YAML
 from sensors import SPADSensor
 from sources import PulsedLaser, Sun, get_light_conditions_from_string
@@ -21,13 +26,13 @@ if __name__ == "__main__":
     ## Setting simulation parameters
 
     root = Path("examples/renders/scene1/")
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = "cpu"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # device = "cpu"
     requires_grad = True
     start_idx = 0
     num_frames = 1
     data_dir = "data"
-    config_path = "visionsim/emulate/aspc/config_ewh_bh.yaml"
+    config_path = "visionsim/emulate/aspc/examples/config_ewh.yaml"
 
     # Load config
     yaml = YAML()
@@ -42,41 +47,26 @@ if __name__ == "__main__":
 
     # Active source
     active_config = config["active_source"]["pulsed_laser"]
-    # active_source = PulsedLaser(
-    #     wavelength=float(active_config['wavelength']) * ureg.nanometer,
-    #     frequency=float(active_config['frequency']) * ureg.hertz,
-    #     pulse_width=float(active_config['pulse_width']) * ureg.second,
-    #     avg_watts=float(active_config['avg_watts']) * ureg.watt,
-    #     pulse_shape=active_config['pulse_shape'],
-    #     pulse_shape_custom=active_config['pulse_shape_custom']
-    # )
     active_enable = active_config.pop("enabled")
     if active_enable:
         active_source = PulsedLaser(**active_config)
 
     # Ambient source
     ambient_config = config["ambient_source"]["sun"]
-    # ambient_source = Sun(
-    #     intensity=float(ambient_config['intensity']) * ureg.watt / ureg.meter**2,
-    #     stability_factor=float(ambient_config['stability_factor']) * ureg.dimensionless,
-    #     temperature=float(ambient_config['temperature']) * ureg.kelvin,
-    #     lambda_pass=float(ambient_config['lambda_pass']) * ureg.nanometer,
-    #     delta_lambda=float(ambient_config['delta_lambda']) * ureg.nanometer,
-    #     light_conditions=get_light_conditions_from_string(ambient_config['light_conditions'])
-    # )
     ambient_config["light_conditions"] = get_light_conditions_from_string(ambient_config["light_conditions"])
     ambient_enable = ambient_config.pop("enabled")
     if ambient_enable:
         ambient_source = Sun(**ambient_config)
 
-    # FOV masks
-    _, img_rows, img_cols = depth_frames.shape
-    empty_mask = torch.zeros((img_rows, img_cols), dtype=bool)
-    fov_masks = get_perpixel_fov_masks(empty_mask, config["histogrammer"]["pixel_fov_list"], device=device)
-    # print("fov_masks", fov_masks.shape)
-
     # Histogrammer
     hist_config = config["histogrammer"]
+    hist_config = HistConfig(**hist_config)
+    histogrammer = Histogrammer(hist_config)
+
+    # FOV masks
+    _, img_rows, img_cols = depth_frames.shape
+    empty_mask = torch.zeros((img_rows, img_cols), dtype=bool, device=device)
+    fov_masks = histogrammer.get_perpixel_fov_masks(empty_mask, hist_config.pixel_fov_list, device=device)
 
     # Sensor
     sensor_config = config["sensor"]
@@ -84,27 +74,17 @@ if __name__ == "__main__":
 
     # Get transients
     sensor_config = config["sensor"]
-    hist_config = config["histogrammer"]
     num_pixels = sensor_config["size"][0] * sensor_config["size"][1]
 
     # Convert tensors to Pint quantities for active source
     albedo_quantity = albedo_frames * ureg.dimensionless
-    # depth_quantity = depth_frames * ureg.meter
-    # depth_frames already carries meter units from preproc; don't reapply units
-    depth_quantity = depth_frames  # Added by BHUYASHI
-
-    # print("albedo_quantity", albedo_quantity.detach().cpu().min(), albedo_quantity.detach().cpu().max())
-    # print("depth_quantity", depth_quantity.detach().cpu().min(), depth_quantity.detach().cpu().max())
+    depth_quantity = depth_frames
 
     radiance = active_source.get_scene_radiance(albedo_quantity, depth_quantity, num_pixels, sensor.omega)
-    # irradiance = (radiance * torch.pi / 4 * (1 / sensor_config['f_number']) ** 2) * float(sensor_config['pixel_pitch']**2)
     irradiance = (radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (
         sensor.pixel_pitch.to(ureg.meter)
     ) ** 2
     irradiance_tensor = irradiance.magnitude
-
-    # print("Number of photons per cycle: ", active_source.num_photons_per_cycle)
-    # exit(-1)
 
     # Get ambient offset
     ambient_radiance = ambient_source.get_scene_radiance(sensor.omega, albedo_quantity, active_source.frequency)
@@ -112,40 +92,38 @@ if __name__ == "__main__":
         sensor.pixel_pitch.to(ureg.meter)
     ) ** 2
     offset = ambient_irradiance.magnitude
-    transients = calculate_transients(
+    transients, ambient_offsets = histogrammer.calculate_transients(
         irradiance_tensor,
-        # depth_frames,
-        depth_frames.magnitude,  # added by BHUYASHI
+        depth_frames.magnitude,
         offset,
         fov_masks,
-        hist_config["n_bins"],
+        histogrammer.n_bins,
         active_source.max_resolvable_depth.magnitude,
     )
     print("transients.shape: ", transients.shape)
 
     # Calculate arrival rates
-    bin_width = 2 * tof2depth(1 / active_source.frequency) / hist_config["n_bins"]
+    bin_width = 2 * tof2depth(1 / active_source.frequency) / histogrammer.n_bins
     _, irf = active_source.get_kernel(bin_width)
     irf_tensor = torch.tensor(irf, dtype=float, device=device)
-    arrival_rates = calculate_arrival_rates(irf_tensor, transients, offset, hist_config["n_bins"])
+    arrival_rates = histogrammer.calculate_arrival_rates(irf_tensor, transients, ambient_offsets, histogrammer.n_bins)
 
     active_source.plot_kernel(bin_width)
 
     # Simulate EWH with dead time
-    ewh_list = simulate_ewh(
+    ewh_list = histogrammer.simulate_ewh(
         arrival_rates,
-        hist_config["n_pulses"],
-        hist_config["n_bins"],
-        hist_config["free_running"],
-        float(hist_config["dead_time_s"]),
+        histogrammer.n_pulses,
+        histogrammer.n_bins,
+        histogrammer.free_running,
+        histogrammer.dead_time_s,
     )
 
     plot_ewh_per_pixel(
-        config,
+        histogrammer,
         fov_masks,
         albedo_frames[0],
-        # depth_frames[0],
-        depth_frames[0].magnitude,  # added by BHUYASHI
+        depth_frames[0].magnitude,
         transients,
         arrival_rates,
         ewh_list,

@@ -2,13 +2,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def plot_ewh_per_pixel(config, fov_masks, albedo_frame, depth_frame, transients, arrival_rates, ewh_list):
+def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, transients, arrival_rates, ewh_list):
     print("Min max of depth_frame", depth_frame.min(), depth_frame.max())
     print("Ewh list", ewh_list)
     print("arrival_rates", arrival_rates)
 
     # Plots
-    num_fovs = len(config["histogrammer"]["pixel_fov_list"])
+    # Get number of FOVs from fov_masks
+    num_fovs = fov_masks.shape[0]
     # FOV Masks
     fig1, ax1 = plt.subplots(1, num_fovs, figsize=(3 * num_fovs, 3))
     fig1.suptitle("FOV Masks", fontsize=16)

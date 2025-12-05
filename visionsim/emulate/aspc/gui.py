@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from histogrammers_temp import calculate_arrival_rates, calculate_transients, get_perpixel_fov_masks
+from histogrammers import HistConfig, Histogrammer
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PyQt5 import QtCore, QtWidgets
@@ -85,6 +85,7 @@ class ControlPanel(QtWidgets.QWidget):
         self.pulse_width = QtWidgets.QDoubleSpinBox()
         self.pulse_width.setRange(1e-5, 1e3)
         self.pulse_width.setDecimals(6)
+        self.pulse_width.setSingleStep(0.1)
         self.pulse_width.setValue(0.01)  # ns
         layout.addRow("pulse width (ns)", self.pulse_width)
 
@@ -177,7 +178,7 @@ class ControlPanel(QtWidgets.QWidget):
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, config_path: str = "visionsim/emulate/aspc/sample_config.yaml"):
+    def __init__(self, config_path: str = "visionsim/emulate/aspc/config.yaml"):
         super().__init__()
         self.setWindowTitle("Active-SPC Histogram Live Viewer")
 
@@ -229,16 +230,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sensor_config = dict(self.config["sensor"])  # copy
         self.sensor = SPADSensor(**self.sensor_config)
 
+        # Prepare histogrammer (from config)
+        self.hist_config = HistConfig(**self.config["histogrammer"])
+        self.histogrammer = Histogrammer(self.hist_config)
+
         # Prepare FOV masks (from config)
-        hist_config = self.config["histogrammer"]
         _, img_rows, img_cols = self.depth_frames.shape
         empty_mask = torch.zeros((img_rows, img_cols), dtype=torch.float32, device=self.device)
-        self.fov_masks = get_perpixel_fov_masks(empty_mask, hist_config["pixel_fov_list"], device=self.device)
+        self.fov_masks = self.histogrammer.get_perpixel_fov_masks(
+            empty_mask, self.histogrammer.pixel_fov_list, device=self.device
+        )
         self.controls.fov_index.setMaximum(max(1, len(self.fov_masks)))
-        if "dead_time_s" in hist_config:
-            self.controls.dead_time_ns.setValue(float(hist_config["dead_time_s"]) * 1e9)
-        if "free_running" in hist_config:
-            self.controls.free_running.setChecked(bool(hist_config["free_running"]))
+        if self.hist_config.dead_time_s is not None:
+            self.controls.dead_time_ns.setValue(float(self.histogrammer.dead_time_s.magnitude) * 1e9)
+        if self.hist_config.free_running is not None:
+            self.controls.free_running.setChecked(bool(self.histogrammer.free_running))
 
         # Debounce updates
         self._update_timer = QtCore.QTimer(self)
@@ -314,7 +320,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 offsets = torch.zeros_like(self.depth_frames, dtype=torch.float32, device=self.device)
 
             # Transients
-            transients, ambient_offsets = calculate_transients(
+            transients, ambient_offsets = self.histogrammer.calculate_transients(
                 irradiance,
                 self.depth_frames,
                 offsets,
@@ -322,7 +328,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 n_bins,
                 (active_source.max_resolvable_depth.magnitude if active_source else 10.0),
                 self.sensor_config["fov"],
-                self.config["histogrammer"]["pixel_fov_list"],
+                self.histogrammer.pixel_fov_list,
                 self.sensor.w,
                 self.sensor.h,
                 self.sensor.omega,
@@ -354,7 +360,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.pulse_canvas.ax.set_ylabel("Amplitude")
                 self.pulse_canvas.draw_idle()
             irf_tensor = torch.tensor(irf, dtype=torch.float32, device=self.device)
-            arrival_rates = calculate_arrival_rates(irf_tensor, transients, ambient_offsets, n_bins)
+            arrival_rates = self.histogrammer.calculate_arrival_rates(irf_tensor, transients, ambient_offsets, n_bins)
 
             # Select FOV
             idx = max(0, min(params["fov_index"], len(arrival_rates) - 1))

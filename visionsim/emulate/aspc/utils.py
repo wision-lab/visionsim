@@ -1,7 +1,9 @@
-from typing import Optional
+from pathlib import Path
+from typing import Optional, Union
 
 import cv2
-import matplotlib.pyplot as plt
+
+# import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from pint import UnitRegistry, set_application_registry
@@ -99,8 +101,8 @@ def resize_to(img, shape):
 
 
 def preproc_albedo_intensity_depth_frames(
-    root: str,
-    device: str,
+    root: Union[str, Path],
+    device: Union[str, torch.device],
     config: dict,
     start_idx: int,
     num_frames: Optional[int] = 1,
@@ -109,8 +111,8 @@ def preproc_albedo_intensity_depth_frames(
     """Function to convert the rgb and depth frames read using data loaders to tensors"
 
     Args:
-        root (str): Path to the root folder containing the rendered RGB images and depth maps
-        device (str): Choose the compute device, cpu or cuda device
+        root (str or Path): Path to the root folder containing the rendered RGB images and depth maps
+        device (str or torch.device): Choose the compute device, cpu or cuda device
         start_idx (int): Index of the first rgb-d to be used generate active SPC frame
         num_frames (int): Number of rgb-d frames used to generate an active SPC frame
         config (dict): Dictionary containing all the simulation parameters
@@ -118,6 +120,8 @@ def preproc_albedo_intensity_depth_frames(
     Returns:
         List[Tensor]: Tensors corresponding to albedo, intensity and depth frames
     """
+    # Convert root to Path if it's a string
+    root = Path(root) if isinstance(root, str) else root
 
     frames = Dataset.from_path(root / "frames")
     depths = Dataset.from_path(root / "depths")

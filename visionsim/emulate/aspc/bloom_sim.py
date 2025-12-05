@@ -105,7 +105,7 @@ def simulate_bloom_2d(
 
 def plot_results(clean, observed, psf, cmap="viridis"):
     plt.figure(figsize=(14, 4))
-    ax = plt.subplot(1, 3, 1)
+    plt.subplot(1, 3, 1)
     plt.title("Clean (single saturated pixel)")
     im0 = plt.imshow(clean, origin="lower", cmap=cmap, vmin=0, vmax=1.0)
     plt.colorbar(im0, fraction=0.046, pad=0.04)

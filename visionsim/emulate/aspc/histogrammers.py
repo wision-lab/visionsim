@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from pint import Quantity
 from torch import Tensor
 from tqdm import tqdm
+from units import validate_units
 from utils import get_irradiance_with_fov, ureg
 
 
@@ -96,9 +97,17 @@ class HistogrammerBase:
         Returns:
             torch.Tensor: A tensor of float masks with values in [0, 1].
         """
+        # Ensure empty_mask is on the correct device
+        if empty_mask.device != device:
+            empty_mask = empty_mask.to(device)
+
         mask_list = []
         for r1, r2, c1, c2 in pixel_fov_list:
-            mask_list.append(self.get_pixel_fov_mask(empty_mask, r1, r2, c1, c2).unsqueeze(0))
+            mask = self.get_pixel_fov_mask(empty_mask, r1, r2, c1, c2)
+            # Ensure mask is on the correct device
+            if mask.device != device:
+                mask = mask.to(device)
+            mask_list.append(mask.unsqueeze(0))
 
         return torch.concat(mask_list)
 
@@ -137,6 +146,15 @@ class HistogrammerBase:
                 - torch.Tensor: A tensor containing the calculated transients.
                 - list: List of ambient offsets.
         """
+        # Ensure all tensors are on the same device
+        device = irradiance_frames.device
+        if fov_masks.device != device:
+            fov_masks = fov_masks.to(device)
+        if depth_frames.device != device:
+            depth_frames = depth_frames.to(device)
+        if offsets.device != device:
+            offsets = offsets.to(device)
+
         num_transients = fov_masks.shape[0]  # Number of FOVs
         transients = torch.zeros(
             (num_transients, gt_ntime_bins),
@@ -226,12 +244,36 @@ class HistogrammerBase:
             arrival_rates[i, :] = convolved_signal + background_extended
         return arrival_rates
 
+    def _apply_non_pr_deadtime(self, buffer: torch.Tensor, dead_time_bins: int, n_tbins: int):
+        """
+        Applies non-paralyzable dead time to a photon arrival buffer (helper function).
+
+        Args:
+            buffer (torch.Tensor): A boolean tensor representing photon arrivals over time.
+                            The second half `buffer[n_tbins:]` contains current arrivals.
+            dead_time_bins (Quantity): Number of time bins for dead time.
+            n_tbins (int): Number of time bins for a single pulse period.
+        """
+        # Identify indices where current arrivals occurred
+        current_arrivals_indices = torch.nonzero(buffer[n_tbins:], as_tuple=True)[0] + n_tbins
+
+        for idx in current_arrivals_indices:
+            # Check for previous photon detection within the dead time window
+            start_check = int(max(idx - dead_time_bins, 0))
+            end_check = idx  # Up to (but not including) the current photon
+
+            # If any photon was detected in the previous dead_time_bins, current photon is "missed"
+            if torch.any(buffer[start_check:end_check]):
+                buffer[idx] = False  # Set current photon detection to False (missed)
+
 
 @dataclass
 class HistConfig:
+    type: Union[str, None] = None
     min_depth: Quantity = 0 * ureg.meter
     max_depth: Quantity = 20 * ureg.meter
     n_bins: int = 1000
+    n_hist_bins: Union[int, None] = None
     shape: Union[int, Tuple[int, int]] = (300, 400)
     strict_units: bool = True
     strict_range: bool = False
@@ -254,6 +296,8 @@ class HistConfig:
             raise ValueError("max_depth must be > min_depth")
         if self.n_bins <= 0:
             raise ValueError("n_bins must be > 0")
+        if self.n_hist_bins is not None and self.n_hist_bins <= 0:
+            raise ValueError("n_hist_bins must be > 0")
         if self.shape[0] <= 0 or self.shape[1] <= 0:
             raise ValueError("shape must be > 0")
         if self.bin_width <= 0:
@@ -269,33 +313,12 @@ class Histogrammer(HistogrammerBase):
     Equi-Width Histogrammer class
     """
 
+    @validate_units()
     def __init__(self, config: HistConfig = HistConfig()):
         super().__init__()
-        config.validate()
+        # config.validate()
         for k, v in config.__dict__.items():
             setattr(self, k, v)
-
-    def _apply_non_pr_deadtime(self, buffer: torch.Tensor, dead_time_bins: Quantity, n_tbins: int):
-        """
-        Applies non-paralyzable dead time to a photon arrival buffer (helper function).
-
-        Args:
-            buffer (torch.Tensor): A boolean tensor representing photon arrivals over time.
-                               The second half `buffer[n_tbins:]` contains current arrivals.
-            dead_time_bins (Quantity): Number of time bins for dead time.
-            n_tbins (int): Number of time bins for a single pulse period.
-        """
-        # Identify indices where current arrivals occurred
-        current_arrivals_indices = torch.nonzero(buffer[n_tbins:], as_tuple=True)[0] + n_tbins
-
-        for idx in current_arrivals_indices:
-            # Check for previous photon detection within the dead time window
-            start_check = int(max(idx - dead_time_bins.magnitude, 0))
-            end_check = idx  # Up to (but not including) the current photon
-
-            # If any photon was detected in the previous dead_time_bins, current photon is "missed"
-            if torch.any(buffer[start_check:end_check]):
-                buffer[idx] = False  # Set current photon detection to False (missed)
 
     def simulate_pixel_ewh(
         self, phi_bar: torch.Tensor, n_pulses: int, n_hist_bins: int, free_running: bool, dead_time_bins: Quantity
@@ -320,14 +343,20 @@ class Histogrammer(HistogrammerBase):
         # First half for previous pulse arrivals, second half for current pulse arrivals
         buffer = torch.zeros((n_tbins * 2), dtype=torch.bool, device=phi_bar.device)
 
+        # Normalize dead time to an integer number of bins (drop units if provided)
+        if hasattr(dead_time_bins, "magnitude"):
+            dead_time_bins_int = int(dead_time_bins.to_base_units().magnitude)
+        else:
+            dead_time_bins_int = int(dead_time_bins)
+
         for n_ in range(n_pulses):
             # Generate photon arrivals using Poisson distribution
             photon_vec = torch.poisson(phi_bar)
             buffer[n_tbins:] = photon_vec > 0  # Mark where photons arrived in current pulse
 
             # Apply non-paralyzable dead time
-            if dead_time_bins > 0 * ureg.second:
-                self._apply_non_pr_deadtime(buffer, dead_time_bins, n_tbins)
+            if dead_time_bins_int > 0:
+                self._apply_non_pr_deadtime(buffer, dead_time_bins_int, n_tbins)
 
             # Accumulate detected photons into the histogram
             photon_hist += buffer[n_tbins:].float()

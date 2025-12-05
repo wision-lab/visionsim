@@ -1,4 +1,6 @@
 import math
+import os
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -8,19 +10,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import yaml
-from histogrammers_temp import (  # changed by BHUYASHI
-    calculate_arrival_rates,
-    calculate_transients,
-    get_perpixel_fov_masks,
-    simulate_ewh_diff,
-)
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from histogrammers import HistConfig, Histogrammer
+from main import get_light_conditions_from_string
 from ruamel.yaml import YAML
-from sensors import SPADSensor  # added by BHUYASHI
-
-# Import from local modules
-from sources import PulsedLaser, Sun, get_light_conditions_from_string
-
-# from utils import tof2depth, ureg, preproc_albedo_intensity_depth_frames
+from sensors import SPADSensor
+from sources import PulsedLaser, Sun
 from utils import (
     eval_constructor,
     irradiance_photons,
@@ -30,87 +27,58 @@ from utils import (
     ureg_constructor,
 )
 
+# Import aspc package first to enable aspc.* imports
+import visionsim.emulate.aspc  # noqa: F401
+
 
 def forward_pass_ewh_diff(
     albedo_frames, intensity_frames, depth_frames, active_source, ambient_source, fov_masks, config, irf_tensor
 ):
     sensor_config = config["sensor"]
-    hist_config = config["histogrammer"]
-    num_pixels = sensor_config["size"][0] * sensor_config["size"][1]  # changed by BHUYASHI
-    sensor = SPADSensor(**sensor_config)  # added by BHUYASHI
+    hist_config = HistConfig(**config["histogrammer"])
+    histogrammer = Histogrammer(hist_config)
+    num_pixels = sensor_config["size"][0] * sensor_config["size"][1]
+    sensor = SPADSensor(**sensor_config)
 
     # Get device from input tensors
-    device = albedo_frames.device
+    # device = albedo_frames.device
 
-    assert hist_config["dead_time_s"] == 0, "Current differentiable EWH does not support non-zero dead time"
+    assert histogrammer.dead_time_s == 0, "Current differentiable EWH does not support non-zero dead time"
 
     # Get transients
     # Convert tensors to Pint quantities for active source
     albedo_quantity = albedo_frames * ureg.dimensionless
-    # depth_quantity = depth_frames * ureg.meter
-    depth_quantity = depth_frames  # added by BHUYASHI
+    depth_quantity = depth_frames
 
     radiance = active_source.get_scene_radiance(albedo_quantity, depth_quantity, num_pixels, sensor.omega)
-    # print("radiance.dtype", radiance.dtype)
-    # irradiance = (radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2) *  sensor.pixel_pitch ** 2
-    irradiance = (radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (  # added by BHUYASHI
+    irradiance = (radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (
         sensor.pixel_pitch.to(ureg.meter)
     ) ** 2
-    # Convert to tensor while preserving gradient flow
-    # CRITICAL: irf_tensor_estim gradients come through irf_tensor in calculate_arrival_rates
-    # The irradiance computation above breaks gradients due to Pint operations
-    # We need to preserve tensor operations through the pipeline
     irradiance_tensor = irradiance.magnitude
-    # irradiance_tensor = torch.as_tensor(irradiance.magnitude, dtype=torch.float32, device=device)
-    # Ensure this tensor requires grad to propagate gradients from upstream
-    # if irradiance_tensor.requires_grad == False:
-    #     irradiance_tensor.requires_grad = True
 
-    # print("Number of photons per cycle: ", active_source.num_photons_per_cycle)
-    # exit(-1)
-
-    # Get ambient offset
-    # ambient_radiance = ambient_source.get_scene_radiance(
-    #     float(sensor_config["omega"]) * ureg.steradian, albedo_quantity, active_source.frequency
-    # )
-    # ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / sensor_config["f_number"]) ** 2) * float(
-    #     sensor_config["pixel_pitch"] ** 2
-    # )
     ambient_radiance = ambient_source.get_scene_radiance(sensor.omega, albedo_quantity, active_source.frequency)
     ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (
         sensor.pixel_pitch.to(ureg.meter)
     ) ** 2
-    # Convert to tensor while preserving gradient flow
     offsets = ambient_irradiance.magnitude
-    # offsets = torch.as_tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=device)
-    transients, ambient_offsets = calculate_transients(
+    transients, ambient_offsets = histogrammer.calculate_transients(
         irradiance_tensor,
         depth_frames,
         offsets,
         fov_masks,
-        hist_config["n_bins"],
+        histogrammer.n_bins,
         active_source.max_resolvable_depth.magnitude,
-        sensor_config["fov"],
-        hist_config["pixel_fov_list"],
-        sensor.w,
-        sensor.h,
-        sensor.omega,
     )
 
     # Calculate arrival rates
-    # bin_width = (2 * tof2depth(1 / active_source.frequency) / hist_config['n_bins'])
-    # _, irf = active_source.get_kernel(bin_width)
-    # print("irf",irf)
-    # irf_tensor = torch.tensor(irf, dtype=float, device=device)
-    # arrival_rates = calculate_arrival_rates(irf_tensor, transients, offset, hist_config["n_bins"])
-    arrival_rates = calculate_arrival_rates(irf_tensor, transients, ambient_offsets, hist_config["n_bins"])
+    arrival_rates = histogrammer.calculate_arrival_rates(irf_tensor, transients, ambient_offsets, histogrammer.n_bins)
 
-    ewh_list = simulate_ewh_diff(
+    ewh_list = histogrammer.simulate_ewh_diff(
         arrival_rates,
-        hist_config["n_pulses"],
-        hist_config["n_bins"],
-        hist_config["free_running"],
-        float(hist_config["dead_time_s"]),
+        histogrammer.n_pulses,
+        histogrammer.n_bins,
+        histogrammer.free_running,
+        histogrammer.dead_time_s,
     )
 
     return transients, arrival_rates, ewh_list
@@ -124,19 +92,16 @@ def compute_rmse(pred, gt):
 if __name__ == "__main__":
     ## Setting simulation parameters
 
-    root = Path("examples/renders/scene1/")  # changed by BHUYASHI
+    root = Path("examples/renders/scene1/")
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device = "cpu"
     requires_grad = False
     start_idx = 0
     num_frames = 1
     data_dir = "data"
-    config_path = "visionsim/emulate/aspc/config_diff_ewh_bh.yaml"  # changed by BHUYASHI
+    config_path = "visionsim/emulate/aspc/examples/config_diff_ewh.yaml"
 
     # Load config
-    # with open(config_path, "r") as f:
-    #     config = yaml.safe_load(f)
-    # added by BHUYASHI
     yaml = YAML()
     safe_builtins = {"__builtins__": {"list": list, "dict": dict, "tuple": tuple}, "np": np, "math": math}
     yaml.Constructor.add_constructor(tag="!Quantity", constructor=ureg_constructor(ureg.Quantity))
@@ -149,62 +114,36 @@ if __name__ == "__main__":
 
     # Active source
     active_config = config["active_source"]["pulsed_laser"]
-    # active_source = PulsedLaser(
-    #     wavelength=float(active_config['wavelength']) * ureg.nanometer,
-    #     frequency=float(active_config['frequency']) * ureg.hertz,
-    #     pulse_width=float(active_config['pulse_width']) * ureg.second,
-    #     avg_watts=float(active_config['avg_watts']) * ureg.watt,
-    #     pulse_shape=active_config['pulse_shape'],
-    #     pulse_shape_custom=active_config['pulse_shape_custom']
-    # )
-    # added by BHUYASHI
     active_enable = active_config.pop("enabled")
     if active_enable:
         active_source = PulsedLaser(**active_config)
 
-    bin_width = 2 * tof2depth(1 / active_source.frequency) / config["histogrammer"]["n_bins"]
-    _, irf = active_source.get_kernel(bin_width)
-    # print("irf", irf)
-    irf_tensor_gt = torch.tensor(irf, dtype=float, device=device)
-    # irf_tensor_gt = torch.tensor(irf, dtype=torch.float32, device=device)
-
-    active_source.plot_kernel(bin_width)
-
     # Ambient source
     ambient_config = config["ambient_source"]["sun"]
-    # ambient_source = Sun(
-    #     intensity=float(ambient_config['intensity']) * ureg.watt / ureg.meter**2,
-    #     stability_factor=float(ambient_config['stability_factor']) * ureg.dimensionless,
-    #     temperature=float(ambient_config['temperature']) * ureg.kelvin,
-    #     lambda_pass=float(ambient_config['lambda_pass']) * ureg.nanometer,
-    #     delta_lambda=float(ambient_config['delta_lambda']) * ureg.nanometer,
-    #     light_conditions=get_light_conditions_from_string(ambient_config['light_conditions'])
-    # )
-    # added by BHUYASHI
     ambient_config["light_conditions"] = get_light_conditions_from_string(ambient_config["light_conditions"])
     ambient_enable = ambient_config.pop("enabled")
     if ambient_enable:
         ambient_source = Sun(**ambient_config)
 
+    # Histogrammer
+    hist_config = config["histogrammer"]
+    hist_config = HistConfig(**hist_config)
+    histogrammer = Histogrammer(hist_config)
+
     # FOV masks
     _, img_rows, img_cols = depth_frames.shape
-    empty_mask = torch.zeros((img_rows, img_cols), dtype=bool)
-    fov_masks = get_perpixel_fov_masks(empty_mask, config["histogrammer"]["pixel_fov_list"], device=device)
-    # print("fov_masks", fov_masks.shape)
+    empty_mask = torch.zeros((img_rows, img_cols), dtype=bool, device=device)
+    fov_masks = histogrammer.get_perpixel_fov_masks(empty_mask, histogrammer.pixel_fov_list, device=device)
+
+    bin_width = 2 * tof2depth(1 / active_source.frequency) / histogrammer.n_bins
+    _, irf = active_source.get_kernel(bin_width)
+    irf_tensor_gt = torch.tensor(irf, dtype=float, device=device)
+    active_source.plot_kernel(bin_width)
 
     transients, arrival_rates, ewh_list_gt = forward_pass_ewh_diff(
         albedo_frames, intensity_frames, depth_frames, active_source, ambient_source, fov_masks, config, irf_tensor_gt
     )
 
-    # plot_ewh_per_pixel(config,
-    #                 fov_masks,
-    #                 albedo_frames[0],
-    #                 depth_frames[0],
-    #                 transients,
-    #                 arrival_rates,
-    #                 ewh_list_gt)
-
-    # ewh_list_measurement = [torch.tensor(ewh1.detach().cpu().numpy(), device=device, requires_grad=True) for ewh1 in ewh_list_gt]
     ewh_list_measurement = ewh_list_gt
     ########################################################################
     requires_grad = True
@@ -214,46 +153,20 @@ if __name__ == "__main__":
     )
 
     # Active source
-    # active_config = config["active_source"]["pulsed_laser"]
-    # active_source2 = PulsedLaser(
-    #     wavelength=float(active_config["wavelength"]) * ureg.nanometer,
-    #     frequency=float(active_config["frequency"]) * ureg.hertz,
-    #     pulse_width=float(active_config["pulse_width"]) * ureg.second,
-    #     avg_watts=float(active_config["avg_watts"]) * ureg.watt,
-    #     pulse_shape=active_config["pulse_shape"],
-    #     pulse_shape_custom=active_config["pulse_shape_custom"],
-    # )
-    # active_enable = active_config.pop("enabled")
     if active_enable:
         active_source2 = PulsedLaser(**active_config)
 
-    bin_width = 2 * tof2depth(1 / active_source2.frequency) / config["histogrammer"]["n_bins"]
+    bin_width = 2 * tof2depth(1 / active_source2.frequency) / histogrammer.n_bins
     _, irf = active_source2.get_kernel(bin_width)
-    # print("irf", irf)
     irf_tensor_gt = torch.tensor(irf, dtype=float, device=device)
-    # irf_tensor_gt = torch.tensor(irf, dtype=torch.float32, device=device)
-    # print("irf_tensor_gt.dtype", irf_tensor_gt.dtype)
 
-    # Ambient source
-    # ambient_config = config["ambient_source"]["sun"]
-    # ambient_source2 = Sun(
-    #     intensity=float(ambient_config["intensity"]) * ureg.watt / ureg.meter**2,
-    #     stability_factor=float(ambient_config["stability_factor"]) * ureg.dimensionless,
-    #     temperature=float(ambient_config["temperature"]) * ureg.kelvin,
-    #     lambda_pass=float(ambient_config["lambda_pass"]) * ureg.nanometer,
-    #     delta_lambda=float(ambient_config["delta_lambda"]) * ureg.nanometer,
-    #     light_conditions=get_light_conditions_from_string(ambient_config["light_conditions"]),
-    # )
-    # ambient_config["light_conditions"] = get_light_conditions_from_string(ambient_config["light_conditions"])
-    # ambient_enable = ambient_config.pop("enabled")
     if ambient_enable:
         ambient_source2 = Sun(**ambient_config)
 
     # FOV masks
     _, img_rows, img_cols = depth_frames.shape
-    empty_mask = torch.zeros((img_rows, img_cols), dtype=bool)
-    fov_masks2 = get_perpixel_fov_masks(empty_mask, config["histogrammer"]["pixel_fov_list"], device=device)
-    # print("fov_masks", fov_masks.shape)
+    empty_mask = torch.zeros((img_rows, img_cols), dtype=bool, device=device)
+    fov_masks2 = histogrammer.get_perpixel_fov_masks(empty_mask, histogrammer.pixel_fov_list, device=device)
 
     irf_init = [0.1, 0.1, 0.1, 0.4, 0.8, 0.9, 0.9, 0.9, 0.8, 0.4, 0.1, 0.1, 0.1]
 
@@ -261,12 +174,7 @@ if __name__ == "__main__":
         torch.tensor(irf_init, device=irf_tensor_gt.device, dtype=irf_tensor_gt.dtype), requires_grad=True
     )
 
-    # requires_grad = True
-
     optimizer = optim.Adam([irf_tensor_estim], lr=0.1)
-
-    # plt.plot(irf_tensor_estim.detach().cpu().numpy())
-    # plt.show()
 
     for epoch in range(100):
         optimizer.zero_grad()
