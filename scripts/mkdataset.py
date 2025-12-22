@@ -91,7 +91,7 @@ def sample_scenes(
     return frame_starts, num_frames
 
 
-def dataclass_to_cli_args(config_instance: dataclasses.dataclass, prefix:str=""):
+def dataclass_to_cli_args(config_instance: dataclasses.dataclass, prefix: str = ""):
     args = []
     for field in dataclasses.fields(config_instance):
         value = getattr(config_instance, field.name)
@@ -120,7 +120,7 @@ def create_dataset_condor(
 ):
     """Similar to `create_datasets` but instead of rendering anything it outputs an arguments file
     and condor submit file that when submitted will run the equivalent `blender.render-animation` commands.
-    
+
     Args:
         scenes_dir (str | os.PathLike): Directory to search for blend files in (includes sub-directories 1-level deep).
             Every scene is assumed to be animated between frames 1-600.
@@ -152,21 +152,21 @@ def create_dataset_condor(
         sequence_id = f"{int(render_config.keyframe_multiplier):03}-{frame_start:05}-{frame_start + num_frames:05}"
         sequence_dir = Path(datasets_dir) / "renders" / scene_name / sequence_id
         return sequence_dir.resolve()
-    
+
     # Get CLI arguments that created current `render_config` and assert they re-parse correctly
     render_args = dataclass_to_cli_args(render_config)
     conf, _ = tyro.cli(RenderConfig, args=shlex.split(render_args), return_unknown_args=True)
     render_args = dataclass_to_cli_args(render_config, prefix="render-config.")
     assert conf == render_config
-    
+
     with open(arg_file, "w") as f:
         for blend_file, frame_start in sequences:
             sequence_dir = get_sequence_dir(blend_file.stem, frame_start)
-            
-            for start, end in itertools.pairwise(range(frame_start, frame_start + num_frames + batch_size, batch_size)): 
+
+            for start, end in itertools.pairwise(range(frame_start, frame_start + num_frames + batch_size, batch_size)):
                 end = min(end, frame_start + num_frames)
                 f.write(f"{blend_file}, {sequence_dir}, {start}, {end}\n")
-    
+
     with open(sub_file, "w") as f:
         f.write(
             dedent(f"""

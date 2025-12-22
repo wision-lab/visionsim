@@ -590,14 +590,14 @@ class BlenderService(rpyc.Service):
             Iterator[bpy.types.FCurve]: an fcurve object from the scene or action
         """
         if bpy.app.version >= (4, 4, 0):
-            for action in actions or bpy.data.actions:
+            for action in (actions or bpy.data.actions):
                 for slot in action.slots:
                     channelbag = anim_utils.action_get_channelbag_for_slot(action, slot)
 
                     for fcurve in channelbag.fcurves or []:
                         yield fcurve
         else:
-            for action in actions or bpy.data.actions:
+            for action in (actions or bpy.data.actions):
                 for fcurve in action.fcurves or []:
                     yield fcurve
 
