@@ -30,9 +30,5 @@ def tform_camcoord_gl2bl(T_bl_gl: npt.NDArray) -> npt.NDArray:
     Returns:
         T_bl_bl (np.NDArray): also 4 x 4, but represents only pose in Blender's convention
     """
-    M_gl_bl = np.array([[1.0, 0.0, 0.0, 0.0],
-                        [0.0, 0.0, 1.0, 0.0],
-                        [0.0, -1.0, 0.0, 0.0],
-                        [0.0, 0.0, 0.0, 1.0]])
+    M_gl_bl = np.array([[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, -1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]])
     return T_bl_gl @ M_gl_bl
-

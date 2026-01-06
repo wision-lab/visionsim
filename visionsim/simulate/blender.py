@@ -17,13 +17,9 @@ from multiprocessing import Process
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-import numpy as np
-import rpyc  # type: ignore
-import rpyc.utils.registry  # type: ignore
-
+# Import only when type checking as to not introduce
+# dependency for blender. Block module typechecking.
 if TYPE_CHECKING:
-    # Import only when type checking as to not introduce
-    # dependency for blender. Block module typechecking.
     from collections.abc import Callable, Collection, Iterable, Iterator
     from types import TracebackType
 
@@ -37,36 +33,47 @@ if TYPE_CHECKING:
     T = TypeVar("T")
     P = ParamSpec("P")
 
+# These are blender specific modules which aren't easily installed but
+# are loaded in when this script is ran from blender.
 try:
-    # These are blender specific modules which aren't easily installed but
-    # are loaded in when this script is ran from blender.
     import addon_utils  # type: ignore
     import bpy  # type: ignore
     import mathutils  # type: ignore
     from bpy_extras import anim_utils  # type: ignore
+except ImportError:
+    addon_utils = None
+    bpy = None
+    mathutils = None
 
-    # Allow relative imports to this file without forcing the user to
-    # install visionsim into their blender install
-    sys.path.insert(0, str(Path(__file__).parent.resolve()))
-    from .compat import file_output_node
-    from .nodes import (  # type: ignore
+# These are also only needed when ran from blender, but they are separated
+# out as we use `bpy is None` as a quick check to see if within blender and
+# these might fail independently.
+try:
+    from visionsim.simulate.compat import file_output_node
+    from visionsim.simulate.nodes import (  # type: ignore
         flowdebug_node_group,
         normaldebug_node_group,
         segmentationdebug_node_group,
         vec2rgba_node_group,
     )
 except ImportError:
-    addon_utils = None
-    bpy = None
-    mathutils = None
+    if bpy is not None:
+        raise RuntimeError("Blender dependencies are missing, please run the post install script.")
 
+# Nice to haves, but not always required
+try:
+    from rich.logging import RichHandler
+
+    handlers = [RichHandler(level="NOTSET")]
+except ImportError:
+    handlers = []
+
+import numpy as np
+import rpyc  # type: ignore
+import rpyc.utils.registry  # type: ignore
 
 # Enable server-side logging
-logging.basicConfig(
-    level=logging.WARNING,
-    format="%(message)s",
-    datefmt="[%X]",
-)
+logging.basicConfig(level=logging.WARNING, format="%(message)s", datefmt="[%X]", handlers=handlers)
 server_log: logging.Logger = logging.getLogger(__name__)
 server_log.setLevel(logging.INFO)
 
@@ -590,14 +597,14 @@ class BlenderService(rpyc.Service):
             Iterator[bpy.types.FCurve]: an fcurve object from the scene or action
         """
         if bpy.app.version >= (4, 4, 0):
-            for action in (actions or bpy.data.actions):
+            for action in actions or bpy.data.actions:
                 for slot in action.slots:
                     channelbag = anim_utils.action_get_channelbag_for_slot(action, slot)
 
                     for fcurve in channelbag.fcurves or []:
                         yield fcurve
         else:
-            for action in (actions or bpy.data.actions):
+            for action in actions or bpy.data.actions:
                 for fcurve in action.fcurves or []:
                     yield fcurve
 

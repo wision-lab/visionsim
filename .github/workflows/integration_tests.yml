@@ -8,7 +8,6 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # python-version: ["3.8", "3.9", "3.10", "3.11"]
         python-version: ["3.10"]
 
     steps:
@@ -22,22 +21,40 @@ jobs:
           python -m pip install --upgrade pip
           pip install ruff
           ruff check --extend-select I tasks.py visionsim/ tests/
-      - name: Install FFmpeg
+      - name: Install Act dependencies
+        if: ${{ env.ACT }}
+        run: |
+          export BLENDER_MAJOR=3.3
+          export BLENDER_VERSION=3.3.1
+          export BLENDER_URL=https://mirror.freedif.org/blender/release/Blender${BLENDER_MAJOR}/blender-${BLENDER_VERSION}-linux-x64.tar.xz
+          export BLENDER_ZIP=blender-${BLENDER_VERSION}-linux-x64.tar.xz
+
+          apt-get update && apt-get install sudo -y
+          sudo apt-get update -y
+          sudo apt-get install -y lsb-release
+          sudo apt-get install -y tar xz-utils git ffmpeg wget nano bzip2 
+          sudo apt-get install -y --no-install-recommends --fix-missing libxi6 libxkbcommon-x11-0 libglfw3-dev libgles2-mesa-dev libsm6
+
+          wget ${BLENDER_URL}
+          tar -xvf ${BLENDER_ZIP} && rm ${BLENDER_ZIP}
+          mv blender-${BLENDER_VERSION}-linux-x64 /usr/local/blender
+
+          echo "PATH=$PATH:/usr/local/blender/" >> $GITHUB_ENV
+      - name: Install Blender & FFmpeg
+        if: ${{ !env.ACT }}
         run: |
           sudo snap install ffmpeg
-          ffmpeg -version
-      - name: Install Blender
-        run: |
           sudo snap install blender --classic --channel=3.3lts/stable
+          ffmpeg -version
           blender --version
       - name: Install VisionSim and dependencies
         run: |
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install . --group dev
+          pip install -e . --group dev
           vsim post-install --editable
       - name: Build Docs
         run : |
           inv build-docs
       - name: Run Tests
         run: |
-          pytest --durations=0
+          pytest --durations=0 -s

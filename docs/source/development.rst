@@ -27,6 +27,15 @@ The ``-rP`` option is also helpful for seeing any stdout messages that are other
 
 | 
 
+Running CI Locally
+------------------
+
+You can run the CI locally using the `ACT CLI <https://github.com/nektos/act>`_, or use it's `vscode extension <https://sanjulaganepola.github.io/github-local-actions-docs/>`_ as a front end. Using the CLI, you can run all workflows that trigger on a push using `act push`. The following command will run the workflows and, if they fail, open an interactive shell into the latest container::
+    
+    $ act push || docker exec -it `docker ps -q | head -n1` bash  
+
+|
+
 Building the Documentation
 --------------------------
 
