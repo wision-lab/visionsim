@@ -21,6 +21,7 @@ from visionsim.types import UpdateFn
 
 T = TypeVar("T")
 P = ParamSpec("P")
+handlers: Iterable[logging.Handler] | None
 server_log: logging.Logger
 EXPOSED_PREFIX: str
 REGISTRY: tuple[Process, rpyc.utils.registry.UDPRegistryClient] | None

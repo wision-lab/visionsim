@@ -9,9 +9,13 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.10"]
+        blender-version: ["3.3.21", "5.0.1"]
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code using Blender ${{ matrix.blender-version }}
+        uses: actions/checkout@v4
+        with:
+          blender-version: ${{ matrix.blender-version }}
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
@@ -24,8 +28,8 @@ jobs:
       - name: Install Act dependencies
         if: ${{ env.ACT }}
         run: |
-          export BLENDER_MAJOR=3.3
-          export BLENDER_VERSION=3.3.1
+          export BLENDER_VERSION=${{ matrix.blender-version }}
+          export BLENDER_MAJOR=$(echo $BLENDER_VERSION | cut -d . -f -2)
           export BLENDER_URL=https://mirror.freedif.org/blender/release/Blender${BLENDER_MAJOR}/blender-${BLENDER_VERSION}-linux-x64.tar.xz
           export BLENDER_ZIP=blender-${BLENDER_VERSION}-linux-x64.tar.xz
 
@@ -43,8 +47,10 @@ jobs:
       - name: Install Blender & FFmpeg
         if: ${{ !env.ACT }}
         run: |
+          export BLENDER_VERSION=${{ matrix.blender-version }}
+          export SNAP_CHANNEL=$(snap info blender | grep $BLENDER_VERSION | head -n 1 | cut -d : -f 1 | tr -d ' ')
           sudo snap install ffmpeg
-          sudo snap install blender --classic --channel=3.3lts/stable
+          sudo snap install blender --classic --channel=$SNAP_CHANNEL
           ffmpeg -version
           blender --version
       - name: Install VisionSim and dependencies

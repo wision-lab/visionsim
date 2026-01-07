@@ -51,6 +51,7 @@ def render_animation(
     render_config: RenderConfig,
     frame_start: int | None = None,
     frame_end: int | None = None,
+    output_blend_file: str | os.PathLike | None = None,
     dry_run: bool = False,
 ):
     """Create datasets by rendering out a sequence from a _single_ blend-file.
@@ -61,6 +62,8 @@ def render_animation(
         render_config (RenderConfig): Render configuration.
         frame_start (int): Start rendering at this frame index (inclusive).
         frame_end (int): Stop rendering at this frame index (inclusive).
+        output_blend_file (str | os.PathLike | None, optional): If set, write the modified blend file to
+            this path. Helpful for troubleshooting. Defaults to not saving.
         dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
     """
     from visionsim.cli import _log, _run  # avoid circular import
@@ -73,6 +76,7 @@ def render_animation(
 
     root_path = Path(root_path).resolve()
     root_path.mkdir(parents=True, exist_ok=True)
+    output_blend_file = Path(output_blend_file).resolve() if output_blend_file else None
 
     if render_config.autoscale:
         if not torch.cuda.is_available():
@@ -113,6 +117,7 @@ def render_animation(
             frame_start=frame_start,
             frame_end=frame_end,
             config=render_config,
+            output_blend_file=output_blend_file,
             dry_run=dry_run,
             update_fn=partial(progress.update, task),
         )

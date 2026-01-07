@@ -64,9 +64,9 @@ except ImportError:
 try:
     from rich.logging import RichHandler
 
-    handlers = [RichHandler(level="NOTSET")]
+    handlers: Iterable[logging.Handler] | None = [RichHandler(level="NOTSET")]
 except ImportError:
-    handlers = []
+    handlers: Iterable[logging.Handler] | None = None
 
 import numpy as np
 import rpyc  # type: ignore
@@ -555,15 +555,15 @@ class BlenderService(rpyc.Service):
         self.normal_path: bpy.types.CompositorNodeOutputFile | None = None
         self.flow_path: bpy.types.CompositorNodeOutputFile | None = None
         self.segmentation_path: bpy.types.CompositorNodeOutputFile | None = None
-        self.depth_extension = ".exr"
+        self.depth_extension: str = ".exr"
         self.unbind_camera: bool = False
         self.use_animation: bool = True
-        self.initialized = True
+        self.initialized: bool = True
 
         # Ensure we are using the compositor, and node tree.
         if bpy.app.version >= (5, 0, 0):
-            tree = bpy.data.node_groups.new("My new comp", "CompositorNodeTree")
-            self.scene.compositing_node_group = tree
+            bpy.ops.node.new_compositing_node_group(name="Compositor Nodes")
+            self.scene.compositing_node_group = bpy.data.node_groups["Compositor Nodes"]
         else:
             self.scene.use_nodes = True
         self.scene.render.use_compositing = True
