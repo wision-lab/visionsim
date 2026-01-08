@@ -38,7 +38,7 @@ dependencies = [
     "rpyc",
     "fastdigest",
     "tyro",
-    "ephemeral-port-reserve"
+    "ephemeral-port-reserve",
 ]
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
@@ -71,7 +71,7 @@ dev = [
     "pytest",
     "ruff",
     "sphinx",
-    "sphinxcontrib-programoutput >= 0.18",
+    "sphinxcontrib-programoutput>=0.18",
     "click_extra[sphinx,pygments]",
     "sphinx-copybutton",
     "sphinxcontrib-video",
@@ -79,5 +79,5 @@ dev = [
     "furo",
     "types-jsonschema",
     'scipy-stubs; python_version >= "3.10"',
-    "psutil"
+    "psutil",
 ]
