@@ -28,7 +28,6 @@ dependencies = [
     "matplotlib",
     "scipy",
     "invoke",
-    "tqdm",
     "natsort",
     "rich",
     "jsonschema",
@@ -70,6 +69,13 @@ dev = [
     "pre-commit",
     "pytest",
     "ruff",
+    "types-jsonschema",
+    'scipy-stubs; python_version >= "3.10"',
+    "psutil",
+]
+docs = [
+    "invoke",
+    "rich",
     "sphinx",
     "sphinxcontrib-programoutput>=0.18",
     "click_extra[sphinx,pygments]",
@@ -77,7 +83,4 @@ dev = [
     "sphinxcontrib-video",
     "sphinxcontrib-napoleon",
     "furo",
-    "types-jsonschema",
-    'scipy-stubs; python_version >= "3.10"',
-    "psutil",
 ]
