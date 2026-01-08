@@ -1,0 +1,28 @@
+name: Build Docs
+
+on: [push]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.13"]
+
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Lint with ruff
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+          ruff check --extend-select I tasks.py visionsim/ tests/
+      - name: Build Docs
+        run : |
+          pip install --group dev --group docs
+          inv build-docs

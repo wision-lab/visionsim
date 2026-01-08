@@ -1,4 +1,4 @@
-name: CLI Installation
+name: Run Tests
 
 on: [push]
 
@@ -9,23 +9,16 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.10"]
-        blender-version: ["3.3.21", "5.0.1"]
+        blender-version: ["3.3.21", "4.5.5", "5.0.1"]
 
     steps:
-      - name: Checkout code using Blender ${{ matrix.blender-version }}
+      - name: Checkout Codebase
         uses: actions/checkout@v4
-        with:
-          blender-version: ${{ matrix.blender-version }}
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Lint with ruff
-        run: |
-          python -m pip install --upgrade pip
-          pip install ruff
-          ruff check --extend-select I tasks.py visionsim/ tests/
-      - name: Install Act dependencies
+      - name: Install Blender ${{ matrix.blender-version }} & FFmpeg
         if: ${{ env.ACT }}
         run: |
           export BLENDER_VERSION=${{ matrix.blender-version }}
@@ -44,7 +37,7 @@ jobs:
           mv blender-${BLENDER_VERSION}-linux-x64 /usr/local/blender
 
           echo "PATH=$PATH:/usr/local/blender/" >> $GITHUB_ENV
-      - name: Install Blender & FFmpeg
+      - name: Install Blender ${{ matrix.blender-version }} & FFmpeg
         if: ${{ !env.ACT }}
         run: |
           export BLENDER_VERSION=${{ matrix.blender-version }}
@@ -56,11 +49,8 @@ jobs:
       - name: Install VisionSim and dependencies
         run: |
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install -e . --group dev --group docs
+          pip install -e . --group dev 
           vsim post-install --editable
-      - name: Build Docs
-        run : |
-          inv build-docs
       - name: Run Tests
         run: |
           pytest --durations=0 -s
