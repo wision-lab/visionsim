@@ -318,7 +318,8 @@ class BlenderServer(rpyc.utils.server.Server):
                 port = port_reserve("localhost") if timeout < 0 else 0
                 autoexec_cmd = "--enable-autoexec" if autoexec else "--disable-autoexec"
                 cmd = shlex.split(
-                    f"{executable or 'blender'} -b {autoexec_cmd} --python-use-system-env --python {__file__} -- --port {port}"
+                    f"{executable or 'blender'} -b {autoexec_cmd} --python-use-system-env "
+                    f"--python {Path(__file__).as_posix()} -- --port {port}"
                 )
 
                 if log_dir_path:
