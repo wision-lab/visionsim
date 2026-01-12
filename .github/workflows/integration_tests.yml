@@ -4,13 +4,12 @@ on: [push]
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         python-version: ["3.10"]
-        blender-version: ["3.3.21", "4.5.5", "5.0.1"]
-
+        blender-version: ["3.3", "4.5", "latest"]
+        os: ["macos-latest", "ubuntu-latest", "windows-latest"]
     steps:
       - name: Checkout Codebase
         uses: actions/checkout@v4
@@ -18,37 +17,28 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install Blender ${{ matrix.blender-version }} & FFmpeg
+      - name: Install ACT dependencies
         if: ${{ env.ACT }}
         run: |
-          export BLENDER_VERSION=${{ matrix.blender-version }}
-          export BLENDER_MAJOR=$(echo $BLENDER_VERSION | cut -d . -f -2)
-          export BLENDER_URL=https://mirror.freedif.org/blender/release/Blender${BLENDER_MAJOR}/blender-${BLENDER_VERSION}-linux-x64.tar.xz
-          export BLENDER_ZIP=blender-${BLENDER_VERSION}-linux-x64.tar.xz
-
           apt-get update && apt-get install sudo -y
           sudo apt-get update -y
           sudo apt-get install -y lsb-release
           sudo apt-get install -y tar xz-utils git ffmpeg wget nano bzip2 
           sudo apt-get install -y --no-install-recommends --fix-missing libxi6 libxkbcommon-x11-0 libglfw3-dev libgles2-mesa-dev libsm6
-
-          wget ${BLENDER_URL}
-          tar -xvf ${BLENDER_ZIP} && rm ${BLENDER_ZIP}
-          mv blender-${BLENDER_VERSION}-linux-x64 /usr/local/blender
-
-          echo "PATH=$PATH:/usr/local/blender/" >> $GITHUB_ENV
-      - name: Install Blender ${{ matrix.blender-version }} & FFmpeg
-        if: ${{ !env.ACT }}
-        run: |
-          export BLENDER_VERSION=${{ matrix.blender-version }}
-          export SNAP_CHANNEL=$(snap info blender | grep $BLENDER_VERSION | head -n 1 | cut -d : -f 1 | tr -d ' ')
-          sudo snap install ffmpeg
-          sudo snap install blender --classic --channel=$SNAP_CHANNEL
-          ffmpeg -version
+      - name: Install Blender
+        uses: bradyajohnston/setup-blender@v5
+        with:
+          version: ${{ matrix.blender-version }}
+      - name: Install ffmpeg
+        uses: federicocarboni/setup-ffmpeg@v3
+      - name: Check Dependencies 
+        run: | 
           blender --version
+          ffmpeg -version 
       - name: Install VisionSim and dependencies
         run: |
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          # Force torch to use CPU
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu 
           pip install -e . --group dev 
           vsim post-install --editable
       - name: Run Tests
