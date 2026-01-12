@@ -30,7 +30,7 @@ jobs:
         with:
           version: ${{ matrix.blender-version }}
       - name: Install ffmpeg
-        uses: federicocarboni/setup-ffmpeg@v3
+        uses: AnimMouse/setup-ffmpeg@v1
       - name: Check Dependencies 
         run: | 
           blender --version
