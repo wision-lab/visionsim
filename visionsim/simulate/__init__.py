@@ -22,5 +22,9 @@ def install_dependencies(
             visionsim is already installed as editable locally.
     """
     cmd = f"{executable or 'blender'} -b --python-use-system-env --python '{install.__file__}' -- "
-    cmd += f"--version={visionsim.__version__}" if not editable else f"--editable='{Path(visionsim.__path__[0]).parent.as_posix()}'"
+    cmd += (
+        f"--version={visionsim.__version__}"
+        if not editable
+        else f"--editable='{Path(visionsim.__path__[0]).parent.as_posix()}'"
+    )
     return subprocess.run(shlex.split(cmd), stdout=sys.stdout, stderr=subprocess.STDOUT, universal_newlines=True)

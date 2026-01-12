@@ -42,7 +42,7 @@ if __name__ == "__main__":
     ]
 
     try:
-        print("Attempting to auto install dependencies into blender's runtime...")
+        print("Attempting to auto install dependencies into blender's runtime...", flush=True)
         outputs = [
             subprocess.run(shlex.split(cmd), stdout=sys.stdout, stderr=subprocess.STDOUT, universal_newlines=True)
             for cmd in commands
