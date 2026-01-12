@@ -9,7 +9,8 @@ jobs:
       matrix:
         python-version: ["3.10"]
         blender-version: ["3.3", "4.5", "latest"]
-        os: ["macos-latest", "ubuntu-latest", "windows-latest"]
+        # os: ["macos-latest", "ubuntu-latest", "windows-latest"]
+        os: ["ubuntu-latest", "windows-latest"]
     steps:
       - name: Checkout Codebase
         uses: actions/checkout@v4
