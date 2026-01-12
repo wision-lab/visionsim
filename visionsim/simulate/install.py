@@ -32,7 +32,7 @@ if __name__ == "__main__":
     group.add_argument("--editable", type=str)
     args, unknown = parser.parse_known_args(sys.argv[index:])
 
-    module_spec = f"visionsim=={args.version}" if args.version else f"--editable {args.editable}"
+    module_spec = f"visionsim=={args.version}" if args.version else f"--editable '{args.editable}'"
     commands = [
         f"{sys.executable} -m ensurepip",
         f"{sys.executable} -m pip install -U pip",
@@ -42,12 +42,11 @@ if __name__ == "__main__":
 
     try:
         print("Attempting to auto install dependencies into blender's runtime...")
-        print("\n".join(commands))
         outputs = [
             subprocess.run(shlex.split(cmd), stdout=sys.stdout, stderr=subprocess.STDOUT, universal_newlines=True)
             for cmd in commands
         ]
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, FileNotFoundError):
         print(
             "Some dependencies are needed to run this script. To install it so that "
             "it is accessible from blender, you need to pip install it "
@@ -55,3 +54,4 @@ if __name__ == "__main__":
         )
         for cmd in commands:
             print("$", cmd)
+        raise
