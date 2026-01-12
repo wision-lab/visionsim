@@ -2,6 +2,7 @@ import argparse
 import shlex
 import subprocess
 import sys
+from pathlib import Path
 
 try:
     # These are blender specific modules which aren't easily installed but
@@ -34,10 +35,10 @@ if __name__ == "__main__":
 
     module_spec = f"visionsim=={args.version}" if args.version else f"--editable '{args.editable}'"
     commands = [
-        f"{sys.executable} -m ensurepip",
-        f"{sys.executable} -m pip install -U pip",
-        f"{sys.executable} -m pip install rpyc",
-        f"{sys.executable} -m pip install --no-warn-script-location --force-reinstall --no-dependencies --verbose {module_spec}",
+        f"{Path(sys.executable).as_posix()} -m ensurepip",
+        f"{Path(sys.executable).as_posix()} -m pip install -U pip",
+        f"{Path(sys.executable).as_posix()} -m pip install rpyc",
+        f"{Path(sys.executable).as_posix()} -m pip install --no-warn-script-location --force-reinstall --no-dependencies --verbose {module_spec}",
     ]
 
     try:
