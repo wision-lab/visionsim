@@ -26,6 +26,10 @@ jobs:
           sudo apt-get install -y lsb-release
           sudo apt-get install -y tar xz-utils git ffmpeg wget nano bzip2 
           sudo apt-get install -y --no-install-recommends --fix-missing libxi6 libxkbcommon-x11-0 libglfw3-dev libgles2-mesa-dev libsm6
+      # See: https://projects.blender.org/blender/blender/issues/126109
+      - name: Fix Blender pre-4.4 issue on Windows
+        if: ${{ (matrix.os == 'windows-latest') && (matrix.blender-version == '3.3') }}
+        run: set TBB_MALLOC_DISABLE_REPLACEMENT=1
       - name: Install Blender
         uses: bradyajohnston/setup-blender@v5
         with:
