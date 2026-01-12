@@ -21,31 +21,35 @@ jobs:
       - name: Install ACT dependencies
         if: ${{ env.ACT }}
         run: |
+          # Update docker image
           apt-get update && apt-get install sudo -y
           sudo apt-get update -y
+
+          # Packages needed for blender
           sudo apt-get install -y lsb-release
           sudo apt-get install -y tar xz-utils git ffmpeg wget nano bzip2 
           sudo apt-get install -y --no-install-recommends --fix-missing libxi6 libxkbcommon-x11-0 libglfw3-dev libgles2-mesa-dev libsm6
-      # See: https://projects.blender.org/blender/blender/issues/126109
-      - name: Fix Blender pre-4.4 issue on Windows
-        if: ${{ (matrix.os == 'windows-latest') && (matrix.blender-version == '3.3') }}
-        run: set TBB_MALLOC_DISABLE_REPLACEMENT=1
+
+          # Install ffmpeg directly as the setup-ffmpeg needs to interact with the gh cli and have access to gh tokens
+          sudo apt-get install -y ffmpeg
+      - name: Install ffmpeg
+        if: ${{ !env.ACT }}
+        uses: AnimMouse/setup-ffmpeg@v1
       - name: Install Blender
         uses: bradyajohnston/setup-blender@v5
         with:
           version: ${{ matrix.blender-version }}
-      - name: Install ffmpeg
-        uses: AnimMouse/setup-ffmpeg@v1
-      - name: Check Dependencies 
-        run: | 
-          blender --version
-          ffmpeg -version 
       - name: Install VisionSim and dependencies
         run: |
           # Force torch to use CPU
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu 
           pip install -e . --group dev 
           vsim post-install --editable
+      - name: Check Dependencies 
+        run: | 
+          blender --version
+          blender --background --python-use-system-env --python-expr "import visionsim"
+          ffmpeg -version 
       - name: Run Tests
         run: |
           pytest --durations=0 -s
