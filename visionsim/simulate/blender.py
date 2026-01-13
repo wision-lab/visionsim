@@ -291,12 +291,11 @@ class BlenderServer(rpyc.utils.server.Server):
 
             finally:
                 for p in procs:
-                    # We need to send two CTRL+C events to blender to kill it
+                    # We need to send two CTRL+C events to blender to kill it, but only one on windows
                     if platform.system() != "Windows":
                         p.send_signal(signal.SIGINT)
                         p.send_signal(signal.SIGINT)
                     else:
-                        p.send_signal(signal.CTRL_C_EVENT)
                         p.send_signal(signal.CTRL_C_EVENT)
 
                 for p in procs:
