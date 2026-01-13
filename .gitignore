@@ -119,7 +119,6 @@ examples/logs/
 examples/renders/
 examples/*.blend*
 examples/quickstart/
-condor/
-condor*
-poster/
-poolexample.py 
+docs/source/_build/
+examples/assets/
+uv.lock

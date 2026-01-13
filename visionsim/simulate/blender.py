@@ -27,12 +27,11 @@ if TYPE_CHECKING:
     import multiprocess  # type: ignore
     import multiprocess.pool  # type: ignore
     import numpy.typing as npt
-    from typing_extensions import Any, Concatenate, ParamSpec, Self, TypeVar
+    from typing_extensions import Any, Concatenate, ParamSpec, Self
 
-    from visionsim.types import UpdateFn
+    from visionsim.types import UpdateFn, type_check_only  # noqa
 
-    T = TypeVar("T")
-    P = ParamSpec("P")
+    _P = ParamSpec("_P")
 
 # These are blender specific modules which aren't easily installed but
 # are loaded in when this script is ran from blender.
@@ -67,7 +66,7 @@ try:
 
     handlers: Iterable[logging.Handler] | None = [RichHandler(level="NOTSET")]
 except ImportError:
-    handlers: Iterable[logging.Handler] | None = None
+    handlers = None
 
 import numpy as np
 import rpyc  # type: ignore
@@ -83,22 +82,22 @@ REGISTRY: tuple[Process, rpyc.utils.registry.UDPRegistryClient] | None = None
 
 
 def require_connected_client(
-    func: Callable[Concatenate[BlenderClient, P], T],
-) -> Callable[Concatenate[BlenderClient, P], T]:
+    func: Callable[Concatenate[BlenderClient, _P], Any],
+) -> Callable[Concatenate[BlenderClient, _P], Any]:
     """Decorator which ensures a client is connected.
 
     Args:
-        func (Callable[Concatenate[BlenderClient, P], T]): Function to decorate
+        func (Callable[Concatenate[BlenderClient, P], Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if client is not connected.
 
     Returns:
-        Callable[Concatenate[BlenderClient, P], T]: Decorated function.
+        Callable[Concatenate[BlenderClient, P], Any]: Decorated function.
     """
 
     @functools.wraps(func)
-    def _decorator(self: BlenderClient, *args: P.args, **kwargs: P.kwargs) -> T:
+    def _decorator(self: BlenderClient, *args: _P.args, **kwargs: _P.kwargs) -> Any:
         if self.conn is None:
             raise RuntimeError(
                 f"'BlenderClient' must be connected to a server instance before calling '{func.__name__}'"
@@ -109,22 +108,22 @@ def require_connected_client(
 
 
 def require_connected_clients(
-    func: Callable[Concatenate[BlenderClients, P], T],
-) -> Callable[Concatenate[BlenderClients, P], T]:
+    func: Callable[Concatenate[BlenderClients, _P], Any],
+) -> Callable[Concatenate[BlenderClients, _P], Any]:
     """Decorator which ensures all clients are connected.
 
     Args:
-        func (Callable[Concatenate[BlenderClients, P], T]): Function to decorate
+        func (Callable[Concatenate[BlenderClients, P], Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if at least one client is not connected.
 
     Returns:
-        Callable[Concatenate[BlenderClients, P], T]: Decorated function.
+        Callable[Concatenate[BlenderClients, P], Any]: Decorated function.
     """
 
     @functools.wraps(func)
-    def _decorator(self: BlenderClients, *args: P.args, **kwargs: P.kwargs):
+    def _decorator(self: BlenderClients, *args: _P.args, **kwargs: _P.kwargs) -> Any:
         if any(c.conn is None for c in self):
             raise RuntimeError(
                 f"All client instances in 'BlenderClients' must be connected before calling '{func.__name__}'"
@@ -135,22 +134,22 @@ def require_connected_clients(
 
 
 def require_initialized_service(
-    func: Callable[Concatenate[BlenderService, P], T],
-) -> Callable[Concatenate[BlenderService, P], T]:
+    func: Callable[Concatenate[BlenderService, _P], Any],
+) -> Callable[Concatenate[BlenderService, _P], Any]:
     """Decorator which ensures the render service was initialized.
 
     Args:
-        func (Callable[Concatenate[BlenderService, P], T]): Function to decorate
+        func (Callable[Concatenate[BlenderService, P], Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if :meth:`client.initialize <BlenderService.exposed_initialize>` has not been previously called.
 
     Returns:
-        Callable[Concatenate[BlenderService, P], T]: Decorated function.
+        Callable[Concatenate[BlenderService, P], Any]: Decorated function.
     """
 
     @functools.wraps(func)
-    def _decorator(self: BlenderService, *args: P.args, **kwargs: P.kwargs):
+    def _decorator(self: BlenderService, *args: _P.args, **kwargs: _P.kwargs) -> Any:
         if not self.initialized:
             raise RuntimeError(f"'BlenderService' must be initialized before calling '{func.__name__}'")
         return func(self, *args, **kwargs)
@@ -159,19 +158,19 @@ def require_initialized_service(
 
 
 def validate_camera_moved(
-    func: Callable[Concatenate[BlenderService, P], T],
-) -> Callable[Concatenate[BlenderService, P], T]:
+    func: Callable[Concatenate[BlenderService, _P], Any],
+) -> Callable[Concatenate[BlenderService, _P], Any]:
     """Decorator which emits a warning if the camera was not moved.
 
     Args:
-        func (Callable[Concatenate[BlenderService, P], T]): Function to decorate
+        func (Callable[Concatenate[BlenderService, P], Any]): Function to decorate
 
     Returns:
-        Callable[Concatenate[BlenderService, P], T]: Decorated function.
+        Callable[Concatenate[BlenderService, P], Any]: Decorated function.
     """
 
     @functools.wraps(func)
-    def _decorator(self: BlenderService, *args: P.args, **kwargs: P.kwargs):
+    def _decorator(self: BlenderService, *args: _P.args, **kwargs: _P.kwargs) -> Any:
         prev_matrix = np.array(self.camera.matrix_world.copy())
         retval = func(self, *args, **kwargs)
         post_matrix = np.array(self.camera.matrix_world.copy())
@@ -420,7 +419,7 @@ class BlenderService(rpyc.Service):
             raise RuntimeError(f"{type(self).__name__} needs to be instantiated from within blender's python runtime.")
         self._conn: rpyc.Connection | None = None
         self.log: logging.Logger = server_log
-        self.initialized = False
+        self.initialized: bool = False
 
     def _clear_cached_properties(self) -> None:
         # Based on: https://stackoverflow.com/a/71579485
@@ -561,7 +560,7 @@ class BlenderService(rpyc.Service):
         self.depth_extension: str = ".exr"
         self.unbind_camera: bool = False
         self.use_animation: bool = True
-        self.initialized: bool = True
+        self.initialized = True
 
         # Ensure we are using the compositor, and node tree.
         if bpy.app.version >= (5, 0, 0):

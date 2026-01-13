@@ -89,6 +89,11 @@ def test(c):
 
 
 @task
+def test_stubs(c):
+    _run(c, "stubtest visionsim.simulate.blender --concise")
+
+
+@task
 def precommit(c):
     """Run pre-commit hooks"""
     _run(c, "pre-commit run --all-files")
@@ -165,7 +170,7 @@ def generate_stubs(c):
     # Stubgen/stubtest is provided by mypy
     source_path = "visionsim/simulate/blender.py"
     stub_path = "visionsim/simulate/blender.pyi"
-    _run(c, f"stubgen {source_path} --include-docstrings -o .")
+    _run(c, f"stubgen {source_path} --include-docstrings --include-private -o .")
 
     class FixStub(ast.NodeTransformer):
         def __init__(self, path, ignores_from: str | None = None):
@@ -216,6 +221,7 @@ def generate_stubs(c):
 
                         if name not in methods:
                             child = copy.deepcopy(child)
+                            child.decorator_list = [ast.Name(id="type_check_only", ctx=ast.Load())]
                             child.name = name
 
                             if node.name == "BlenderClients":
@@ -247,8 +253,8 @@ def generate_stubs(c):
         f.write(code)
 
     _run(c, f"ruff check --select I --fix {stub_path}")
+    _run(c, f"ruff check --extend-select I --fix {stub_path}")
     _run(c, f"ruff format {stub_path}")
-    # _run(c, "stubtest visionsim.simulate.blender --concise")
 
 
 @task

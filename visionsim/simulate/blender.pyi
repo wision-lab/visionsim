@@ -1,6 +1,7 @@
 import functools
 import logging
 import os
+import socket
 import subprocess
 from collections.abc import Callable, Collection, Iterable, Iterator
 from contextlib import ExitStack, contextmanager
@@ -15,72 +16,71 @@ import numpy.typing as npt
 import rpyc  # type: ignore
 import rpyc.utils  # type: ignore
 import rpyc.utils.registry  # type: ignore
-from typing_extensions import Any, Concatenate, ParamSpec, Self, TypeVar
+from typing_extensions import Any, Concatenate, ParamSpec, Self
 
-from visionsim.types import UpdateFn
+from visionsim.types import UpdateFn, type_check_only
 
-T = TypeVar("T")
-P = ParamSpec("P")
+_P = ParamSpec("_P")
 handlers: Iterable[logging.Handler] | None
 server_log: logging.Logger
 EXPOSED_PREFIX: str
 REGISTRY: tuple[Process, rpyc.utils.registry.UDPRegistryClient] | None
 
 def require_connected_client(
-    func: Callable[Concatenate[BlenderClient, P], T],
-) -> Callable[Concatenate[BlenderClient, P], T]:
+    func: Callable[Concatenate[BlenderClient, _P], Any],
+) -> Callable[Concatenate[BlenderClient, _P], Any]:
     """Decorator which ensures a client is connected.
 
     Args:
-        func (Callable[Concatenate[BlenderClient, P], T]): Function to decorate
+        func (Callable[Concatenate[BlenderClient, P], Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if client is not connected.
 
     Returns:
-        Callable[Concatenate[BlenderClient, P], T]: Decorated function.
+        Callable[Concatenate[BlenderClient, P], Any]: Decorated function.
     """
 
 def require_connected_clients(
-    func: Callable[Concatenate[BlenderClients, P], T],
-) -> Callable[Concatenate[BlenderClients, P], T]:
+    func: Callable[Concatenate[BlenderClients, _P], Any],
+) -> Callable[Concatenate[BlenderClients, _P], Any]:
     """Decorator which ensures all clients are connected.
 
     Args:
-        func (Callable[Concatenate[BlenderClients, P], T]): Function to decorate
+        func (Callable[Concatenate[BlenderClients, P], Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if at least one client is not connected.
 
     Returns:
-        Callable[Concatenate[BlenderClients, P], T]: Decorated function.
+        Callable[Concatenate[BlenderClients, P], Any]: Decorated function.
     """
 
 def require_initialized_service(
-    func: Callable[Concatenate[BlenderService, P], T],
-) -> Callable[Concatenate[BlenderService, P], T]:
+    func: Callable[Concatenate[BlenderService, _P], Any],
+) -> Callable[Concatenate[BlenderService, _P], Any]:
     """Decorator which ensures the render service was initialized.
 
     Args:
-        func (Callable[Concatenate[BlenderService, P], T]): Function to decorate
+        func (Callable[Concatenate[BlenderService, P], Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if :meth:`client.initialize <BlenderService.exposed_initialize>` has not been previously called.
 
     Returns:
-        Callable[Concatenate[BlenderService, P], T]: Decorated function.
+        Callable[Concatenate[BlenderService, P], Any]: Decorated function.
     """
 
 def validate_camera_moved(
-    func: Callable[Concatenate[BlenderService, P], T],
-) -> Callable[Concatenate[BlenderService, P], T]:
+    func: Callable[Concatenate[BlenderService, _P], Any],
+) -> Callable[Concatenate[BlenderService, _P], Any]:
     """Decorator which emits a warning if the camera was not moved.
 
     Args:
-        func (Callable[Concatenate[BlenderService, P], T]): Function to decorate
+        func (Callable[Concatenate[BlenderService, P], Any]): Function to decorate
 
     Returns:
-        Callable[Concatenate[BlenderService, P], T]: Decorated function.
+        Callable[Concatenate[BlenderService, P], Any]: Decorated function.
     """
 
 class BlenderServer(rpyc.utils.server.Server):
@@ -180,6 +180,8 @@ class BlenderServer(rpyc.utils.server.Server):
         """
 
     @staticmethod
+    def _launch_registry() -> None: ...
+    @staticmethod
     def discover() -> list[tuple[str, int]]:
         """Discover any :class:`BlenderServer`s that are already running and return their connection parameters.
 
@@ -190,6 +192,8 @@ class BlenderServer(rpyc.utils.server.Server):
             list[tuple[str, int]]: List of connection setting for each server, where each element is a (hostname, port) tuple.
         """
 
+    def _accept_method(self, sock: socket.socket) -> None: ...
+
 class BlenderService(rpyc.Service):
     """Server-side API to interact with blender and render novel views.
 
@@ -198,6 +202,7 @@ class BlenderService(rpyc.Service):
     """
 
     ALIASES: list[str]
+    _conn: rpyc.Connection | None
     log: logging.Logger
     initialized: bool
 
@@ -208,6 +213,7 @@ class BlenderService(rpyc.Service):
             RuntimeError: raised if not within blender's runtime.
         """
 
+    def _clear_cached_properties(self) -> None: ...
     def on_connect(self, conn: rpyc.Connection) -> None:
         """Called when the connection is established
 
@@ -877,6 +883,7 @@ class BlenderClient:
             traceback (TracebackType | None): Traceback of exception if any.
         """
 
+    @type_check_only
     def with_logger(self, log: logging.Logger) -> None:
         """Use supplied logger, if logger is initialized in client, messages will log to the client.
 
@@ -884,6 +891,7 @@ class BlenderClient:
             log (logging.Logger): Logger to use for messages
         """
 
+    @type_check_only
     def initialize(self, blend_file: str | os.PathLike, root_path: str | os.PathLike, **kwargs) -> None:
         """Initialize BlenderService and load blendfile.
 
@@ -894,7 +902,7 @@ class BlenderClient:
                 `bpy.ops.wm.open_mainfile <https://docs.blender.org/api/current/bpy.ops.wm.html#bpy.ops.wm.open_mainfile>`_.
         """
 
-    @require_initialized_service
+    @type_check_only
     def iter_fcurves(self, actions: list[bpy.types.Action] | None = None) -> Iterator[bpy.types.FCurve]:
         """Yield fcurves of all actions.
 
@@ -909,7 +917,7 @@ class BlenderClient:
             Iterator[bpy.types.FCurve]: an fcurve object from the scene or action
         """
 
-    @require_initialized_service
+    @type_check_only
     def empty_transforms(self) -> dict[str, Any]:
         """Return a dictionary with camera intrinsics. Forms the basis of
         a ``transforms.json`` file, but contains no frame data.
@@ -918,7 +926,7 @@ class BlenderClient:
             dict[str, Any]: empty transforms dictionary containing only camera parameters.
         """
 
-    @require_initialized_service
+    @type_check_only
     def original_fps(self) -> int:
         """Get effective framerate (fps/fps_base).
 
@@ -926,7 +934,7 @@ class BlenderClient:
             int: Frame rate of scene.
         """
 
-    @require_initialized_service
+    @type_check_only
     def animation_range(self) -> range:
         """Get animation range of current scene as range(start, end+1, step).
 
@@ -934,7 +942,7 @@ class BlenderClient:
             range: Range of frames in animation.
         """
 
-    @require_initialized_service
+    @type_check_only
     def animation_range_tuple(self) -> tuple[int, int, int]:
         """Get animation range of current scene as a tuple of (start, end, step).
 
@@ -942,7 +950,7 @@ class BlenderClient:
             tuple[int, int, int]: Frame start, end, and step of animation.
         """
 
-    @require_initialized_service
+    @type_check_only
     def include_depths(self, debug: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include depth map for rendered images.
 
@@ -964,7 +972,7 @@ class BlenderClient:
             ValueError: raise if file-format nor understood.
         """
 
-    @require_initialized_service
+    @type_check_only
     def include_normals(self, debug: bool = True, exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
@@ -976,7 +984,7 @@ class BlenderClient:
                 Defaults to "ZIP".
         """
 
-    @require_initialized_service
+    @type_check_only
     def include_flows(self, direction: str = "forward", debug: bool = True, exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
@@ -998,7 +1006,7 @@ class BlenderClient:
             RuntimeError: raised when motion blur is enabled as flow cannot be computed.
         """
 
-    @require_initialized_service
+    @type_check_only
     def include_segmentations(
         self, shuffle: bool = True, debug: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
     ) -> None:
@@ -1020,7 +1028,7 @@ class BlenderClient:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
         """
 
-    @require_initialized_service
+    @type_check_only
     def load_addons(self, *addons: str) -> None:
         """Load blender addons by name (case-insensitive).
 
@@ -1028,7 +1036,7 @@ class BlenderClient:
             *addons (str): name of addons to load.
         """
 
-    @require_initialized_service
+    @type_check_only
     def set_resolution(self, height: tuple[int] | list[int] | int | None = None, width: int | None = None) -> None:
         """Set frame resolution (height, width) in pixels.
         If a single tuple is passed, instead of using keyword arguments, it will be parsed as (height, width).
@@ -1041,7 +1049,7 @@ class BlenderClient:
             ValueError: raised if resolution is not understood.
         """
 
-    @require_initialized_service
+    @type_check_only
     def image_settings(
         self, file_format: str | None = None, bit_depth: int | None = None, color_mode: str | None = None
     ) -> None:
@@ -1060,7 +1068,7 @@ class BlenderClient:
             color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
         """
 
-    @require_initialized_service
+    @type_check_only
     def use_motion_blur(self, enable: bool) -> None:
         """Enable/disable motion blur.
 
@@ -1068,7 +1076,7 @@ class BlenderClient:
             enable (bool): If true, enable motion blur.
         """
 
-    @require_initialized_service
+    @type_check_only
     def use_animations(self, enable: bool) -> None:
         """Enable/disable all animations.
 
@@ -1076,7 +1084,7 @@ class BlenderClient:
             enable (bool): If true, enable animations.
         """
 
-    @require_initialized_service
+    @type_check_only
     def cycles_settings(
         self,
         device_type: str | None = None,
@@ -1106,7 +1114,7 @@ class BlenderClient:
             list[str]: Name of activated devices.
         """
 
-    @require_initialized_service
+    @type_check_only
     def unbind_camera(self, clear_animations: bool = True) -> None:
         """Remove constraints, animations and parents from main camera.
 
@@ -1116,7 +1124,7 @@ class BlenderClient:
             clear_animations (bool, optional): If true clear animation data for camera.
         """
 
-    @require_initialized_service
+    @type_check_only
     def move_keyframes(self, scale: float = 1.0, shift: float = 0.0) -> None:
         """Adjusts keyframes in Blender animations, keypoints are first scaled then shifted.
 
@@ -1128,7 +1136,7 @@ class BlenderClient:
             RuntimeError: raised if trying to move keyframes beyond blender's limits.
         """
 
-    @require_initialized_service
+    @type_check_only
     def set_current_frame(self, frame_number: int) -> None:
         """Set current frame number. This might advance any animations.
 
@@ -1136,7 +1144,7 @@ class BlenderClient:
             frame_number (int): index of frame to skip to.
         """
 
-    @require_initialized_service
+    @type_check_only
     def camera_extrinsics(self) -> npt.NDArray[np.floating]:
         """Get the 4x4 transform matrix encoding the current camera pose.
 
@@ -1144,7 +1152,7 @@ class BlenderClient:
             npt.NDArray[np.floating]: Current camera pose in matrix form.
         """
 
-    @require_initialized_service
+    @type_check_only
     def camera_intrinsics(self) -> npt.NDArray[np.floating]:
         """Get the 3x3 camera intrinsics matrix for active camera,
         which defines how 3D points are projected onto 2D.
@@ -1155,8 +1163,7 @@ class BlenderClient:
             npt.NDArray[np.floating]: Camera intrinsics matrix based on camera properties.
         """
 
-    @require_initialized_service
-    @validate_camera_moved
+    @type_check_only
     def position_camera(
         self,
         location: npt.ArrayLike | None = None,
@@ -1182,8 +1189,7 @@ class BlenderClient:
             ValueError: raised if camera orientation is over-defined.
         """
 
-    @require_initialized_service
-    @validate_camera_moved
+    @type_check_only
     def rotate_camera(self, angle: float) -> None:
         """Rotate camera around it's optical axis, relative to current orientation. All transformations are local,
         use :meth:`unbind_camera <exposed_unbind_camera>` to ensure position is set in world coordinates.
@@ -1192,7 +1198,7 @@ class BlenderClient:
             angle: Relative amount to rotate by (clockwise, in radians).
         """
 
-    @require_initialized_service
+    @type_check_only
     def set_camera_keyframe(self, frame_num: int, matrix: npt.ArrayLike | None = None) -> None:
         """Set camera keyframe at given frame number.
         If camera matrix is not supplied, currently set camera position/rotation/scale will be used,
@@ -1205,7 +1211,7 @@ class BlenderClient:
                 use current camera matrix. Defaults to None.
         """
 
-    @require_initialized_service
+    @type_check_only
     def set_animation_range(self, start: int | None = None, stop: int | None = None, step: int | None = None) -> None:
         """Set animation range for scene.
 
@@ -1215,7 +1221,7 @@ class BlenderClient:
             step (int | None, optional): frame interval. Defaults to None.
         """
 
-    @require_initialized_service
+    @type_check_only
     def render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> dict[str, Any]:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
@@ -1229,7 +1235,7 @@ class BlenderClient:
             dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
 
-    @require_initialized_service
+    @type_check_only
     def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> dict[str, Any]:
         """Same as first setting current frame then rendering it.
 
@@ -1246,7 +1252,7 @@ class BlenderClient:
             dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
 
-    @require_initialized_service
+    @type_check_only
     def render_frames(
         self,
         frame_numbers: Iterable[int],
@@ -1273,7 +1279,7 @@ class BlenderClient:
             dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
-    @require_initialized_service
+    @type_check_only
     def render_animation(
         self,
         frame_start: int | None = None,
@@ -1305,7 +1311,7 @@ class BlenderClient:
             dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
-    @require_initialized_service
+    @type_check_only
     def save_file(self, path: str | os.PathLike) -> None:
         """Save the opened blender file. This is useful for introspecting the state of the compositor/scene/etc.
 
@@ -1346,6 +1352,7 @@ class BlenderClients(tuple):
             *objs (Iterator[BlenderClient | tuple[str, int]]): :class:`BlenderClient` instances or their hostnames and ports.
         """
 
+    def _method_dispatch_factory(self, name: str, method: Callable) -> Callable: ...
     def __enter__(self) -> Self:
         """Connect all clients to their render servers via a context manager.
 
@@ -1556,6 +1563,7 @@ class BlenderClients(tuple):
     def wait(self) -> None:
         """Wait for all clients at once."""
 
+    @type_check_only
     def with_logger(self, log: logging.Logger) -> None:
         """Use supplied logger, if logger is initialized in client, messages will log to the client.
 
@@ -1563,6 +1571,7 @@ class BlenderClients(tuple):
             log (logging.Logger): Logger to use for messages
         """
 
+    @type_check_only
     def initialize(self, blend_file: str | os.PathLike, root_path: str | os.PathLike, **kwargs) -> None:
         """Initialize BlenderService and load blendfile.
 
@@ -1573,7 +1582,7 @@ class BlenderClients(tuple):
                 `bpy.ops.wm.open_mainfile <https://docs.blender.org/api/current/bpy.ops.wm.html#bpy.ops.wm.open_mainfile>`_.
         """
 
-    @require_initialized_service
+    @type_check_only
     def iter_fcurves(self, actions: list[bpy.types.Action] | None = None) -> tuple[Iterator[bpy.types.FCurve],]:
         """Yield fcurves of all actions.
 
@@ -1588,7 +1597,7 @@ class BlenderClients(tuple):
             Iterator[bpy.types.FCurve]: an fcurve object from the scene or action
         """
 
-    @require_initialized_service
+    @type_check_only
     def empty_transforms(self) -> tuple[dict[str, Any],]:
         """Return a dictionary with camera intrinsics. Forms the basis of
         a ``transforms.json`` file, but contains no frame data.
@@ -1597,7 +1606,7 @@ class BlenderClients(tuple):
             dict[str, Any]: empty transforms dictionary containing only camera parameters.
         """
 
-    @require_initialized_service
+    @type_check_only
     def original_fps(self) -> tuple[int,]:
         """Get effective framerate (fps/fps_base).
 
@@ -1605,7 +1614,7 @@ class BlenderClients(tuple):
             int: Frame rate of scene.
         """
 
-    @require_initialized_service
+    @type_check_only
     def animation_range(self) -> tuple[range,]:
         """Get animation range of current scene as range(start, end+1, step).
 
@@ -1613,7 +1622,7 @@ class BlenderClients(tuple):
             range: Range of frames in animation.
         """
 
-    @require_initialized_service
+    @type_check_only
     def animation_range_tuple(self) -> tuple[tuple[int, int, int],]:
         """Get animation range of current scene as a tuple of (start, end, step).
 
@@ -1621,7 +1630,7 @@ class BlenderClients(tuple):
             tuple[int, int, int]: Frame start, end, and step of animation.
         """
 
-    @require_initialized_service
+    @type_check_only
     def include_depths(self, debug: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include depth map for rendered images.
 
@@ -1643,7 +1652,7 @@ class BlenderClients(tuple):
             ValueError: raise if file-format nor understood.
         """
 
-    @require_initialized_service
+    @type_check_only
     def include_normals(self, debug: bool = True, exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
@@ -1655,7 +1664,7 @@ class BlenderClients(tuple):
                 Defaults to "ZIP".
         """
 
-    @require_initialized_service
+    @type_check_only
     def include_flows(self, direction: str = "forward", debug: bool = True, exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
@@ -1677,7 +1686,7 @@ class BlenderClients(tuple):
             RuntimeError: raised when motion blur is enabled as flow cannot be computed.
         """
 
-    @require_initialized_service
+    @type_check_only
     def include_segmentations(
         self, shuffle: bool = True, debug: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
     ) -> None:
@@ -1699,7 +1708,7 @@ class BlenderClients(tuple):
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
         """
 
-    @require_initialized_service
+    @type_check_only
     def load_addons(self, *addons: str) -> None:
         """Load blender addons by name (case-insensitive).
 
@@ -1707,7 +1716,7 @@ class BlenderClients(tuple):
             *addons (str): name of addons to load.
         """
 
-    @require_initialized_service
+    @type_check_only
     def set_resolution(self, height: tuple[int] | list[int] | int | None = None, width: int | None = None) -> None:
         """Set frame resolution (height, width) in pixels.
         If a single tuple is passed, instead of using keyword arguments, it will be parsed as (height, width).
@@ -1720,7 +1729,7 @@ class BlenderClients(tuple):
             ValueError: raised if resolution is not understood.
         """
 
-    @require_initialized_service
+    @type_check_only
     def image_settings(
         self, file_format: str | None = None, bit_depth: int | None = None, color_mode: str | None = None
     ) -> None:
@@ -1739,7 +1748,7 @@ class BlenderClients(tuple):
             color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
         """
 
-    @require_initialized_service
+    @type_check_only
     def use_motion_blur(self, enable: bool) -> None:
         """Enable/disable motion blur.
 
@@ -1747,7 +1756,7 @@ class BlenderClients(tuple):
             enable (bool): If true, enable motion blur.
         """
 
-    @require_initialized_service
+    @type_check_only
     def use_animations(self, enable: bool) -> None:
         """Enable/disable all animations.
 
@@ -1755,7 +1764,7 @@ class BlenderClients(tuple):
             enable (bool): If true, enable animations.
         """
 
-    @require_initialized_service
+    @type_check_only
     def cycles_settings(
         self,
         device_type: str | None = None,
@@ -1785,7 +1794,7 @@ class BlenderClients(tuple):
             list[str]: Name of activated devices.
         """
 
-    @require_initialized_service
+    @type_check_only
     def unbind_camera(self, clear_animations: bool = True) -> None:
         """Remove constraints, animations and parents from main camera.
 
@@ -1795,7 +1804,7 @@ class BlenderClients(tuple):
             clear_animations (bool, optional): If true clear animation data for camera.
         """
 
-    @require_initialized_service
+    @type_check_only
     def move_keyframes(self, scale: float = 1.0, shift: float = 0.0) -> None:
         """Adjusts keyframes in Blender animations, keypoints are first scaled then shifted.
 
@@ -1807,7 +1816,7 @@ class BlenderClients(tuple):
             RuntimeError: raised if trying to move keyframes beyond blender's limits.
         """
 
-    @require_initialized_service
+    @type_check_only
     def set_current_frame(self, frame_number: int) -> None:
         """Set current frame number. This might advance any animations.
 
@@ -1815,7 +1824,7 @@ class BlenderClients(tuple):
             frame_number (int): index of frame to skip to.
         """
 
-    @require_initialized_service
+    @type_check_only
     def camera_extrinsics(self) -> tuple[npt.NDArray[np.floating],]:
         """Get the 4x4 transform matrix encoding the current camera pose.
 
@@ -1823,7 +1832,7 @@ class BlenderClients(tuple):
             npt.NDArray[np.floating]: Current camera pose in matrix form.
         """
 
-    @require_initialized_service
+    @type_check_only
     def camera_intrinsics(self) -> tuple[npt.NDArray[np.floating],]:
         """Get the 3x3 camera intrinsics matrix for active camera,
         which defines how 3D points are projected onto 2D.
@@ -1834,8 +1843,7 @@ class BlenderClients(tuple):
             npt.NDArray[np.floating]: Camera intrinsics matrix based on camera properties.
         """
 
-    @require_initialized_service
-    @validate_camera_moved
+    @type_check_only
     def position_camera(
         self,
         location: npt.ArrayLike | None = None,
@@ -1861,8 +1869,7 @@ class BlenderClients(tuple):
             ValueError: raised if camera orientation is over-defined.
         """
 
-    @require_initialized_service
-    @validate_camera_moved
+    @type_check_only
     def rotate_camera(self, angle: float) -> None:
         """Rotate camera around it's optical axis, relative to current orientation. All transformations are local,
         use :meth:`unbind_camera <exposed_unbind_camera>` to ensure position is set in world coordinates.
@@ -1871,7 +1878,7 @@ class BlenderClients(tuple):
             angle: Relative amount to rotate by (clockwise, in radians).
         """
 
-    @require_initialized_service
+    @type_check_only
     def set_camera_keyframe(self, frame_num: int, matrix: npt.ArrayLike | None = None) -> None:
         """Set camera keyframe at given frame number.
         If camera matrix is not supplied, currently set camera position/rotation/scale will be used,
@@ -1884,7 +1891,7 @@ class BlenderClients(tuple):
                 use current camera matrix. Defaults to None.
         """
 
-    @require_initialized_service
+    @type_check_only
     def set_animation_range(self, start: int | None = None, stop: int | None = None, step: int | None = None) -> None:
         """Set animation range for scene.
 
@@ -1894,7 +1901,7 @@ class BlenderClients(tuple):
             step (int | None, optional): frame interval. Defaults to None.
         """
 
-    @require_initialized_service
+    @type_check_only
     def render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> tuple[dict[str, Any],]:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
@@ -1908,7 +1915,7 @@ class BlenderClients(tuple):
             dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
 
-    @require_initialized_service
+    @type_check_only
     def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> tuple[dict[str, Any],]:
         """Same as first setting current frame then rendering it.
 
