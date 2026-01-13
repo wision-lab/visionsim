@@ -36,8 +36,10 @@ Due to this, SPCs are fundamentally digital devices. They will output a binary o
 From this, we can infer that the binary pixel measurement :math:`B` will follow a Bernoulli distribution given by [1]_:
 
 .. math:: 
-    P(B=0) &= P(k=0) = e^{-\phi \tau},
-    P(B=1) &= P(k \ge 1)=1-e^{-\phi \tau}.
+    \begin{split}
+        P(B=0) &= P(k=0) = e^{-\phi \tau},\\
+        P(B=1) &= P(k \ge 1)=1-e^{-\phi \tau}.
+    \end{split}
 
 However, a SPC can run at extremely fast rates, so in practice while each measurement is extremely noisy, and quantized to a single bits-worth of information, we can acquire many thousands of measurements in the time a conventional camera takes for a single exposure. 
 
