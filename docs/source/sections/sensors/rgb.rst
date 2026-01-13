@@ -4,9 +4,7 @@ Conventional Camera
 For scene radiance :math:`\phi`, exposure time :math:`\tau`, optical response function :math:`\Gamma`, the intensity :math:`I` of the pixel can be modeled as [1]_:
 
 .. math::
-    \begin{align*}
-        I = \Gamma \left(min\left(\int_{\tau} \phi dt,~\text{FWC}\right) + \mathcal{N} \right) \,.
-    \end{align*}
+    I = \Gamma \left(min\left(\int_{\tau} \phi dt,~\text{FWC}\right) + \mathcal{N} \right) \,.
 
 Where ``FWC`` is the pixel's s full well capacity, and many sources of noise, including read noise and photon shot noise, which we absorb into :math:`\mathcal{N}`.
 
