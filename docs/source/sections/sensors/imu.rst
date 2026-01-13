@@ -27,10 +27,8 @@ The measurements captured by an IMU can be modeled as the ground truth accelerat
     An IMU measures the rotation rate and the acceleration of the sensor with respect to an inertial frame. The measurements, namely :math:`{}_{\mathrm{B}}\tilde{\boldsymbol{\omega}}_{\mathrm{WB}}(t)` and :math:`{}_{\mathrm{B}}\tilde{\mathbf{a}}(t)`, are affected by additive white noise :math:`{\boldsymbol{\eta}}` and a slowly varying sensor bias :math:`\mathbf{b}`:
 
     .. math:: 
-        \begin{split}
-            {}_{\mathrm{B}}\tilde{\boldsymbol{\omega}}_{\mathrm{WB}}(t) &= {}_{\mathrm{B}}\boldsymbol{\omega}_{\mathrm{WB}}(t) + \mathbf{b}^g(t) + \boldsymbol{\eta}^g(t) \\
-            {}_{\mathrm{B}}\tilde{\mathbf{a}}(t) &= \mathbf{R}_{\mathrm{WB}}^\top(t) \left( {}_w\mathbf{a}(t) - {}_w\mathbf{g} \right) + \mathbf{b}^a(t) + \boldsymbol{\eta}^a(t)
-        \end{split}
+        {}_{\mathrm{B}}\tilde{\boldsymbol{\omega}}_{\mathrm{WB}}(t) &= {}_{\mathrm{B}}\boldsymbol{\omega}_{\mathrm{WB}}(t) + \mathbf{b}^g(t) + \boldsymbol{\eta}^g(t) 
+        {}_{\mathrm{B}}\tilde{\mathbf{a}}(t) &= \mathbf{R}_{\mathrm{WB}}^\top(t) \left( {}_w\mathbf{a}(t) - {}_w\mathbf{g} \right) + \mathbf{b}^a(t) + \boldsymbol{\eta}^a(t)
 
     In our notation, the prefix B denotes that the corresponding quantity is expressed in the frame B (the IMU's frame, a.k.a the "body" frame). The pose of the IMU is described by the transformation :math:`\left\{\mathbf{R}_{\mathrm{WB}}, {}_w\mathbf{p}\right\}` which maps a point from sensor frame B to W (the world coordinate frame). The vector :math:`{}_{\mathrm{B}}\boldsymbol{\omega}_{\mathrm{WB}}(t)\in\mathbb{R}^{3}` is the instantaneous angular velocity of B relative to W expressed in coordinate frame B, while :math:`{}_w\mathbf{a}(t)\in\mathbb{R}^{3}` is the acceleration of the sensor; :math:`{}_w\mathbf{g}` is the gravity vector in world Coordinates. 
 
