@@ -10,11 +10,13 @@ from typing_extensions import Literal
 from visionsim.emulate.rgb import emulate_rgb_from_sequence
 
 
-def _spad_collate(batch, *, mode, rng, factor, is_tonemapped=True):
+def _spad_collate(batch, *, mode, rng, factor, bitdepth=1, gray=False, is_tonemapped=True):
     """Use default collate function on batch and then simulate SPAD, enabling compute to be done in threads"""
     from visionsim.dataset import default_collate
     from visionsim.emulate.spc import emulate_spc
     from visionsim.utils.color import srgb_to_linearrgb
+
+    from skimage.color import rgb2gray
 
     idxs, imgs, poses = default_collate(batch)
 
@@ -23,8 +25,11 @@ def _spad_collate(batch, *, mode, rng, factor, is_tonemapped=True):
         imgs = srgb_to_linearrgb((imgs / 255.0).astype(float))
     else:
         imgs = imgs.astype(float) / 255.0
+    
+    if gray and (imgs.shape[-1] == 3):
+        imgs = rgb2gray(imgs)
 
-    binary_img = emulate_spc(imgs, factor=factor, rng=rng) * 255
+    binary_img = emulate_spc(imgs, factor=factor, bitdepth=bitdepth, rng=rng) * 255
     binary_img = binary_img.astype(np.uint8)
 
     if mode.lower() == "npy":
@@ -38,6 +43,8 @@ def spad(
     output_dir: str | os.PathLike,
     pattern: str = "frame_{:06}.png",
     factor: float = 1.0,
+    gray: bool = False,
+    bitdepth: int = 1,
     seed: int = 2147483647,
     mode: Literal["npy", "img"] = "npy",
     batch_size: int = 4,
@@ -50,6 +57,8 @@ def spad(
         output_dir: directory in which to save binary frames
         pattern: filenames of frames should match this
         factor: multiplicative factor controlling dynamic range of output
+        gray: to set grayscale instead of 3-channel sensing
+        bitdepth: representing number of underlying binary measurements aggregated (bitdepth = k => 2^k - 1 binary measurements averaged)
         seed: random seed to use while sampling, ensures reproducibility
         mode: how to save binary frames
         batch_size: number of frames to write at once
@@ -68,8 +77,11 @@ def spad(
     dataset = Dataset.from_path(input_path)
     transforms_new = copy.deepcopy(dataset.transforms or {})
     shape = np.array(dataset.full_shape)
-    shape[-1] = transforms_new["c"] = 3
-
+    if gray:
+        shape[-1] = transforms_new["c"] = 1
+    else:
+        shape[-1] = transforms_new["c"] = 3
+    
     if mode.lower() == "img":
         ...
     elif mode.lower() == "npy":
@@ -87,7 +99,7 @@ def spad(
         dataset,
         batch_size=batch_size,
         num_workers=os.cpu_count() or 1,
-        collate_fn=functools.partial(_spad_collate, mode=mode, rng=rng, factor=factor, is_tonemapped=is_tonemapped),
+        collate_fn=functools.partial(_spad_collate, mode=mode, rng=rng, factor=factor, bitdepth=bitdepth, gray=gray, is_tonemapped=is_tonemapped),
     )
 
     with (
