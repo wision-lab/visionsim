@@ -6,7 +6,7 @@
 
 import bpy  # type: ignore
 
-from .common import new_socket
+from .common import MAPRANGE_NODE, MATH_NODE, new_socket, set_clamp
 
 
 # initialize SegmentationDebug node group
@@ -46,9 +46,9 @@ def segmentationdebug_node_group():
     combine_color.inputs[3].default_value = 1.0
 
     # node NormalizeIdx
-    normalizeidx = segmentationdebug.nodes.new("CompositorNodeMapRange")
+    normalizeidx = segmentationdebug.nodes.new(MAPRANGE_NODE)
     normalizeidx.name = "NormalizeIdx"
-    normalizeidx.use_clamp = False
+    set_clamp(normalizeidx, False)
     # From Min
     normalizeidx.inputs[1].default_value = 0.0
     # From Max
@@ -59,10 +59,10 @@ def segmentationdebug_node_group():
     normalizeidx.inputs[4].default_value = 1.0
 
     # node Math
-    math = segmentationdebug.nodes.new("CompositorNodeMath")
+    math = segmentationdebug.nodes.new(MATH_NODE)
     math.name = "Math"
     math.operation = "ADD"
-    math.use_clamp = True
+    set_clamp(math, True)
     # Value_001
     math.inputs[1].default_value = 0.0
 

@@ -6,7 +6,7 @@
 
 import bpy  # type: ignore
 
-from .common import new_socket
+from .common import COMBXYZ_NODE, MATH_NODE, SEPXYZ_NODE, new_socket, set_clamp
 
 
 # initialize NormalDebug node group
@@ -36,16 +36,19 @@ def normaldebug_node_group():
     group_input = normaldebug.nodes.new("NodeGroupInput")
     group_input.name = "Group Input"
 
-    # node RotRow1
-    rotrow1 = normaldebug.nodes.new("CompositorNodeNormal")
+    if bpy.app.version >= (5, 0, 0):
+        rotrow1 = normaldebug.nodes.new("ShaderNodeVectorMath")
+        rotrow2 = normaldebug.nodes.new("ShaderNodeVectorMath")
+        rotrow3 = normaldebug.nodes.new("ShaderNodeVectorMath")
+        rotrow1.operation = "DOT_PRODUCT"
+        rotrow2.operation = "DOT_PRODUCT"
+        rotrow3.operation = "DOT_PRODUCT"
+    else:
+        rotrow1 = normaldebug.nodes.new("CompositorNodeNormal")
+        rotrow2 = normaldebug.nodes.new("CompositorNodeNormal")
+        rotrow3 = normaldebug.nodes.new("CompositorNodeNormal")
     rotrow1.name = "RotRow1"
-
-    # node RotRow2
-    rotrow2 = normaldebug.nodes.new("CompositorNodeNormal")
     rotrow2.name = "RotRow2"
-
-    # node RotRow3
-    rotrow3 = normaldebug.nodes.new("CompositorNodeNormal")
     rotrow3.name = "RotRow3"
 
     # node Rotation
@@ -56,30 +59,30 @@ def normaldebug_node_group():
     rotation.shrink = True
 
     # node RemapX
-    remapx = normaldebug.nodes.new("CompositorNodeMath")
+    remapx = normaldebug.nodes.new(MATH_NODE)
     remapx.name = "RemapX"
     remapx.operation = "MULTIPLY_ADD"
-    remapx.use_clamp = True
+    set_clamp(remapx, True)
     # Value_001
     remapx.inputs[1].default_value = 0.5
     # Value_002
     remapx.inputs[2].default_value = 0.5
 
     # node RemapY
-    remapy = normaldebug.nodes.new("CompositorNodeMath")
+    remapy = normaldebug.nodes.new(MATH_NODE)
     remapy.name = "RemapY"
     remapy.operation = "MULTIPLY_ADD"
-    remapy.use_clamp = True
+    set_clamp(remapy, True)
     # Value_001
     remapy.inputs[1].default_value = 0.5
     # Value_002
     remapy.inputs[2].default_value = 0.5
 
     # node RemapZ
-    remapz = normaldebug.nodes.new("CompositorNodeMath")
+    remapz = normaldebug.nodes.new(MATH_NODE)
     remapz.name = "RemapZ"
     remapz.operation = "MULTIPLY_ADD"
-    remapz.use_clamp = True
+    set_clamp(remapz, True)
     # Value_001
     remapz.inputs[1].default_value = 0.5
     # Value_002
@@ -103,17 +106,11 @@ def normaldebug_node_group():
     debugnormal.shrink = True
 
     # node Separate XYZ
-    if bpy.app.version >= (3, 2, 0):
-        separate_xyz = normaldebug.nodes.new("CompositorNodeSeparateXYZ")
-    else:
-        separate_xyz = normaldebug.nodes.new("CompositorNodeSepRGBA")
+    separate_xyz = normaldebug.nodes.new(SEPXYZ_NODE)
     separate_xyz.name = "Separate XYZ"
 
     # node Combine XYZ.002
-    if bpy.app.version >= (3, 2, 0):
-        combine_xyz = normaldebug.nodes.new("CompositorNodeCombineXYZ")
-    else:
-        combine_xyz = normaldebug.nodes.new("CompositorNodeCombRGBA")
+    combine_xyz = normaldebug.nodes.new(COMBXYZ_NODE)
     combine_xyz.name = "Combine XYZ.002"
 
     # node Reroute
@@ -193,17 +190,26 @@ def normaldebug_node_group():
     # script on startup and autoexec does not need to be true!
     #
     # Notes:
-    #   1) Blender's normals node actually returns the negative dot product (which may be a bug)
+    #   1) Blender's normals node actually returns the negative dot product before version 5.0
     #      so we negate that here. See: https://projects.blender.org/blender/blender/issues/132770
     #   2) We need the inverse of the camera matrix, it's a rotation so it's the same as it's
     #      transpose, which we do here by flipping the i/j indices we sample from.
-    # TODO: Negation of dot product might become version specific once the bug is fixed.
     for row, node in enumerate([rotrow1, rotrow2, rotrow3]):
-        fcurves = node.outputs[0].driver_add("default_value")
+        if bpy.app.version >= (5, 0, 0):
+            # Use second input of vector math node
+            fcurves = node.inputs[1].driver_add("default_value")
+        else:
+            fcurves = node.outputs[0].driver_add("default_value")
+
         for col, fcurve in enumerate(fcurves):
             mat = fcurve.driver.variables.new()
             mat.name = "camera_world_matrix"
             mat.targets[0].id = bpy.context.scene.camera
             mat.targets[0].data_path = "matrix_world"
-            fcurve.driver.expression = f"-camera_world_matrix[{col}][{row}]"
+
+            # Only negate to counter the bug for pre-v5.0
+            if bpy.app.version >= (5, 0, 0):
+                fcurve.driver.expression = f"camera_world_matrix[{col}][{row}]"
+            else:
+                fcurve.driver.expression = f"-camera_world_matrix[{col}][{row}]"
     return normaldebug

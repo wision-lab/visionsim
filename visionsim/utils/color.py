@@ -5,15 +5,7 @@ import numpy.typing as npt
 import torch
 from scipy.ndimage import correlate
 from skimage.util import img_as_float
-from typing_extensions import Literal, overload
-
-
-@overload
-def srgb_to_linearrgb(img: npt.NDArray[np.floating]) -> npt.NDArray[np.floating]: ...
-
-
-@overload
-def srgb_to_linearrgb(img: torch.Tensor) -> torch.Tensor: ...
+from typing_extensions import Literal
 
 
 def srgb_to_linearrgb(img: torch.Tensor | npt.NDArray[np.floating]) -> torch.Tensor | npt.NDArray[np.floating]:
@@ -32,14 +24,6 @@ def srgb_to_linearrgb(img: torch.Tensor | npt.NDArray[np.floating]) -> torch.Ten
     img[mask] = module.clip(img[mask], 0.0, module.inf) / 12.92
     img[~mask] = ((img[~mask] + 0.055) / 1.055) ** 2.4  # type: ignore
     return img
-
-
-@overload
-def linearrgb_to_srgb(img: npt.NDArray[np.floating]) -> npt.NDArray[np.floating]: ...
-
-
-@overload
-def linearrgb_to_srgb(img: torch.Tensor) -> torch.Tensor: ...
 
 
 def linearrgb_to_srgb(img: torch.Tensor | npt.NDArray) -> torch.Tensor | npt.NDArray:

@@ -6,7 +6,7 @@ Editable Install
 
 To install visionsim locally in an editable state with all required development dependencies, clone the repository, navigate to it and run::
     
-    $ pip install -e ".[dev]"
+    $ pip install -e . --group dev --group docs
 
 Similarly, to install visionsim in an editable manner within Blender's runtime, you can do the following::
 
@@ -26,6 +26,15 @@ To ensure that there's no conflicts due to different versions of the libraries b
 The ``-rP`` option is also helpful for seeing any stdout messages that are otherwise hidden. 
 
 | 
+
+Running CI Locally
+------------------
+
+You can run the CI locally using the `ACT CLI <https://github.com/nektos/act>`_, or use it's `vscode extension <https://sanjulaganepola.github.io/github-local-actions-docs/>`_ as a front end. Using the CLI, you can run all workflows that trigger on a push using `act push`. The following command will run the workflows and, if they fail, open an interactive shell into the latest container::
+    
+    $ act push || docker exec -it `docker ps -q | head -n1` bash  
+
+|
 
 Building the Documentation
 --------------------------
@@ -52,3 +61,18 @@ installed (via pip) and then install the pre-hooks with::
     $ pre-commit install
 
 See `pre-commit <https://pre-commit.com/#intro>`_ for more.
+
+| 
+
+Release Process
+---------------
+
+To prepare for a new release, first ensure all tests, linting, formatting and typing checks pass, and update the documentation and version numbers accordingly. Then you'll need to build the new source distribution and push it to PyPI using twine. 
+
+The up-to-date source on this is the `python package authority <https://packaging.python.org/en/latest/tutorials/packaging-projects>`_, but you'll have to first build the source distribution using::
+
+    $ python -m build
+
+Then upload it to PyPI with twine::
+
+    $ python -m twine upload dist/*

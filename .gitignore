@@ -118,3 +118,7 @@ cache/
 examples/logs/
 examples/renders/
 examples/*.blend*
+examples/quickstart/
+docs/source/_build/
+examples/assets/
+uv.lock

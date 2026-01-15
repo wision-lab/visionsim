@@ -10,7 +10,7 @@ try:
     #   the bare-install in blender's runtime
     import tyro
 except ImportError:
-    tyro = None
+    tyro = None  # type: ignore
 
 
 _SIZE_SYMBOLS = ("B", "K", "M", "G", "T", "P", "E", "Z", "Y")

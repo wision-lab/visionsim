@@ -7,7 +7,7 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "VisionSIM"
-copyright = "VisionSIM developers, 2025"
+copyright = "VisionSIM developers, 2026"
 author = "Sacha Jungerman"
 
 # -- General configuration ---------------------------------------------------
