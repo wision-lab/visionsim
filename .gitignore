@@ -105,6 +105,10 @@ ENV/
 .vscode/
 .idea/
 
+# Editor swap files
+*.swp
+*.asv
+
 # Custom
 paper/
 out/

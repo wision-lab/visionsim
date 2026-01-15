@@ -10,8 +10,10 @@ from typing_extensions import Literal
 from visionsim.emulate.rgb import emulate_rgb_from_sequence
 
 
-def _spad_collate(batch, *, mode, rng, factor, is_tonemapped=True):
+def _spad_collate(batch, *, mode, rng, factor, bitdepth=1, gray=False, is_tonemapped=True):
     """Use default collate function on batch and then simulate SPAD, enabling compute to be done in threads"""
+    from skimage.color import rgb2gray
+
     from visionsim.dataset import default_collate
     from visionsim.emulate.spc import emulate_spc
     from visionsim.utils.color import srgb_to_linearrgb
@@ -24,7 +26,10 @@ def _spad_collate(batch, *, mode, rng, factor, is_tonemapped=True):
     else:
         imgs = imgs.astype(float) / 255.0
 
-    binary_img = emulate_spc(imgs, factor=factor, rng=rng) * 255
+    if gray and (imgs.shape[-1] == 3):
+        imgs = rgb2gray(imgs)
+
+    binary_img = emulate_spc(imgs, factor=factor, bitdepth=bitdepth, rng=rng) * 255
     binary_img = binary_img.astype(np.uint8)
 
     if mode.lower() == "npy":
@@ -38,6 +43,8 @@ def spad(
     output_dir: str | os.PathLike,
     pattern: str = "frame_{:06}.png",
     factor: float = 1.0,
+    gray: bool = False,
+    bitdepth: int = 1,
     seed: int = 2147483647,
     mode: Literal["npy", "img"] = "npy",
     batch_size: int = 4,
@@ -50,6 +57,8 @@ def spad(
         output_dir: directory in which to save binary frames
         pattern: filenames of frames should match this
         factor: multiplicative factor controlling dynamic range of output
+        gray: to set grayscale instead of 3-channel sensing
+        bitdepth: representing number of underlying binary measurements aggregated (bitdepth = k => 2^k - 1 binary measurements averaged)
         seed: random seed to use while sampling, ensures reproducibility
         mode: how to save binary frames
         batch_size: number of frames to write at once
@@ -68,7 +77,10 @@ def spad(
     dataset = Dataset.from_path(input_path)
     transforms_new = copy.deepcopy(dataset.transforms or {})
     shape = np.array(dataset.full_shape)
-    shape[-1] = transforms_new["c"] = 3
+    if gray:
+        shape[-1] = transforms_new["c"] = 1
+    else:
+        shape[-1] = transforms_new["c"] = 3
 
     if mode.lower() == "img":
         ...
@@ -87,7 +99,9 @@ def spad(
         dataset,
         batch_size=batch_size,
         num_workers=os.cpu_count() or 1,
-        collate_fn=functools.partial(_spad_collate, mode=mode, rng=rng, factor=factor, is_tonemapped=is_tonemapped),
+        collate_fn=functools.partial(
+            _spad_collate, mode=mode, rng=rng, factor=factor, bitdepth=bitdepth, gray=gray, is_tonemapped=is_tonemapped
+        ),
     )
 
     with (
@@ -196,15 +210,15 @@ def rgb(
     input_dir: str | os.PathLike,
     output_dir: str | os.PathLike,
     chunk_size: int = 10,
-    shutr_angl: float = 360.0,
-    rdout_std: float = 0.3,
+    shutter_angle: float = 360.0,
+    readout_std: float = 0.3,
     fwc: float | None = None,
     scale_flux: float = 1.0,
     g_ISO: float = 1.0,
     bitdepth: int = 12,
     demosaic: Literal["off", "bilinear", "MHC04"] = "bilinear",
-    dnois_sigma: float = 0.0,
-    sharpn_wt: float = 0.0,
+    denoise_sigma: float = 0.0,
+    sharpen_weight: float = 0.0,
     pattern: str = "frame_{:06}.png",
     mode: Literal["npy", "img"] = "npy",
     force: bool = False,
@@ -215,15 +229,15 @@ def rgb(
         input_dir: directory in which to look for frames
         output_dir: directory in which to save binary frames
         chunk_size: number of consecutive frames to average together
-        shutr_angl: fraction of inter-frame duration shutter is active (0-360 deg)
-        rdout_std: standard deviation of gaussian read noise in photoelectrons
+        shutter_angle: fraction of inter-frame duration shutter is active (0-360 deg)
+        readout_std: standard deviation of gaussian read noise in photoelectrons
         fwc: full well capacity of sensor in photoelectrons
         scale_flux: factor to scale the input images before Poisson simulation
         g_ISO: gain for photo-electron reading after Poisson rng
         bitdepth: ADC bitdepth
         demosaic: demosaicing method (default bilinear)
-        dnois_sigma: Gaussian blur with this sigma will be used (default 0.0 disables this)
-        sharpn_wt: weight used in sharpening (default 0.0 disables this)
+        denoise_sigma: Gaussian blur with this sigma will be used (default 0.0 disables this)
+        sharpen_weight: weight used in sharpening (default 0.0 disables this)
         pattern: filenames of frames should match this
         mode: how to save generated frames
         force: if true, overwrite output file(s) if present
@@ -278,15 +292,15 @@ def rgb(
 
             rgb_img = emulate_rgb_from_sequence(
                 imgs,
-                readout_std=rdout_std,
+                readout_std=readout_std,
                 fwc=fwc or np.inf,
-                shutter_angle_degrees=shutr_angl,
+                shutter_angle_degrees=shutter_angle,
                 scale_flux=scale_flux,
                 gain_ISO=g_ISO,
                 bitdepth=bitdepth,
                 demosaic_method=demosaic,
-                denoise_sigma=dnois_sigma,
-                sharpen_weight=sharpn_wt,
+                denoise_sigma=denoise_sigma,
+                sharpen_weight=sharpen_weight,
             )
 
             if transforms_new:
