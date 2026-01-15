@@ -8,17 +8,18 @@ from contextlib import ExitStack, contextmanager
 from multiprocessing import Process
 from pathlib import Path
 from types import TracebackType
+from typing import type_check_only
 
 import bpy  # type: ignore
 import multiprocess  # type: ignore
 import numpy as np
 import numpy.typing as npt
 import rpyc  # type: ignore
-import rpyc.utils  # type: ignore
 import rpyc.utils.registry  # type: ignore
+import rpyc.utils.server  # type: ignore
 from typing_extensions import Any, Concatenate, ParamSpec, Self
 
-from visionsim.types import UpdateFn, type_check_only
+from visionsim.types import UpdateFn
 
 _P = ParamSpec("_P")
 handlers: Iterable[logging.Handler] | None
@@ -201,7 +202,7 @@ class BlenderService(rpyc.Service):
     a connected blender service. These methods are prefixed by ``exposed_``.
     """
 
-    ALIASES: list[str]
+    ALIASES: tuple[str]
     _conn: rpyc.Connection | None
     log: logging.Logger
     initialized: bool

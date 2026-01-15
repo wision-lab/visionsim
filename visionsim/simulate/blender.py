@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     import numpy.typing as npt
     from typing_extensions import Any, Concatenate, ParamSpec, Self
 
-    from visionsim.types import UpdateFn, type_check_only  # noqa
+    from visionsim.types import UpdateFn  # noqa
 
     _P = ParamSpec("_P")
 
@@ -71,6 +71,7 @@ except ImportError:
 import numpy as np
 import rpyc  # type: ignore
 import rpyc.utils.registry  # type: ignore
+import rpyc.utils.server  # type: ignore
 
 # Enable server-side logging
 logging.basicConfig(level=logging.WARNING, format="%(message)s", datefmt="[%X]", handlers=handlers)
@@ -388,12 +389,12 @@ class BlenderServer(rpyc.utils.server.Server):
             list[tuple[str, int]]: List of connection setting for each server, where each element is a (hostname, port) tuple.
         """
         _, client = BlenderServer.spawn_registry()
-        return list(client.discover("BLENDER"))
+        return list(cast(tuple, client.discover("BLENDER")))
 
     def _accept_method(self, sock: socket.socket) -> None:
         # Accept a single connection, and block here until it closes. Any other incoming
         # connections will stall, and run out the `sync_request_timeout` while attempting to connect.
-        self._authenticate_and_serve_client(sock)
+        return self._authenticate_and_serve_client(sock)
 
 
 class BlenderService(rpyc.Service):
@@ -407,7 +408,7 @@ class BlenderService(rpyc.Service):
     #   By default the service name is extracted from the class name, so here
     #   it would be `blender` anyways, but we define an alias here to support
     #   subclasses which might be named differently and not discovered.
-    ALIASES: list[str] = ["BLENDER"]
+    ALIASES: tuple[str] = ("BLENDER", )
 
     def __init__(self) -> None:
         """Initialize render service.

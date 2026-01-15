@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from typing import type_check_only
 
 from typing_extensions import Annotated, Protocol, TypeAlias
 
@@ -46,7 +45,6 @@ def _bytes_to_str(nbytes: int, ndigits: int = 1) -> str:
     return f"{hnbytes:.{ndigits}f}{symbol}"
 
 
-@type_check_only
 class UpdateFn(Protocol):
     """Mirrors `rich.progress.Progress.update` with curried task-id argument"""
 
