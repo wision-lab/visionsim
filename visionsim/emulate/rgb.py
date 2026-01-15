@@ -46,7 +46,7 @@ def emulate_rgb_from_sequence(
         Quantized sRGB patch is returned
     """
     # Get sum of linear-intensity frames.
-    burst_size = int(max(1, np.ceil(len(sequence) * (shutter_angle_degrees/360.0))))
+    burst_size = int(max(1, np.ceil(len(sequence) * (shutter_angle_degrees / 360.0))))
     sequence = np.array(sequence[:burst_size])
     patch = np.sum(sequence, axis=0) * scale_flux
 
@@ -68,7 +68,7 @@ def emulate_rgb_from_sequence(
     # apply ISO gain
     patch *= gain_ISO
     # assume perfect quantization in ADC
-    patch = np.round(np.clip(patch, 0, (2**bitdepth-1)))
+    patch = np.round(np.clip(patch, 0, (2**bitdepth - 1)))
     patch = patch * (1.0 / (2**bitdepth - 1))
 
     # de-mosaicing
@@ -79,13 +79,12 @@ def emulate_rgb_from_sequence(
     if denoise_sigma != 0.0:
         patch = gaussian(patch, denoise_sigma)
     if sharpen_weight != 0.0:
-        patch = unsharp_mask(patch, amount=sharpen_weight,
-                             channel_axis=2 if color else None)
+        patch = unsharp_mask(patch, amount=sharpen_weight, channel_axis=2 if color else None)
 
     # Convert to sRGB color space for viewing and quantize to 8-bits
     patch = linearrgb_to_srgb(patch.astype(np.double))
     patch = np.round(patch * 255).astype(np.uint8)
-    if not color:   # fake it anyway
+    if not color:  # fake it anyway
         patch = np.repeat(patch, 3, axis=-1)
     return patch
 

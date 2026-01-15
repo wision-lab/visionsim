@@ -12,11 +12,11 @@ from visionsim.emulate.rgb import emulate_rgb_from_sequence
 
 def _spad_collate(batch, *, mode, rng, factor, bitdepth=1, gray=False, is_tonemapped=True):
     """Use default collate function on batch and then simulate SPAD, enabling compute to be done in threads"""
+    from skimage.color import rgb2gray
+
     from visionsim.dataset import default_collate
     from visionsim.emulate.spc import emulate_spc
     from visionsim.utils.color import srgb_to_linearrgb
-
-    from skimage.color import rgb2gray
 
     idxs, imgs, poses = default_collate(batch)
 
@@ -25,7 +25,7 @@ def _spad_collate(batch, *, mode, rng, factor, bitdepth=1, gray=False, is_tonema
         imgs = srgb_to_linearrgb((imgs / 255.0).astype(float))
     else:
         imgs = imgs.astype(float) / 255.0
-    
+
     if gray and (imgs.shape[-1] == 3):
         imgs = rgb2gray(imgs)
 
@@ -81,7 +81,7 @@ def spad(
         shape[-1] = transforms_new["c"] = 1
     else:
         shape[-1] = transforms_new["c"] = 3
-    
+
     if mode.lower() == "img":
         ...
     elif mode.lower() == "npy":
@@ -99,7 +99,9 @@ def spad(
         dataset,
         batch_size=batch_size,
         num_workers=os.cpu_count() or 1,
-        collate_fn=functools.partial(_spad_collate, mode=mode, rng=rng, factor=factor, bitdepth=bitdepth, gray=gray, is_tonemapped=is_tonemapped),
+        collate_fn=functools.partial(
+            _spad_collate, mode=mode, rng=rng, factor=factor, bitdepth=bitdepth, gray=gray, is_tonemapped=is_tonemapped
+        ),
     )
 
     with (
@@ -286,7 +288,7 @@ def rgb(
             imgs = srgb_to_linearrgb(imgs)
 
             # batch_size is not relevant here
-            imgs = imgs[:,0,...]
+            imgs = imgs[:, 0, ...]
 
             rgb_img = emulate_rgb_from_sequence(
                 imgs,
