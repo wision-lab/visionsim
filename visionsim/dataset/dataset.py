@@ -206,7 +206,7 @@ class ImgDataset(Dataset):
             if self.transforms:
                 h, w, c = self.transforms["h"], self.transforms["w"], self.transforms["c"]
             else:
-                # Peak into dataset to get H/W
+                # Peek into dataset to get H/W
                 _, im, _ = self[0]
                 h, w, c = np.array(im).shape
             self._full_shape = (len(self), h, w, c)
