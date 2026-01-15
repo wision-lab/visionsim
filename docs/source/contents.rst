@@ -27,4 +27,5 @@
    :caption: For Developers
 
    API Documentation <apidocs/visionsim>
+   CLI Usage <apidocs/visionsim.cli>
    development
