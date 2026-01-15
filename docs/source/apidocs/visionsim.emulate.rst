@@ -17,29 +17,29 @@ visionsim.emulate.imu module
 
 .. automodule:: visionsim.emulate.imu
    :members:
-   :show-inheritance:
    :undoc-members:
+   :show-inheritance:
 
 visionsim.emulate.rgb module
 ----------------------------
 
 .. automodule:: visionsim.emulate.rgb
    :members:
-   :show-inheritance:
    :undoc-members:
+   :show-inheritance:
 
 visionsim.emulate.spc module
 ----------------------------
 
 .. automodule:: visionsim.emulate.spc
    :members:
-   :show-inheritance:
    :undoc-members:
+   :show-inheritance:
 
 Module contents
 ---------------
 
 .. automodule:: visionsim.emulate
    :members:
-   :show-inheritance:
    :undoc-members:
+   :show-inheritance:

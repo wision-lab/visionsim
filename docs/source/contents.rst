@@ -21,13 +21,10 @@
 
    tutorials/extending 
    tutorials/large-dataset
-   .. tutorials/stereo
-   .. tutorials/preexisting-ds
 
 .. toctree::
    :hidden:
    :caption: For Developers
 
    API Documentation <apidocs/visionsim>
-   CLI Usage <clidocs/visionsim.cli>
    development

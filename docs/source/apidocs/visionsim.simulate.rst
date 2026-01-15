@@ -9,37 +9,37 @@ visionsim.simulate.blender module
 
 .. automodule:: visionsim.simulate.blender
    :members:
-   :show-inheritance:
    :undoc-members:
+   :show-inheritance:
 
 visionsim.simulate.config module
 --------------------------------
 
 .. automodule:: visionsim.simulate.config
    :members:
-   :show-inheritance:
    :undoc-members:
+   :show-inheritance:
 
 visionsim.simulate.install module
 ---------------------------------
 
 .. automodule:: visionsim.simulate.install
    :members:
-   :show-inheritance:
    :undoc-members:
+   :show-inheritance:
 
 visionsim.simulate.job module
 -----------------------------
 
 .. automodule:: visionsim.simulate.job
    :members:
-   :show-inheritance:
    :undoc-members:
+   :show-inheritance:
 
 Module contents
 ---------------
 
 .. automodule:: visionsim.simulate
    :members:
-   :show-inheritance:
    :undoc-members:
+   :show-inheritance:
