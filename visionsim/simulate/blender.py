@@ -88,13 +88,13 @@ def require_connected_client(
     """Decorator which ensures a client is connected.
 
     Args:
-        func (Callable[Concatenate[BlenderClient, P], Any]): Function to decorate
+        func (Callable[Concatenate[BlenderClient, _P], Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if client is not connected.
 
     Returns:
-        Callable[Concatenate[BlenderClient, P], Any]: Decorated function.
+        Callable[Concatenate[BlenderClient, _P], Any]: Decorated function.
     """
 
     @functools.wraps(func)
@@ -114,13 +114,13 @@ def require_connected_clients(
     """Decorator which ensures all clients are connected.
 
     Args:
-        func (Callable[Concatenate[BlenderClients, P], Any]): Function to decorate
+        func (Callable[Concatenate[BlenderClients, _P], Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if at least one client is not connected.
 
     Returns:
-        Callable[Concatenate[BlenderClients, P], Any]: Decorated function.
+        Callable[Concatenate[BlenderClients, _P], Any]: Decorated function.
     """
 
     @functools.wraps(func)
@@ -140,13 +140,13 @@ def require_initialized_service(
     """Decorator which ensures the render service was initialized.
 
     Args:
-        func (Callable[Concatenate[BlenderService, P], Any]): Function to decorate
+        func (Callable[Concatenate[BlenderService, _P], Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if :meth:`client.initialize <BlenderService.exposed_initialize>` has not been previously called.
 
     Returns:
-        Callable[Concatenate[BlenderService, P], Any]: Decorated function.
+        Callable[Concatenate[BlenderService, _P], Any]: Decorated function.
     """
 
     @functools.wraps(func)
@@ -164,10 +164,10 @@ def validate_camera_moved(
     """Decorator which emits a warning if the camera was not moved.
 
     Args:
-        func (Callable[Concatenate[BlenderService, P], Any]): Function to decorate
+        func (Callable[Concatenate[BlenderService, _P], Any]): Function to decorate
 
     Returns:
-        Callable[Concatenate[BlenderService, P], Any]: Decorated function.
+        Callable[Concatenate[BlenderService, _P], Any]: Decorated function.
     """
 
     @functools.wraps(func)
@@ -408,7 +408,7 @@ class BlenderService(rpyc.Service):
     #   By default the service name is extracted from the class name, so here
     #   it would be `blender` anyways, but we define an alias here to support
     #   subclasses which might be named differently and not discovered.
-    ALIASES: tuple[str] = ("BLENDER", )
+    ALIASES: tuple[str] = ("BLENDER",)
 
     def __init__(self) -> None:
         """Initialize render service.

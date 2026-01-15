@@ -56,6 +56,13 @@ path = "visionsim/__init__.py"
 line-length = 121
 exclude = ["visionsim/interpolate/rife/*"]
 
+[tool.mypy]
+exclude = [
+    "visionsim/interpolate/rife/*",
+    "visionsim/emulate/dvs/*"
+]
+follow_imports="skip"
+
 [dependency-groups]
 dev = [
     "build>=1.3.0",
