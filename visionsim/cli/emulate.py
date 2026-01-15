@@ -274,7 +274,7 @@ def rgb(
             imgs = srgb_to_linearrgb(imgs)
 
             # batch_size is not relevant here
-            imgs = imgs[:,0,...]
+            imgs = imgs[:, 0, ...]
 
             rgb_img = emulate_rgb_from_sequence(
                 imgs,

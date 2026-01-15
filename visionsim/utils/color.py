@@ -44,9 +44,7 @@ def linearrgb_to_srgb(img: torch.Tensor | npt.NDArray) -> torch.Tensor | npt.NDA
     return img
 
 
-def rgb2raw_bayer(rgb: torch.Tensor | npt.NDArray,
-                  cfa_pattern: Literal["rggb"] = "rggb"
-) -> torch.Tensor | npt.NDArray:
+def rgb2raw_bayer(rgb: torch.Tensor | npt.NDArray, cfa_pattern: Literal["rggb"] = "rggb") -> torch.Tensor | npt.NDArray:
     """Mosaicing
 
     Realizes a mosaiced CFA image as would be sampled by a real Bayer-patterned sensor
@@ -59,7 +57,7 @@ def rgb2raw_bayer(rgb: torch.Tensor | npt.NDArray,
         raw: CFA mosaiced data
     """
     if cfa_pattern == "rggb":
-        raw = np.copy(rgb[:,:,0])
+        raw = np.copy(rgb[:, :, 0])
         raw[::2, 1::2] = rgb[::2, 1::2, 1]
         raw[1::2, ::2] = rgb[1::2, ::2, 1]
         raw[1::2, 1::2] = rgb[1::2, 1::2, 2]
@@ -68,13 +66,14 @@ def rgb2raw_bayer(rgb: torch.Tensor | npt.NDArray,
     return raw
 
 
-def raw2rgb_bayer(raw: torch.Tensor | npt.NDArray,
-                  cfa_pattern: Literal["rggb"] = "rggb",
-                  method: Literal["off", "bilinear", "MHC04"] = "bilinear"
+def raw2rgb_bayer(
+    raw: torch.Tensor | npt.NDArray,
+    cfa_pattern: Literal["rggb"] = "rggb",
+    method: Literal["off", "bilinear", "MHC04"] = "bilinear",
 ) -> torch.Tensor | npt.NDArray:
     """Demosaicing
 
-    Convolution-based implementation as suggested by Malvar et al., 
+    Convolution-based implementation as suggested by Malvar et al.,
     "High-quality linear interpolation for demosaicing of Bayer-patterned color images", ICASSP 2004.
     https://home.cis.rit.edu/~cnspci/references/dip/demosaicking/malvar2004.pdf
 
@@ -112,23 +111,23 @@ def raw2rgb_bayer(raw: torch.Tensor | npt.NDArray,
             return rgb
 
         if method in ["bilinear", "MHC04"]:
-            h_avg_fw_x = np.array([[0., 0.5, 0.5]])
+            h_avg_fw_x = np.array([[0.0, 0.5, 0.5]])
             h_avg_bw_x = np.fliplr(h_avg_fw_x)
-            
-            rgb[::2, ::2, 1] = 0.5 * (correlate(G1, h_avg_bw_x, mode="nearest")
-                                      + correlate(G2, h_avg_bw_x.T, mode="nearest"))
-            rgb[::2, ::2, 2] = correlate(correlate(B, h_avg_bw_x, mode="nearest"),
-                                          h_avg_bw_x.T, mode="nearest")
+
+            rgb[::2, ::2, 1] = 0.5 * (
+                correlate(G1, h_avg_bw_x, mode="nearest") + correlate(G2, h_avg_bw_x.T, mode="nearest")
+            )
+            rgb[::2, ::2, 2] = correlate(correlate(B, h_avg_bw_x, mode="nearest"), h_avg_bw_x.T, mode="nearest")
 
             rgb[::2, 1::2, 0] = correlate(R, h_avg_fw_x, mode="nearest")
             rgb[::2, 1::2, 2] = correlate(B, h_avg_bw_x.T, mode="nearest")
             rgb[1::2, ::2, 0] = correlate(R, h_avg_fw_x.T, mode="nearest")
             rgb[1::2, ::2, 2] = correlate(B, h_avg_bw_x, mode="nearest")
 
-            rgb[1::2, 1::2, 0] = correlate(correlate(R, h_avg_fw_x, mode="nearest"),
-                                            h_avg_fw_x.T, mode="nearest")
-            rgb[1::2, 1::2, 1] = 0.5 * (correlate(G1, h_avg_fw_x.T, mode="nearest")
-                                        + correlate(G2, h_avg_fw_x, mode="nearest"))
+            rgb[1::2, 1::2, 0] = correlate(correlate(R, h_avg_fw_x, mode="nearest"), h_avg_fw_x.T, mode="nearest")
+            rgb[1::2, 1::2, 1] = 0.5 * (
+                correlate(G1, h_avg_fw_x.T, mode="nearest") + correlate(G2, h_avg_fw_x, mode="nearest")
+            )
 
             if method == "bilinear":
                 return rgb
@@ -137,53 +136,52 @@ def raw2rgb_bayer(raw: torch.Tensor | npt.NDArray,
                 # Kernels in Fig. 2 of Malvar et al., along with weight factors for combination.
                 # This implementation is a little idiosyncratic because it realizes the 2D convolution
                 # via a sequence of 1D convolutions, probably not worth it in hindsight...
-                h_avg_nhood_x = np.array([[0.5, 0., 0.5]])
+                h_avg_nhood_x = np.array([[0.5, 0.0, 0.5]])
 
-                av_R = correlate(correlate(R, h_avg_nhood_x, mode="nearest"),
-                                  h_avg_nhood_x.T, mode="nearest")
+                av_R = correlate(correlate(R, h_avg_nhood_x, mode="nearest"), h_avg_nhood_x.T, mode="nearest")
                 diff_R = R - av_R
 
-                av_B = correlate(correlate(B, h_avg_nhood_x, mode="nearest"),
-                                  h_avg_nhood_x.T, mode="nearest")
+                av_B = correlate(correlate(B, h_avg_nhood_x, mode="nearest"), h_avg_nhood_x.T, mode="nearest")
                 diff_B = B - av_B
 
-                rgb[::2, ::2, 1] += (1/2) * diff_R
-                rgb[::2, ::2, 2] += (3/4) * diff_B
-                rgb[1::2, 1::2, 1] += (1/2) * diff_B
-                rgb[1::2, 1::2, 0] += (3/4) * diff_R
-                
-                av_G2_at_G1 = correlate(correlate(G2, h_avg_fw_x, mode="nearest"),
-                                         h_avg_bw_x.T, mode="nearest")
+                rgb[::2, ::2, 1] += (1 / 2) * diff_R
+                rgb[::2, ::2, 2] += (3 / 4) * diff_B
+                rgb[1::2, 1::2, 1] += (1 / 2) * diff_B
+                rgb[1::2, 1::2, 0] += (3 / 4) * diff_R
 
-                av_G1_at_G1_R = (correlate(G1, h_avg_nhood_x, mode="nearest")
-                                 - correlate(G1, 0.5*h_avg_nhood_x.T, mode="nearest"))
-                av_G1_R = (1/5) * (2*av_G1_at_G1_R + 4*av_G2_at_G1)
+                av_G2_at_G1 = correlate(correlate(G2, h_avg_fw_x, mode="nearest"), h_avg_bw_x.T, mode="nearest")
+
+                av_G1_at_G1_R = correlate(G1, h_avg_nhood_x, mode="nearest") - correlate(
+                    G1, 0.5 * h_avg_nhood_x.T, mode="nearest"
+                )
+                av_G1_R = (1 / 5) * (2 * av_G1_at_G1_R + 4 * av_G2_at_G1)
                 diff_G1_R = G1 - av_G1_R
-                rgb[::2, 1::2, 0] += (5/8) * diff_G1_R
+                rgb[::2, 1::2, 0] += (5 / 8) * diff_G1_R
 
-                av_G1_at_G1_B = (correlate(G1, h_avg_nhood_x.T, mode="nearest")
-                                 - correlate(G1, 0.5*h_avg_nhood_x, mode="nearest"))
-                av_G1_B = (1/5) * (2*av_G1_at_G1_B + 4*av_G2_at_G1)
+                av_G1_at_G1_B = correlate(G1, h_avg_nhood_x.T, mode="nearest") - correlate(
+                    G1, 0.5 * h_avg_nhood_x, mode="nearest"
+                )
+                av_G1_B = (1 / 5) * (2 * av_G1_at_G1_B + 4 * av_G2_at_G1)
                 diff_G1_B = G1 - av_G1_B
-                rgb[::2, 1::2, 2] += (5/8) * diff_G1_B
+                rgb[::2, 1::2, 2] += (5 / 8) * diff_G1_B
 
-                av_G1_at_G2 = correlate(correlate(G1, h_avg_bw_x, mode="nearest"),
-                                         h_avg_fw_x.T, mode="nearest")
+                av_G1_at_G2 = correlate(correlate(G1, h_avg_bw_x, mode="nearest"), h_avg_fw_x.T, mode="nearest")
 
-                av_G2_at_G2_R = (correlate(G2, h_avg_nhood_x.T, mode="nearest")
-                                 - correlate(G2, 0.5*h_avg_nhood_x, mode="nearest"))
-                av_G2_R = (1/5) * (4*av_G1_at_G2 + 2*av_G2_at_G2_R)
+                av_G2_at_G2_R = correlate(G2, h_avg_nhood_x.T, mode="nearest") - correlate(
+                    G2, 0.5 * h_avg_nhood_x, mode="nearest"
+                )
+                av_G2_R = (1 / 5) * (4 * av_G1_at_G2 + 2 * av_G2_at_G2_R)
                 diff_G2_R = G2 - av_G2_R
-                rgb[1::2, ::2, 0] += (5/8) * diff_G2_R
+                rgb[1::2, ::2, 0] += (5 / 8) * diff_G2_R
 
-                av_G2_at_G2_B = (correlate(G2, h_avg_nhood_x, mode="nearest")
-                                 - correlate(G2, 0.5*h_avg_nhood_x.T, mode="nearest"))
-                av_G2_B = (1/5) * (4*av_G1_at_G2 + 2*av_G2_at_G2_B)
+                av_G2_at_G2_B = correlate(G2, h_avg_nhood_x, mode="nearest") - correlate(
+                    G2, 0.5 * h_avg_nhood_x.T, mode="nearest"
+                )
+                av_G2_B = (1 / 5) * (4 * av_G1_at_G2 + 2 * av_G2_at_G2_B)
                 diff_G2_B = G2 - av_G2_B
-                rgb[1::2, ::2, 2] += (5/8) * diff_G2_B
+                rgb[1::2, ::2, 2] += (5 / 8) * diff_G2_B
 
                 return rgb
     else:
         raise NotImplementedError
     return rgb
-
