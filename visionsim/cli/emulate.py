@@ -196,15 +196,15 @@ def rgb(
     input_dir: str | os.PathLike,
     output_dir: str | os.PathLike,
     chunk_size: int = 10,
-    shutr_angl: float = 360.0,
-    rdout_std: float = 0.3,
+    shutter_angle: float = 360.0,
+    readout_std: float = 0.3,
     fwc: float | None = None,
     scale_flux: float = 1.0,
     g_ISO: float = 1.0,
     bitdepth: int = 12,
     demosaic: Literal["off", "bilinear", "MHC04"] = "bilinear",
-    dnois_sigma: float = 0.0,
-    sharpn_wt: float = 0.0,
+    denoise_sigma: float = 0.0,
+    sharpen_weight: float = 0.0,
     pattern: str = "frame_{:06}.png",
     mode: Literal["npy", "img"] = "npy",
     force: bool = False,
@@ -215,15 +215,15 @@ def rgb(
         input_dir: directory in which to look for frames
         output_dir: directory in which to save binary frames
         chunk_size: number of consecutive frames to average together
-        shutr_angl: fraction of inter-frame duration shutter is active (0-360 deg)
-        rdout_std: standard deviation of gaussian read noise in photoelectrons
+        shutter_angle: fraction of inter-frame duration shutter is active (0-360 deg)
+        readout_std: standard deviation of gaussian read noise in photoelectrons
         fwc: full well capacity of sensor in photoelectrons
         scale_flux: factor to scale the input images before Poisson simulation
         g_ISO: gain for photo-electron reading after Poisson rng
         bitdepth: ADC bitdepth
         demosaic: demosaicing method (default bilinear)
-        dnois_sigma: Gaussian blur with this sigma will be used (default 0.0 disables this)
-        sharpn_wt: weight used in sharpening (default 0.0 disables this)
+        denoise_sigma: Gaussian blur with this sigma will be used (default 0.0 disables this)
+        sharpen_weight: weight used in sharpening (default 0.0 disables this)
         pattern: filenames of frames should match this
         mode: how to save generated frames
         force: if true, overwrite output file(s) if present
@@ -278,15 +278,15 @@ def rgb(
 
             rgb_img = emulate_rgb_from_sequence(
                 imgs,
-                readout_std=rdout_std,
+                readout_std=readout_std,
                 fwc=fwc or np.inf,
-                shutter_angle_degrees=shutr_angl,
+                shutter_angle_degrees=shutter_angle,
                 scale_flux=scale_flux,
                 gain_ISO=g_ISO,
                 bitdepth=bitdepth,
                 demosaic_method=demosaic,
-                denoise_sigma=dnois_sigma,
-                sharpen_weight=sharpn_wt,
+                denoise_sigma=denoise_sigma,
+                sharpen_weight=sharpen_weight,
             )
 
             if transforms_new:
