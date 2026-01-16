@@ -251,7 +251,7 @@ class BlenderServer(rpyc.utils.server.Server):
         """Spawn one or more blender instances and start a :class:`BlenderServer` in each.
 
         This is roughly equivalent to calling ``blender -b --python blender.py`` in many subprocesses,
-        where ``blender.py`` initializes and ``start``\s a server instance. Proper logging and termination of
+        where ``blender.py`` initializes and ``start``\\s a server instance. Proper logging and termination of
         these processes is also taken care of.
 
         Note: The returned processes and connection settings are not guaranteed to be in the same order.
@@ -380,7 +380,7 @@ class BlenderServer(rpyc.utils.server.Server):
 
     @staticmethod
     def discover() -> list[tuple[str, int]]:
-        """Discover any :class:`BlenderServer`\s that are already running and return their connection parameters.
+        """Discover any :class:`BlenderServer`\\s that are already running and return their connection parameters.
 
         Note:
             A discoverable server might already be in use and can refuse connection attempts.

@@ -65,7 +65,7 @@ class PoolProgress(Progress):
         """Initialize a ``PoolProgress`` instance.
 
         Note:
-            All other \*args and \*\*kwargs are passed as is to 
+            All other \\*args and \\*\\*kwargs are passed as is to 
             `rich.progress.Progress <https://rich.readthedocs.io/en/latest/reference/progress.html#rich.progress.Progress>`_.
 
         Args:

@@ -89,7 +89,7 @@ def combine(
 
     Internally this task will first optionally pad all videos to length using ffmpeg's ``tpad`` filter,
     then ``scale`` all videos in a row to have the same height, combine rows together using the ``hstack``
-    filter before finally ``scale``\ing row-videos to have same width and ``vstack``\ing them together.
+    filter before finally ``scale``\\ing row-videos to have same width and ``vstack``\\ing them together.
 
     Args:
         matrix: Way to specify videos to combine as a 2D matrix of file paths
