@@ -94,8 +94,8 @@ def combine(
     Args:
         matrix: Way to specify videos to combine as a 2D matrix of file paths
         outfile: where to save generated mp4
-        mode: if 'shortest' combined video will last as long s shortest input video. 
-            If 'static', the last frame of videos that are shorter than the longest input video will be repeated. 
+        mode: if 'shortest' combined video will last as long s shortest input video.
+            If 'static', the last frame of videos that are shorter than the longest input video will be repeated.
             If 'pad', all videos as padded with frames of ``color`` to last the same duration.
         color: color to pad videos with, only used if mode is 'pad'
         multiple: some codecs require size to be a multiple of n
@@ -106,7 +106,7 @@ def combine(
         The input videos can also be specified in a 2D array using the ``--matrix`` argument like so:
 
         .. code-block:: bash
-    
+
             $ visionsim ffmpeg.combine --matrix='[["a.mp4", "b.mp4"]]' --outfile="output.mp4"
     """
     # TODO: Allow borders and use xstack for better performance

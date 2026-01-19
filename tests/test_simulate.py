@@ -72,11 +72,15 @@ def test_docstrings(obj):
 def test_render_layout(cube_dataset):
     assert (cube_dataset / "transforms.json").exists()
 
-    for subdir in ["frames", "depths", "normals", "flows", "segmentations"]:
-        subdir = cube_dataset / subdir
+    for gt_type in ["frames", "depths", "normals", "flows", "segmentations"]:
+        subdir = cube_dataset / gt_type
         assert subdir.exists()
-        assert len(list(subdir.glob("*.png"))) == 5
-        assert len(list(subdir.glob("*.exr"))) in (0, 5)
+        assert not (subdir / "transforms.json").exists()
+
+        if gt_type == "frames":
+            assert len(list(subdir.glob("**/*.png"))) == 5
+        else:
+            assert len(list(subdir.glob("**/*.exr"))) == 5
 
 
 @pytest.mark.parametrize(

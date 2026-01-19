@@ -51,9 +51,9 @@ except ImportError:
 try:
     from visionsim.simulate.compat import file_output_node
     from visionsim.simulate.nodes import (  # type: ignore
-        flowdebug_node_group,
-        normaldebug_node_group,
-        segmentationdebug_node_group,
+        flow_preview_node_group,
+        normal_preview_node_group,
+        segmentation_preview_node_group,
         vec2rgba_node_group,
     )
 except ImportError:
@@ -80,6 +80,8 @@ server_log.setLevel(logging.INFO)
 
 EXPOSED_PREFIX: str = "exposed_"
 REGISTRY: tuple[Process, rpyc.utils.registry.UDPRegistryClient] | None = None
+ITEMS_PER_SUBFOLDER: int = 1000
+INDEX_PADDING: int = np.ceil(np.log10(ITEMS_PER_SUBFOLDER)).astype(int)
 
 
 def require_connected_client(
@@ -544,21 +546,19 @@ class BlenderService(rpyc.Service):
             self.reset()
 
         # Load blendfile
-        self.blend_file: Path = Path(str(blend_file))
+        self.root_path: Path = Path(str(root_path)).resolve()
+        self.blend_file: Path = Path(str(blend_file)).resolve()
         bpy.ops.wm.open_mainfile(filepath=str(blend_file), **kwargs)
         self.log.info(f"Successfully loaded {blend_file}")
 
-        # Ensure root paths exist
-        self.root_path: Path = Path(str(root_path)).resolve()
-        self.root_path.mkdir(parents=True, exist_ok=True)
-        (self.root_path / "frames").mkdir(parents=True, exist_ok=True)
-
         # Init various variables to track state
-        self.depth_path: bpy.types.CompositorNodeOutputFile | None = None
-        self.normal_path: bpy.types.CompositorNodeOutputFile | None = None
-        self.flow_path: bpy.types.CompositorNodeOutputFile | None = None
-        self.segmentation_path: bpy.types.CompositorNodeOutputFile | None = None
-        self.depth_extension: str = ".exr"
+        self.outputs: dict[
+            str,
+            tuple[
+                bpy.types.CompositorNodeOutputFile,
+                bpy.types.NodeOutputFileSlotFile | bpy.types.NodeCompositorFileOutputItem,
+            ],
+        ] = {}
         self.unbind_camera: bool = False
         self.use_animation: bool = True
         self.initialized = True
@@ -680,11 +680,11 @@ class BlenderService(rpyc.Service):
         return (self.scene.frame_start, self.scene.frame_end, self.scene.frame_step)  # type: ignore
 
     @require_initialized_service
-    def exposed_include_depths(self, debug=True, file_format="OPEN_EXR", exr_codec="ZIP") -> None:
+    def exposed_include_depths(self, preview=True, file_format="OPEN_EXR", exr_codec="ZIP") -> None:
         """Sets up Blender compositor to include depth map for rendered images.
 
         Args:
-            debug (bool, optional): if true, colorized depth maps, helpful for quick visualizations,
+            preview (bool, optional): if true, colorized depth maps, helpful for quick visualizations,
                 will be generated alongside ground-truth depth maps. Defaults to True.
             file_format (str, optional): format of depth maps, one of "OPEN_EXR" or "HDR". The former
                 is lossless, but can require significant storage, the later is lossy and more compressed.
@@ -694,7 +694,7 @@ class BlenderService(rpyc.Service):
                 ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "ZIP".
 
         Note:
-            The debug colormap is re-normalized on a per-frame basis, to visually
+            The preview colormap is re-normalized on a per-frame basis, to visually
             compare across frames, apply colorization after rendering using the CLI.
 
         Raises:
@@ -702,137 +702,115 @@ class BlenderService(rpyc.Service):
         """
         # TODO: Add colormap option?
         self.view_layer.use_pass_z = True
-        (self.root_path / "depths").mkdir(parents=True, exist_ok=True)
 
         if file_format.upper() not in ("OPEN_EXR", "HDR"):
             raise ValueError(f"Expected one of OPEN_EXR/HDR for file_format, got {file_format}.")
 
-        if debug:
-            debug_depth_path, (debug_depth_slot,) = file_output_node(
-                self.tree, self.root_path / "depths", slots=[f"debug_depth_{'#' * 6}"], label="Debug Depth Output"
+        if preview:
+            preview_depth_output_node, (preview_depth_socket,), (preview_depth_slot,) = file_output_node(
+                self.tree,
+                self.root_path / "previews" / "depths" / "0000",
+                label="Preview Depth Output",
+                preview=True,
+                color_mode="BW",
             )
-            debug_depth_path.format.file_format = "PNG"
-            debug_depth_path.format.compression = 90
-            debug_depth_path.format.color_depth = "8"
-            debug_depth_path.format.color_mode = "BW"
-
-            # Important! Set the view settings to raw otherwise result is tonemapped
-            if bpy.app.version >= (3, 2, 0):
-                debug_depth_path.format.color_management = "OVERRIDE"
-            debug_depth_path.format.view_settings.view_transform = "Raw"
-            debug_depth_path.format.view_settings.look = "None"
-            debug_depth_path.format.view_settings.gamma = 0
-            debug_depth_path.format.view_settings.exposure = 1
-            debug_depth_path.format.view_settings.use_curve_mapping = False
-
-            if bpy.app.version >= (4, 3, 0):
-                debug_depth_path.format.view_settings.use_white_balance = False
 
             normalize = self.tree.nodes.new("CompositorNodeNormalize")
             self.tree.links.new(self.render_layers.outputs["Depth"], normalize.inputs[0])
-            self.tree.links.new(normalize.outputs[0], debug_depth_slot)
+            self.tree.links.new(normalize.outputs[0], preview_depth_socket)
+            self.outputs["preview_depth"] = (preview_depth_output_node, preview_depth_slot)
 
-        self.depth_path, (depth_slot,) = file_output_node(
-            self.tree, self.root_path / "depths", slots=[f"depth_{'#' * 6}"], label="Depth Output"
+        depth_output_node, (depth_socket,), (depth_slot,) = file_output_node(
+            self.tree, self.root_path / "depths" / "0000", label="Depth Output"
         )
 
         if bpy.app.version >= (3, 2, 0):
-            self.depth_path.format.color_management = "OVERRIDE"
-            self.depth_path.format.linear_colorspace_settings.name = "Non-Color"
-        self.depth_path.format.file_format = file_format
+            depth_output_node.format.color_management = "OVERRIDE"
+            depth_output_node.format.linear_colorspace_settings.name = "Non-Color"
+        depth_output_node.format.file_format = file_format
 
         if file_format.upper() == "OPEN_EXR":
-            self.depth_path.format.exr_codec = exr_codec
+            depth_output_node.format.exr_codec = exr_codec
 
             if bpy.app.version < (4, 3, 0):
-                self.depth_path.format.color_mode = "RGB"
+                depth_output_node.format.color_mode = "RGB"
             else:
-                self.depth_path.format.color_mode = "BW"
+                depth_output_node.format.color_mode = "BW"
 
-            self.depth_extension = ".exr"
+            depth_slot.name = str(Path(depth_slot.name).with_suffix(".exr"))
         else:
-            self.depth_path.format.color_mode = "RGB"
-            self.depth_extension = ".hdr"
+            depth_output_node.format.color_mode = "RGB"
+            depth_slot.name = str(Path(depth_slot.name).with_suffix(".hdr"))
 
-        self.tree.links.new(self.render_layers.outputs["Depth"], depth_slot)
+        self.tree.links.new(self.render_layers.outputs["Depth"], depth_socket)
+        self.outputs["depth"] = (depth_output_node, depth_slot)
 
     @require_initialized_service
-    def exposed_include_normals(self, debug=True, exr_codec="ZIP") -> None:
+    def exposed_include_normals(self, preview=True, exr_codec="ZIP") -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
         Args:
-            debug (bool, optional): if true, colorized normal maps will also be generated with each vector
+            preview (bool, optional): if true, colorized normal maps will also be generated with each vector
                 component being remapped from [-1, 1] to [0-255] with xyz becoming rgb. Defaults to True.
             exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
                 Defaults to "ZIP".
         """
         self.view_layer.use_pass_normal = True
-        (self.root_path / "normals").mkdir(parents=True, exist_ok=True)
 
-        # The node group `normaldebug` transforms normals from the global
-        # coordinate frame to the camera's, and also colors normals as RGB
+        # This node group transforms normals from the global coordinate frame
+        # to the camera's, and also colors normals as RGB
         normal_group = self.tree.nodes.new("CompositorNodeGroup")
-        normal_group.label = "NormalDebug"
-        normal_group.node_tree = normaldebug_node_group()
+        normal_group.label = "Normal Preview"
+        normal_group.node_tree = normal_preview_node_group()
         self.tree.links.new(self.render_layers.outputs["Normal"], normal_group.inputs[0])
 
-        if debug:
-            debug_normal_path, (debug_normal_slot,) = file_output_node(
-                self.tree, self.root_path / "normals", slots=[f"debug_normal_{'#' * 6}"], label="Normals Debug Output"
+        if preview:
+            preview_normal_output_node, (preview_normal_socket,), (preview_normal_slot,) = file_output_node(
+                self.tree,
+                self.root_path / "previews" / "normals" / "0000",
+                label="Normals Preview Output",
+                preview=True,
+                color_mode="RGB",
             )
-            debug_normal_path.format.file_format = "PNG"
-            debug_normal_path.format.compression = 90
-            debug_normal_path.format.color_depth = "8"
-            debug_normal_path.format.color_mode = "RGB"
 
-            # Important! Set the view settings to raw otherwise result is tonemapped
-            if bpy.app.version >= (3, 2, 0):
-                debug_normal_path.format.color_management = "OVERRIDE"
-            debug_normal_path.format.view_settings.view_transform = "Raw"
-            debug_normal_path.format.view_settings.look = "None"
-            debug_normal_path.format.view_settings.gamma = 0
-            debug_normal_path.format.view_settings.exposure = 1
-            debug_normal_path.format.view_settings.use_curve_mapping = False
+            self.tree.links.new(normal_group.outputs["RGBA"], preview_normal_socket)
+            self.outputs["preview_normal"] = (preview_normal_output_node, preview_normal_slot)
 
-            if bpy.app.version >= (4, 3, 0):
-                debug_normal_path.format.view_settings.use_white_balance = False
-
-            self.tree.links.new(normal_group.outputs["RGBA"], debug_normal_slot)
-
-        self.normal_path, (normal_slot,) = file_output_node(
-            self.tree, self.root_path / "normals", slots=[f"normal_{'#' * 6}"], label="Normals Output"
+        normal_output_node, (normal_socket,), (normal_slot,) = file_output_node(
+            self.tree, self.root_path / "normals" / "0000", label="Normals Output"
         )
 
         if bpy.app.version >= (3, 2, 0):
-            self.normal_path.format.color_management = "OVERRIDE"
-            self.normal_path.format.linear_colorspace_settings.name = "Non-Color"
-        self.normal_path.format.file_format = "OPEN_EXR"
-        self.normal_path.format.exr_codec = exr_codec
-        self.normal_path.format.color_mode = "RGB"
+            normal_output_node.format.color_management = "OVERRIDE"
+            normal_output_node.format.linear_colorspace_settings.name = "Non-Color"
+        normal_output_node.format.file_format = "OPEN_EXR"
+        normal_output_node.format.exr_codec = exr_codec
+        normal_output_node.format.color_mode = "RGB"
 
         vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
         vec2rgba.label = "Vector2RGBA"
         vec2rgba.node_tree = vec2rgba_node_group()
 
         self.tree.links.new(normal_group.outputs["Vector"], vec2rgba.inputs["Image"])
-        self.tree.links.new(vec2rgba.outputs["Image"], normal_slot)
+        self.tree.links.new(vec2rgba.outputs["Image"], normal_socket)
+        self.outputs["normal"] = (normal_output_node, normal_slot)
 
     @require_initialized_service
-    def exposed_include_flows(self, direction="forward", debug=True, exr_codec="ZIP") -> None:
+    def exposed_include_flows(self, direction="forward", preview=True, exr_codec="ZIP") -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
         Args:
             direction (str, optional): One of 'forward', 'backward' or 'both'. Direction of flow to colorize
-                for debug visualization. Only used when debug is true, otherwise both forward and backward
+                for preview visualization. Only used when ``preview`` is true, otherwise both forward and backward
                 flows are saved. Defaults to "forward".
-            debug (bool, optional): If true, also save debug visualizations of flow. Defaults to True.
+            preview (bool, optional): If true, also save preview visualizations of flow. Defaults to True.
             exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
                 Defaults to "ZIP".
 
         Note:
-            The debug colormap is re-normalized on a per-frame basis, to visually
+            The preview colormap is re-normalized on a per-frame basis, to visually
             compare across frames, apply colorization after rendering using the CLI.
 
         Raises:
@@ -845,9 +823,8 @@ class BlenderService(rpyc.Service):
             raise RuntimeError("Cannot compute optical flow if motion blur is enabled.")
 
         self.view_layer.use_pass_vector = True
-        (self.root_path / "flows").mkdir(parents=True, exist_ok=True)
 
-        if debug:
+        if preview:
             # Separate forward and backward flows (with a separate color not vector node)
             if bpy.app.version >= (3, 3, 0):
                 split_flow = self.tree.nodes.new(type="CompositorNodeSeparateColor")
@@ -856,81 +833,76 @@ class BlenderService(rpyc.Service):
                 split_flow = self.tree.nodes.new(type="CompositorNodeSepRGBA")
             self.tree.links.new(self.render_layers.outputs["Vector"], split_flow.inputs["Image"])
 
-            # Create output node
-            debug_flow_path, (debug_fwd_flow_slot, debug_bwd_flow_slot) = file_output_node(
+            # Create output nodes
+            preview_fwd_flow_output_node, (preview_fwd_flow_socket,), (preview_fwd_flow_slot,) = file_output_node(
                 self.tree,
-                self.root_path / "flows",
-                slots=[f"debug_fwd_flow_{'#' * 6}", f"debug_bwd_flow_{'#' * 6}"],
-                label="Flow Debug Output",
+                self.root_path / "previews" / "flows" / "forward" / "0000",
+                label="Forward Flow Preview Output",
+                preview=True,
+                color_mode="RGB",
             )
-            debug_flow_path.format.file_format = "PNG"
-            debug_flow_path.format.compression = 90
-            debug_flow_path.format.color_depth = "8"
-            debug_flow_path.format.color_mode = "RGB"
+            preview_bwd_flow_output_node, (preview_bwd_flow_socket,), (preview_bwd_flow_slot,) = file_output_node(
+                self.tree,
+                self.root_path / "previews" / "flows" / "backward" / "0000",
+                label="Backward Flow Preview Output",
+                preview=True,
+                color_mode="RGB",
+            )
 
-            # Important! Set the view settings to raw otherwise result is tonemapped
-            if bpy.app.version >= (3, 2, 0):
-                debug_flow_path.format.color_management = "OVERRIDE"
-            debug_flow_path.format.view_settings.view_transform = "Raw"
-            debug_flow_path.format.view_settings.look = "None"
-            debug_flow_path.format.view_settings.gamma = 0
-            debug_flow_path.format.view_settings.exposure = 1
-            debug_flow_path.format.view_settings.use_curve_mapping = False
-
-            if bpy.app.version >= (4, 3, 0):
-                debug_flow_path.format.view_settings.use_white_balance = False
-
-            # Instantiate flow debug node group(s) and connect them
+            # Instantiate flow preview node group(s) and connect them
             if direction.lower() in ("forward", "both"):
                 flow_group = self.tree.nodes.new("CompositorNodeGroup")
-                flow_group.node_tree = flowdebug_node_group()
-                flow_group.label = "FlowDebug Forward"
+                flow_group.node_tree = flow_preview_node_group()
+                flow_group.label = "Forward Flow Preview"
 
                 self.tree.links.new(split_flow.outputs[0], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs[1], flow_group.inputs["y"])
-                self.tree.links.new(flow_group.outputs["Image"], debug_fwd_flow_slot)
+                self.tree.links.new(flow_group.outputs["Image"], preview_fwd_flow_socket)
+                self.outputs["preview_forward_flow"] = (preview_fwd_flow_output_node, preview_fwd_flow_slot)
             if direction.lower() in ("backward", "both"):
                 flow_group = self.tree.nodes.new("CompositorNodeGroup")
-                flow_group.node_tree = flowdebug_node_group()
-                flow_group.label = "FlowDebug Backward"
+                flow_group.node_tree = flow_preview_node_group()
+                flow_group.label = "Backward Flow Preview"
 
                 self.tree.links.new(split_flow.outputs[2], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs[3], flow_group.inputs["y"])
-                self.tree.links.new(flow_group.outputs["Image"], debug_bwd_flow_slot)
+                self.tree.links.new(flow_group.outputs["Image"], preview_bwd_flow_socket)
+                self.outputs["preview_backward_flow"] = (preview_bwd_flow_output_node, preview_bwd_flow_slot)
 
         # Save flows as EXRs, flows are a 4-vec of forward flows x/y then backwards flows x/y
         # before blender 4.3, saving a vector as an image saved only 3 channels even if `color_mode`
         # is set to RGBA. So we add a dummy vec2rgba node to trick blender into treating the
         # vector as an image with 4 channels. This dummy node just splits and recombines channels.
-        self.flow_path, (flow_path_slot,) = file_output_node(
-            self.tree, self.root_path / "flows", slots=[f"flow_{'#' * 6}"], label="Flow Output"
+        flow_output_node, (flow_socket,), (flow_slot,) = file_output_node(
+            self.tree, self.root_path / "flows" / "0000", label="Flow Output"
         )
 
         if bpy.app.version >= (3, 2, 0):
-            self.flow_path.format.color_management = "OVERRIDE"
-            self.flow_path.format.linear_colorspace_settings.name = "Non-Color"
-        self.flow_path.format.file_format = "OPEN_EXR"
-        self.flow_path.format.exr_codec = exr_codec
-        self.flow_path.format.color_mode = "RGBA"
+            flow_output_node.format.color_management = "OVERRIDE"
+            flow_output_node.format.linear_colorspace_settings.name = "Non-Color"
+        flow_output_node.format.file_format = "OPEN_EXR"
+        flow_output_node.format.exr_codec = exr_codec
+        flow_output_node.format.color_mode = "RGBA"
 
         vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
         vec2rgba.label = "Vector2RGBA"
         vec2rgba.node_tree = vec2rgba_node_group()
 
         self.tree.links.new(self.render_layers.outputs["Vector"], vec2rgba.inputs["Image"])
-        self.tree.links.new(vec2rgba.outputs["Image"], flow_path_slot)
+        self.tree.links.new(vec2rgba.outputs["Image"], flow_socket)
+        self.outputs["flow"] = (flow_output_node, flow_slot)
 
     @require_initialized_service
-    def exposed_include_segmentations(self, shuffle=True, debug=True, seed=1234, exr_codec="ZIP") -> None:
+    def exposed_include_segmentations(self, shuffle=True, preview=True, seed=1234, exr_codec="ZIP") -> None:
         """Sets up Blender compositor to include segmentation maps for rendered images.
 
-        The debug visualization simply assigns a color to each object ID by mapping the
+        The preview visualization simply assigns a color to each object ID by mapping the
         objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
         for the background which will have a value of 0 to ensure it is black).
 
         Args:
-            shuffle (bool, optional): shuffle debug colors, helps differentiate object instances. Defaults to True.
-            debug (bool, optional): If true, also save debug visualizations of segmentation. Defaults to True.
+            shuffle (bool, optional): shuffle preview colors, helps differentiate object instances. Defaults to True.
+            preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
             seed (int, optional): random seed used when shuffling colors. Defaults to 1234.
             exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
@@ -945,7 +917,6 @@ class BlenderService(rpyc.Service):
             raise RuntimeError("Cannot produce segmentation maps when not using CYCLES.")
 
         self.view_layer.use_pass_object_index = True
-        (self.root_path / "segmentations").mkdir(parents=True, exist_ok=True)
         object_index_name = "Object Index" if bpy.app.version >= (5, 0, 0) else "IndexOB"
 
         # Assign IDs to every object (background will be 0)
@@ -958,54 +929,43 @@ class BlenderService(rpyc.Service):
         for i, obj in zip(indices, bpy.data.objects):
             obj.pass_index = i + 1
 
-        if debug:
+        if preview:
             seg_group = self.tree.nodes.new("CompositorNodeGroup")
-            seg_group.label = "SegmentationDebug"
-            seg_group.node_tree = segmentationdebug_node_group()
+            seg_group.label = "Segmentation Preview"
+            seg_group.node_tree = segmentation_preview_node_group()
             seg_group.node_tree.nodes["NormalizeIdx"].inputs["From Max"].default_value = len(bpy.data.objects)
 
-            debug_seg_path, (debug_seg_slot,) = file_output_node(
-                self.tree,
-                self.root_path / "segmentations",
-                slots=[f"debug_segmentation_{'#' * 6}"],
-                label="Segmentations Debug Output",
+            preview_segmentation_output_node, (preview_segmentation_socket,), (preview_segmentation_slot,) = (
+                file_output_node(
+                    self.tree,
+                    self.root_path / "previews" / "segmentations" / "0000",
+                    label="Segmentations Preview Output",
+                    preview=True,
+                    color_mode="RGB",
+                )
             )
-            debug_seg_path.format.file_format = "PNG"
-            debug_seg_path.format.compression = 90
-            debug_seg_path.format.color_depth = "8"
-            debug_seg_path.format.color_mode = "RGB"
-
-            # Important! Set the view settings to raw otherwise result is tonemapped
-            if bpy.app.version >= (3, 2, 0):
-                debug_seg_path.format.color_management = "OVERRIDE"
-            debug_seg_path.format.view_settings.view_transform = "Raw"
-            debug_seg_path.format.view_settings.look = "None"
-            debug_seg_path.format.view_settings.gamma = 0
-            debug_seg_path.format.view_settings.exposure = 1
-            debug_seg_path.format.view_settings.use_curve_mapping = False
-
-            if bpy.app.version >= (4, 3, 0):
-                debug_seg_path.format.view_settings.use_white_balance = False
 
             self.tree.links.new(self.render_layers.outputs[object_index_name], seg_group.inputs["Value"])
-            self.tree.links.new(seg_group.outputs["Image"], debug_seg_slot)
+            self.tree.links.new(seg_group.outputs["Image"], preview_segmentation_socket)
+            self.outputs["preview_segmentation"] = (preview_segmentation_output_node, preview_segmentation_slot)
 
-        self.segmentation_path, (segmentation_slot,) = file_output_node(
-            self.tree, self.root_path / "segmentations", slots=[f"segmentation_{'#' * 6}"], label="Segmentations Output"
+        segmentation_output_node, (segmentation_socket,), (segmentation_slot,) = file_output_node(
+            self.tree, self.root_path / "segmentations" / "0000", label="Segmentations Output"
         )
 
         if bpy.app.version >= (3, 2, 0):
-            self.segmentation_path.format.color_management = "OVERRIDE"
-            self.segmentation_path.format.linear_colorspace_settings.name = "Non-Color"
-        self.segmentation_path.format.file_format = "OPEN_EXR"
-        self.segmentation_path.format.exr_codec = exr_codec
+            segmentation_output_node.format.color_management = "OVERRIDE"
+            segmentation_output_node.format.linear_colorspace_settings.name = "Non-Color"
+        segmentation_output_node.format.file_format = "OPEN_EXR"
+        segmentation_output_node.format.exr_codec = exr_codec
 
         if bpy.app.version < (4, 3, 0):
-            self.segmentation_path.format.color_mode = "RGB"
+            segmentation_output_node.format.color_mode = "RGB"
         else:
-            self.segmentation_path.format.color_mode = "BW"
+            segmentation_output_node.format.color_mode = "BW"
 
-        self.tree.links.new(self.render_layers.outputs[object_index_name], segmentation_slot)
+        self.tree.links.new(self.render_layers.outputs[object_index_name], segmentation_socket)
+        self.outputs["segmentation"] = (segmentation_output_node, segmentation_slot)
 
     @require_initialized_service
     def exposed_load_addons(self, *addons: str) -> None:
@@ -1373,6 +1333,10 @@ class BlenderService(rpyc.Service):
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
 
+        Note:
+            This method renders the current frame as-is, it assumes the camera position,
+            frame number and all other parameters have been set.
+
         Args:
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
@@ -1382,31 +1346,29 @@ class BlenderService(rpyc.Service):
             dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
         # TODO: Implement skipping for depth/normals/flow?
+        folder_index = f"{self.scene.frame_current // ITEMS_PER_SUBFOLDER:04}"
+        frame_index = f"{self.scene.frame_current % ITEMS_PER_SUBFOLDER:0{INDEX_PADDING}}"
+        self.scene.render.filepath = str(self.root_path / "frames" / folder_index / frame_index)
+        paths = {"file_path": Path(self.scene.render.filepath).with_suffix(self.scene.render.file_extension)}
 
-        # Assumes the camera position, frame number and all other params have been set
-        index = self.scene.frame_current
-        self.scene.render.filepath = str(self.root_path / "frames" / f"frame_{index:06}")
-        paths = {"file_path": Path(f"frames/frame_{index:06}").with_suffix(self.scene.render.file_extension)}
+        for schema_prefix, (node, slot) in self.outputs.items():
+            node.directory = str(Path(node.directory).parent / folder_index)
+            slot.name = str(Path(slot.name).with_stem(frame_index).name)
+            paths[f"{schema_prefix}_file_path"] = Path(node.directory) / slot.name
 
-        if self.depth_path is not None:
-            paths["depth_file_path"] = Path(f"depths/depth_{index:06}{self.depth_extension}")
-        if self.normal_path is not None:
-            paths["normal_file_path"] = Path(f"normals/normal_{index:06}.exr")
-        if self.flow_path is not None:
-            paths["flow_file_path"] = Path(f"flows/flow_{index:06}.exr")
-        if self.segmentation_path is not None:
-            paths["segmentation_file_path"] = Path(f"segmentations/segmentation_{index:06}.exr")
+        for path in paths.values():
+            path.parent.mkdir(parents=True, exist_ok=True)
 
         if not dry_run:
             # Render frame(s), skip the render iff all files exist and `allow_skips`
             if not allow_skips or any(not Path(self.root_path / p).exists() for p in paths.values()):
                 # If `write_still` is false, depth & normals can be written but rgb will be skipped
-                skip_frame = Path(self.root_path / paths["file_path"]).exists() and allow_skips
+                skip_frame = paths["file_path"].exists() and allow_skips
                 bpy.ops.render.render(animation=False, write_still=not skip_frame)
 
         # Returns paths that were written
         return {
-            **{k: str(p) for k, p in paths.items()},
+            **{k: str(p.relative_to(self.root_path)) for k, p in paths.items()},
             "transform_matrix": self.exposed_camera_extrinsics().tolist(),
         }
 

@@ -60,13 +60,13 @@ def render_job(
     )
 
     if config.depths:
-        client.include_depths(debug=config.debug, exr_codec=config.exr_codec)
+        client.include_depths(preview=config.preview, exr_codec=config.exr_codec)
     if config.normals:
-        client.include_normals(debug=config.debug, exr_codec=config.exr_codec)
+        client.include_normals(preview=config.preview, exr_codec=config.exr_codec)
     if config.flows:
-        client.include_flows(debug=config.debug, direction=config.flow_direction, exr_codec=config.exr_codec)
+        client.include_flows(preview=config.preview, direction=config.flow_direction, exr_codec=config.exr_codec)
     if config.segmentations:
-        client.include_segmentations(debug=config.debug, exr_codec=config.exr_codec)
+        client.include_segmentations(preview=config.preview, exr_codec=config.exr_codec)
 
     if config.unbind_camera:
         client.unbind_camera()

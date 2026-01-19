@@ -29,11 +29,11 @@ class RenderConfig:
     flows: bool = False
     """If true, enable optical flow outputs"""
     flow_direction: Literal["forward", "backward", "both"] = "forward"
-    """Direction of flow to colorize for debug visualization. Only used when debug is true"""
+    """Direction of flow to colorize for preview visualization. Only used when ``preview`` is true"""
     segmentations: bool = False
     """If true, enable segmentation map outputs"""
-    debug: bool = True
-    """If true, also save debug visualizations for auxiliary outputs"""
+    preview: bool = True
+    """If true, also save preview visualizations for auxiliary outputs"""
     keyframe_multiplier: float = 1.0
     """Stretch keyframes by this amount, eg: 2.0 will slow down time"""
     timeout: int = -1

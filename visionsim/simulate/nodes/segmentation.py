@@ -10,7 +10,7 @@ from .common import MAPRANGE_NODE, MATH_NODE, new_socket, set_clamp
 
 
 # initialize SegmentationDebug node group
-def segmentationdebug_node_group():
+def segmentation_preview_node_group():
     segmentationdebug = bpy.data.node_groups.new(type="CompositorNodeTree", name="SegmentationDebug")
 
     if bpy.app.version >= (4, 3, 0):

@@ -26,6 +26,8 @@ handlers: Iterable[logging.Handler] | None
 server_log: logging.Logger
 EXPOSED_PREFIX: str
 REGISTRY: tuple[Process, rpyc.utils.registry.UDPRegistryClient] | None
+ITEMS_PER_SUBFOLDER: int
+INDEX_PADDING: int
 
 def require_connected_client(
     func: Callable[Concatenate[BlenderClient, _P], Any],
@@ -33,13 +35,13 @@ def require_connected_client(
     """Decorator which ensures a client is connected.
 
     Args:
-        func (Callable[Concatenate[BlenderClient, P], Any]): Function to decorate
+        func (Callable[Concatenate[BlenderClient, _P], Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if client is not connected.
 
     Returns:
-        Callable[Concatenate[BlenderClient, P], Any]: Decorated function.
+        Callable[Concatenate[BlenderClient, _P], Any]: Decorated function.
     """
 
 def require_connected_clients(
@@ -48,13 +50,13 @@ def require_connected_clients(
     """Decorator which ensures all clients are connected.
 
     Args:
-        func (Callable[Concatenate[BlenderClients, P], Any]): Function to decorate
+        func (Callable[Concatenate[BlenderClients, _P], Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if at least one client is not connected.
 
     Returns:
-        Callable[Concatenate[BlenderClients, P], Any]: Decorated function.
+        Callable[Concatenate[BlenderClients, _P], Any]: Decorated function.
     """
 
 def require_initialized_service(
@@ -63,13 +65,13 @@ def require_initialized_service(
     """Decorator which ensures the render service was initialized.
 
     Args:
-        func (Callable[Concatenate[BlenderService, P], Any]): Function to decorate
+        func (Callable[Concatenate[BlenderService, _P], Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if :meth:`client.initialize <BlenderService.exposed_initialize>` has not been previously called.
 
     Returns:
-        Callable[Concatenate[BlenderService, P], Any]: Decorated function.
+        Callable[Concatenate[BlenderService, _P], Any]: Decorated function.
     """
 
 def validate_camera_moved(
@@ -78,10 +80,10 @@ def validate_camera_moved(
     """Decorator which emits a warning if the camera was not moved.
 
     Args:
-        func (Callable[Concatenate[BlenderService, P], Any]): Function to decorate
+        func (Callable[Concatenate[BlenderService, _P], Any]): Function to decorate
 
     Returns:
-        Callable[Concatenate[BlenderService, P], Any]: Decorated function.
+        Callable[Concatenate[BlenderService, _P], Any]: Decorated function.
     """
 
 class BlenderServer(rpyc.utils.server.Server):
@@ -138,7 +140,7 @@ class BlenderServer(rpyc.utils.server.Server):
         """Spawn one or more blender instances and start a :class:`BlenderServer` in each.
 
         This is roughly equivalent to calling ``blender -b --python blender.py`` in many subprocesses,
-        where ``blender.py`` initializes and ``start``s a server instance. Proper logging and termination of
+        where ``blender.py`` initializes and ``start``\\s a server instance. Proper logging and termination of
         these processes is also taken care of.
 
         Note: The returned processes and connection settings are not guaranteed to be in the same order.
@@ -184,7 +186,7 @@ class BlenderServer(rpyc.utils.server.Server):
     def _launch_registry() -> None: ...
     @staticmethod
     def discover() -> list[tuple[str, int]]:
-        """Discover any :class:`BlenderServer`s that are already running and return their connection parameters.
+        """Discover any :class:`BlenderServer`\\s that are already running and return their connection parameters.
 
         Note:
             A discoverable server might already be in use and can refuse connection attempts.
@@ -280,13 +282,14 @@ class BlenderService(rpyc.Service):
         Args:
             log (logging.Logger): Logger to use for messages
         """
-    blend_file: Path
     root_path: Path
-    depth_path: bpy.types.CompositorNodeOutputFile | None
-    normal_path: bpy.types.CompositorNodeOutputFile | None
-    flow_path: bpy.types.CompositorNodeOutputFile | None
-    segmentation_path: bpy.types.CompositorNodeOutputFile | None
-    depth_extension: str
+    blend_file: Path
+    outputs: dict[
+        str,
+        tuple[
+            bpy.types.CompositorNodeOutputFile, bpy.types.NodeOutputFileSlotFile | bpy.types.NodeCompositorFileOutputItem
+        ],
+    ]
     unbind_camera: bool
     use_animation: bool
     disabled_fcurves: set[bpy.types.Action]
@@ -350,11 +353,13 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
-    def exposed_include_depths(self, debug: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP") -> None:
+    def exposed_include_depths(
+        self, preview: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP"
+    ) -> None:
         """Sets up Blender compositor to include depth map for rendered images.
 
         Args:
-            debug (bool, optional): if true, colorized depth maps, helpful for quick visualizations,
+            preview (bool, optional): if true, colorized depth maps, helpful for quick visualizations,
                 will be generated alongside ground-truth depth maps. Defaults to True.
             file_format (str, optional): format of depth maps, one of "OPEN_EXR" or "HDR". The former
                 is lossless, but can require significant storage, the later is lossy and more compressed.
@@ -364,7 +369,7 @@ class BlenderService(rpyc.Service):
                 ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "ZIP".
 
         Note:
-            The debug colormap is re-normalized on a per-frame basis, to visually
+            The preview colormap is re-normalized on a per-frame basis, to visually
             compare across frames, apply colorization after rendering using the CLI.
 
         Raises:
@@ -372,11 +377,11 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
-    def exposed_include_normals(self, debug: bool = True, exr_codec: str = "ZIP") -> None:
+    def exposed_include_normals(self, preview: bool = True, exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
         Args:
-            debug (bool, optional): if true, colorized normal maps will also be generated with each vector
+            preview (bool, optional): if true, colorized normal maps will also be generated with each vector
                 component being remapped from [-1, 1] to [0-255] with xyz becoming rgb. Defaults to True.
             exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
@@ -384,20 +389,20 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
-    def exposed_include_flows(self, direction: str = "forward", debug: bool = True, exr_codec: str = "ZIP") -> None:
+    def exposed_include_flows(self, direction: str = "forward", preview: bool = True, exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
         Args:
             direction (str, optional): One of 'forward', 'backward' or 'both'. Direction of flow to colorize
-                for debug visualization. Only used when debug is true, otherwise both forward and backward
+                for preview visualization. Only used when ``preview`` is true, otherwise both forward and backward
                 flows are saved. Defaults to "forward".
-            debug (bool, optional): If true, also save debug visualizations of flow. Defaults to True.
+            preview (bool, optional): If true, also save preview visualizations of flow. Defaults to True.
             exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
                 Defaults to "ZIP".
 
         Note:
-            The debug colormap is re-normalized on a per-frame basis, to visually
+            The preview colormap is re-normalized on a per-frame basis, to visually
             compare across frames, apply colorization after rendering using the CLI.
 
         Raises:
@@ -407,17 +412,17 @@ class BlenderService(rpyc.Service):
 
     @require_initialized_service
     def exposed_include_segmentations(
-        self, shuffle: bool = True, debug: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
+        self, shuffle: bool = True, preview: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
     ) -> None:
         """Sets up Blender compositor to include segmentation maps for rendered images.
 
-        The debug visualization simply assigns a color to each object ID by mapping the
+        The preview visualization simply assigns a color to each object ID by mapping the
         objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
         for the background which will have a value of 0 to ensure it is black).
 
         Args:
-            shuffle (bool, optional): shuffle debug colors, helps differentiate object instances. Defaults to True.
-            debug (bool, optional): If true, also save debug visualizations of segmentation. Defaults to True.
+            shuffle (bool, optional): shuffle preview colors, helps differentiate object instances. Defaults to True.
+            preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
             seed (int, optional): random seed used when shuffling colors. Defaults to 1234.
             exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
@@ -630,6 +635,10 @@ class BlenderService(rpyc.Service):
     def exposed_render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> dict[str, Any]:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
+
+        Note:
+            This method renders the current frame as-is, it assumes the camera position,
+            frame number and all other parameters have been set.
 
         Args:
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
@@ -952,11 +961,11 @@ class BlenderClient:
         """
 
     @type_check_only
-    def include_depths(self, debug: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP") -> None:
+    def include_depths(self, preview: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include depth map for rendered images.
 
         Args:
-            debug (bool, optional): if true, colorized depth maps, helpful for quick visualizations,
+            preview (bool, optional): if true, colorized depth maps, helpful for quick visualizations,
                 will be generated alongside ground-truth depth maps. Defaults to True.
             file_format (str, optional): format of depth maps, one of "OPEN_EXR" or "HDR". The former
                 is lossless, but can require significant storage, the later is lossy and more compressed.
@@ -966,7 +975,7 @@ class BlenderClient:
                 ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "ZIP".
 
         Note:
-            The debug colormap is re-normalized on a per-frame basis, to visually
+            The preview colormap is re-normalized on a per-frame basis, to visually
             compare across frames, apply colorization after rendering using the CLI.
 
         Raises:
@@ -974,11 +983,11 @@ class BlenderClient:
         """
 
     @type_check_only
-    def include_normals(self, debug: bool = True, exr_codec: str = "ZIP") -> None:
+    def include_normals(self, preview: bool = True, exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
         Args:
-            debug (bool, optional): if true, colorized normal maps will also be generated with each vector
+            preview (bool, optional): if true, colorized normal maps will also be generated with each vector
                 component being remapped from [-1, 1] to [0-255] with xyz becoming rgb. Defaults to True.
             exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
@@ -986,20 +995,20 @@ class BlenderClient:
         """
 
     @type_check_only
-    def include_flows(self, direction: str = "forward", debug: bool = True, exr_codec: str = "ZIP") -> None:
+    def include_flows(self, direction: str = "forward", preview: bool = True, exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
         Args:
             direction (str, optional): One of 'forward', 'backward' or 'both'. Direction of flow to colorize
-                for debug visualization. Only used when debug is true, otherwise both forward and backward
+                for preview visualization. Only used when ``preview`` is true, otherwise both forward and backward
                 flows are saved. Defaults to "forward".
-            debug (bool, optional): If true, also save debug visualizations of flow. Defaults to True.
+            preview (bool, optional): If true, also save preview visualizations of flow. Defaults to True.
             exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
                 Defaults to "ZIP".
 
         Note:
-            The debug colormap is re-normalized on a per-frame basis, to visually
+            The preview colormap is re-normalized on a per-frame basis, to visually
             compare across frames, apply colorization after rendering using the CLI.
 
         Raises:
@@ -1009,17 +1018,17 @@ class BlenderClient:
 
     @type_check_only
     def include_segmentations(
-        self, shuffle: bool = True, debug: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
+        self, shuffle: bool = True, preview: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
     ) -> None:
         """Sets up Blender compositor to include segmentation maps for rendered images.
 
-        The debug visualization simply assigns a color to each object ID by mapping the
+        The preview visualization simply assigns a color to each object ID by mapping the
         objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
         for the background which will have a value of 0 to ensure it is black).
 
         Args:
-            shuffle (bool, optional): shuffle debug colors, helps differentiate object instances. Defaults to True.
-            debug (bool, optional): If true, also save debug visualizations of segmentation. Defaults to True.
+            shuffle (bool, optional): shuffle preview colors, helps differentiate object instances. Defaults to True.
+            preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
             seed (int, optional): random seed used when shuffling colors. Defaults to 1234.
             exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
@@ -1226,6 +1235,10 @@ class BlenderClient:
     def render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> dict[str, Any]:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
+
+        Note:
+            This method renders the current frame as-is, it assumes the camera position,
+            frame number and all other parameters have been set.
 
         Args:
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
@@ -1632,11 +1645,11 @@ class BlenderClients(tuple):
         """
 
     @type_check_only
-    def include_depths(self, debug: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP") -> None:
+    def include_depths(self, preview: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include depth map for rendered images.
 
         Args:
-            debug (bool, optional): if true, colorized depth maps, helpful for quick visualizations,
+            preview (bool, optional): if true, colorized depth maps, helpful for quick visualizations,
                 will be generated alongside ground-truth depth maps. Defaults to True.
             file_format (str, optional): format of depth maps, one of "OPEN_EXR" or "HDR". The former
                 is lossless, but can require significant storage, the later is lossy and more compressed.
@@ -1646,7 +1659,7 @@ class BlenderClients(tuple):
                 ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "ZIP".
 
         Note:
-            The debug colormap is re-normalized on a per-frame basis, to visually
+            The preview colormap is re-normalized on a per-frame basis, to visually
             compare across frames, apply colorization after rendering using the CLI.
 
         Raises:
@@ -1654,11 +1667,11 @@ class BlenderClients(tuple):
         """
 
     @type_check_only
-    def include_normals(self, debug: bool = True, exr_codec: str = "ZIP") -> None:
+    def include_normals(self, preview: bool = True, exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
         Args:
-            debug (bool, optional): if true, colorized normal maps will also be generated with each vector
+            preview (bool, optional): if true, colorized normal maps will also be generated with each vector
                 component being remapped from [-1, 1] to [0-255] with xyz becoming rgb. Defaults to True.
             exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
@@ -1666,20 +1679,20 @@ class BlenderClients(tuple):
         """
 
     @type_check_only
-    def include_flows(self, direction: str = "forward", debug: bool = True, exr_codec: str = "ZIP") -> None:
+    def include_flows(self, direction: str = "forward", preview: bool = True, exr_codec: str = "ZIP") -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
         Args:
             direction (str, optional): One of 'forward', 'backward' or 'both'. Direction of flow to colorize
-                for debug visualization. Only used when debug is true, otherwise both forward and backward
+                for preview visualization. Only used when ``preview`` is true, otherwise both forward and backward
                 flows are saved. Defaults to "forward".
-            debug (bool, optional): If true, also save debug visualizations of flow. Defaults to True.
+            preview (bool, optional): If true, also save preview visualizations of flow. Defaults to True.
             exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
                 Defaults to "ZIP".
 
         Note:
-            The debug colormap is re-normalized on a per-frame basis, to visually
+            The preview colormap is re-normalized on a per-frame basis, to visually
             compare across frames, apply colorization after rendering using the CLI.
 
         Raises:
@@ -1689,17 +1702,17 @@ class BlenderClients(tuple):
 
     @type_check_only
     def include_segmentations(
-        self, shuffle: bool = True, debug: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
+        self, shuffle: bool = True, preview: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
     ) -> None:
         """Sets up Blender compositor to include segmentation maps for rendered images.
 
-        The debug visualization simply assigns a color to each object ID by mapping the
+        The preview visualization simply assigns a color to each object ID by mapping the
         objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
         for the background which will have a value of 0 to ensure it is black).
 
         Args:
-            shuffle (bool, optional): shuffle debug colors, helps differentiate object instances. Defaults to True.
-            debug (bool, optional): If true, also save debug visualizations of segmentation. Defaults to True.
+            shuffle (bool, optional): shuffle preview colors, helps differentiate object instances. Defaults to True.
+            preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
             seed (int, optional): random seed used when shuffling colors. Defaults to 1234.
             exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
@@ -1906,6 +1919,10 @@ class BlenderClients(tuple):
     def render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> tuple[dict[str, Any],]:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
+
+        Note:
+            This method renders the current frame as-is, it assumes the camera position,
+            frame number and all other parameters have been set.
 
         Args:
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.

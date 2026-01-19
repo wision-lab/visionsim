@@ -40,7 +40,7 @@ def executable(pytestconfig):
 
 
 @pytest.fixture(scope="session")
-def cube_dataset(tmp_path_factory, executable):
+def cube_dataset(tmp_path_factory, executable) -> Path:
     # Note: If this fails and you're using flatpak, it might be because
     #   the application doesn't have read/write access to /tmp!
     tmpdir = tmp_path_factory.mktemp("renders")

@@ -112,7 +112,7 @@ def cartesian2polar_node_group():
 
 
 # initialize FlowDebug node group
-def flowdebug_node_group():
+def flow_preview_node_group():
     flowdebug = bpy.data.node_groups.new(type="CompositorNodeTree", name="FlowDebug")
 
     if bpy.app.version >= (4, 3, 0):
