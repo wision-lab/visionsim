@@ -3,9 +3,9 @@ import numpy as np
 
 
 def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, transients, arrival_rates, ewh_list):
-    print("Min max of depth_frame", depth_frame.min(), depth_frame.max())
-    print("Ewh list", ewh_list)
-    print("arrival_rates", arrival_rates)
+    # print("Min max of depth_frame", depth_frame.min(), depth_frame.max())
+    # print("Ewh list", ewh_list)
+    # print("arrival_rates", arrival_rates)
 
     # Plots
     # Get number of FOVs from fov_masks
@@ -40,7 +40,10 @@ def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, trans
     for i in range(num_fovs):
         current_ax = ax3 if num_fovs == 1 else ax3[i]
         current_ax.imshow(
-            depth_frame.detach().cpu().numpy() * fov_masks[i].detach().cpu().numpy(), cmap="jet"
+            # The depth frame visualization should not be multiplied with a continuous FOV mask
+            # The visualization only shows the region of the depth frame that contributes to the transient for a specific pixel
+            depth_frame.detach().cpu().numpy() * (fov_masks[i].detach().cpu().numpy()>0), cmap="jet"
+            # depth_frame.detach().cpu().numpy() * fov_masks[i].detach().cpu().numpy(), cmap="jet"
         )  # Assuming max depth of 10m based on 10.0/255.0 scaling
         current_ax.set_title(f"FOV {i + 1}")
         current_ax.axis("off")
