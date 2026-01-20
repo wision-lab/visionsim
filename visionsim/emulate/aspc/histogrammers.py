@@ -84,7 +84,7 @@ class HistogrammerBase:
         return mask
 
     def get_perpixel_fov_masks(
-        self, empty_mask: Tensor, pixel_fov_list: list, device: torch.device = torch.device("cpu")
+        self, empty_mask: Tensor, pixel_fov_list: list, device: torch.device = torch.device("cpu"), vignette: bool = True
     ) -> Tensor:
         """
         Generates a list of FOV masks based on `pixel_fov_list`.
@@ -103,7 +103,7 @@ class HistogrammerBase:
 
         mask_list = []
         for r1, r2, c1, c2 in pixel_fov_list:
-            mask = self.get_pixel_fov_mask(empty_mask, r1, r2, c1, c2)
+            mask = self.get_pixel_fov_mask(empty_mask, r1, r2, c1, c2, vignette = vignette)
             # Ensure mask is on the correct device
             if mask.device != device:
                 mask = mask.to(device)
@@ -251,7 +251,7 @@ class HistogrammerBase:
         Args:
             buffer (torch.Tensor): A boolean tensor representing photon arrivals over time.
                             The second half `buffer[n_tbins:]` contains current arrivals.
-            dead_time_bins (Quantity): Number of time bins for dead time.
+            dead_time_bins (int): Number of time bins for dead time.
             n_tbins (int): Number of time bins for a single pulse period.
         """
         # Identify indices where current arrivals occurred
@@ -285,6 +285,7 @@ class HistConfig:
             [0, 0.999, 0, 0.999],
         ]
     )
+    vignette: bool = True
     n_pulses: int = 100
     dead_time_s: Quantity = 10e-9 * ureg.second
     free_running: bool = False
@@ -321,7 +322,7 @@ class Histogrammer(HistogrammerBase):
             setattr(self, k, v)
 
     def simulate_pixel_ewh(
-        self, phi_bar: torch.Tensor, n_pulses: int, n_hist_bins: int, free_running: bool, dead_time_bins: Quantity
+        self, phi_bar: torch.Tensor, n_pulses: int, n_hist_bins: int, free_running: bool, dead_time_bins: int
     ) -> torch.Tensor:
         """
         Simulates the Equi-Width Histogram (EWH) for a single pixel.
@@ -331,7 +332,7 @@ class Histogrammer(HistogrammerBase):
             n_pulses (int): Number of laser pulses to simulate.
             n_hist_bins (int): Number of histogram bins.
             free_running (bool): True for free-running mode, False for gated mode.
-            dead_time_bins (Quantity): Number of time bins for dead time.
+            dead_time_bins (int): Number of time bins for dead time.
 
         Returns:
             torch.Tensor: A tensor representing the accumulated photon histogram for the pixel.
@@ -343,20 +344,20 @@ class Histogrammer(HistogrammerBase):
         # First half for previous pulse arrivals, second half for current pulse arrivals
         buffer = torch.zeros((n_tbins * 2), dtype=torch.bool, device=phi_bar.device)
 
-        # Normalize dead time to an integer number of bins (drop units if provided)
-        if hasattr(dead_time_bins, "magnitude"):
-            dead_time_bins_int = int(dead_time_bins.to_base_units().magnitude)
-        else:
-            dead_time_bins_int = int(dead_time_bins)
+        # Pre-calculate probability once (outside the loop) as we are assuming phi_bar is static per pulse
+        # p(detection) = 1 - e^(-rate)
+        prob_detection = 1.0 - torch.exp(-phi_bar)
 
         for n_ in range(n_pulses):
-            # Generate photon arrivals using Poisson distribution
-            photon_vec = torch.poisson(phi_bar)
-            buffer[n_tbins:] = photon_vec > 0  # Mark where photons arrived in current pulse
+
+            detections = torch.bernoulli(prob_detection)
+            
+            # Update buffer
+            buffer[n_tbins:] = detections.bool()
 
             # Apply non-paralyzable dead time
-            if dead_time_bins_int > 0:
-                self._apply_non_pr_deadtime(buffer, dead_time_bins_int, n_tbins)
+            if dead_time_bins > 0:
+                self._apply_non_pr_deadtime(buffer, dead_time_bins, n_tbins)
 
             # Accumulate detected photons into the histogram
             photon_hist += buffer[n_tbins:].float()
@@ -374,7 +375,7 @@ class Histogrammer(HistogrammerBase):
         n_pulses: int,
         n_hist_bins: int,
         free_running: bool = False,
-        dead_time_bins: Quantity = 0 * ureg.second,
+        dead_time_bins: int = 0,
     ) -> list[torch.Tensor]:
         """
         Simulates the Equi-Width Histogram (EWH) for all pixels/FOVs.
@@ -384,7 +385,7 @@ class Histogrammer(HistogrammerBase):
             n_pulses (int): Number of laser pulses to simulate.
             n_hist_bins (int): Number of histogram bins.
             free_running (bool): True for free-running mode, False for gated mode.
-            dead_time_bins (Quantity): Number of time bins for dead time.
+            dead_time_bins (int): Number of time bins for dead time.
 
         Returns:
             list[torch.Tensor]: A list of tensors, where each tensor is the EWH for a pixel.
@@ -432,7 +433,7 @@ class Histogrammer(HistogrammerBase):
         n_pulses: int,
         n_hist_bins: int,
         free_running: bool = False,
-        dead_time_bins: Quantity = 0 * ureg.second,
+        dead_time_bins: int = 0,
     ) -> torch.Tensor:
         """
         Simulates the Equi-Width Histogram (EWH) for all pixels/FOVs (differentiable version).
@@ -442,12 +443,12 @@ class Histogrammer(HistogrammerBase):
             n_pulses (int): Number of laser pulses to simulate.
             n_hist_bins (int): Number of histogram bins.
             free_running (bool): True for free-running mode, False for gated mode.
-            dead_time_bins (Quantity): Number of time bins for dead time.
+            dead_time_bins (int): Number of time bins for dead time.
 
         Returns:
             torch.Tensor: A tensor of EWH histograms for all pixels.
         """
-        assert dead_time_bins == 0 * ureg.second, "Current differentiable EWH does not support non-zero dead time"
+        assert dead_time_bins == 0, "Current differentiable EWH does not support non-zero dead time"
 
         # Use expected value instead of sampling for differentiability
         # For Poisson distribution, E[X] = lambda = arrival_rates * n_pulses
@@ -506,7 +507,7 @@ class HistogrammerEDH(HistogrammerBase):
         return edh_bins
 
     def simulate_pixel_edh(
-        self, phi_bar: torch.Tensor, n_pulses: int, n_hist_bins: int, free_running: bool, dead_time_bins: Quantity
+        self, phi_bar: torch.Tensor, n_pulses: int, n_hist_bins: int, free_running: bool, dead_time_bins: int
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Simulates the Equi-Depth Histogram (EDH) for a single pixel.
@@ -558,7 +559,7 @@ class HistogrammerEDH(HistogrammerBase):
         n_pulses: int,
         n_hist_bins: int,
         free_running: bool = False,
-        dead_time_bins: Quantity = 0 * ureg.second,
+        dead_time_bins: int = 0,
     ) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
         """
         Simulates the Equi-Depth Histogram (EDH) for all pixels/FOVs.
