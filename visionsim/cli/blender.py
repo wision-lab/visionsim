@@ -54,7 +54,7 @@ def render_animation(
     output_blend_file: str | os.PathLike | None = None,
     dry_run: bool = False,
 ):
-    """Create datasets by rendering out a sequence from a _single_ blend-file.
+    """Create datasets by rendering out a sequence from a single blend-file.
 
     Args:
         blend_file (str | os.PathLike): Path to blend file.

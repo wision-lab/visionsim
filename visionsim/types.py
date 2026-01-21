@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from typing_extensions import Annotated, Protocol, TypeAlias
+from typing_extensions import Annotated, Literal, Protocol, TypeAlias
 
 try:
     # Note: Keep import requirements to only stdlib
@@ -17,6 +17,22 @@ _SIZE_SYMBOLS = ("B", "K", "M", "G", "T", "P", "E", "Z", "Y")
 _SIZE_BOUNDS = [(1024**i, sym) for i, sym in enumerate(_SIZE_SYMBOLS)]
 _SIZE_DICT = {sym: val for val, sym in _SIZE_BOUNDS}
 _SIZE_RANGES = list(zip(_SIZE_BOUNDS, _SIZE_BOUNDS[1:]))
+
+FILE_FORMATS = Literal[
+    "BMP",
+    "IRIS",
+    "PNG",
+    "JPEG",
+    "JPEG2000",
+    "TARGA",
+    "CINEON",
+    "DPX",
+    "OPEN_EXR",
+    "HDR",
+    "TIFF",
+    "WEBP",
+]
+EXR_CODECS = Literal["NONE", "PXR24", "ZIP", "PIZ", "RLE", "ZIPS", "DWAA", "DWAB"]
 
 
 def _bytes_from_str(size: str | list[str]) -> int:

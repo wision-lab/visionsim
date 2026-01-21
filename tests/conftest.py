@@ -52,6 +52,8 @@ def cube_dataset(tmp_path_factory, executable) -> Path:
         client.move_keyframes(scale=1 / 5)
         client.set_animation_range(10, 15)
         client.set_resolution(50, 50)
+        client.include_composites()
+        client.include_frames()
         client.include_depths()
         client.include_normals()
         client.include_flows()

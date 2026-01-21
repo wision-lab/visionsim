@@ -2,6 +2,7 @@ import inspect
 import itertools
 import re
 import warnings
+from dataclasses import fields
 
 import numpy as np
 import OpenEXR
@@ -9,7 +10,7 @@ import pytest
 from docstring_parser import parse_from_object
 
 from visionsim.dataset import IMG_SCHEMA, read_and_validate
-from visionsim.simulate import blender
+from visionsim.simulate import blender, config
 
 
 def get_public_members(obj, module=None):
@@ -72,12 +73,23 @@ def test_docstrings(obj):
 def test_render_layout(cube_dataset):
     assert (cube_dataset / "transforms.json").exists()
 
-    for gt_type in ["frames", "depths", "normals", "flows", "segmentations"]:
+    for gt_type in [
+        "composites",
+        "frames",
+        "depths",
+        "normals",
+        "flows",
+        "segmentations",
+        "previews/depths",
+        "previews/normals",
+        "previews/flows",
+        "previews/segmentations",
+    ]:
         subdir = cube_dataset / gt_type
         assert subdir.exists()
         assert not (subdir / "transforms.json").exists()
 
-        if gt_type == "frames":
+        if gt_type in ("frames", "composites") or "previews" in gt_type:
             assert len(list(subdir.glob("**/*.png"))) == 5
         else:
             assert len(list(subdir.glob("**/*.exr"))) == 5
@@ -105,3 +117,22 @@ def test_groundtruth_exrs(cube_dataset, subdir, channels):
 
 def test_transforms_schema(cube_dataset):
     read_and_validate(path=cube_dataset / "transforms.json", schema=IMG_SCHEMA)
+
+
+@pytest.mark.parametrize(
+    "func, conf",
+    [
+        (blender.BlenderService.exposed_include_composites, config.CompositesConfig),
+        (blender.BlenderService.exposed_include_frames, config.FramesConfig),
+        (blender.BlenderService.exposed_include_depths, config.DepthsConfig),
+        (blender.BlenderService.exposed_include_normals, config.NormalsConfig),
+        (blender.BlenderService.exposed_include_flows, config.FlowsConfig),
+        (blender.BlenderService.exposed_include_segmentations, config.SegmentationsConfig),
+    ],
+)
+def test_output_configs(func, conf):
+    conf_params = {f.name: f.default for f in fields(conf)}
+    sig_params = {name: val.default for name, val in inspect.signature(func).parameters.items()}
+    sig_params.pop("self")
+
+    assert sig_params == conf_params

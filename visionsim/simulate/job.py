@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import asdict
 from pathlib import Path
 
 from visionsim.simulate.blender import BlenderClient, BlenderClients
@@ -47,7 +48,6 @@ def render_job(
     """
     client.initialize(blend_file, root)
     client.set_resolution(height=config.height, width=config.width)
-    client.image_settings(file_format=config.file_format, bit_depth=config.bit_depth)
     client.use_animations(config.use_animations)
     client.load_addons(*(config.addons or []))
 
@@ -59,14 +59,18 @@ def render_job(
         use_cpu=True,
     )
 
-    if config.depths:
-        client.include_depths(preview=config.preview, exr_codec=config.exr_codec)
-    if config.normals:
-        client.include_normals(preview=config.preview, exr_codec=config.exr_codec)
-    if config.flows:
-        client.include_flows(preview=config.preview, direction=config.flow_direction, exr_codec=config.exr_codec)
-    if config.segmentations:
-        client.include_segmentations(preview=config.preview, exr_codec=config.exr_codec)
+    if config.include_composites:
+        client.include_composites(**asdict(config.composites))
+    if config.include_frames:
+        client.include_frames(**asdict(config.frames))
+    if config.include_depths:
+        client.include_depths(**asdict(config.depths))
+    if config.include_normals:
+        client.include_normals(**asdict(config.normals))
+    if config.include_flows:
+        client.include_flows(**asdict(config.flows))
+    if config.include_segmentations:
+        client.include_segmentations(**asdict(config.segmentations))
 
     if config.unbind_camera:
         client.unbind_camera()

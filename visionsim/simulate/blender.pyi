@@ -17,9 +17,9 @@ import numpy.typing as npt
 import rpyc  # type: ignore
 import rpyc.utils.registry  # type: ignore
 import rpyc.utils.server  # type: ignore
-from typing_extensions import Any, Concatenate, ParamSpec, Self
+from typing_extensions import Any, Concatenate, Literal, ParamSpec, Self
 
-from visionsim.types import UpdateFn
+from visionsim.types import EXR_CODECS, FILE_FORMATS, UpdateFn
 
 _P = ParamSpec("_P")
 handlers: Iterable[logging.Handler] | None
@@ -28,6 +28,7 @@ EXPOSED_PREFIX: str
 REGISTRY: tuple[Process, rpyc.utils.registry.UDPRegistryClient] | None
 ITEMS_PER_SUBFOLDER: int
 INDEX_PADDING: int
+FORMATS: dict[str, str]
 
 def require_connected_client(
     func: Callable[Concatenate[BlenderClient, _P], Any],
@@ -353,53 +354,121 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
-    def exposed_include_depths(
-        self, preview: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP"
+    def exposed_include_composites(
+        self,
+        file_format: FILE_FORMATS | None = None,
+        color_mode: Literal["BW", "RGB", "RGBA"] | None = None,
+        exr_codec: EXR_CODECS | None = None,
+        bit_depth: Literal[8, 16, 32] | None = None,
     ) -> None:
-        """Sets up Blender compositor to include depth map for rendered images.
+        """Sets up Blender to include the outputs of any existing compositor nodes groups.
+
+        Note: A default arguments of ``None`` means do not change setting inherited from the blendfile's ``Output`` settings.
 
         Args:
-            preview (bool, optional): if true, colorized depth maps, helpful for quick visualizations,
-                will be generated alongside ground-truth depth maps. Defaults to True.
-            file_format (str, optional): format of depth maps, one of "OPEN_EXR" or "HDR". The former
-                is lossless, but can require significant storage, the later is lossy and more compressed.
-                If depth is needed to compute scene-flow, use open-exr. Defaults to "OPEN_EXR".
-            exr_codec (str, optional): codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+            file_format (str | None, optional): Format to save composited render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP'). Defaults to None.
+            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
+            exr_codec (str | None, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
                 options vary depending on the version of Blender, with the following being broadly available:
-                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "ZIP".
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to None.
+            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
+        """
+
+    @require_initialized_service
+    def exposed_include_frames(
+        self,
+        file_format: FILE_FORMATS = "PNG",
+        color_mode: Literal["BW", "RGB", "RGBA"] = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 8,
+    ) -> None:
+        """Sets up Blender compositor to include ground truth rendered images, bypassing any existing compositor nodes.
+
+        Note:
+            For linear intensity renders, use the "OPEN_EXR" format with and 32 or 16 bits.
+
+        Args:
+            file_format (str, optional): Format to save ground truth render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP'). Defaults to "PNG".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 8 bits.
+
+        Raises:
+            ValueError: raised when file-format not understood.
+        """
+
+    @require_initialized_service
+    def exposed_include_depths(
+        self,
+        preview: bool = True,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include depth map for rendered images.
 
         Note:
             The preview colormap is re-normalized on a per-frame basis, to visually
             compare across frames, apply colorization after rendering using the CLI.
 
+        Args:
+            preview (bool, optional): If true, colorized depth maps, helpful for quick visualizations,
+                will be generated alongside ground-truth depth maps. Defaults to True.
+            file_format (str, optional): Format of depth maps, one of "OPEN_EXR" or "HDR". Defaults to "OPEN_EXR".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 32 bits.
+
         Raises:
-            ValueError: raise if file-format nor understood.
+            ValueError: raised when file-format not understood.
         """
 
     @require_initialized_service
-    def exposed_include_normals(self, preview: bool = True, exr_codec: str = "ZIP") -> None:
+    def exposed_include_normals(
+        self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
+    ) -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
         Args:
-            preview (bool, optional): if true, colorized normal maps will also be generated with each vector
-                component being remapped from [-1, 1] to [0-255] with xyz becoming rgb. Defaults to True.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            preview (bool, optional): If true, colorized normal maps will also be generated with each vector
+                component being remapped from [-1, 1] to [0-255] where XYZ coordinates are mapped channel-wise to RGB.
+                Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Either 16 or 32 bits. Defaults to 32 bits.
         """
 
     @require_initialized_service
-    def exposed_include_flows(self, direction: str = "forward", preview: bool = True, exr_codec: str = "ZIP") -> None:
+    def exposed_include_flows(
+        self,
+        preview: bool = True,
+        direction: Literal["forward", "backward", "both"] = "forward",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
         Args:
+            preview (bool, optional): If true, also save preview visualizations of flow. Defaults to True.
             direction (str, optional): One of 'forward', 'backward' or 'both'. Direction of flow to colorize
                 for preview visualization. Only used when ``preview`` is true, otherwise both forward and backward
                 flows are saved. Defaults to "forward".
-            preview (bool, optional): If true, also save preview visualizations of flow. Defaults to True.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 32 bits.
 
         Note:
             The preview colormap is re-normalized on a per-frame basis, to visually
@@ -412,7 +481,12 @@ class BlenderService(rpyc.Service):
 
     @require_initialized_service
     def exposed_include_segmentations(
-        self, shuffle: bool = True, preview: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
     ) -> None:
         """Sets up Blender compositor to include segmentation maps for rendered images.
 
@@ -421,12 +495,14 @@ class BlenderService(rpyc.Service):
         for the background which will have a value of 0 to ensure it is black).
 
         Args:
-            shuffle (bool, optional): shuffle preview colors, helps differentiate object instances. Defaults to True.
             preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
-            seed (int, optional): random seed used when shuffling colors. Defaults to 1234.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate object instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
@@ -456,30 +532,14 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
-    def exposed_image_settings(
-        self, file_format: str | None = None, bit_depth: int | None = None, color_mode: str | None = None
-    ) -> None:
-        """Set the render's output format and bit-depth.
-        Useful for linear intensity renders, using "OPEN_EXR" and 32 or 16 bits.
-
-        Note: A default arguments of ``None`` means do not change setting inherited from blendfile.
-
-        Args:
-            file_format (str | None, optional): Format to save render as. Options vary depending on the version of Blender,
-                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
-                'CINEON', 'DPX', 'OPEN_EXR_MULTILAYER', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP', 'AVI_JPEG', 'AVI_RAW', 'FFMPEG').
-                Defaults to None.
-            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
-                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
-            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
-        """
-
-    @require_initialized_service
     def exposed_use_motion_blur(self, enable: bool) -> None:
         """Enable/disable motion blur.
 
         Args:
             enable (bool): If true, enable motion blur.
+
+        Raises:
+            RuntimeError: raised when motion blur is enabled as flow cannot be computed.
         """
 
     @require_initialized_service
@@ -961,51 +1021,121 @@ class BlenderClient:
         """
 
     @type_check_only
-    def include_depths(self, preview: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP") -> None:
-        """Sets up Blender compositor to include depth map for rendered images.
+    def include_composites(
+        self,
+        file_format: FILE_FORMATS | None = None,
+        color_mode: Literal["BW", "RGB", "RGBA"] | None = None,
+        exr_codec: EXR_CODECS | None = None,
+        bit_depth: Literal[8, 16, 32] | None = None,
+    ) -> None:
+        """Sets up Blender to include the outputs of any existing compositor nodes groups.
+
+        Note: A default arguments of ``None`` means do not change setting inherited from the blendfile's ``Output`` settings.
 
         Args:
-            preview (bool, optional): if true, colorized depth maps, helpful for quick visualizations,
-                will be generated alongside ground-truth depth maps. Defaults to True.
-            file_format (str, optional): format of depth maps, one of "OPEN_EXR" or "HDR". The former
-                is lossless, but can require significant storage, the later is lossy and more compressed.
-                If depth is needed to compute scene-flow, use open-exr. Defaults to "OPEN_EXR".
-            exr_codec (str, optional): codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+            file_format (str | None, optional): Format to save composited render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP'). Defaults to None.
+            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
+            exr_codec (str | None, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
                 options vary depending on the version of Blender, with the following being broadly available:
-                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "ZIP".
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to None.
+            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
+        """
+
+    @type_check_only
+    def include_frames(
+        self,
+        file_format: FILE_FORMATS = "PNG",
+        color_mode: Literal["BW", "RGB", "RGBA"] = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 8,
+    ) -> None:
+        """Sets up Blender compositor to include ground truth rendered images, bypassing any existing compositor nodes.
+
+        Note:
+            For linear intensity renders, use the "OPEN_EXR" format with and 32 or 16 bits.
+
+        Args:
+            file_format (str, optional): Format to save ground truth render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP'). Defaults to "PNG".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 8 bits.
+
+        Raises:
+            ValueError: raised when file-format not understood.
+        """
+
+    @type_check_only
+    def include_depths(
+        self,
+        preview: bool = True,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include depth map for rendered images.
 
         Note:
             The preview colormap is re-normalized on a per-frame basis, to visually
             compare across frames, apply colorization after rendering using the CLI.
 
+        Args:
+            preview (bool, optional): If true, colorized depth maps, helpful for quick visualizations,
+                will be generated alongside ground-truth depth maps. Defaults to True.
+            file_format (str, optional): Format of depth maps, one of "OPEN_EXR" or "HDR". Defaults to "OPEN_EXR".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 32 bits.
+
         Raises:
-            ValueError: raise if file-format nor understood.
+            ValueError: raised when file-format not understood.
         """
 
     @type_check_only
-    def include_normals(self, preview: bool = True, exr_codec: str = "ZIP") -> None:
+    def include_normals(
+        self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
+    ) -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
         Args:
-            preview (bool, optional): if true, colorized normal maps will also be generated with each vector
-                component being remapped from [-1, 1] to [0-255] with xyz becoming rgb. Defaults to True.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            preview (bool, optional): If true, colorized normal maps will also be generated with each vector
+                component being remapped from [-1, 1] to [0-255] where XYZ coordinates are mapped channel-wise to RGB.
+                Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Either 16 or 32 bits. Defaults to 32 bits.
         """
 
     @type_check_only
-    def include_flows(self, direction: str = "forward", preview: bool = True, exr_codec: str = "ZIP") -> None:
+    def include_flows(
+        self,
+        preview: bool = True,
+        direction: Literal["forward", "backward", "both"] = "forward",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
         Args:
+            preview (bool, optional): If true, also save preview visualizations of flow. Defaults to True.
             direction (str, optional): One of 'forward', 'backward' or 'both'. Direction of flow to colorize
                 for preview visualization. Only used when ``preview`` is true, otherwise both forward and backward
                 flows are saved. Defaults to "forward".
-            preview (bool, optional): If true, also save preview visualizations of flow. Defaults to True.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 32 bits.
 
         Note:
             The preview colormap is re-normalized on a per-frame basis, to visually
@@ -1018,7 +1148,12 @@ class BlenderClient:
 
     @type_check_only
     def include_segmentations(
-        self, shuffle: bool = True, preview: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
     ) -> None:
         """Sets up Blender compositor to include segmentation maps for rendered images.
 
@@ -1027,12 +1162,14 @@ class BlenderClient:
         for the background which will have a value of 0 to ensure it is black).
 
         Args:
-            shuffle (bool, optional): shuffle preview colors, helps differentiate object instances. Defaults to True.
             preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
-            seed (int, optional): random seed used when shuffling colors. Defaults to 1234.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate object instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
@@ -1060,30 +1197,14 @@ class BlenderClient:
         """
 
     @type_check_only
-    def image_settings(
-        self, file_format: str | None = None, bit_depth: int | None = None, color_mode: str | None = None
-    ) -> None:
-        """Set the render's output format and bit-depth.
-        Useful for linear intensity renders, using "OPEN_EXR" and 32 or 16 bits.
-
-        Note: A default arguments of ``None`` means do not change setting inherited from blendfile.
-
-        Args:
-            file_format (str | None, optional): Format to save render as. Options vary depending on the version of Blender,
-                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
-                'CINEON', 'DPX', 'OPEN_EXR_MULTILAYER', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP', 'AVI_JPEG', 'AVI_RAW', 'FFMPEG').
-                Defaults to None.
-            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
-                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
-            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
-        """
-
-    @type_check_only
     def use_motion_blur(self, enable: bool) -> None:
         """Enable/disable motion blur.
 
         Args:
             enable (bool): If true, enable motion blur.
+
+        Raises:
+            RuntimeError: raised when motion blur is enabled as flow cannot be computed.
         """
 
     @type_check_only
@@ -1645,51 +1766,121 @@ class BlenderClients(tuple):
         """
 
     @type_check_only
-    def include_depths(self, preview: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP") -> None:
-        """Sets up Blender compositor to include depth map for rendered images.
+    def include_composites(
+        self,
+        file_format: FILE_FORMATS | None = None,
+        color_mode: Literal["BW", "RGB", "RGBA"] | None = None,
+        exr_codec: EXR_CODECS | None = None,
+        bit_depth: Literal[8, 16, 32] | None = None,
+    ) -> None:
+        """Sets up Blender to include the outputs of any existing compositor nodes groups.
+
+        Note: A default arguments of ``None`` means do not change setting inherited from the blendfile's ``Output`` settings.
 
         Args:
-            preview (bool, optional): if true, colorized depth maps, helpful for quick visualizations,
-                will be generated alongside ground-truth depth maps. Defaults to True.
-            file_format (str, optional): format of depth maps, one of "OPEN_EXR" or "HDR". The former
-                is lossless, but can require significant storage, the later is lossy and more compressed.
-                If depth is needed to compute scene-flow, use open-exr. Defaults to "OPEN_EXR".
-            exr_codec (str, optional): codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+            file_format (str | None, optional): Format to save composited render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP'). Defaults to None.
+            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
+            exr_codec (str | None, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
                 options vary depending on the version of Blender, with the following being broadly available:
-                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "ZIP".
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to None.
+            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
+        """
+
+    @type_check_only
+    def include_frames(
+        self,
+        file_format: FILE_FORMATS = "PNG",
+        color_mode: Literal["BW", "RGB", "RGBA"] = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 8,
+    ) -> None:
+        """Sets up Blender compositor to include ground truth rendered images, bypassing any existing compositor nodes.
+
+        Note:
+            For linear intensity renders, use the "OPEN_EXR" format with and 32 or 16 bits.
+
+        Args:
+            file_format (str, optional): Format to save ground truth render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP'). Defaults to "PNG".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 8 bits.
+
+        Raises:
+            ValueError: raised when file-format not understood.
+        """
+
+    @type_check_only
+    def include_depths(
+        self,
+        preview: bool = True,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include depth map for rendered images.
 
         Note:
             The preview colormap is re-normalized on a per-frame basis, to visually
             compare across frames, apply colorization after rendering using the CLI.
 
+        Args:
+            preview (bool, optional): If true, colorized depth maps, helpful for quick visualizations,
+                will be generated alongside ground-truth depth maps. Defaults to True.
+            file_format (str, optional): Format of depth maps, one of "OPEN_EXR" or "HDR". Defaults to "OPEN_EXR".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 32 bits.
+
         Raises:
-            ValueError: raise if file-format nor understood.
+            ValueError: raised when file-format not understood.
         """
 
     @type_check_only
-    def include_normals(self, preview: bool = True, exr_codec: str = "ZIP") -> None:
+    def include_normals(
+        self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
+    ) -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
         Args:
-            preview (bool, optional): if true, colorized normal maps will also be generated with each vector
-                component being remapped from [-1, 1] to [0-255] with xyz becoming rgb. Defaults to True.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            preview (bool, optional): If true, colorized normal maps will also be generated with each vector
+                component being remapped from [-1, 1] to [0-255] where XYZ coordinates are mapped channel-wise to RGB.
+                Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Either 16 or 32 bits. Defaults to 32 bits.
         """
 
     @type_check_only
-    def include_flows(self, direction: str = "forward", preview: bool = True, exr_codec: str = "ZIP") -> None:
+    def include_flows(
+        self,
+        preview: bool = True,
+        direction: Literal["forward", "backward", "both"] = "forward",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
         Args:
+            preview (bool, optional): If true, also save preview visualizations of flow. Defaults to True.
             direction (str, optional): One of 'forward', 'backward' or 'both'. Direction of flow to colorize
                 for preview visualization. Only used when ``preview`` is true, otherwise both forward and backward
                 flows are saved. Defaults to "forward".
-            preview (bool, optional): If true, also save preview visualizations of flow. Defaults to True.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 32 bits.
 
         Note:
             The preview colormap is re-normalized on a per-frame basis, to visually
@@ -1702,7 +1893,12 @@ class BlenderClients(tuple):
 
     @type_check_only
     def include_segmentations(
-        self, shuffle: bool = True, preview: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
     ) -> None:
         """Sets up Blender compositor to include segmentation maps for rendered images.
 
@@ -1711,12 +1907,14 @@ class BlenderClients(tuple):
         for the background which will have a value of 0 to ensure it is black).
 
         Args:
-            shuffle (bool, optional): shuffle preview colors, helps differentiate object instances. Defaults to True.
             preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
-            seed (int, optional): random seed used when shuffling colors. Defaults to 1234.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate object instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
@@ -1744,30 +1942,14 @@ class BlenderClients(tuple):
         """
 
     @type_check_only
-    def image_settings(
-        self, file_format: str | None = None, bit_depth: int | None = None, color_mode: str | None = None
-    ) -> None:
-        """Set the render's output format and bit-depth.
-        Useful for linear intensity renders, using "OPEN_EXR" and 32 or 16 bits.
-
-        Note: A default arguments of ``None`` means do not change setting inherited from blendfile.
-
-        Args:
-            file_format (str | None, optional): Format to save render as. Options vary depending on the version of Blender,
-                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
-                'CINEON', 'DPX', 'OPEN_EXR_MULTILAYER', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP', 'AVI_JPEG', 'AVI_RAW', 'FFMPEG').
-                Defaults to None.
-            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
-                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
-            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
-        """
-
-    @type_check_only
     def use_motion_blur(self, enable: bool) -> None:
         """Enable/disable motion blur.
 
         Args:
             enable (bool): If true, enable motion blur.
+
+        Raises:
+            RuntimeError: raised when motion blur is enabled as flow cannot be computed.
         """
 
     @type_check_only

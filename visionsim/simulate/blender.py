@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import functools
 import inspect
 import itertools
@@ -18,6 +19,8 @@ from multiprocessing import Process
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from typing_extensions import Literal
+
 # Import only when type checking as to not introduce
 # dependency for blender. Block module typechecking.
 if TYPE_CHECKING:
@@ -29,7 +32,7 @@ if TYPE_CHECKING:
     import numpy.typing as npt
     from typing_extensions import Any, Concatenate, ParamSpec, Self
 
-    from visionsim.types import UpdateFn  # noqa
+    from visionsim.types import EXR_CODECS, FILE_FORMATS, UpdateFn  # noqa
 
     _P = ParamSpec("_P")
 
@@ -82,6 +85,22 @@ EXPOSED_PREFIX: str = "exposed_"
 REGISTRY: tuple[Process, rpyc.utils.registry.UDPRegistryClient] | None = None
 ITEMS_PER_SUBFOLDER: int = 1000
 INDEX_PADDING: int = np.ceil(np.log10(ITEMS_PER_SUBFOLDER)).astype(int)
+
+# Taken from blender/scripts/addons_core/node_wrangler/operators/save_viewer_image.py
+FORMATS: dict[str, str] = {
+    "BMP": ".bmp",
+    "IRIS": ".rgb",
+    "PNG": ".png",
+    "JPEG": ".jpeg",
+    "JPEG2000": ".jp2",
+    "TARGA": ".tga",
+    "CINEON": ".cin",
+    "DPX": ".dpx",
+    "OPEN_EXR": ".exr",
+    "HDR": ".hdr",
+    "TIFF": ".tif",
+    "WEBP": ".webp",
+}
 
 
 def require_connected_client(
@@ -680,25 +699,136 @@ class BlenderService(rpyc.Service):
         return (self.scene.frame_start, self.scene.frame_end, self.scene.frame_step)  # type: ignore
 
     @require_initialized_service
-    def exposed_include_depths(self, preview=True, file_format="OPEN_EXR", exr_codec="ZIP") -> None:
-        """Sets up Blender compositor to include depth map for rendered images.
+    def exposed_include_composites(
+        self,
+        file_format: FILE_FORMATS | None = None,
+        color_mode: Literal["BW", "RGB", "RGBA"] | None = None,
+        exr_codec: EXR_CODECS | None = None,
+        bit_depth: Literal[8, 16, 32] | None = None,
+    ) -> None:
+        """Sets up Blender to include the outputs of any existing compositor nodes groups.
+
+        Note: A default arguments of ``None`` means do not change setting inherited from the blendfile's ``Output`` settings.
 
         Args:
-            preview (bool, optional): if true, colorized depth maps, helpful for quick visualizations,
-                will be generated alongside ground-truth depth maps. Defaults to True.
-            file_format (str, optional): format of depth maps, one of "OPEN_EXR" or "HDR". The former
-                is lossless, but can require significant storage, the later is lossy and more compressed.
-                If depth is needed to compute scene-flow, use open-exr. Defaults to "OPEN_EXR".
-            exr_codec (str, optional): codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+            file_format (str | None, optional): Format to save composited render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP'). Defaults to None.
+            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
+            exr_codec (str | None, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
                 options vary depending on the version of Blender, with the following being broadly available:
-                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "ZIP".
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to None.
+            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
+        """
+
+        def _compositor_not_used():
+            # Check if any group output nodes are directly connected to the "Image" render layer.
+            nodes = collections.deque(n for n in self.tree.nodes if not isinstance(n, bpy.types.NodeGroupOutput))
+
+            while nodes:
+                node = nodes.pop()
+
+                for sock in node.inputs:
+                    for link in sock.links:
+                        if isinstance(link.from_node, bpy.types.NodeReroute):
+                            nodes.appendleft(link.from_node)
+                        elif (
+                            isinstance(link.from_node, bpy.types.CompositorNodeRLayers)
+                            and link.from_socket.name == "Image"
+                        ):
+                            return True
+            return False
+
+        if _compositor_not_used():
+            self.log.warning(
+                "No custom compositing workflow found, the 'composites' and 'frames' outputs might be identical!"
+            )
+
+        if file_format is not None:
+            self.scene.render.image_settings.file_format = file_format.upper()
+        if bit_depth is not None:
+            self.scene.render.image_settings.color_depth = str(bit_depth)
+        if color_mode is not None:
+            self.scene.render.image_settings.color_mode = color_mode.upper()
+        if exr_codec is not None:
+            self.scene.render.image_settings.exr_codec = exr_codec
+        self.outputs["composite"] = (object, object)
+
+    @require_initialized_service
+    def exposed_include_frames(
+        self,
+        file_format: FILE_FORMATS = "PNG",
+        color_mode: Literal["BW", "RGB", "RGBA"] = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 8,
+    ) -> None:
+        """Sets up Blender compositor to include ground truth rendered images, bypassing any existing compositor nodes.
+
+        Note:
+            For linear intensity renders, use the "OPEN_EXR" format with and 32 or 16 bits.
+
+        Args:
+            file_format (str, optional): Format to save ground truth render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP'). Defaults to "PNG".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 8 bits.
+
+        Raises:
+            ValueError: raised when file-format not understood.
+        """
+        if file_format.upper() not in FORMATS:
+            raise RuntimeError(
+                f"File format not understood, got `{file_format}` and expected one of `{', '.join(FORMATS)}`"
+            )
+
+        frame_output_node, (frame_socket,), (frame_slot,) = file_output_node(
+            self.tree, self.root_path / "frames" / "0000", label="Frame Output"
+        )
+
+        if bpy.app.version >= (3, 2, 0):
+            frame_output_node.format.color_management = "OVERRIDE"
+            frame_output_node.format.linear_colorspace_settings.name = "Non-Color"
+        frame_output_node.format.file_format = file_format
+        frame_output_node.format.color_mode = color_mode
+        frame_output_node.format.exr_codec = exr_codec
+        frame_output_node.format.color_depth = str(bit_depth)
+        frame_slot.name = str(Path(frame_slot.name).with_suffix(FORMATS[file_format.upper()]))
+
+        self.tree.links.new(self.render_layers.outputs["Image"], frame_socket)
+        self.outputs[""] = (frame_output_node, frame_slot)
+
+    @require_initialized_service
+    def exposed_include_depths(
+        self,
+        preview: bool = True,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include depth map for rendered images.
 
         Note:
             The preview colormap is re-normalized on a per-frame basis, to visually
             compare across frames, apply colorization after rendering using the CLI.
 
+        Args:
+            preview (bool, optional): If true, colorized depth maps, helpful for quick visualizations,
+                will be generated alongside ground-truth depth maps. Defaults to True.
+            file_format (str, optional): Format of depth maps, one of "OPEN_EXR" or "HDR". Defaults to "OPEN_EXR".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 32 bits.
+
         Raises:
-            ValueError: raise if file-format nor understood.
+            ValueError: raised when file-format not understood.
         """
         # TODO: Add colormap option?
         self.view_layer.use_pass_z = True
@@ -728,6 +858,7 @@ class BlenderService(rpyc.Service):
             depth_output_node.format.color_management = "OVERRIDE"
             depth_output_node.format.linear_colorspace_settings.name = "Non-Color"
         depth_output_node.format.file_format = file_format
+        depth_output_node.format.color_depth = str(bit_depth)
 
         if file_format.upper() == "OPEN_EXR":
             depth_output_node.format.exr_codec = exr_codec
@@ -746,15 +877,19 @@ class BlenderService(rpyc.Service):
         self.outputs["depth"] = (depth_output_node, depth_slot)
 
     @require_initialized_service
-    def exposed_include_normals(self, preview=True, exr_codec="ZIP") -> None:
+    def exposed_include_normals(
+        self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
+    ) -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
         Args:
-            preview (bool, optional): if true, colorized normal maps will also be generated with each vector
-                component being remapped from [-1, 1] to [0-255] with xyz becoming rgb. Defaults to True.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            preview (bool, optional): If true, colorized normal maps will also be generated with each vector
+                component being remapped from [-1, 1] to [0-255] where XYZ coordinates are mapped channel-wise to RGB.
+                Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Either 16 or 32 bits. Defaults to 32 bits.
         """
         self.view_layer.use_pass_normal = True
 
@@ -787,6 +922,7 @@ class BlenderService(rpyc.Service):
         normal_output_node.format.file_format = "OPEN_EXR"
         normal_output_node.format.exr_codec = exr_codec
         normal_output_node.format.color_mode = "RGB"
+        normal_output_node.format.color_depth = str(bit_depth)
 
         vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
         vec2rgba.label = "Vector2RGBA"
@@ -797,17 +933,25 @@ class BlenderService(rpyc.Service):
         self.outputs["normal"] = (normal_output_node, normal_slot)
 
     @require_initialized_service
-    def exposed_include_flows(self, direction="forward", preview=True, exr_codec="ZIP") -> None:
+    def exposed_include_flows(
+        self,
+        preview: bool = True,
+        direction: Literal["forward", "backward", "both"] = "forward",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
         Args:
+            preview (bool, optional): If true, also save preview visualizations of flow. Defaults to True.
             direction (str, optional): One of 'forward', 'backward' or 'both'. Direction of flow to colorize
                 for preview visualization. Only used when ``preview`` is true, otherwise both forward and backward
                 flows are saved. Defaults to "forward".
-            preview (bool, optional): If true, also save preview visualizations of flow. Defaults to True.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 32 bits.
 
         Note:
             The preview colormap is re-normalized on a per-frame basis, to visually
@@ -883,6 +1027,7 @@ class BlenderService(rpyc.Service):
         flow_output_node.format.file_format = "OPEN_EXR"
         flow_output_node.format.exr_codec = exr_codec
         flow_output_node.format.color_mode = "RGBA"
+        flow_output_node.format.color_depth = str(bit_depth)
 
         vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
         vec2rgba.label = "Vector2RGBA"
@@ -893,7 +1038,14 @@ class BlenderService(rpyc.Service):
         self.outputs["flow"] = (flow_output_node, flow_slot)
 
     @require_initialized_service
-    def exposed_include_segmentations(self, shuffle=True, preview=True, seed=1234, exr_codec="ZIP") -> None:
+    def exposed_include_segmentations(
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
         """Sets up Blender compositor to include segmentation maps for rendered images.
 
         The preview visualization simply assigns a color to each object ID by mapping the
@@ -901,12 +1053,14 @@ class BlenderService(rpyc.Service):
         for the background which will have a value of 0 to ensure it is black).
 
         Args:
-            shuffle (bool, optional): shuffle preview colors, helps differentiate object instances. Defaults to True.
             preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
-            seed (int, optional): random seed used when shuffling colors. Defaults to 1234.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate object instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
@@ -958,6 +1112,7 @@ class BlenderService(rpyc.Service):
             segmentation_output_node.format.linear_colorspace_settings.name = "Non-Color"
         segmentation_output_node.format.file_format = "OPEN_EXR"
         segmentation_output_node.format.exr_codec = exr_codec
+        segmentation_output_node.format.color_depth = str(bit_depth)
 
         if bpy.app.version < (4, 3, 0):
             segmentation_output_node.format.color_mode = "RGB"
@@ -1007,37 +1162,17 @@ class BlenderService(rpyc.Service):
         self.scene.render.resolution_percentage = 100
 
     @require_initialized_service
-    def exposed_image_settings(
-        self, file_format: str | None = None, bit_depth: int | None = None, color_mode: str | None = None
-    ) -> None:
-        """Set the render's output format and bit-depth.
-        Useful for linear intensity renders, using "OPEN_EXR" and 32 or 16 bits.
-
-        Note: A default arguments of ``None`` means do not change setting inherited from blendfile.
-
-        Args:
-            file_format (str | None, optional): Format to save render as. Options vary depending on the version of Blender,
-                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
-                'CINEON', 'DPX', 'OPEN_EXR_MULTILAYER', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP', 'AVI_JPEG', 'AVI_RAW', 'FFMPEG').
-                Defaults to None.
-            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
-                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
-            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
-        """
-        if file_format is not None:
-            self.scene.render.image_settings.file_format = file_format.upper()
-        if bit_depth is not None:
-            self.scene.render.image_settings.color_depth = str(bit_depth)
-        if color_mode is not None:
-            self.scene.render.image_settings.color_mode = color_mode.upper()
-
-    @require_initialized_service
     def exposed_use_motion_blur(self, enable: bool) -> None:
         """Enable/disable motion blur.
 
         Args:
             enable (bool): If true, enable motion blur.
+
+        Raises:
+            RuntimeError: raised when motion blur is enabled as flow cannot be computed.
         """
+        if enable and any("flow" in name for name in self.outputs):
+            raise RuntimeError("Cannot enable motion blur if computing optical flow.")
         self.scene.render.use_motion_blur = enable
 
     @require_initialized_service
@@ -1345,16 +1480,20 @@ class BlenderService(rpyc.Service):
         Returns:
             dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
-        # TODO: Implement skipping for depth/normals/flow?
         folder_index = f"{self.scene.frame_current // ITEMS_PER_SUBFOLDER:04}"
         frame_index = f"{self.scene.frame_current % ITEMS_PER_SUBFOLDER:0{INDEX_PADDING}}"
-        self.scene.render.filepath = str(self.root_path / "frames" / folder_index / frame_index)
-        paths = {"file_path": Path(self.scene.render.filepath).with_suffix(self.scene.render.file_extension)}
+        paths = {}
 
         for schema_prefix, (node, slot) in self.outputs.items():
-            node.directory = str(Path(node.directory).parent / folder_index)
-            slot.name = str(Path(slot.name).with_stem(frame_index).name)
-            paths[f"{schema_prefix}_file_path"] = Path(node.directory) / slot.name
+            if schema_prefix == "composite":
+                self.scene.render.filepath = str(self.root_path / "composites" / folder_index / frame_index)
+                paths[f"{schema_prefix}_file_path"] = Path(self.scene.render.filepath).with_suffix(
+                    self.scene.render.file_extension
+                )
+            else:
+                node.directory = str(Path(node.directory).parent / folder_index)
+                slot.name = str(Path(slot.name).with_stem(frame_index).name)
+                paths[f"{schema_prefix}{'_' if schema_prefix else ''}file_path"] = Path(node.directory) / slot.name
 
         for path in paths.values():
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -1362,9 +1501,8 @@ class BlenderService(rpyc.Service):
         if not dry_run:
             # Render frame(s), skip the render iff all files exist and `allow_skips`
             if not allow_skips or any(not Path(self.root_path / p).exists() for p in paths.values()):
-                # If `write_still` is false, depth & normals can be written but rgb will be skipped
-                skip_frame = paths["file_path"].exists() and allow_skips
-                bpy.ops.render.render(animation=False, write_still=not skip_frame)
+                # If `write_still` is false, depth/normals/etc can be written but composites will be skipped
+                bpy.ops.render.render(animation=False, write_still="composite" in self.outputs)
 
         # Returns paths that were written
         return {
