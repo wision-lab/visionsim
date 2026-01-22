@@ -17,9 +17,10 @@ import numpy.typing as npt
 import rpyc  # type: ignore
 import rpyc.utils.registry  # type: ignore
 import rpyc.utils.server  # type: ignore
+from _typeshed import Incomplete
 from typing_extensions import Any, Concatenate, Literal, ParamSpec, Self
 
-from visionsim.types import EXR_CODECS, FILE_FORMATS, UpdateFn
+from visionsim.types import COLOR_MODES, EXR_CODECS, FILE_FORMATS, UpdateFn
 
 _P = ParamSpec("_P")
 handlers: Iterable[logging.Handler] | None
@@ -29,6 +30,7 @@ REGISTRY: tuple[Process, rpyc.utils.registry.UDPRegistryClient] | None
 ITEMS_PER_SUBFOLDER: int
 INDEX_PADDING: int
 FORMATS: dict[str, str]
+COLOR_MODE_CHANNELS: Incomplete
 
 def require_connected_client(
     func: Callable[Concatenate[BlenderClient, _P], Any],
@@ -209,6 +211,7 @@ class BlenderService(rpyc.Service):
     _conn: rpyc.Connection | None
     log: logging.Logger
     initialized: bool
+    warned_no_outputs: bool
 
     def __init__(self) -> None:
         """Initialize render service.
@@ -288,7 +291,9 @@ class BlenderService(rpyc.Service):
     outputs: dict[
         str,
         tuple[
-            bpy.types.CompositorNodeOutputFile, bpy.types.NodeOutputFileSlotFile | bpy.types.NodeCompositorFileOutputItem
+            bpy.types.CompositorNodeOutputFile,
+            bpy.types.NodeOutputFileSlotFile | bpy.types.NodeCompositorFileOutputItem,
+            int,
         ],
     ]
     unbind_camera: bool
@@ -321,16 +326,7 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
-    def exposed_empty_transforms(self) -> dict[str, Any]:
-        """Return a dictionary with camera intrinsics. Forms the basis of
-        a ``transforms.json`` file, but contains no frame data.
-
-        Returns:
-            dict[str, Any]: empty transforms dictionary containing only camera parameters.
-        """
-
-    @require_initialized_service
-    def exposed_original_fps(self) -> int:
+    def exposed_get_original_fps(self) -> int:
         """Get effective framerate (fps/fps_base).
 
         Returns:
@@ -357,7 +353,7 @@ class BlenderService(rpyc.Service):
     def exposed_include_composites(
         self,
         file_format: FILE_FORMATS | None = None,
-        color_mode: Literal["BW", "RGB", "RGBA"] | None = None,
+        color_mode: COLOR_MODES | None = None,
         exr_codec: EXR_CODECS | None = None,
         bit_depth: Literal[8, 16, 32] | None = None,
     ) -> None:
@@ -381,7 +377,7 @@ class BlenderService(rpyc.Service):
     def exposed_include_frames(
         self,
         file_format: FILE_FORMATS = "PNG",
-        color_mode: Literal["BW", "RGB", "RGBA"] = "RGB",
+        color_mode: COLOR_MODES = "RGB",
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: Literal[8, 16, 32] = 8,
     ) -> None:
@@ -611,22 +607,19 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
+    def exposed_camera_info(self) -> dict[str, Any]:
+        """Return a dictionary with camera intrinsics.
+
+        Returns:
+            dict[str, Any]: dictionary containing camera parameters.
+        """
+
+    @require_initialized_service
     def exposed_camera_extrinsics(self) -> npt.NDArray[np.floating]:
         """Get the 4x4 transform matrix encoding the current camera pose.
 
         Returns:
             npt.NDArray[np.floating]: Current camera pose in matrix form.
-        """
-
-    @require_initialized_service
-    def exposed_camera_intrinsics(self) -> npt.NDArray[np.floating]:
-        """Get the 3x3 camera intrinsics matrix for active camera,
-        which defines how 3D points are projected onto 2D.
-
-        Note: Assumes pinhole camera model.
-
-        Returns:
-            npt.NDArray[np.floating]: Camera intrinsics matrix based on camera properties.
         """
 
     @require_initialized_service
@@ -706,7 +699,7 @@ class BlenderService(rpyc.Service):
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
 
         Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
+            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera info.
         """
 
     @require_initialized_service
@@ -723,7 +716,7 @@ class BlenderService(rpyc.Service):
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
 
         Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
+            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera info.
         """
 
     @require_initialized_service
@@ -988,16 +981,7 @@ class BlenderClient:
         """
 
     @type_check_only
-    def empty_transforms(self) -> dict[str, Any]:
-        """Return a dictionary with camera intrinsics. Forms the basis of
-        a ``transforms.json`` file, but contains no frame data.
-
-        Returns:
-            dict[str, Any]: empty transforms dictionary containing only camera parameters.
-        """
-
-    @type_check_only
-    def original_fps(self) -> int:
+    def get_original_fps(self) -> int:
         """Get effective framerate (fps/fps_base).
 
         Returns:
@@ -1024,7 +1008,7 @@ class BlenderClient:
     def include_composites(
         self,
         file_format: FILE_FORMATS | None = None,
-        color_mode: Literal["BW", "RGB", "RGBA"] | None = None,
+        color_mode: COLOR_MODES | None = None,
         exr_codec: EXR_CODECS | None = None,
         bit_depth: Literal[8, 16, 32] | None = None,
     ) -> None:
@@ -1048,7 +1032,7 @@ class BlenderClient:
     def include_frames(
         self,
         file_format: FILE_FORMATS = "PNG",
-        color_mode: Literal["BW", "RGB", "RGBA"] = "RGB",
+        color_mode: COLOR_MODES = "RGB",
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: Literal[8, 16, 32] = 8,
     ) -> None:
@@ -1276,22 +1260,19 @@ class BlenderClient:
         """
 
     @type_check_only
+    def camera_info(self) -> dict[str, Any]:
+        """Return a dictionary with camera intrinsics.
+
+        Returns:
+            dict[str, Any]: dictionary containing camera parameters.
+        """
+
+    @type_check_only
     def camera_extrinsics(self) -> npt.NDArray[np.floating]:
         """Get the 4x4 transform matrix encoding the current camera pose.
 
         Returns:
             npt.NDArray[np.floating]: Current camera pose in matrix form.
-        """
-
-    @type_check_only
-    def camera_intrinsics(self) -> npt.NDArray[np.floating]:
-        """Get the 3x3 camera intrinsics matrix for active camera,
-        which defines how 3D points are projected onto 2D.
-
-        Note: Assumes pinhole camera model.
-
-        Returns:
-            npt.NDArray[np.floating]: Camera intrinsics matrix based on camera properties.
         """
 
     @type_check_only
@@ -1367,7 +1348,7 @@ class BlenderClient:
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
 
         Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
+            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera info.
         """
 
     @type_check_only
@@ -1384,7 +1365,7 @@ class BlenderClient:
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
 
         Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
+            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera info.
         """
 
     @type_check_only
@@ -1497,7 +1478,7 @@ class BlenderClients(tuple):
 
     def __exit__(
         self, type: type[BaseException] | None, value: BaseException | None, traceback: TracebackType | None
-    ) -> None:
+    ) -> bool | None:
         """Disconnect from each render server via a context manager.
 
         Args:
@@ -1733,16 +1714,7 @@ class BlenderClients(tuple):
         """
 
     @type_check_only
-    def empty_transforms(self) -> tuple[dict[str, Any],]:
-        """Return a dictionary with camera intrinsics. Forms the basis of
-        a ``transforms.json`` file, but contains no frame data.
-
-        Returns:
-            dict[str, Any]: empty transforms dictionary containing only camera parameters.
-        """
-
-    @type_check_only
-    def original_fps(self) -> tuple[int,]:
+    def get_original_fps(self) -> tuple[int,]:
         """Get effective framerate (fps/fps_base).
 
         Returns:
@@ -1769,7 +1741,7 @@ class BlenderClients(tuple):
     def include_composites(
         self,
         file_format: FILE_FORMATS | None = None,
-        color_mode: Literal["BW", "RGB", "RGBA"] | None = None,
+        color_mode: COLOR_MODES | None = None,
         exr_codec: EXR_CODECS | None = None,
         bit_depth: Literal[8, 16, 32] | None = None,
     ) -> None:
@@ -1793,7 +1765,7 @@ class BlenderClients(tuple):
     def include_frames(
         self,
         file_format: FILE_FORMATS = "PNG",
-        color_mode: Literal["BW", "RGB", "RGBA"] = "RGB",
+        color_mode: COLOR_MODES = "RGB",
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: Literal[8, 16, 32] = 8,
     ) -> None:
@@ -2021,22 +1993,19 @@ class BlenderClients(tuple):
         """
 
     @type_check_only
+    def camera_info(self) -> tuple[dict[str, Any],]:
+        """Return a dictionary with camera intrinsics.
+
+        Returns:
+            dict[str, Any]: dictionary containing camera parameters.
+        """
+
+    @type_check_only
     def camera_extrinsics(self) -> tuple[npt.NDArray[np.floating],]:
         """Get the 4x4 transform matrix encoding the current camera pose.
 
         Returns:
             npt.NDArray[np.floating]: Current camera pose in matrix form.
-        """
-
-    @type_check_only
-    def camera_intrinsics(self) -> tuple[npt.NDArray[np.floating],]:
-        """Get the 3x3 camera intrinsics matrix for active camera,
-        which defines how 3D points are projected onto 2D.
-
-        Note: Assumes pinhole camera model.
-
-        Returns:
-            npt.NDArray[np.floating]: Camera intrinsics matrix based on camera properties.
         """
 
     @type_check_only
@@ -2112,7 +2081,7 @@ class BlenderClients(tuple):
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
 
         Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
+            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera info.
         """
 
     @type_check_only
@@ -2129,5 +2098,5 @@ class BlenderClients(tuple):
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
 
         Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
+            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera info.
         """

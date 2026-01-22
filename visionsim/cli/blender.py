@@ -48,7 +48,7 @@ def render_animation(
     blend_file: str | os.PathLike,
     root_path: str | os.PathLike,
     /,
-    render_config: RenderConfig,
+    config: RenderConfig,
     frame_start: int | None = None,
     frame_end: int | None = None,
     output_blend_file: str | os.PathLike | None = None,
@@ -59,7 +59,7 @@ def render_animation(
     Args:
         blend_file (str | os.PathLike): Path to blend file.
         root_path (str | os.PathLike): Dataset output folder.
-        render_config (RenderConfig): Render configuration.
+        config (RenderConfig): Render configuration.
         frame_start (int): Start rendering at this frame index (inclusive).
         frame_end (int): Stop rendering at this frame index (inclusive).
         output_blend_file (str | os.PathLike | None, optional): If set, write the modified blend file to
@@ -69,7 +69,7 @@ def render_animation(
     from visionsim.cli import _log, _run  # avoid circular import
 
     # Runtime checks and gard rails
-    if _run(f"{render_config.executable or 'blender'} --version", shell=True).returncode != 0:
+    if _run(f"{config.executable or 'blender'} --version", shell=True).returncode != 0:
         raise RuntimeError("No blender installation found on path!")
     if not (blend_file := Path(blend_file).resolve()).exists():
         raise FileNotFoundError(f"Blender file {blend_file} not found.")
@@ -78,34 +78,34 @@ def render_animation(
     root_path.mkdir(parents=True, exist_ok=True)
     output_blend_file = Path(output_blend_file).resolve() if output_blend_file else None
 
-    if render_config.autoscale:
+    if config.autoscale:
         if not torch.cuda.is_available():
             _log.warning("No GPU devices found, cannot autoscale. Falling back on using a single render job.")
-            render_config.autoscale = False
-            render_config.max_job_vram = None
-            render_config.jobs = 1
+            config.autoscale = False
+            config.max_job_vram = None
+            config.jobs = 1
         elif torch.cuda.device_count() != 1:
             _log.warning("Cannot autoscale when using multi-gpu. Falling back on using a single render job.")
-            render_config.autoscale = False
-            render_config.max_job_vram = None
-            render_config.jobs = 1
+            config.autoscale = False
+            config.max_job_vram = None
+            config.jobs = 1
         else:
             idx = torch.cuda.current_device()
             device = torch.device(idx)
             free, _ = torch.cuda.mem_get_info(device)
-            render_config.jobs = free // render_config.max_job_vram
-            _log.info(f"Auto-scaling to using {render_config.jobs} render jobs on {torch.cuda.get_device_name(idx)}.")
+            config.jobs = free // config.max_job_vram
+            _log.info(f"Auto-scaling to using {config.jobs} render jobs on {torch.cuda.get_device_name(idx)}.")
 
-    if render_config.jobs <= 0:
-        raise RuntimeError(f"At least one render job is needed, got `render_config.jobs={render_config.jobs}`.")
+    if config.jobs <= 0:
+        raise RuntimeError(f"At least one render job is needed, got `render_config.jobs={config.jobs}`.")
 
     with (
         BlenderClients.spawn(
-            jobs=render_config.jobs,
-            log_dir=Path(render_config.log_dir),
-            timeout=render_config.timeout,
-            executable=render_config.executable,
-            autoexec=render_config.autoexec,
+            jobs=config.jobs,
+            log_dir=Path(config.log_dir),
+            timeout=config.timeout,
+            executable=config.executable,
+            autoexec=config.autoexec,
         ) as clients,
         ElapsedProgress() as progress,
     ):
@@ -116,10 +116,10 @@ def render_animation(
             root_path,
             frame_start=frame_start,
             frame_end=frame_end,
-            config=render_config,
+            config=config,
             output_blend_file=output_blend_file,
             dry_run=dry_run,
             update_fn=partial(progress.update, task),
         )
-        original_fps, *_ = clients.original_fps()
-    sequence_info(root_path, keyframe_multiplier=render_config.keyframe_multiplier, original_fps=original_fps)
+        original_fps, *_ = clients.get_original_fps()
+    sequence_info(root_path, keyframe_multiplier=config.keyframe_multiplier, original_fps=original_fps)

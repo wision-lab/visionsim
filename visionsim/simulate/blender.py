@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     import numpy.typing as npt
     from typing_extensions import Any, Concatenate, ParamSpec, Self
 
-    from visionsim.types import EXR_CODECS, FILE_FORMATS, UpdateFn  # noqa
+    from visionsim.types import COLOR_MODES, EXR_CODECS, FILE_FORMATS, UpdateFn  # noqa
 
     _P = ParamSpec("_P")
 
@@ -101,6 +101,7 @@ FORMATS: dict[str, str] = {
     "TIFF": ".tif",
     "WEBP": ".webp",
 }
+COLOR_MODE_CHANNELS = {"BW": 1, "RGB": 3, "RGBA": 4}
 
 
 def require_connected_client(
@@ -442,6 +443,7 @@ class BlenderService(rpyc.Service):
         self._conn: rpyc.Connection | None = None
         self.log: logging.Logger = server_log
         self.initialized: bool = False
+        self.warned_no_outputs: bool = False
 
     def _clear_cached_properties(self) -> None:
         # Based on: https://stackoverflow.com/a/71579485
@@ -480,6 +482,7 @@ class BlenderService(rpyc.Service):
         bpy.ops.wm.read_factory_settings()
         self._clear_cached_properties()
         self.initialized = False
+        self.warned_no_outputs = False
 
     @property
     @require_initialized_service
@@ -571,11 +574,14 @@ class BlenderService(rpyc.Service):
         self.log.info(f"Successfully loaded {blend_file}")
 
         # Init various variables to track state
+        # The `outputs` dict maps the output prefix (eg depth) to a triple containing:
+        # (the output node, the output slot, number of channels)
         self.outputs: dict[
             str,
             tuple[
                 bpy.types.CompositorNodeOutputFile,
                 bpy.types.NodeOutputFileSlotFile | bpy.types.NodeCompositorFileOutputItem,
+                int,
             ],
         ] = {}
         self.unbind_camera: bool = False
@@ -631,47 +637,7 @@ class BlenderService(rpyc.Service):
                     yield fcurve
 
     @require_initialized_service
-    def exposed_empty_transforms(self) -> dict[str, Any]:
-        """Return a dictionary with camera intrinsics. Forms the basis of
-        a ``transforms.json`` file, but contains no frame data.
-
-        Returns:
-            dict[str, Any]: empty transforms dictionary containing only camera parameters.
-        """
-        transforms = {
-            k: getattr(self.camera.data, k)
-            for k in [
-                "angle",
-                "angle_x",
-                "angle_y",
-                "clip_start",
-                "clip_end",
-                "lens",
-                "lens_unit",
-                "sensor_height",
-                "sensor_width",
-                "sensor_fit",
-                "shift_x",
-                "shift_y",
-                "type",
-            ]
-        }
-        transforms["frames"] = []
-
-        # Note: This might be a blender bug, but when height==width,
-        #   angle_x != angle_y, so here we just use angle.
-        transforms["c"] = {"BW": 1, "RGB": 3, "RGBA": 4}.get(self.scene.render.image_settings.color_mode)
-        transforms["w"] = self.scene.render.resolution_x
-        transforms["h"] = self.scene.render.resolution_y
-        transforms["fl_x"] = float(1 / 2 * self.scene.render.resolution_x / np.tan(1 / 2 * self.camera.data.angle))
-        transforms["fl_y"] = float(1 / 2 * self.scene.render.resolution_y / np.tan(1 / 2 * self.camera.data.angle))
-        transforms["cx"] = 1 / 2 * self.scene.render.resolution_x + transforms["shift_x"]
-        transforms["cy"] = 1 / 2 * self.scene.render.resolution_y + transforms["shift_y"]
-        transforms["intrinsics"] = self.exposed_camera_intrinsics().tolist()
-        return transforms
-
-    @require_initialized_service
-    def exposed_original_fps(self) -> int:
+    def exposed_get_original_fps(self) -> int:
         """Get effective framerate (fps/fps_base).
 
         Returns:
@@ -702,7 +668,7 @@ class BlenderService(rpyc.Service):
     def exposed_include_composites(
         self,
         file_format: FILE_FORMATS | None = None,
-        color_mode: Literal["BW", "RGB", "RGBA"] | None = None,
+        color_mode: COLOR_MODES | None = None,
         exr_codec: EXR_CODECS | None = None,
         bit_depth: Literal[8, 16, 32] | None = None,
     ) -> None:
@@ -725,6 +691,12 @@ class BlenderService(rpyc.Service):
         def _compositor_not_used():
             # Check if any group output nodes are directly connected to the "Image" render layer.
             nodes = collections.deque(n for n in self.tree.nodes if not isinstance(n, bpy.types.NodeGroupOutput))
+
+            # Either there's no group output or it's not connected to anything.
+            if not nodes:
+                raise RuntimeError("Cannot save compositor outputs, a `Group Output` node was not found.")
+            elif all(not i.links for node in nodes for i in node.inputs):
+                raise RuntimeError("Cannot save compositor outputs, nothing is connected to the `Group Output` node.")
 
             while nodes:
                 node = nodes.pop()
@@ -753,13 +725,20 @@ class BlenderService(rpyc.Service):
             self.scene.render.image_settings.color_mode = color_mode.upper()
         if exr_codec is not None:
             self.scene.render.image_settings.exr_codec = exr_codec
-        self.outputs["composite"] = (object, object)
+
+        # Note: The compositor output is saved by blender directly through
+        #   it's output settings so no file output node is needed.
+        self.outputs["composite"] = (
+            object,
+            object,
+            COLOR_MODE_CHANNELS.get(self.scene.render.image_settings.color_mode.upper()),
+        )
 
     @require_initialized_service
     def exposed_include_frames(
         self,
         file_format: FILE_FORMATS = "PNG",
-        color_mode: Literal["BW", "RGB", "RGBA"] = "RGB",
+        color_mode: COLOR_MODES = "RGB",
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: Literal[8, 16, 32] = 8,
     ) -> None:
@@ -801,7 +780,7 @@ class BlenderService(rpyc.Service):
         frame_slot.name = str(Path(frame_slot.name).with_suffix(FORMATS[file_format.upper()]))
 
         self.tree.links.new(self.render_layers.outputs["Image"], frame_socket)
-        self.outputs[""] = (frame_output_node, frame_slot)
+        self.outputs[""] = (frame_output_node, frame_slot, COLOR_MODE_CHANNELS.get(color_mode.upper()))
 
     @require_initialized_service
     def exposed_include_depths(
@@ -848,7 +827,7 @@ class BlenderService(rpyc.Service):
             normalize = self.tree.nodes.new("CompositorNodeNormalize")
             self.tree.links.new(self.render_layers.outputs["Depth"], normalize.inputs[0])
             self.tree.links.new(normalize.outputs[0], preview_depth_socket)
-            self.outputs["preview_depth"] = (preview_depth_output_node, preview_depth_slot)
+            self.outputs["preview_depth"] = (preview_depth_output_node, preview_depth_slot, 1)
 
         depth_output_node, (depth_socket,), (depth_slot,) = file_output_node(
             self.tree, self.root_path / "depths" / "0000", label="Depth Output"
@@ -874,7 +853,7 @@ class BlenderService(rpyc.Service):
             depth_slot.name = str(Path(depth_slot.name).with_suffix(".hdr"))
 
         self.tree.links.new(self.render_layers.outputs["Depth"], depth_socket)
-        self.outputs["depth"] = (depth_output_node, depth_slot)
+        self.outputs["depth"] = (depth_output_node, depth_slot, 1)
 
     @require_initialized_service
     def exposed_include_normals(
@@ -910,7 +889,7 @@ class BlenderService(rpyc.Service):
             )
 
             self.tree.links.new(normal_group.outputs["RGBA"], preview_normal_socket)
-            self.outputs["preview_normal"] = (preview_normal_output_node, preview_normal_slot)
+            self.outputs["preview_normal"] = (preview_normal_output_node, preview_normal_slot, 3)
 
         normal_output_node, (normal_socket,), (normal_slot,) = file_output_node(
             self.tree, self.root_path / "normals" / "0000", label="Normals Output"
@@ -930,7 +909,7 @@ class BlenderService(rpyc.Service):
 
         self.tree.links.new(normal_group.outputs["Vector"], vec2rgba.inputs["Image"])
         self.tree.links.new(vec2rgba.outputs["Image"], normal_socket)
-        self.outputs["normal"] = (normal_output_node, normal_slot)
+        self.outputs["normal"] = (normal_output_node, normal_slot, 3)
 
     @require_initialized_service
     def exposed_include_flows(
@@ -1002,7 +981,7 @@ class BlenderService(rpyc.Service):
                 self.tree.links.new(split_flow.outputs[0], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs[1], flow_group.inputs["y"])
                 self.tree.links.new(flow_group.outputs["Image"], preview_fwd_flow_socket)
-                self.outputs["preview_forward_flow"] = (preview_fwd_flow_output_node, preview_fwd_flow_slot)
+                self.outputs["preview_forward_flow"] = (preview_fwd_flow_output_node, preview_fwd_flow_slot, 3)
             if direction.lower() in ("backward", "both"):
                 flow_group = self.tree.nodes.new("CompositorNodeGroup")
                 flow_group.node_tree = flow_preview_node_group()
@@ -1011,7 +990,7 @@ class BlenderService(rpyc.Service):
                 self.tree.links.new(split_flow.outputs[2], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs[3], flow_group.inputs["y"])
                 self.tree.links.new(flow_group.outputs["Image"], preview_bwd_flow_socket)
-                self.outputs["preview_backward_flow"] = (preview_bwd_flow_output_node, preview_bwd_flow_slot)
+                self.outputs["preview_backward_flow"] = (preview_bwd_flow_output_node, preview_bwd_flow_slot, 3)
 
         # Save flows as EXRs, flows are a 4-vec of forward flows x/y then backwards flows x/y
         # before blender 4.3, saving a vector as an image saved only 3 channels even if `color_mode`
@@ -1035,7 +1014,7 @@ class BlenderService(rpyc.Service):
 
         self.tree.links.new(self.render_layers.outputs["Vector"], vec2rgba.inputs["Image"])
         self.tree.links.new(vec2rgba.outputs["Image"], flow_socket)
-        self.outputs["flow"] = (flow_output_node, flow_slot)
+        self.outputs["flow"] = (flow_output_node, flow_slot, 4)
 
     @require_initialized_service
     def exposed_include_segmentations(
@@ -1101,7 +1080,7 @@ class BlenderService(rpyc.Service):
 
             self.tree.links.new(self.render_layers.outputs[object_index_name], seg_group.inputs["Value"])
             self.tree.links.new(seg_group.outputs["Image"], preview_segmentation_socket)
-            self.outputs["preview_segmentation"] = (preview_segmentation_output_node, preview_segmentation_slot)
+            self.outputs["preview_segmentation"] = (preview_segmentation_output_node, preview_segmentation_slot, 3)
 
         segmentation_output_node, (segmentation_socket,), (segmentation_slot,) = file_output_node(
             self.tree, self.root_path / "segmentations" / "0000", label="Segmentations Output"
@@ -1120,7 +1099,11 @@ class BlenderService(rpyc.Service):
             segmentation_output_node.format.color_mode = "BW"
 
         self.tree.links.new(self.render_layers.outputs[object_index_name], segmentation_socket)
-        self.outputs["segmentation"] = (segmentation_output_node, segmentation_slot)
+        self.outputs["segmentation"] = (
+            segmentation_output_node,
+            segmentation_slot,
+            COLOR_MODE_CHANNELS.get(segmentation_output_node.format.color_mode),
+        )
 
     @require_initialized_service
     def exposed_load_addons(self, *addons: str) -> None:
@@ -1330,6 +1313,50 @@ class BlenderService(rpyc.Service):
         self.scene.frame_set(frame_number)
 
     @require_initialized_service
+    def exposed_camera_info(self) -> dict[str, Any]:
+        """Return a dictionary with camera intrinsics.
+
+        Returns:
+            dict[str, Any]: dictionary containing camera parameters.
+        """
+        if self.camera.data.type != "PERSP":
+            raise RuntimeError(
+                f"Only perspective cameras are currently supported, got '{self.camera.data.type}' instead."
+            )
+
+        info = {
+            k: getattr(self.camera.data, k)
+            for k in [
+                "angle",
+                "angle_x",
+                "angle_y",
+                "clip_start",
+                "clip_end",
+                "lens",
+                "lens_unit",
+                "sensor_height",
+                "sensor_width",
+                "sensor_fit",
+                "shift_x",
+                "shift_y",
+                "type",
+            ]
+        }
+
+        # Note: This might be a blender bug, but when height==width,
+        #   angle_x != angle_y, so here we just use angle.
+        scale = self.scene.render.resolution_percentage / 100.0
+        info["w"] = self.scene.render.resolution_x * scale
+        info["h"] = self.scene.render.resolution_y * scale
+        info["fl_x"] = float(1 / 2 * self.scene.render.resolution_x / np.tan(1 / 2 * self.camera.data.angle))
+        info["fl_y"] = float(1 / 2 * self.scene.render.resolution_y / np.tan(1 / 2 * self.camera.data.angle))
+        info["shift_x"] *= self.scene.render.resolution_x * scale
+        info["shift_y"] *= self.scene.render.resolution_y * scale
+        info["cx"] = 1 / 2 * self.scene.render.resolution_x * scale + info["shift_x"]
+        info["cy"] = 1 / 2 * self.scene.render.resolution_y * scale + info["shift_y"]
+        return info
+
+    @require_initialized_service
     def exposed_camera_extrinsics(self) -> npt.NDArray[np.floating]:
         """Get the 4x4 transform matrix encoding the current camera pose.
 
@@ -1339,29 +1366,6 @@ class BlenderService(rpyc.Service):
         pose = np.array(self.camera.matrix_world)
         pose[:3, :3] /= np.linalg.norm(pose[:3, :3], axis=0)
         return pose
-
-    @require_initialized_service
-    def exposed_camera_intrinsics(self) -> npt.NDArray[np.floating]:
-        """Get the 3x3 camera intrinsics matrix for active camera,
-        which defines how 3D points are projected onto 2D.
-
-        Note: Assumes pinhole camera model.
-
-        Returns:
-            npt.NDArray[np.floating]: Camera intrinsics matrix based on camera properties.
-        """
-        scale = self.scene.render.resolution_percentage / 100
-        width = self.scene.render.resolution_x * scale
-        height = self.scene.render.resolution_y * scale
-        camera_data = self.scene.camera.data
-
-        aspect_ratio = width / height
-        K = np.eye(3, dtype=np.float32)
-        K[0, 0] = width / 2.0 / np.tan(camera_data.angle / 2)
-        K[1, 1] = height / 2.0 / np.tan(camera_data.angle / 2) * aspect_ratio
-        K[0, 2] = width / 2.0
-        K[1, 2] = height / 2.0
-        return K
 
     @require_initialized_service
     @validate_camera_moved
@@ -1478,13 +1482,22 @@ class BlenderService(rpyc.Service):
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
 
         Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
+            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera info.
         """
         folder_index = f"{self.scene.frame_current // ITEMS_PER_SUBFOLDER:04}"
         frame_index = f"{self.scene.frame_current % ITEMS_PER_SUBFOLDER:0{INDEX_PADDING}}"
         paths = {}
 
-        for schema_prefix, (node, slot) in self.outputs.items():
+        if not self.outputs and not self.warned_no_outputs:
+            self.log.warning(
+                "No outputs are selected, so nothing will be rendered. "
+                "Consider including different types of ground truth annotations using "
+                "the `include_X` methods (eg: `include_frames`) or equivalently using "
+                "`--config.include-frames` if using the CLI."
+            )
+            self.warned_no_outputs = True
+
+        for schema_prefix, (node, slot, _) in self.outputs.items():
             if schema_prefix == "composite":
                 self.scene.render.filepath = str(self.root_path / "composites" / folder_index / frame_index)
                 paths[f"{schema_prefix}_file_path"] = Path(self.scene.render.filepath).with_suffix(
@@ -1508,6 +1521,7 @@ class BlenderService(rpyc.Service):
         return {
             **{k: str(p.relative_to(self.root_path)) for k, p in paths.items()},
             "transform_matrix": self.exposed_camera_extrinsics().tolist(),
+            "camera_info": self.exposed_camera_info(),
         }
 
     @require_initialized_service
@@ -1524,7 +1538,7 @@ class BlenderService(rpyc.Service):
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
 
         Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
+            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera info.
         """
         self.exposed_set_current_frame(frame_number)
         return self.exposed_render_current_frame(allow_skips=allow_skips, dry_run=dry_run)
@@ -1584,14 +1598,14 @@ class BlenderService(rpyc.Service):
         scene_original_range = self.scene.frame_start, self.scene.frame_end
         self.scene.frame_start, self.scene.frame_end = 0, 1_048_574
 
-        # Store transforms as we go
-        transforms = self.exposed_empty_transforms()
+        # Store frame data as we go
+        transforms = []
 
         # Capture frames!
         for frame_number in frame_numbers:
             # Tell blender to update camera position and all animations and render frame
             frame_data = self.exposed_render_frame(frame_number, allow_skips=allow_skips, dry_run=dry_run)
-            transforms["frames"].append(frame_data)
+            transforms.append(frame_data)
 
             # Call any progress callbacks
             if update_fn is not None:
@@ -1953,7 +1967,7 @@ class BlenderClients(tuple):
         type: type[BaseException] | None,
         value: BaseException | None,
         traceback: TracebackType | None,
-    ) -> None:
+    ) -> bool | None:
         """Disconnect from each render server via a context manager.
 
         Args:
@@ -1961,7 +1975,7 @@ class BlenderClients(tuple):
             value (BaseException | None): Value of exception if any.
             traceback (TracebackType | None): Traceback of exception if any.
         """
-        self.stack.__exit__(type, value, traceback)
+        return self.stack.__exit__(type, value, traceback)
 
     @classmethod
     @contextmanager
@@ -2182,7 +2196,7 @@ class BlenderClients(tuple):
         children = itertools.tee(frame_numbers, len(self))
         frame_chunks = [itertools.islice(it, index, None, len(self)) for index, it in enumerate(children)]
 
-        transforms_dicts = [
+        transforms_lists = [
             client.render_frames_async(frames, allow_skips=allow_skips, dry_run=dry_run, update_fn=ignore_total)
             for client, frames in zip(self, frame_chunks)
         ]
@@ -2190,15 +2204,13 @@ class BlenderClients(tuple):
 
         # Equivalent to more-itertools' interleave_longest
         _marker = object()
-        frames = [
+        transforms = [
             frame
             for frame in itertools.chain.from_iterable(
-                itertools.zip_longest(*[t.value["frames"] for t in transforms_dicts], fillvalue=_marker)
+                itertools.zip_longest(*[i.value for i in transforms_lists], fillvalue=_marker)
             )
             if frame is not _marker
         ]
-        transforms: dict[str, Any] = transforms_dicts.pop().value
-        transforms["frames"] = frames
         return transforms
 
     @require_connected_clients

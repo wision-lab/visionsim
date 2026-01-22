@@ -33,6 +33,7 @@ FILE_FORMATS = Literal[
     "WEBP",
 ]
 EXR_CODECS = Literal["NONE", "PXR24", "ZIP", "PIZ", "RLE", "ZIPS", "DWAA", "DWAB"]
+COLOR_MODES = Literal["BW", "RGB", "RGBA"]
 
 
 def _bytes_from_str(size: str | list[str]) -> int:
