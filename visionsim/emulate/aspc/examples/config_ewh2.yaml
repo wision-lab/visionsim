@@ -1,12 +1,12 @@
 # Histogrammer 
 histogrammer:
   min_depth: 0.0
-  max_depth: 40.0
+  max_depth: 15.0 # For the current version max_depth must be consistent with the pulsed_laser frequency. 
   n_bins: 1000
   shape: [10, 10]  # [height, width] to match sensor size
   strict_units: true
   strict_range: false
-  bin_width: 0.03  # meters per bin
+  bin_width: 0.015  # meters per bin
   pixel_fov_list: [[0, 0.1, 0, 0.1], [0, 0.1, 0.1, 0.2], [0, 0.1, 0.2, 0.3], [0, 0.1, 0.3, 0.4]]
   vignette: false # Enable vignetting effect 
   n_pulses: 10000   # number of laser pulses
