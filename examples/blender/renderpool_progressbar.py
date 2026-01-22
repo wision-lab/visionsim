@@ -7,6 +7,7 @@ from visionsim.utils.progress import PoolProgress
 def render(client, blend_file, tick):
     root = Path("renders") / Path(blend_file).stem
     client.initialize(blend_file, root)
+    client.include_frames()
     client.set_resolution((512, 512))
     client.move_keyframes(scale=0.5)
     client.render_animation(update_fn=tick)
