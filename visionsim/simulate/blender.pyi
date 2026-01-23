@@ -210,8 +210,9 @@ class BlenderService(rpyc.Service):
     ALIASES: tuple[str]
     _conn: rpyc.Connection | None
     log: logging.Logger
-    initialized: bool
-    warned_no_outputs: bool
+    _initialized: bool
+    _warned_no_outputs: bool
+    _outputs: dict[str, Any]
 
     def __init__(self) -> None:
         """Initialize render service.
@@ -242,6 +243,52 @@ class BlenderService(rpyc.Service):
         De-initialize service by restoring blender to it's startup state,
         ensuring any cached attributes are cleaned (otherwise objects will be stale),
         and resetting any instance variables that were previously initialized.
+        """
+
+    def register_output_type(
+        self,
+        subpath: str,
+        node: bpy.types.CompositorNodeOutputFile,
+        slot: bpy.types.NodeOutputFileSlotFile | bpy.types.NodeCompositorFileOutputItem,
+        **camera_defaults,
+    ) -> None:
+        """Register a new output datatype. If this is not called by an ``include_`` method, the
+        metadata for that datatype will not be saved to the database and the path to which the data
+        is saved will not be updated at every render.
+
+        Warning:
+            You must pass in the slot instance that was returned when a new ``file_output_item``
+            was created and not simply one of the `node.file_output_items <https://docs.blender.org/api/
+            current/bpy.types.CompositorNodeOutputFile.html#bpy.types.CompositorNodeOutputFile.file_output_items>`_
+            as these are readonly!
+
+        Args:
+            subpath (str): Path suffix, from root data directory, of the new datatype (eg: "previews/depths")
+            node (bpy.types.CompositorNodeOutputFile): Output file node responsible for saving
+            slot (bpy.types.NodeOutputFileSlotFile | bpy.types.NodeCompositorFileOutputItem): Slot of node which
+                will save the output data.
+            **camera_defaults: Any addition camera information that will be added by default. Commonly,
+                the number of output channels is passed in (eg: c=4 for RGBA).
+
+        Raises:
+            RuntimeError: raised if output type has already been registered.
+        """
+
+    def _save_metadata(
+        self,
+        paths: dict[str, Path],
+        camera_info: dict[str, str | float | int],
+        transform_matrix: list[float],
+        index: int,
+    ) -> None:
+        """Post-render callback responsible for saving frame metadata to each database.
+
+        Args:
+            paths (dict[str, Path]): A dictionary mapping the data type's subpath to the recently rendered file.
+                For example, ``{"frames": "0001/321.png", "depths": "0001/321.exr"}``.
+            camera_info (dict[str, str  |  float  |  int]): Camera info at current index, as retrieved by ``BlenderService.camera_info``.
+            transform_matrix (list[float]): Current camera extrinsic matrix.
+            index (int): Current frame index.
         """
 
     @property
@@ -288,17 +335,8 @@ class BlenderService(rpyc.Service):
         """
     root_path: Path
     blend_file: Path
-    outputs: dict[
-        str,
-        tuple[
-            bpy.types.CompositorNodeOutputFile,
-            bpy.types.NodeOutputFileSlotFile | bpy.types.NodeCompositorFileOutputItem,
-            int,
-        ],
-    ]
-    unbind_camera: bool
-    use_animation: bool
-    disabled_fcurves: set[bpy.types.Action]
+    _use_animation: bool
+    _disabled_fcurves: set[bpy.types.Action]
 
     def exposed_initialize(self, blend_file: str | os.PathLike, root_path: str | os.PathLike, **kwargs) -> None:
         """Initialize BlenderService and load blendfile.
@@ -685,7 +723,7 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
-    def exposed_render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> dict[str, Any]:
+    def exposed_render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> None:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
 
@@ -697,13 +735,10 @@ class BlenderService(rpyc.Service):
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-
-        Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera info.
         """
 
     @require_initialized_service
-    def exposed_render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> dict[str, Any]:
+    def exposed_render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> None:
         """Same as first setting current frame then rendering it.
 
         Warning:
@@ -714,9 +749,6 @@ class BlenderService(rpyc.Service):
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-
-        Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera info.
         """
 
     @require_initialized_service
@@ -726,7 +758,7 @@ class BlenderService(rpyc.Service):
         allow_skips: bool = True,
         dry_run: bool = False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Render all requested frames and return associated transforms dictionary.
 
         Args:
@@ -741,9 +773,6 @@ class BlenderService(rpyc.Service):
 
         Raises:
             RuntimeError: raised if trying to render frames beyond blender's limits.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
     @require_initialized_service
@@ -755,7 +784,7 @@ class BlenderService(rpyc.Service):
         allow_skips: bool = True,
         dry_run: bool = False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Determines frame range to render, sets camera positions and orientations, and renders all frames in animation range.
 
         Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
@@ -773,9 +802,6 @@ class BlenderService(rpyc.Service):
 
         Raises:
             ValueError: raised if scene and camera are entirely static.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
     @require_initialized_service
@@ -1334,7 +1360,7 @@ class BlenderClient:
         """
 
     @type_check_only
-    def render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> dict[str, Any]:
+    def render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> None:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
 
@@ -1346,13 +1372,10 @@ class BlenderClient:
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-
-        Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera info.
         """
 
     @type_check_only
-    def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> dict[str, Any]:
+    def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> None:
         """Same as first setting current frame then rendering it.
 
         Warning:
@@ -1363,9 +1386,6 @@ class BlenderClient:
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-
-        Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera info.
         """
 
     @type_check_only
@@ -1375,7 +1395,7 @@ class BlenderClient:
         allow_skips: bool = True,
         dry_run: bool = False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Render all requested frames and return associated transforms dictionary.
 
         Args:
@@ -1390,9 +1410,6 @@ class BlenderClient:
 
         Raises:
             RuntimeError: raised if trying to render frames beyond blender's limits.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
     @type_check_only
@@ -1404,7 +1421,7 @@ class BlenderClient:
         allow_skips: bool = True,
         dry_run: bool = False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Determines frame range to render, sets camera positions and orientations, and renders all frames in animation range.
 
         Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
@@ -1422,9 +1439,6 @@ class BlenderClient:
 
         Raises:
             ValueError: raised if scene and camera are entirely static.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
     @type_check_only
@@ -1478,7 +1492,7 @@ class BlenderClients(tuple):
 
     def __exit__(
         self, type: type[BaseException] | None, value: BaseException | None, traceback: TracebackType | None
-    ) -> bool | None:
+    ) -> None:
         """Disconnect from each render server via a context manager.
 
         Args:
@@ -1605,7 +1619,7 @@ class BlenderClients(tuple):
         allow_skips: bool = True,
         dry_run: bool = False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Render all requested frames by distributing workload across connected clients and return associated transforms dictionary.
 
         Warning:
@@ -1624,9 +1638,6 @@ class BlenderClients(tuple):
 
         Raises:
             RuntimeError: raised if trying to render frames beyond blender's limits.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
     @require_connected_clients
@@ -1638,7 +1649,7 @@ class BlenderClients(tuple):
         allow_skips: bool = True,
         dry_run: bool = False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Determines frame range to render, sets camera positions and orientations, and renders all frames in animation range by distributing
         workload onto all connected clients.
 
@@ -1657,9 +1668,6 @@ class BlenderClients(tuple):
 
         Raises:
             ValueError: raised if scene and camera are entirely static.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
     @require_connected_clients
@@ -2067,7 +2075,7 @@ class BlenderClients(tuple):
         """
 
     @type_check_only
-    def render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> tuple[dict[str, Any],]:
+    def render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> None:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
 
@@ -2079,13 +2087,10 @@ class BlenderClients(tuple):
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-
-        Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera info.
         """
 
     @type_check_only
-    def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> tuple[dict[str, Any],]:
+    def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> None:
         """Same as first setting current frame then rendering it.
 
         Warning:
@@ -2096,7 +2101,4 @@ class BlenderClients(tuple):
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-
-        Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera info.
         """

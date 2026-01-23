@@ -75,6 +75,9 @@ import numpy as np
 import rpyc  # type: ignore
 import rpyc.utils.registry  # type: ignore
 import rpyc.utils.server  # type: ignore
+from playhouse.sqlite_ext import SqliteExtDatabase
+
+from visionsim.simulate.schema import Camera, Frame
 
 # Enable server-side logging
 logging.basicConfig(level=logging.WARNING, format="%(message)s", datefmt="[%X]", handlers=handlers)
@@ -173,7 +176,7 @@ def require_initialized_service(
 
     @functools.wraps(func)
     def _decorator(self: BlenderService, *args: _P.args, **kwargs: _P.kwargs) -> Any:
-        if not self.initialized:
+        if not self._initialized:
             raise RuntimeError(f"'BlenderService' must be initialized before calling '{func.__name__}'")
         return func(self, *args, **kwargs)
 
@@ -442,8 +445,9 @@ class BlenderService(rpyc.Service):
             raise RuntimeError(f"{type(self).__name__} needs to be instantiated from within blender's python runtime.")
         self._conn: rpyc.Connection | None = None
         self.log: logging.Logger = server_log
-        self.initialized: bool = False
-        self.warned_no_outputs: bool = False
+        self._initialized: bool = False
+        self._warned_no_outputs: bool = False
+        self._outputs: dict[str, Any] = {}
 
     def _clear_cached_properties(self) -> None:
         # Based on: https://stackoverflow.com/a/71579485
@@ -481,8 +485,84 @@ class BlenderService(rpyc.Service):
         """
         bpy.ops.wm.read_factory_settings()
         self._clear_cached_properties()
-        self.initialized = False
-        self.warned_no_outputs = False
+        self._initialized = False
+        self._warned_no_outputs = False
+        self._outputs = {}
+
+    def register_output_type(
+        self,
+        subpath: str,
+        node: bpy.types.CompositorNodeOutputFile,
+        slot: bpy.types.NodeOutputFileSlotFile | bpy.types.NodeCompositorFileOutputItem,
+        **camera_defaults,
+    ) -> None:
+        """Register a new output datatype. If this is not called by an ``include_`` method, the
+        metadata for that datatype will not be saved to the database and the path to which the data
+        is saved will not be updated at every render.
+
+        Warning:
+            You must pass in the slot instance that was returned when a new ``file_output_item``
+            was created and not simply one of the `node.file_output_items <https://docs.blender.org/api/
+            current/bpy.types.CompositorNodeOutputFile.html#bpy.types.CompositorNodeOutputFile.file_output_items>`_
+            as these are readonly!
+
+        Args:
+            subpath (str): Path suffix, from root data directory, of the new datatype (eg: "previews/depths")
+            node (bpy.types.CompositorNodeOutputFile): Output file node responsible for saving
+            slot (bpy.types.NodeOutputFileSlotFile | bpy.types.NodeCompositorFileOutputItem): Slot of node which
+                will save the output data.
+            **camera_defaults: Any addition camera information that will be added by default. Commonly,
+                the number of output channels is passed in (eg: c=4 for RGBA).
+
+        Raises:
+            RuntimeError: raised if output type has already been registered.
+        """
+        if subpath in self._outputs:
+            raise RuntimeError(f"Cannot register '{subpath}', as it was already registered!")
+
+        if (db_path := self.root_path / subpath / "transforms.db").exists():
+            self.log.info(f"Database at {db_path} already exists, overwriting...")
+            db_path.unlink()
+
+        # https://docs.peewee-orm.com/en/latest/peewee/database.html#recommended-settings
+        db = SqliteExtDatabase(
+            db_path,
+            pragmas={
+                "journal_mode": "wal",
+                "cache_size": -1 * 64000,
+                "foreign_keys": 1,
+                "ignore_check_constraints": 0,
+                "synchronous": 0,
+            },
+        )
+        self._outputs[subpath] = (node, slot, db, camera_defaults)
+
+    def _save_metadata(
+        self,
+        paths: dict[str, Path],
+        camera_info: dict[str, str | float | int],
+        transform_matrix: list[float],
+        index: int,
+    ) -> None:
+        """Post-render callback responsible for saving frame metadata to each database.
+
+        Args:
+            paths (dict[str, Path]): A dictionary mapping the data type's subpath to the recently rendered file.
+                For example, ``{"frames": "0001/321.png", "depths": "0001/321.exr"}``.
+            camera_info (dict[str, str  |  float  |  int]): Camera info at current index, as retrieved by ``BlenderService.camera_info``.
+            transform_matrix (list[float]): Current camera extrinsic matrix.
+            index (int): Current frame index.
+        """
+        if missing := set(self._outputs.keys()) - set(paths.keys()):
+            self.log.warning(f"Metadata for outputs {missing} is missing!")
+
+        for subpath, (_, _, db, defaults) in self._outputs.items():
+            with db.connection_context():
+                with db.atomic("IMMEDIATE"):
+                    with db.bind_ctx([Camera, Frame]):
+                        db.create_tables([Camera, Frame], safe=True)
+                        camera, _ = Camera.get_or_create(**(defaults | camera_info))
+                        Frame.create(index=index, camera=camera, transform_matrix=transform_matrix, path=paths[subpath])
 
     @property
     @require_initialized_service
@@ -564,7 +644,7 @@ class BlenderService(rpyc.Service):
         """
         # TODO: This should perhaps be `exposed_load_file`, and the root_path logic should be moved
         #   to another method which would facilitate writing to local disk/sending renders over the wire.
-        if self.initialized:
+        if self._initialized:
             self.reset()
 
         # Load blendfile
@@ -574,19 +654,8 @@ class BlenderService(rpyc.Service):
         self.log.info(f"Successfully loaded {blend_file}")
 
         # Init various variables to track state
-        # The `outputs` dict maps the output prefix (eg depth) to a triple containing:
-        # (the output node, the output slot, number of channels)
-        self.outputs: dict[
-            str,
-            tuple[
-                bpy.types.CompositorNodeOutputFile,
-                bpy.types.NodeOutputFileSlotFile | bpy.types.NodeCompositorFileOutputItem,
-                int,
-            ],
-        ] = {}
-        self.unbind_camera: bool = False
-        self.use_animation: bool = True
-        self.initialized = True
+        self._use_animation: bool = True
+        self._initialized = True
 
         # Ensure we are using the compositor, and node tree.
         if bpy.app.version >= (5, 0, 0):
@@ -606,7 +675,7 @@ class BlenderService(rpyc.Service):
                 self.log.warning(f"Found unexpected output node {n}")
 
         # Catalogue any animations that are already disabled, otherwise
-        self.disabled_fcurves: set[bpy.types.Action] = set(
+        self._disabled_fcurves: set[bpy.types.Action] = set(
             fcurve for fcurve in self.exposed_iter_fcurves() if fcurve.mute
         )
 
@@ -688,7 +757,7 @@ class BlenderService(rpyc.Service):
                 chosen file format, with 8, 16 and 32bits being common. Defaults to None.
         """
 
-        def _compositor_not_used():
+        def _compositor_not_used() -> bool:
             # Check if any group output nodes are directly connected to the "Image" render layer.
             nodes = collections.deque(n for n in self.tree.nodes if not isinstance(n, bpy.types.NodeGroupOutput))
 
@@ -728,10 +797,11 @@ class BlenderService(rpyc.Service):
 
         # Note: The compositor output is saved by blender directly through
         #   it's output settings so no file output node is needed.
-        self.outputs["composite"] = (
+        self.register_output_type(
+            "composites",
             object,
             object,
-            COLOR_MODE_CHANNELS.get(self.scene.render.image_settings.color_mode.upper()),
+            c=COLOR_MODE_CHANNELS.get(self.scene.render.image_settings.color_mode.upper()),
         )
 
     @require_initialized_service
@@ -780,7 +850,12 @@ class BlenderService(rpyc.Service):
         frame_slot.name = str(Path(frame_slot.name).with_suffix(FORMATS[file_format.upper()]))
 
         self.tree.links.new(self.render_layers.outputs["Image"], frame_socket)
-        self.outputs[""] = (frame_output_node, frame_slot, COLOR_MODE_CHANNELS.get(color_mode.upper()))
+        self.register_output_type(
+            "frames",
+            frame_output_node,
+            frame_slot,
+            c=COLOR_MODE_CHANNELS.get(color_mode.upper()),
+        )
 
     @require_initialized_service
     def exposed_include_depths(
@@ -827,7 +902,7 @@ class BlenderService(rpyc.Service):
             normalize = self.tree.nodes.new("CompositorNodeNormalize")
             self.tree.links.new(self.render_layers.outputs["Depth"], normalize.inputs[0])
             self.tree.links.new(normalize.outputs[0], preview_depth_socket)
-            self.outputs["preview_depth"] = (preview_depth_output_node, preview_depth_slot, 1)
+            self.register_output_type("previews/depths", preview_depth_output_node, preview_depth_slot, c=1)
 
         depth_output_node, (depth_socket,), (depth_slot,) = file_output_node(
             self.tree, self.root_path / "depths" / "0000", label="Depth Output"
@@ -853,7 +928,7 @@ class BlenderService(rpyc.Service):
             depth_slot.name = str(Path(depth_slot.name).with_suffix(".hdr"))
 
         self.tree.links.new(self.render_layers.outputs["Depth"], depth_socket)
-        self.outputs["depth"] = (depth_output_node, depth_slot, 1)
+        self.register_output_type("depths", depth_output_node, depth_slot, c=1)
 
     @require_initialized_service
     def exposed_include_normals(
@@ -889,7 +964,7 @@ class BlenderService(rpyc.Service):
             )
 
             self.tree.links.new(normal_group.outputs["RGBA"], preview_normal_socket)
-            self.outputs["preview_normal"] = (preview_normal_output_node, preview_normal_slot, 3)
+            self.register_output_type("previews/normals", preview_normal_output_node, preview_normal_slot, c=3)
 
         normal_output_node, (normal_socket,), (normal_slot,) = file_output_node(
             self.tree, self.root_path / "normals" / "0000", label="Normals Output"
@@ -909,7 +984,7 @@ class BlenderService(rpyc.Service):
 
         self.tree.links.new(normal_group.outputs["Vector"], vec2rgba.inputs["Image"])
         self.tree.links.new(vec2rgba.outputs["Image"], normal_socket)
-        self.outputs["normal"] = (normal_output_node, normal_slot, 3)
+        self.register_output_type("normals", normal_output_node, normal_slot, c=3)
 
     @require_initialized_service
     def exposed_include_flows(
@@ -981,7 +1056,9 @@ class BlenderService(rpyc.Service):
                 self.tree.links.new(split_flow.outputs[0], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs[1], flow_group.inputs["y"])
                 self.tree.links.new(flow_group.outputs["Image"], preview_fwd_flow_socket)
-                self.outputs["preview_forward_flow"] = (preview_fwd_flow_output_node, preview_fwd_flow_slot, 3)
+                self.register_output_type(
+                    "previews/flows/forward", preview_fwd_flow_output_node, preview_fwd_flow_slot, c=3
+                )
             if direction.lower() in ("backward", "both"):
                 flow_group = self.tree.nodes.new("CompositorNodeGroup")
                 flow_group.node_tree = flow_preview_node_group()
@@ -990,7 +1067,9 @@ class BlenderService(rpyc.Service):
                 self.tree.links.new(split_flow.outputs[2], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs[3], flow_group.inputs["y"])
                 self.tree.links.new(flow_group.outputs["Image"], preview_bwd_flow_socket)
-                self.outputs["preview_backward_flow"] = (preview_bwd_flow_output_node, preview_bwd_flow_slot, 3)
+                self.register_output_type(
+                    "previews/flows/backward", preview_bwd_flow_output_node, preview_bwd_flow_slot, c=3
+                )
 
         # Save flows as EXRs, flows are a 4-vec of forward flows x/y then backwards flows x/y
         # before blender 4.3, saving a vector as an image saved only 3 channels even if `color_mode`
@@ -1014,7 +1093,7 @@ class BlenderService(rpyc.Service):
 
         self.tree.links.new(self.render_layers.outputs["Vector"], vec2rgba.inputs["Image"])
         self.tree.links.new(vec2rgba.outputs["Image"], flow_socket)
-        self.outputs["flow"] = (flow_output_node, flow_slot, 4)
+        self.register_output_type("flows", flow_output_node, flow_slot, c=4)
 
     @require_initialized_service
     def exposed_include_segmentations(
@@ -1080,7 +1159,9 @@ class BlenderService(rpyc.Service):
 
             self.tree.links.new(self.render_layers.outputs[object_index_name], seg_group.inputs["Value"])
             self.tree.links.new(seg_group.outputs["Image"], preview_segmentation_socket)
-            self.outputs["preview_segmentation"] = (preview_segmentation_output_node, preview_segmentation_slot, 3)
+            self.register_output_type(
+                "previews/segmentations", preview_segmentation_output_node, preview_segmentation_slot, c=3
+            )
 
         segmentation_output_node, (segmentation_socket,), (segmentation_slot,) = file_output_node(
             self.tree, self.root_path / "segmentations" / "0000", label="Segmentations Output"
@@ -1099,10 +1180,11 @@ class BlenderService(rpyc.Service):
             segmentation_output_node.format.color_mode = "BW"
 
         self.tree.links.new(self.render_layers.outputs[object_index_name], segmentation_socket)
-        self.outputs["segmentation"] = (
+        self.register_output_type(
+            "segmentations",
             segmentation_output_node,
             segmentation_slot,
-            COLOR_MODE_CHANNELS.get(segmentation_output_node.format.color_mode),
+            c=COLOR_MODE_CHANNELS.get(segmentation_output_node.format.color_mode),
         )
 
     @require_initialized_service
@@ -1154,7 +1236,7 @@ class BlenderService(rpyc.Service):
         Raises:
             RuntimeError: raised when motion blur is enabled as flow cannot be computed.
         """
-        if enable and any("flow" in name for name in self.outputs):
+        if enable and "flows" in self._outputs:
             raise RuntimeError("Cannot enable motion blur if computing optical flow.")
         self.scene.render.use_motion_blur = enable
 
@@ -1166,9 +1248,9 @@ class BlenderService(rpyc.Service):
             enable (bool): If true, enable animations.
         """
         for fcurve in self.exposed_iter_fcurves():
-            if fcurve not in self.disabled_fcurves:
+            if fcurve not in self._disabled_fcurves:
                 fcurve.mute = not enable
-        self.use_animation = enable
+        self._use_animation = enable
 
     @require_initialized_service
     def exposed_cycles_settings(
@@ -1257,7 +1339,6 @@ class BlenderService(rpyc.Service):
 
         if clear_animations:
             self.camera.animation_data_clear()
-        self.unbind_camera = True
 
     @require_initialized_service
     def exposed_move_keyframes(self, scale=1.0, shift=0.0) -> None:
@@ -1346,8 +1427,8 @@ class BlenderService(rpyc.Service):
         # Note: This might be a blender bug, but when height==width,
         #   angle_x != angle_y, so here we just use angle.
         scale = self.scene.render.resolution_percentage / 100.0
-        info["w"] = self.scene.render.resolution_x * scale
-        info["h"] = self.scene.render.resolution_y * scale
+        info["w"] = int(self.scene.render.resolution_x * scale)
+        info["h"] = int(self.scene.render.resolution_y * scale)
         info["fl_x"] = float(1 / 2 * self.scene.render.resolution_x / np.tan(1 / 2 * self.camera.data.angle))
         info["fl_y"] = float(1 / 2 * self.scene.render.resolution_y / np.tan(1 / 2 * self.camera.data.angle))
         info["shift_x"] *= self.scene.render.resolution_x * scale
@@ -1468,7 +1549,7 @@ class BlenderService(rpyc.Service):
             self.scene.frame_step = step
 
     @require_initialized_service
-    def exposed_render_current_frame(self, allow_skips=True, dry_run=False) -> dict[str, Any]:
+    def exposed_render_current_frame(self, allow_skips=True, dry_run=False) -> None:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
 
@@ -1480,33 +1561,28 @@ class BlenderService(rpyc.Service):
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-
-        Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera info.
         """
         folder_index = f"{self.scene.frame_current // ITEMS_PER_SUBFOLDER:04}"
         frame_index = f"{self.scene.frame_current % ITEMS_PER_SUBFOLDER:0{INDEX_PADDING}}"
         paths = {}
 
-        if not self.outputs and not self.warned_no_outputs:
+        if not self._outputs and not self._warned_no_outputs:
             self.log.warning(
                 "No outputs are selected, so nothing will be rendered. "
                 "Consider including different types of ground truth annotations using "
                 "the `include_X` methods (eg: `include_frames`) or equivalently using "
                 "`--config.include-frames` if using the CLI."
             )
-            self.warned_no_outputs = True
+            self._warned_no_outputs = True
 
-        for schema_prefix, (node, slot, _) in self.outputs.items():
-            if schema_prefix == "composite":
-                self.scene.render.filepath = str(self.root_path / "composites" / folder_index / frame_index)
-                paths[f"{schema_prefix}_file_path"] = Path(self.scene.render.filepath).with_suffix(
-                    self.scene.render.file_extension
-                )
+        for subpath, (node, slot, *_) in self._outputs.items():
+            if subpath == "composites":
+                self.scene.render.filepath = str(self.root_path / subpath / folder_index / frame_index)
+                paths[subpath] = Path(self.scene.render.filepath).with_suffix(self.scene.render.file_extension)
             else:
-                node.directory = str(Path(node.directory).parent / folder_index)
+                node.directory = str(self.root_path / subpath / folder_index)
                 slot.name = str(Path(slot.name).with_stem(frame_index).name)
-                paths[f"{schema_prefix}{'_' if schema_prefix else ''}file_path"] = Path(node.directory) / slot.name
+                paths[subpath] = Path(node.directory) / slot.name
 
         for path in paths.values():
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -1515,17 +1591,18 @@ class BlenderService(rpyc.Service):
             # Render frame(s), skip the render iff all files exist and `allow_skips`
             if not allow_skips or any(not Path(self.root_path / p).exists() for p in paths.values()):
                 # If `write_still` is false, depth/normals/etc can be written but composites will be skipped
-                bpy.ops.render.render(animation=False, write_still="composite" in self.outputs)
+                bpy.ops.render.render(animation=False, write_still="composites" in self._outputs)
 
-        # Returns paths that were written
-        return {
-            **{k: str(p.relative_to(self.root_path)) for k, p in paths.items()},
-            "transform_matrix": self.exposed_camera_extrinsics().tolist(),
-            "camera_info": self.exposed_camera_info(),
-        }
+        # Update databases with frame paths and camera info
+        self._save_metadata(
+            paths={k: str(p.relative_to(self.root_path / k)) for k, p in paths.items()},
+            transform_matrix=self.exposed_camera_extrinsics().tolist(),
+            camera_info=self.exposed_camera_info(),
+            index=self.scene.frame_current,
+        )
 
     @require_initialized_service
-    def exposed_render_frame(self, frame_number: int, allow_skips=True, dry_run=False) -> dict[str, Any]:
+    def exposed_render_frame(self, frame_number: int, allow_skips=True, dry_run=False) -> None:
         """Same as first setting current frame then rendering it.
 
         Warning:
@@ -1536,17 +1613,14 @@ class BlenderService(rpyc.Service):
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-
-        Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera info.
         """
         self.exposed_set_current_frame(frame_number)
-        return self.exposed_render_current_frame(allow_skips=allow_skips, dry_run=dry_run)
+        self.exposed_render_current_frame(allow_skips=allow_skips, dry_run=dry_run)
 
     @require_initialized_service
     def exposed_render_frames(
         self, frame_numbers: Iterable[int], allow_skips=True, dry_run=False, update_fn: UpdateFn | None = None
-    ) -> dict[str, Any]:
+    ) -> None:
         """Render all requested frames and return associated transforms dictionary.
 
         Args:
@@ -1561,9 +1635,6 @@ class BlenderService(rpyc.Service):
 
         Raises:
             RuntimeError: raised if trying to render frames beyond blender's limits.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
         # Ensure frame_numbers is a list to find extrema
         frame_numbers = list(frame_numbers)
@@ -1584,7 +1655,7 @@ class BlenderService(rpyc.Service):
             raise RuntimeError("Cannot render frames at negative indices. You can try shifting keyframes.")
 
         # Warn if requested frames lie outside animation range
-        if self.use_animation and (frame_start < self.scene.frame_start or self.scene.frame_end < frame_end):
+        if self._use_animation and (frame_start < self.scene.frame_start or self.scene.frame_end < frame_end):
             self.log.warning(
                 f"Current animation starts at frame #{self.scene.frame_start} and ends at "
                 f"#{self.scene.frame_end} (with step={self.scene.frame_step}), but you requested "
@@ -1598,14 +1669,10 @@ class BlenderService(rpyc.Service):
         scene_original_range = self.scene.frame_start, self.scene.frame_end
         self.scene.frame_start, self.scene.frame_end = 0, 1_048_574
 
-        # Store frame data as we go
-        transforms = []
-
         # Capture frames!
         for frame_number in frame_numbers:
             # Tell blender to update camera position and all animations and render frame
-            frame_data = self.exposed_render_frame(frame_number, allow_skips=allow_skips, dry_run=dry_run)
-            transforms.append(frame_data)
+            self.exposed_render_frame(frame_number, allow_skips=allow_skips, dry_run=dry_run)
 
             # Call any progress callbacks
             if update_fn is not None:
@@ -1613,7 +1680,6 @@ class BlenderService(rpyc.Service):
 
         # Restore animation range to original values
         self.scene.frame_start, self.scene.frame_end = scene_original_range
-        return transforms
 
     @require_initialized_service
     def exposed_render_animation(
@@ -1624,7 +1690,7 @@ class BlenderService(rpyc.Service):
         allow_skips=True,
         dry_run=False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Determines frame range to render, sets camera positions and orientations, and renders all frames in animation range.
 
         Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
@@ -1642,16 +1708,13 @@ class BlenderService(rpyc.Service):
 
         Raises:
             ValueError: raised if scene and camera are entirely static.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
         frame_start = self.scene.frame_start if frame_start is None else frame_start
         frame_end = self.scene.frame_end if frame_end is None else frame_end
         frame_step = self.scene.frame_step if frame_step is None else frame_step
         frame_range = range(frame_start, frame_end + 1, frame_step)
 
-        if not self.use_animation:
+        if not self._use_animation:
             raise ValueError(
                 "Animations are disabled, scene will be entirely static. "
                 "To instead render a single frame, use `render_frame`."
@@ -1659,7 +1722,7 @@ class BlenderService(rpyc.Service):
         elif all(p.animation_data is None for p in self.get_parents(self.camera)) and self.camera.animation_data is None:
             self.log.warning("Active camera nor it's parents are animated, camera will be static.")
 
-        return self.exposed_render_frames(frame_range, allow_skips=allow_skips, dry_run=dry_run, update_fn=update_fn)
+        self.exposed_render_frames(frame_range, allow_skips=allow_skips, dry_run=dry_run, update_fn=update_fn)
 
     @require_initialized_service
     def exposed_save_file(self, path: str | os.PathLike) -> None:
@@ -1967,7 +2030,7 @@ class BlenderClients(tuple):
         type: type[BaseException] | None,
         value: BaseException | None,
         traceback: TracebackType | None,
-    ) -> bool | None:
+    ) -> None:
         """Disconnect from each render server via a context manager.
 
         Args:
@@ -2160,7 +2223,7 @@ class BlenderClients(tuple):
         allow_skips: bool = True,
         dry_run: bool = False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Render all requested frames by distributing workload across connected clients and return associated transforms dictionary.
 
         Warning:
@@ -2179,9 +2242,6 @@ class BlenderClients(tuple):
 
         Raises:
             RuntimeError: raised if trying to render frames beyond blender's limits.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
         # Set total number of steps, disable updates of total from child processes
@@ -2192,26 +2252,15 @@ class BlenderClients(tuple):
         if update_fn is not None:
             update_fn(total=len(frame_numbers))
 
-        # Equivalent to more-itertools' distribute
+        # Equivalent to more-itertools' distribute (round-robin)
         children = itertools.tee(frame_numbers, len(self))
         frame_chunks = [itertools.islice(it, index, None, len(self)) for index, it in enumerate(children)]
 
-        transforms_lists = [
+        for client, frames in zip(self, frame_chunks):
             client.render_frames_async(frames, allow_skips=allow_skips, dry_run=dry_run, update_fn=ignore_total)
-            for client, frames in zip(self, frame_chunks)
-        ]
-        self.wait()
 
-        # Equivalent to more-itertools' interleave_longest
-        _marker = object()
-        transforms = [
-            frame
-            for frame in itertools.chain.from_iterable(
-                itertools.zip_longest(*[i.value for i in transforms_lists], fillvalue=_marker)
-            )
-            if frame is not _marker
-        ]
-        return transforms
+        # Important: wait for all async renders to finish
+        self.wait()
 
     @require_connected_clients
     def render_animation(
@@ -2222,7 +2271,7 @@ class BlenderClients(tuple):
         allow_skips=True,
         dry_run=False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Determines frame range to render, sets camera positions and orientations, and renders all frames in animation range by distributing
         workload onto all connected clients.
 
@@ -2241,9 +2290,6 @@ class BlenderClients(tuple):
 
         Raises:
             ValueError: raised if scene and camera are entirely static.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
         start, end, step = self.common_animation_range_tuple()
         frame_start = start if frame_start is None else frame_start
@@ -2251,7 +2297,7 @@ class BlenderClients(tuple):
         frame_step = step if frame_step is None else frame_step
         frame_range = range(frame_start, frame_end + 1, frame_step)
 
-        return self.render_frames(frame_range, allow_skips=allow_skips, dry_run=dry_run, update_fn=update_fn)
+        self.render_frames(frame_range, allow_skips=allow_skips, dry_run=dry_run, update_fn=update_fn)
 
     @require_connected_clients
     def save_file(self, path: str | os.PathLike) -> None:

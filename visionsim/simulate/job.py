@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import asdict
-from pathlib import Path
 
 from visionsim.simulate.blender import BlenderClient, BlenderClients
 from visionsim.simulate.config import RenderConfig
@@ -82,7 +80,7 @@ def render_job(
     if output_blend_file is not None:
         client.save_file(output_blend_file)
 
-    transforms = client.render_animation(
+    client.render_animation(
         frame_start=frame_start,
         frame_end=frame_end,
         frame_step=frame_step,
@@ -90,6 +88,3 @@ def render_job(
         dry_run=dry_run,
         update_fn=update_fn,
     )
-
-    with open(Path(root) / "transforms.json", "w") as f:
-        json.dump(transforms, f, indent=2)

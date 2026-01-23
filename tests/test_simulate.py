@@ -1,8 +1,10 @@
 import inspect
 import itertools
+import os
 import re
 import warnings
 from dataclasses import fields
+from pathlib import Path
 
 import numpy as np
 import OpenEXR
@@ -11,6 +13,7 @@ from docstring_parser import parse_from_object
 
 from visionsim.dataset import IMG_SCHEMA, read_and_validate
 from visionsim.simulate import blender, config
+from visionsim.simulate.blender import INDEX_PADDING, ITEMS_PER_SUBFOLDER, BlenderClients
 
 
 def get_public_members(obj, module=None):
@@ -136,3 +139,24 @@ def test_output_configs(func, conf):
     sig_params.pop("self")
 
     assert sig_params == conf_params
+
+
+def test_database_threading(tmp_path_factory):
+    tmpdir = tmp_path_factory.mktemp("renders")
+    log_dir = tmp_path_factory.mktemp("logs")
+    scene = Path(__file__).parent / "test_files" / "scenes" / "cube.blend"
+
+    # Spoof frames to bypass render, only save metadata, from a bunch of blender instances.
+    # This forces a lot of database writes, which helps test for any potential "Database is locked" errors.
+    with BlenderClients.spawn(jobs=os.cpu_count() or 5, timeout=30, log_dir=log_dir) as clients:
+        clients.initialize(scene.resolve(), tmpdir.resolve())
+        clients.include_frames()
+        clients.move_keyframes(scale=5)
+
+        for idx in clients.common_animation_range():
+            folder_index = f"{idx // ITEMS_PER_SUBFOLDER:04}"
+            frame_index = f"{idx % ITEMS_PER_SUBFOLDER:0{INDEX_PADDING}}"
+            frame = tmpdir / "frames" / folder_index / f"{frame_index}.png"
+            frame.parent.mkdir(exist_ok=True, parents=True)
+            frame.touch()
+        clients.render_animation()
