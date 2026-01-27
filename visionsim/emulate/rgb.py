@@ -5,23 +5,26 @@ import numpy.typing as npt
 from skimage.filters import gaussian, unsharp_mask
 from typing_extensions import Literal
 
-from visionsim.utils.color import linearrgb_to_srgb, raw2rgb_bayer, rgb2raw_bayer
+from visionsim.utils.color import linearrgb_to_srgb, raw_to_rgb_bayer, rgb_to_raw_bayer
 
 
 def emulate_rgb_from_sequence(
     sequence: npt.ArrayLike,
-    shutter_angle_degrees: float = 360.0,
-    readout_std: float = 0.3,
+    shutter_frac: float = 1.0,
+    readout_std: float = 0.0,
     fwc: float = 10000.0,
-    bitdepth: int = 12,
-    scale_flux: float = 1.0,
-    gain_ISO: float = 1.0,
-    demosaic_method: Literal["off", "bilinear", "MHC04"] = "bilinear",
+    adc_bitdepth: int = 12,
+    flux_gain: float = 1.0,
+    iso_gain: float = 1.0,
+    mosaic: bool = False,
+    demosaic: Literal["off", "bilinear", "MHC04"] = "MHC04",
     denoise_sigma: float = 0.0,
     sharpen_weight: float = 0.0,
     rng: np.random.Generator | None = None,
 ) -> npt.NDArray:
     """Emulates a conventional RGB camera from a sequence of intensity frames.
+
+    For camera model see [1]. For demosaicing details see docs for `utils/color/raw_to_rgb_bayer`.
 
     Note:
         Motion-blur is approximated by averaging consecutive ground truth frames,
@@ -31,33 +34,39 @@ def emulate_rgb_from_sequence(
     Args:
         sequence (npt.ArrayLike): Input sequence of linear-intensity frames, can be a collection of frames,
             or np/torch array with time as the first dimension.
-        shutter_angle_degrees (float, optional): fraction of inter-frame duration the shutter is active.
-        readout_std (float, optional): Standard deviation of zero mean Gaussian read noise. Defaults to 20.0.
-        fwc (float, optional): Full well capacity, used for normalization. Defaults to 500.0.
-        bitdepth (int, optional): Resolution of ADC in bits. Defaults to 12.
-        scale_flux (float, optional): factor to scale the input [0, 1] image _before_ Poisson rng
-        gain_ISO (float, optional): factor to scale the photo-electron reading _after_ Poisson rng
-        demosaic_method (string, optional): demosaicing method to use
+        shutter_frac (float, optional): fraction of inter-frame duration the shutter is active. Range [0, 1]
+        readout_std (float, optional): Standard deviation of zero mean Gaussian read noise. Defaults to 0.0.
+        fwc (float, optional): Full well capacity, used for normalization. Defaults to 10000.0.
+        adc_bitdepth (int, optional): Resolution of ADC in bits. Defaults to 12.
+        flux_gain (float, optional): factor to scale the input [0, 1] image _before_ Poisson rng
+        iso_gain (float, optional): factor to scale the photo-electron reading _after_ Poisson rng
+        mosaic (bool, optional): implement one array with mosaiced R-/G-/B-sensitive pixels or an innately 3-channel sensor
+        demosaic (string, optional): demosaicing method to use
         denoise_sigma (float, optional): Gaussian blur kernel sigma (disabled if 0.0)
         sharpen_weight (float, optional): sharpening weight (disabled if 0.0)
         rng (np.random.Generator, optional): Optional random number generator. Defaults to none.
 
     Returns:
-        Quantized sRGB patch is returned
+        Quantized sRGB patch is returned as _uint8_ array (range [0, 255])
+
+    References:
+        ..  [1] S. W. Hasinoff, F. Durand, and W. T. Freeman,
+            “Noise-optimal capture for high dynamic range photography,”
+            CVPR 2010.
     """
     # Get sum of linear-intensity frames.
-    burst_size = int(max(1, np.ceil(len(sequence) * (shutter_angle_degrees / 360.0))))
+    burst_size = int(max(1, np.ceil(len(sequence) * shutter_frac)))
     sequence = np.array(sequence[:burst_size])
-    patch = np.sum(sequence, axis=0) * scale_flux
+    patch = np.sum(sequence, axis=0) * flux_gain
 
-    color = (len(patch.shape) > 2) and (patch.shape[2] > 1)
-    if color:
-        patch = rgb2raw_bayer(patch)
+    has_alpha = len(patch.shape) > 2 and (patch.shape[2] in [2, 4])  # LA/RGBA
+    patch_alpha = patch[..., -1:] if has_alpha else None
+    has_color = len(patch.shape) > 2 and (patch.shape[2] in [3, 4])  # RGB/RGBA
+    patch = patch[..., :-1] if has_alpha else patch
+    if has_color and mosaic:
+        patch = rgb_to_raw_bayer(patch)
 
-    # Roughly translating the model in Eqs. (1,2) and Fig. 1 of Hasinoff et al.:
-    # S. W. Hasinoff, F. Durand, and W. T. Freeman,
-    # “Noise-optimal capture for high dynamic range photography,” CVPR 2010.
-
+    # Roughly translating the model in Eqs. (1,2) and Fig. 1 of Hasinoff et al.
     # Perform poisson sampling
     rng = np.random.default_rng() if rng is None else rng
     patch = rng.poisson(patch).astype(float)
@@ -66,26 +75,32 @@ def emulate_rgb_from_sequence(
     # readout noise
     patch += rng.normal(0, readout_std, size=patch.shape)
     # apply ISO gain
-    patch *= gain_ISO
+    patch *= iso_gain
     # assume perfect quantization in ADC
-    patch = np.round(np.clip(patch, 0, (2**bitdepth - 1)))
-    patch = patch * (1.0 / (2**bitdepth - 1))
+    patch = np.round(np.clip(patch, 0, (2**adc_bitdepth - 1)))
+    patch = patch * (1.0 / (2**adc_bitdepth - 1))
 
-    # de-mosaicing
-    if color:
-        patch = raw2rgb_bayer(patch, method=demosaic_method)
+    # de-mosaicing: necessary if data is mosaiced, so can't be `None`.
+    # ("off" is not a no-op, it still creates a full 3-channel image from 1,
+    # albeit a bad one)
+    if has_color and mosaic:
+        patch = raw_to_rgb_bayer(patch, method=demosaic)
 
     # de-noising and sharpening
     if denoise_sigma != 0.0:
         patch = gaussian(patch, denoise_sigma)
     if sharpen_weight != 0.0:
-        patch = unsharp_mask(patch, amount=sharpen_weight, channel_axis=2 if color else None)
+        patch = unsharp_mask(patch, amount=sharpen_weight, channel_axis=2 if has_color else None)
 
     # Convert to sRGB color space for viewing and quantize to 8-bits
     patch = linearrgb_to_srgb(patch.astype(np.double))
     patch = np.round(patch * 255).astype(np.uint8)
-    if not color:  # fake it anyway
+    if not has_color:  # fake it anyway, because this is emulate____rgb____
+        if len(patch.shape) < 3:
+            patch = np.atleast_3d(patch)
         patch = np.repeat(patch, 3, axis=-1)
+    if has_alpha:
+        patch = np.concatenate((patch, patch_alpha), axis=-1)
     return patch
 
 

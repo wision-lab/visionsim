@@ -209,14 +209,15 @@ def events(
 def rgb(
     input_dir: str | os.PathLike,
     output_dir: str | os.PathLike,
-    chunk_size: int = 10,
-    shutter_angle: float = 360.0,
-    readout_std: float = 0.3,
+    chunk_size: int = 1,
+    shutter_frac: float = 1.0,
+    readout_std: float = 0.0,
     fwc: float | None = None,
-    scale_flux: float = 1.0,
-    g_ISO: float = 1.0,
-    bitdepth: int = 12,
-    demosaic: Literal["off", "bilinear", "MHC04"] = "bilinear",
+    flux_gain: float = 1.0,
+    iso_gain: float = 1.0,
+    adc_bitdepth: int = 12,
+    mosaic: bool = False,
+    demosaic: Literal["off", "bilinear", "MHC04"] = "MHC04",
     denoise_sigma: float = 0.0,
     sharpen_weight: float = 0.0,
     pattern: str = "frame_{:06}.png",
@@ -229,13 +230,14 @@ def rgb(
         input_dir: directory in which to look for frames
         output_dir: directory in which to save binary frames
         chunk_size: number of consecutive frames to average together
-        shutter_angle: fraction of inter-frame duration shutter is active (0-360 deg)
+        shutter_frac: fraction of inter-frame duration shutter is active (0 to 1)
         readout_std: standard deviation of gaussian read noise in photoelectrons
         fwc: full well capacity of sensor in photoelectrons
-        scale_flux: factor to scale the input images before Poisson simulation
-        g_ISO: gain for photo-electron reading after Poisson rng
-        bitdepth: ADC bitdepth
-        demosaic: demosaicing method (default bilinear)
+        flux_gain: factor to scale the input images before Poisson simulation
+        iso_gain: gain for photo-electron reading after Poisson rng
+        adc_bitdepth: ADC bitdepth
+        mosaic: implement mosaiced R-/G-/B- pixels or an innately 3-channel sensor
+        demosaic: demosaicing method (default Malvar et al.'s method)
         denoise_sigma: Gaussian blur with this sigma will be used (default 0.0 disables this)
         sharpen_weight: weight used in sharpening (default 0.0 disables this)
         pattern: filenames of frames should match this
@@ -294,11 +296,12 @@ def rgb(
                 imgs,
                 readout_std=readout_std,
                 fwc=fwc or np.inf,
-                shutter_angle_degrees=shutter_angle,
-                scale_flux=scale_flux,
-                gain_ISO=g_ISO,
-                bitdepth=bitdepth,
-                demosaic_method=demosaic,
+                shutter_frac=shutter_frac,
+                flux_gain=flux_gain,
+                iso_gain=iso_gain,
+                adc_bitdepth=adc_bitdepth,
+                mosaic=mosaic,
+                demosaic=demosaic,
                 denoise_sigma=denoise_sigma,
                 sharpen_weight=sharpen_weight,
             )

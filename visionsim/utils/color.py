@@ -43,7 +43,9 @@ def linearrgb_to_srgb(img: torch.Tensor | npt.NDArray) -> torch.Tensor | npt.NDA
     return img
 
 
-def rgb2raw_bayer(rgb: torch.Tensor | npt.NDArray, cfa_pattern: Literal["rggb"] = "rggb") -> torch.Tensor | npt.NDArray:
+def rgb_to_raw_bayer(
+    rgb: torch.Tensor | npt.NDArray, cfa_pattern: Literal["rggb"] = "rggb"
+) -> torch.Tensor | npt.NDArray:
     """Mosaicing
 
     Realizes a mosaiced CFA image as would be sampled by a real Bayer-patterned sensor
@@ -65,16 +67,16 @@ def rgb2raw_bayer(rgb: torch.Tensor | npt.NDArray, cfa_pattern: Literal["rggb"] 
     return raw
 
 
-def raw2rgb_bayer(
+def raw_to_rgb_bayer(
     raw: torch.Tensor | npt.NDArray,
     cfa_pattern: Literal["rggb"] = "rggb",
     method: Literal["off", "bilinear", "MHC04"] = "bilinear",
 ) -> torch.Tensor | npt.NDArray:
     """Demosaicing
 
-    Convolution-based implementation as suggested by Malvar et al.,
-    "High-quality linear interpolation for demosaicing of Bayer-patterned color images", ICASSP 2004.
-    https://home.cis.rit.edu/~cnspci/references/dip/demosaicking/malvar2004.pdf
+    Convolution-based implementation as suggested by Malvar et al. [1].
+
+    Bilinear is simpler but visually not as nice as Malvar et al.'s method.
 
     Alternative implementations are also available from OpenCV:
         rgb = cv2.cvtColor(<uint16_array>, cv2.COLOR_BAYER_BG2BGR)[:,:,::-1],
@@ -89,13 +91,19 @@ def raw2rgb_bayer(
 
     Returns:
         rgb: demosaiced RGB image
+
+    References:
+        .. [1] Malvar et al. (2004), "High-quality linear interpolation for demosaicing of Bayer-patterned color images", ICASSP 2004. <https://home.cis.rit.edu/~cnspci/references/dip/demosaicking/malvar2004.pdf>
     """
 
     if cfa_pattern == "rggb":
         if any(((L % 2) != 0) for L in raw.shape):
             raise RuntimeError(f"Expected even-length raw array, got {(raw.shape)}")
 
-        if not isinstance(raw, np.floating):
+        if torch.is_tensor(raw):
+            raw = raw.numpy()
+
+        if not np.issubdtype(raw.dtype, np.floating):
             raise RuntimeError(f"Expected floating-point array, got {raw.dtype}")
 
         R, G1, G2, B = raw[::2, ::2], raw[::2, 1::2], raw[1::2, ::2], raw[1::2, 1::2]
