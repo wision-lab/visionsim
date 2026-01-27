@@ -4,7 +4,6 @@ import numpy as np
 import numpy.typing as npt
 import torch
 from scipy.ndimage import correlate
-from skimage.util import img_as_float
 from typing_extensions import Literal
 
 
@@ -97,7 +96,7 @@ def raw2rgb_bayer(
             raise RuntimeError(f"Expected even-length raw array, got {(raw.shape)}")
 
         if not isinstance(raw, np.floating):
-            raw = img_as_float(raw)
+            raise RuntimeError(f"Expected floating-point array, got {raw.dtype}")
 
         R, G1, G2, B = raw[::2, ::2], raw[::2, 1::2], raw[1::2, ::2], raw[1::2, 1::2]
 

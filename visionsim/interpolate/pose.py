@@ -6,6 +6,8 @@ from scipy.interpolate import make_interp_spline
 from scipy.spatial.transform import Rotation, RotationSpline
 from typing_extensions import Literal, cast
 
+import logging
+logger = logging.getLogger(__name__)
 
 class pose_interp:
     """Linearly interpolate between 4x4 (or 3x4) transformation matrices by interpolating it's components"""
@@ -27,6 +29,8 @@ class pose_interp:
         self.ts = np.linspace(0, 1, len(self.transforms)) if ts is None else np.array(ts)
         self.determinants = np.linalg.det(self.transforms[:, :3, :3])
 
+        if k >= len(self.transforms):
+            logger.warning(f"spline degree {k} >= #poses ({len(self.transforms)})")
         k = min(len(self.transforms) - 1, k)  # for small chunk_sizes
         self.k = k
 
