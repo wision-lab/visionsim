@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 import numpy.typing as npt
-from skimage.filters import gaussian, unsharp_mask
+from scipy.ndimage import gaussian_filter
 from typing_extensions import Literal
 
 from visionsim.utils.color import linearrgb_to_srgb, raw_to_rgb_bayer, rgb_to_raw_bayer
+from visionsim.utils.imgproc import unsharp_mask
 
 
 def emulate_rgb_from_sequence(
@@ -17,7 +18,7 @@ def emulate_rgb_from_sequence(
     flux_gain: float = 1.0,
     iso_gain: float = 1.0,
     mosaic: bool = False,
-    demosaic: Literal["off", "bilinear", "MHC04"] = "MHC04",
+    demosaic: Literal["off", "bilinear", "MHC04"] = "off",
     denoise_sigma: float = 0.0,
     sharpen_weight: float = 0.0,
     rng: np.random.Generator | None = None,
@@ -41,7 +42,7 @@ def emulate_rgb_from_sequence(
         flux_gain (float, optional): factor to scale the input [0, 1] image _before_ Poisson rng
         iso_gain (float, optional): factor to scale the photo-electron reading _after_ Poisson rng
         mosaic (bool, optional): implement one array with mosaiced R-/G-/B-sensitive pixels or an innately 3-channel sensor
-        demosaic (string, optional): demosaicing method to use
+        demosaic (string, optional): demosaicing method to use if "mosaic" is set (default "off")
         denoise_sigma (float, optional): Gaussian blur kernel sigma (disabled if 0.0)
         sharpen_weight (float, optional): sharpening weight (disabled if 0.0)
         rng (np.random.Generator, optional): Optional random number generator. Defaults to none.
@@ -59,9 +60,9 @@ def emulate_rgb_from_sequence(
     sequence = np.array(sequence[:burst_size])
     patch = np.sum(sequence, axis=0) * flux_gain
 
-    has_alpha = len(patch.shape) > 2 and (patch.shape[2] in [2, 4])  # LA/RGBA
+    has_alpha = (patch.ndim > 2) and (patch.shape[2] in [2, 4])  # LA/RGBA
     patch_alpha = patch[..., -1:] if has_alpha else None
-    has_color = len(patch.shape) > 2 and (patch.shape[2] in [3, 4])  # RGB/RGBA
+    has_color = (patch.ndim > 2) and (patch.shape[2] in [3, 4])  # RGB/RGBA
     patch = patch[..., :-1] if has_alpha else patch
     if has_color and mosaic:
         patch = rgb_to_raw_bayer(patch)
@@ -88,9 +89,9 @@ def emulate_rgb_from_sequence(
 
     # de-noising and sharpening
     if denoise_sigma != 0.0:
-        patch = gaussian(patch, denoise_sigma)
+        patch = gaussian_filter(patch, denoise_sigma)
     if sharpen_weight != 0.0:
-        patch = unsharp_mask(patch, amount=sharpen_weight, channel_axis=2 if has_color else None)
+        patch = unsharp_mask(patch, sigma=max(1,denoise_sigma), amount=sharpen_weight)
 
     # Convert to sRGB color space for viewing and quantize to 8-bits
     patch = linearrgb_to_srgb(patch.astype(np.double))
