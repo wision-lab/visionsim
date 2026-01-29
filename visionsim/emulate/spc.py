@@ -9,7 +9,7 @@ from typing_extensions import cast
 def emulate_spc(
     img: npt.NDArray[np.floating],
     flux_gain: float = 1.0,
-    bitdepth: int = 1, 
+    bitdepth: int = 1,
     rng: np.random.Generator | None = None,
 ) -> npt.NDArray[np.integer]:
     """Perform bernoulli sampling on linearized RGB frames to yield binary frames.

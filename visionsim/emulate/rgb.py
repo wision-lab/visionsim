@@ -91,7 +91,7 @@ def emulate_rgb_from_sequence(
     if denoise_sigma != 0.0:
         patch = gaussian_filter(patch, denoise_sigma)
     if sharpen_weight != 0.0:
-        patch = unsharp_mask(patch, sigma=max(1,denoise_sigma), amount=sharpen_weight)
+        patch = unsharp_mask(patch, sigma=max(1, denoise_sigma), amount=sharpen_weight)
 
     # Convert to sRGB color space for viewing and quantize to 8-bits
     patch = linearrgb_to_srgb(patch.astype(np.double))

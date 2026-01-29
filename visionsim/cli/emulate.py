@@ -1,55 +1,54 @@
 from __future__ import annotations
 
 import functools
+import logging
 import os
 from pathlib import Path
-
-import logging
-logger = logging.getLogger(__name__)
 
 import numpy as np
 from typing_extensions import Literal
 
 from visionsim.emulate.rgb import emulate_rgb_from_sequence
 
+logger = logging.getLogger(__name__)
 
-def _spad_collate(batch, *, mode, rng, is_tonemapped=True, has_alpha=False, 
-                flux_gain=1, bitdepth=1, force_gray=False):
+
+def _spad_collate(batch, *, mode, rng, is_tonemapped=True, has_alpha=False, flux_gain=1, bitdepth=1, force_gray=False):
     """Use default collate function on batch and then simulate SPAD, enabling compute to be done in threads"""
     from visionsim.dataset import default_collate
     from visionsim.emulate.spc import emulate_spc
     from visionsim.utils.color import srgb_to_linearrgb
 
     idxs, imgs, poses = default_collate(batch)
-    
+
     if has_alpha:
-        imgs_alpha = imgs[...,-1:]
+        imgs_alpha = imgs[..., -1:]
         if np.issubdtype(imgs.dtype, np.floating):
             # returned imgs are np.uint8
             imgs_alpha = (255 * imgs_alpha).astype(np.uint8)
-        imgs = imgs[...,:-1]
+        imgs = imgs[..., :-1]
 
     if is_tonemapped:
         # Image has been tonemapped so undo mapping
         imgs = srgb_to_linearrgb((imgs / 255.0).astype(float))
     else:
         imgs = imgs.astype(float) / 255.0
-    
+
     # The warning about missing mosaicing should really be here...
     # but it will swamp the logs if we do that, so it got moved to the calling
     # code
     if imgs.shape[-1] == 3:
         if force_gray:
             w = (0.2125, 0.7154, 0.0721)
-            imgs = (imgs[...,0] * w[0]) + (imgs[...,1] * w[1]) + (imgs[...,2] * w[2])
+            imgs = (imgs[..., 0] * w[0]) + (imgs[..., 1] * w[1]) + (imgs[..., 2] * w[2])
         # else:
         #     logger.warning("emulate.spad: mosaicing/demosaicing not implemented")
 
     imgs = emulate_spc(imgs, flux_gain=flux_gain, bitdepth=bitdepth, rng=rng)
-    imgs = (255*imgs).astype(np.uint8)
+    imgs = (255 * imgs).astype(np.uint8)
     if has_alpha:
         if imgs.ndim < 4:
-            imgs = imgs[...,np.newaxis]
+            imgs = imgs[..., np.newaxis]
         imgs = np.concatenate((imgs, imgs_alpha), axis=3)
 
     if (mode.lower() == "npy") and (bitdepth == 1) and not has_alpha:
@@ -97,12 +96,12 @@ def spad(
     dataset = Dataset.from_path(input_path)
     transforms_new = copy.deepcopy(dataset.transforms or {})
     shape = np.array(dataset.full_shape)
-    
-    has_alpha = (len(shape) == 4) and (shape[-1] in [2, 4]) # LA/RGBA
+
+    has_alpha = (len(shape) == 4) and (shape[-1] in [2, 4])  # LA/RGBA
 
     if force_gray:
         shape[-1] = 1 + (1 if has_alpha else 0)
-    elif shape[-1] in [3, 4]:   # RGB/RGBA
+    elif shape[-1] in [3, 4]:  # RGB/RGBA
         # this warning could go to _spad_collate instead,
         # but it swamps the logs if we do that
         logger.warning("emulate.spad: mosaicing/demosaicing not implemented")
@@ -129,8 +128,14 @@ def spad(
         batch_size=batch_size,
         num_workers=os.cpu_count() or 1,
         collate_fn=functools.partial(
-            _spad_collate, mode=mode, rng=rng, flux_gain=flux_gain, bitdepth=bitdepth,
-            force_gray=force_gray, is_tonemapped=is_tonemapped, has_alpha=has_alpha,
+            _spad_collate,
+            mode=mode,
+            rng=rng,
+            flux_gain=flux_gain,
+            bitdepth=bitdepth,
+            force_gray=force_gray,
+            is_tonemapped=is_tonemapped,
+            has_alpha=has_alpha,
         ),
     )
 
