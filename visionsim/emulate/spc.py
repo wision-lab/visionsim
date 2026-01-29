@@ -7,23 +7,25 @@ from typing_extensions import cast
 
 
 def emulate_spc(
-    img: npt.NDArray[np.floating], factor: float = 1.0, bitdepth: int = 1, rng: np.random.Generator | None = None
+    img: npt.NDArray[np.floating],
+    flux_gain: float = 1.0,
+    bitdepth: int = 1, 
+    rng: np.random.Generator | None = None,
 ) -> npt.NDArray[np.integer]:
     """Perform bernoulli sampling on linearized RGB frames to yield binary frames.
 
     Args:
         img (npt.ArrayLike): Linear intensity image to sample binary frame from.
-        factor (float, optional): Arbitrary corrective brightness factor. Defaults to 1.0.
-        bitdepth(int, optional): number of underlying binary measurements to average (default 1)
+        flux_gain(float, default=1): scale factor to convert img in [0, 1] range to other flux levels
+        bitdepth (int, default=1): representing a SPAD sensor that averages `2^bitdepth - 1` binary samples internally for each measurement, operating at framerate `(1 / (2^bitdepth - 1))` of a binary SPAD sensor
         rng (np.random.Generator, optional): Optional random number generator. Defaults to none.
 
     Returns:
-        Binary single photon frame
+        binomial-distributed single-photon frame
     """
-    # Perform bernoulli sampling (equivalent to binomial w/ n=1)
     rng = np.random.default_rng() if rng is None else rng
-    N = (2**bitdepth) - 1
-    return (1.0 / N) * rng.binomial(cast(npt.NDArray[np.integer], N), 1.0 - np.exp(-img * factor))
+    N = int(2**bitdepth) - 1
+    return (1.0 / N) * rng.binomial(cast(npt.NDArray[np.integer], N), 1.0 - np.exp(-img * flux_gain))
 
 
 def spc_avg_to_rgb(

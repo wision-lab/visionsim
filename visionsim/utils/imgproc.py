@@ -32,7 +32,7 @@ def unsharp_mask(
             np.clip(img + (amount * (img - img_smooth)), 0, 1, out=img)
         else:
             # work with copy and convert back
-            if ~isinstance(img, np.uint8):
+            if not isinstance(img, np.uint8):
                 raise NotImplementedError("_unsharp_mask1 expects (float | uint8)")
             img_float = (1.0/255) * img.astype(np.float)
             img_smooth_float = (1.0/255) * img_smooth.astype(np.float)

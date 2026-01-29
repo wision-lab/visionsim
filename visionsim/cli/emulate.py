@@ -4,59 +4,81 @@ import functools
 import os
 from pathlib import Path
 
+import logging
+logger = logging.getLogger(__name__)
+
 import numpy as np
 from typing_extensions import Literal
 
 from visionsim.emulate.rgb import emulate_rgb_from_sequence
 
 
-def _spad_collate(batch, *, mode, rng, factor, bitdepth=1, gray=False, is_tonemapped=True):
+def _spad_collate(batch, *, mode, rng, is_tonemapped=True, has_alpha=False, 
+                flux_gain=1, bitdepth=1, force_gray=False):
     """Use default collate function on batch and then simulate SPAD, enabling compute to be done in threads"""
     from visionsim.dataset import default_collate
     from visionsim.emulate.spc import emulate_spc
     from visionsim.utils.color import srgb_to_linearrgb
 
     idxs, imgs, poses = default_collate(batch)
+    
+    if has_alpha:
+        imgs_alpha = imgs[...,-1:]
+        if np.issubdtype(imgs.dtype, np.floating):
+            # returned imgs are np.uint8
+            imgs_alpha = (255 * imgs_alpha).astype(np.uint8)
+        imgs = imgs[...,:-1]
 
     if is_tonemapped:
         # Image has been tonemapped so undo mapping
         imgs = srgb_to_linearrgb((imgs / 255.0).astype(float))
     else:
         imgs = imgs.astype(float) / 255.0
+    
+    # The warning about missing mosaicing should really be here...
+    # but it will swamp the logs if we do that, so it got moved to the calling
+    # code
+    if imgs.shape[-1] == 3:
+        if force_gray:
+            w = (0.2125, 0.7154, 0.0721)
+            imgs = (imgs[...,0] * w[0]) + (imgs[...,1] * w[1]) + (imgs[...,2] * w[2])
+        # else:
+        #     logger.warning("emulate.spad: mosaicing/demosaicing not implemented")
 
-    if gray and (imgs.shape[-1] == 3):
-        imgs = imgs.mean(axis=-1)
+    imgs = emulate_spc(imgs, flux_gain=flux_gain, bitdepth=bitdepth, rng=rng)
+    imgs = (255*imgs).astype(np.uint8)
+    if has_alpha:
+        if imgs.ndim < 4:
+            imgs = imgs[...,np.newaxis]
+        imgs = np.concatenate((imgs, imgs_alpha), axis=3)
 
-    binary_img = emulate_spc(imgs, factor=factor, bitdepth=bitdepth, rng=rng) * 255
-    binary_img = binary_img.astype(np.uint8)
-
-    if mode.lower() == "npy":
-        binary_img = binary_img >= 128
-        binary_img = np.packbits(binary_img, axis=2)
-    return idxs, binary_img, poses
+    if (mode.lower() == "npy") and (bitdepth == 1) and not has_alpha:
+        imgs = imgs >= 128
+        imgs = np.packbits(imgs, axis=2)
+    return idxs, imgs, poses
 
 
 def spad(
     input_dir: str | os.PathLike,
     output_dir: str | os.PathLike,
-    pattern: str = "frame_{:06}.png",
-    factor: float = 1.0,
-    gray: bool = False,
+    flux_gain: float = 1.0,
     bitdepth: int = 1,
+    force_gray: bool = False,
     seed: int = 2147483647,
+    pattern: str = "frame_{:06}.png",
     mode: Literal["npy", "img"] = "npy",
     batch_size: int = 4,
     force: bool = False,
 ):
-    """Perform bernoulli sampling on linearized RGB frames to yield binary frames
+    """Perform binomial sampling on linearized RGB frames to yield binary frames
 
     Args:
         input_dir: directory in which to look for frames
         output_dir: directory in which to save binary frames
         pattern: filenames of frames should match this
-        factor: multiplicative factor controlling dynamic range of output
-        gray: to set grayscale instead of 3-channel sensing
-        bitdepth: representing number of underlying binary measurements aggregated (bitdepth = k => 2^k - 1 binary measurements averaged)
+        flux_gain: multiplicative factor controlling dynamic range of output
+        bitdepth: representing number of underlying binary measurements aggregated (2^bitdepth - 1)
+        force_gray: to disable RGB sensing even if the input images are color
         seed: random seed to use while sampling, ensures reproducibility
         mode: how to save binary frames
         batch_size: number of frames to write at once
@@ -75,18 +97,27 @@ def spad(
     dataset = Dataset.from_path(input_path)
     transforms_new = copy.deepcopy(dataset.transforms or {})
     shape = np.array(dataset.full_shape)
-    if gray:
-        shape[-1] = transforms_new["c"] = 1
-    else:
-        shape[-1] = transforms_new["c"] = 3
+    
+    has_alpha = (len(shape) == 4) and (shape[-1] in [2, 4]) # LA/RGBA
+
+    if force_gray:
+        shape[-1] = 1 + (1 if has_alpha else 0)
+    elif shape[-1] in [3, 4]:   # RGB/RGBA
+        # this warning could go to _spad_collate instead,
+        # but it swamps the logs if we do that
+        logger.warning("emulate.spad: mosaicing/demosaicing not implemented")
+    transforms_new["c"] = shape[-1]
 
     if mode.lower() == "img":
         ...
     elif mode.lower() == "npy":
-        # Default to bitpacking width
-        transforms_new["bitpack"] = True
-        transforms_new["bitpack_dim"] = 2
-        shape[2] /= 8
+        if bitdepth == 1:
+            # Default to bitpacking width
+            transforms_new["bitpack"] = True
+            transforms_new["bitpack_dim"] = 2
+            shape[2] /= 8
+        else:
+            transforms_new["bitpack"] = False
     else:
         raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
 
@@ -98,7 +129,8 @@ def spad(
         batch_size=batch_size,
         num_workers=os.cpu_count() or 1,
         collate_fn=functools.partial(
-            _spad_collate, mode=mode, rng=rng, factor=factor, bitdepth=bitdepth, gray=gray, is_tonemapped=is_tonemapped
+            _spad_collate, mode=mode, rng=rng, flux_gain=flux_gain, bitdepth=bitdepth,
+            force_gray=force_gray, is_tonemapped=is_tonemapped, has_alpha=has_alpha,
         ),
     )
 
