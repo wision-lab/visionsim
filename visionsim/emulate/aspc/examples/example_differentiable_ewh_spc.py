@@ -15,6 +15,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ruamel.yaml import YAML
 
+# Import aspc package first to enable aspc.* imports
+import visionsim.emulate.aspc  # noqa: F401
 from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer
 from visionsim.emulate.aspc.main import get_light_conditions_from_string
 from visionsim.emulate.aspc.sensors import SPADSensor
@@ -27,9 +29,6 @@ from visionsim.emulate.aspc.utils import (
     ureg,
     ureg_constructor,
 )
-
-# Import aspc package first to enable aspc.* imports
-import visionsim.emulate.aspc  # noqa: F401
 
 
 def forward_pass_ewh_diff(

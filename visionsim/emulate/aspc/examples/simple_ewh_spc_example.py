@@ -3,16 +3,15 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from ruamel.yaml import YAML
 
 from visionsim.emulate.aspc.examples.ascp_plot_utils import plot_ewh_per_pixel
 from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer
-from ruamel.yaml import YAML
 from visionsim.emulate.aspc.sensors import SPADSensor
 from visionsim.emulate.aspc.sources import PulsedLaser, Sun, get_light_conditions_from_string
 from visionsim.emulate.aspc.utils import (
     eval_constructor,
     irradiance_photons,
-    preproc_albedo_intensity_depth_frames,
     tof2depth,
     ureg,
     ureg_constructor,
@@ -40,15 +39,15 @@ if __name__ == "__main__":
     Nr = config["histogrammer"]["shape"][0]
     Nc = config["histogrammer"]["shape"][1]
 
-    albedo_frames = torch.ones((1,Nr, Nc), dtype=torch.double, device=device, requires_grad=requires_grad)
-    intensity_frames = torch.ones((1,Nr, Nc), dtype=torch.double, device=device, requires_grad=requires_grad)
-    depth_frames = torch.ones((1,Nr, Nc), dtype=torch.double, device=device, requires_grad=requires_grad)* ureg.meter
+    albedo_frames = torch.ones((1, Nr, Nc), dtype=torch.double, device=device, requires_grad=requires_grad)
+    intensity_frames = torch.ones((1, Nr, Nc), dtype=torch.double, device=device, requires_grad=requires_grad)
+    depth_frames = torch.ones((1, Nr, Nc), dtype=torch.double, device=device, requires_grad=requires_grad) * ureg.meter
 
     # Hardcoded depth for toy example with 4 pixel FOVs focusing of 1m, 2m, 3m, 4m targets
-    depth_frames[0,0,0]*=1
-    depth_frames[0,0,1]*=2
-    depth_frames[0,0,2]*=3
-    depth_frames[0,0,3]*=4
+    depth_frames[0, 0, 0] *= 1
+    depth_frames[0, 0, 1] *= 2
+    depth_frames[0, 0, 2] *= 3
+    depth_frames[0, 0, 3] *= 4
 
     # Active source
     active_config = config["active_source"]["pulsed_laser"]
@@ -72,7 +71,9 @@ if __name__ == "__main__":
     # FOV masks
     _, img_rows, img_cols = depth_frames.shape
     empty_mask = torch.zeros((img_rows, img_cols), dtype=bool, device=device)
-    fov_masks = histogrammer.get_perpixel_fov_masks(empty_mask, hist_config.pixel_fov_list, device=device, vignette = vignette)
+    fov_masks = histogrammer.get_perpixel_fov_masks(
+        empty_mask, hist_config.pixel_fov_list, device=device, vignette=vignette
+    )
 
     # Sensor
     sensor_config = config["sensor"]
@@ -87,33 +88,31 @@ if __name__ == "__main__":
     depth_quantity = depth_frames
 
     radiance = active_source.get_scene_radiance(albedo_quantity, depth_quantity, num_pixels, sensor.omega)
-    
+
     # --- Verify  ---
-    print("\n" + "="*20 + " DEBUG GEOMETRY " + "="*20)
+    print("\n" + "=" * 20 + " DEBUG GEOMETRY " + "=" * 20)
     # 1. Check pixel area in meters^2
     pixel_area = sensor.pixel_pitch.to(ureg.meter).magnitude ** 2
     print(f"Pixel Area (m^2):      {pixel_area:.2e}")
-    
+
     # 2. Check Geometric Loss (1/F#^2)
     f_num_loss = (1 / sensor.f_number) ** 2
     print(f"Lens Loss (1/F#^2):    {f_num_loss:.2e}")
-    
+
     # 3. Check Radiance magnitude (Watts/sr/m^2)
     # Safely handle Pint Quantity wrapping a CUDA Tensor
-    if hasattr(radiance, 'magnitude'):
+    if hasattr(radiance, "magnitude"):
         # Extract tensor from Pint -> Move to CPU -> Convert to float
         rad_val = radiance.magnitude.mean().cpu().item()
     else:
         # It's just a raw tensor
         rad_val = radiance.mean().cpu().item()
-        
+
     print(f"Radiance (Mean):       {rad_val:.2e}")
-    print("="*56 + "\n")
+    print("=" * 56 + "\n")
 
     # --------------------------------------------------
-    
-    
-    
+
     irradiance = (radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (
         sensor.pixel_pitch.to(ureg.meter)
     ) ** 2
@@ -127,14 +126,14 @@ if __name__ == "__main__":
     offset = ambient_irradiance.magnitude
 
     # --- VERIFICATION BLOCK ---
-    print("\n" + "="*40)
+    print("\n" + "=" * 40)
     print("RADIOMETRIC VERIFICATION")
-    print("="*40)
-    
+    print("=" * 40)
+
     # 1. Signal is ALREADY Per Pulse (because sources.py handled the frequency division)
     photons_per_pulse = irradiance_tensor.mean()
     print(f"Signal Strength:   {photons_per_pulse:.4f} photons/PULSE")
-    
+
     # 2. Calculate Flux for reference (Signal * Frequency)
     freq_hz = active_source.frequency.to(ureg.hertz).magnitude
     photons_per_sec = photons_per_pulse * freq_hz
@@ -152,39 +151,39 @@ if __name__ == "__main__":
     # Ambient is also calculated per integration window (1/freq) in sources.py
     ambient_per_pulse = np.mean(offset) if not torch.is_tensor(offset) else offset.mean().item()
     print(f"Ambient Noise:     {ambient_per_pulse:.2e} photons/PULSE")
-    
+
     # 5. SBR
     sbr = photons_per_pulse / (ambient_per_pulse + 1e-15)
     print(f"SBR:               {sbr:.2f}")
-    print("="*40 + "\n")
+    print("=" * 40 + "\n")
 
-    print("\n" + "="*20 + " ROI FLUX CHECK " + "="*20)
+    print("\n" + "=" * 20 + " ROI FLUX CHECK " + "=" * 20)
 
     # FIX: Remove the batch dimension [1, 100, 100] -> [100, 100]
     # If using torch:
     if torch.is_tensor(irradiance_tensor):
-        irradiance_2d = irradiance_tensor.squeeze() 
+        irradiance_2d = irradiance_tensor.squeeze()
     else:
         # If numpy
         irradiance_2d = irradiance_tensor.squeeze()
 
     for i, mask in enumerate(fov_masks):
         mask_bool = mask.bool()
-        
+
         num_pixels_in_roi = mask_bool.sum().item()
         print(f"ROI {i}: Accumulating {num_pixels_in_roi} pixels")
-        
+
         if num_pixels_in_roi > 0:
             # FIX: Apply mask to the 2D version
             region_flux = irradiance_2d[mask_bool].mean().item()
             total_histogram_counts = region_flux * num_pixels_in_roi
-            
+
             print(f"   -> Flux per pixel: {region_flux:.4f}")
             print(f"   -> Histogram Height: ~{total_histogram_counts:.1f} photons/pulse")
         else:
             print("   -> ROI is empty")
-            
-    print("="*56 + "\n")
+
+    print("=" * 56 + "\n")
 
     # --- VERIFICATION BLOCK END ---
 
@@ -206,7 +205,7 @@ if __name__ == "__main__":
 
     active_source.plot_kernel(bin_width)
 
-    dead_time_bins = int(histogrammer.dead_time_s*histogrammer.n_bins*active_source.frequency)
+    dead_time_bins = int(histogrammer.dead_time_s * histogrammer.n_bins * active_source.frequency)
 
     # Simulate EWH with dead time
     ewh_list = histogrammer.simulate_ewh(

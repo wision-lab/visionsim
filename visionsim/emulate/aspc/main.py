@@ -1,26 +1,20 @@
 import math
-import sys
 from pathlib import Path
-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from ruamel.yaml import YAML
+
 from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer
 from visionsim.emulate.aspc.sensors import SPADSensor
 from visionsim.emulate.aspc.sources import LightConditions, PulsedLaser, Sun
 from visionsim.emulate.aspc.utils import (
-    eval_constructor,
-    file_constructor,
     irradiance_photons,
     preproc_albedo_intensity_depth_frames,
     tof2depth,
     ureg,
-    ureg_constructor,
+    yaml_constructor,
 )
 
 
@@ -38,9 +32,9 @@ if __name__ == "__main__":
     # Load config
     yaml = YAML()
     safe_builtins = {"__builtins__": {"list": list, "dict": dict, "tuple": tuple}, "np": np, "math": math}
-    yaml.Constructor.add_constructor(tag="!Quantity", constructor=ureg_constructor(ureg.Quantity))
-    yaml.Constructor.add_constructor(tag="!expr", constructor=eval_constructor(eval, safe_builtins))
-    yaml.Constructor.add_constructor(tag="!file", constructor=file_constructor(config_path))
+    yaml.Constructor.add_constructor(tag="!Quantity", constructor=yaml_constructor(ureg.Quantity))
+    yaml.Constructor.add_constructor(tag="!expr", constructor=yaml_constructor(eval, safe_builtins))
+    yaml.Constructor.add_constructor(tag="!file", constructor=yaml_constructor(config_path))
     config = yaml.load(open(config_path))
 
     # Load data
@@ -89,13 +83,16 @@ if __name__ == "__main__":
     ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (
         sensor.pixel_pitch.to(ureg.meter)
     ) ** 2
-    print("ambient_radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2", ambient_radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2)
+    print(
+        "ambient_radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2",
+        ambient_radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2,
+    )
     print("sensor.pixel_pitch", sensor.pixel_pitch)
     print("sensor.f_number", sensor.f_number)
     print("ambient_irradiance", ambient_irradiance)
     offsets = torch.tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=device)
     print("offsets", offsets)
-    print(f"offsets.sum() / 100", offsets.sum() / 100)
+    print("offsets.sum() / 100", offsets.sum() / 100)
     # Get transients
     transients, ambient_offsets = histogrammer.calculate_transients(
         irradiance,
@@ -135,9 +132,9 @@ if __name__ == "__main__":
     for i in range(num_fovs):
         current_ax = ax1 if num_fovs == 1 else ax1[i]
         current_ax.imshow(fov_masks[i].cpu().numpy(), cmap="gray")
-        current_ax.set_title(f"FOV {i+1}")
-        current_ax.axis('off')
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout to prevent suptitle overlap
+        current_ax.set_title(f"FOV {i + 1}")
+        current_ax.axis("off")
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust layout to prevent suptitle overlap
     plt.show()
 
     # # Albedo values for the first frame
@@ -146,8 +143,8 @@ if __name__ == "__main__":
     for i in range(num_fovs):
         current_ax = ax2 if num_fovs == 1 else ax2[i]
         current_ax.imshow(albedo_frames[0].cpu().numpy() * fov_masks[i].cpu().numpy(), cmap="gray", vmin=0, vmax=1)
-        current_ax.set_title(f"FOV {i+1}")
-        current_ax.axis('off')
+        current_ax.set_title(f"FOV {i + 1}")
+        current_ax.axis("off")
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
@@ -157,9 +154,11 @@ if __name__ == "__main__":
     for i in range(num_fovs):
         current_ax = ax3 if num_fovs == 1 else ax3[i]
         index_mask = fov_masks[i].cpu().numpy() > 0
-        current_ax.imshow(depth_frames[0].cpu().numpy() * index_mask, cmap="viridis", vmin=0, vmax=10) # Assuming max depth of 10m based on 10.0/255.0 scaling
-        current_ax.set_title(f"FOV {i+1}")
-        current_ax.axis('off')
+        current_ax.imshow(
+            depth_frames[0].cpu().numpy() * index_mask, cmap="viridis", vmin=0, vmax=10
+        )  # Assuming max depth of 10m based on 10.0/255.0 scaling
+        current_ax.set_title(f"FOV {i + 1}")
+        current_ax.axis("off")
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 

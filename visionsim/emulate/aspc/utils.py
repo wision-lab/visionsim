@@ -183,40 +183,37 @@ def preproc_albedo_intensity_depth_frames(
 #############################################
 
 
-def ureg_constructor(cls):
-    def ureg_yaml(loader, node):
-        if isinstance(node, ScalarNode):
-            value = loader.construct_scalar(node)
-            return cls(value) if value else cls()
-        elif isinstance(node, SequenceNode):
-            value = loader.construct_sequence(node)
-            return [cls(v) for v in value]
-        else:
-            raise NotImplementedError
-
-    return ureg_yaml
-
-
-def eval_constructor(cls, safe_builtins=None):
+def yaml_constructor(cls, safe_builtins=None):
     def eval_yaml(loader, node):
-        if isinstance(node, ScalarNode):
-            value = loader.construct_scalar(node)
-            return cls(value, safe_builtins)
-        else:
-            raise NotImplementedError
+        tag = node.tag
+
+        if tag == "!Quantity":
+            if isinstance(node, ScalarNode):
+                value = loader.construct_scalar(node)
+                return cls(value) if value else cls()
+            elif isinstance(node, SequenceNode):
+                value = loader.construct_sequence(node)
+                return [cls(v) for v in value]
+            else:
+                raise NotImplementedError
+
+        elif tag == "!expr":
+            if isinstance(node, ScalarNode):
+                value = loader.construct_scalar(node)
+                return cls(value, safe_builtins)
+            else:
+                raise NotImplementedError
+
+        elif tag == "!file":
+            if isinstance(node, ScalarNode):
+                value = loader.construct_scalar(node)
+                return np.loadtxt(value)
+            else:
+                raise NotImplementedError
+
+        raise NotImplementedError(f"Unsupported YAML tag: {tag}")
 
     return eval_yaml
-
-
-def file_constructor(cls):
-    def file_yaml(loader, node):
-        if isinstance(node, ScalarNode):
-            value = loader.construct_scalar(node)
-            return np.loadtxt(value)
-        else:
-            raise NotImplementedError
-
-    return file_yaml
 
 
 def get_irradiance_with_fov(irradiance, sensor_fov, pixel_fov, omega, w, h):

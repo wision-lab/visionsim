@@ -1,6 +1,4 @@
 import math
-import random
-import time
 from enum import Enum
 
 # from typing import Tuple
@@ -10,6 +8,7 @@ import numpy as np
 # import torch
 from pint import Quantity
 from scipy.constants import c, h, k, sigma
+
 from visionsim.emulate.aspc.units import validate_units
 from visionsim.emulate.aspc.utils import radiance_photons, tof2depth, ureg, watts2photons
 
@@ -184,7 +183,6 @@ class CoherentSource(LightSource):
         *,
         wavelength=550 * ureg.nanometer,
         avg_watts=ureg.watt,
-
     ):
         super().__init__()
         self.wavelength = wavelength
@@ -413,6 +411,7 @@ class Sun(ConstantSource, BlackBodySource):
 
     def __repr__(self):
         return f"Sun(intensity={self.intensity.to(ureg.watt)}, stability_factor={self.stability_factor.to(ureg.dimensionless)}, temperature={self.temperature.to(ureg.kelvin)}, lambda_pass={self.lambda_pass.to(ureg.nanometer)}, delta_lambda={self.delta_lambda.to(ureg.nanometer)}, light_conditions={self.light_conditions})"
+
 
 def get_light_conditions_from_string(condition_str: str) -> LightConditions:
     """Convert string to LightConditions enum value."""

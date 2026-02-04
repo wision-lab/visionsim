@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from pint import Quantity
 from torch import Tensor
 from tqdm import tqdm
+
 from visionsim.emulate.aspc.units import validate_units
 from visionsim.emulate.aspc.utils import get_irradiance_with_fov, ureg
 
@@ -103,7 +104,7 @@ class HistogrammerBase:
 
         mask_list = []
         for r1, r2, c1, c2 in pixel_fov_list:
-            mask = self.get_pixel_fov_mask(empty_mask, r1, r2, c1, c2, vignette = vignette)
+            mask = self.get_pixel_fov_mask(empty_mask, r1, r2, c1, c2, vignette=vignette)
             # Ensure mask is on the correct device
             if mask.device != device:
                 mask = mask.to(device)
@@ -148,8 +149,10 @@ class HistogrammerBase:
         """
         # check max depth
         if self.max_depth.magnitude > max_depth:
-            raise ValueError(f"Max depth in config {self.max_depth.magnitude} is more than maximum resolvable depth {max_depth}")
-        
+            raise ValueError(
+                f"Max depth in config {self.max_depth.magnitude} is more than maximum resolvable depth {max_depth}"
+            )
+
         # Ensure all tensors are on the same device
         device = irradiance_frames.device
         if fov_masks.device != device:
@@ -355,9 +358,8 @@ class Histogrammer(HistogrammerBase):
         prob_detection = 1.0 - torch.exp(-phi_bar)
 
         for n_ in range(n_pulses):
-
             detections = torch.bernoulli(prob_detection)
-            
+
             # Update buffer
             buffer[n_tbins:] = detections.bool()
 

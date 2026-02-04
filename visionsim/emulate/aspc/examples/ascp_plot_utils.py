@@ -1,19 +1,13 @@
+from pathlib import Path
+
+import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
-import matplotlib.patches as patches
 import torch
-from pathlib import Path 
+
 
 def plot_spad_sensor_grid(
-    histogrammer, 
-    fov_masks, 
-    grid_shape, 
-    albedo_frame, 
-    depth_frame, 
-    transients, 
-    arrival_rates, 
-    ewh_list,
-    save_path=None
+    histogrammer, fov_masks, grid_shape, albedo_frame, depth_frame, transients, arrival_rates, ewh_list, save_path=None
 ):
     """
     Visualizes SPAD data and saves three distinct plots:
@@ -22,11 +16,13 @@ def plot_spad_sensor_grid(
     3. Waveforms: Transient Response vs Generated Histogram (EWH)
     """
     rows, cols = grid_shape
-    
+
     # --- HELPER: ROBUST CONVERSION TO NUMPY ---
     def ensure_numpy(x):
-        if isinstance(x, np.ndarray): return x
-        if torch.is_tensor(x): return x.detach().cpu().numpy()
+        if isinstance(x, np.ndarray):
+            return x
+        if torch.is_tensor(x):
+            return x.detach().cpu().numpy()
         if isinstance(x, list):
             if len(x) > 0 and torch.is_tensor(x[0]):
                 return torch.stack(x).detach().cpu().numpy()
@@ -45,25 +41,25 @@ def plot_spad_sensor_grid(
     # ---------------------------------------------------------
     depth_map_est = np.zeros((rows, cols))
     depth_map_gt = np.zeros((rows, cols))
-    
+
     # Calculate bin width
     max_depth_val = histogrammer.max_depth
-    if hasattr(max_depth_val, 'magnitude'):
-        max_depth_val = max_depth_val.magnitude     
-    bin_dist_m = max_depth_val / histogrammer.n_bins 
-    
+    if hasattr(max_depth_val, "magnitude"):
+        max_depth_val = max_depth_val.magnitude
+    bin_dist_m = max_depth_val / histogrammer.n_bins
+
     # Fill maps
     for r in range(rows):
         for c in range(cols):
             idx = r * cols + c
-            
+
             # Estimate
             if idx < len(ewh_data):
                 peak_bin = np.argmax(ewh_data[idx])
                 # Filter: Only estimate depth if there are photons
-                if np.sum(ewh_data[idx]) > 0: 
+                if np.sum(ewh_data[idx]) > 0:
                     depth_map_est[r, c] = peak_bin * bin_dist_m
-            
+
             # Ground Truth
             if idx < len(fov_masks):
                 mask = ensure_numpy(fov_masks[idx])
@@ -74,7 +70,8 @@ def plot_spad_sensor_grid(
     # --- GLOBAL SCALING ---
     vmin_depth = 0
     vmax_depth = np.max(depth_map_gt)
-    if vmax_depth == 0: vmax_depth = 1.0
+    if vmax_depth == 0:
+        vmax_depth = 1.0
 
     # Handle Filenames
     scenario_name = ""
@@ -83,7 +80,7 @@ def plot_spad_sensor_grid(
         base_name = path_obj.stem.replace("_reconstruction", "")
         parent = path_obj.parent
         scenario_name = f": {base_name}"
-        
+
         save_path_recon = parent / f"{base_name}_reconstruction.png"
         save_path_overlay = parent / f"{base_name}_overlay.png"
         save_path_waveforms = parent / f"{base_name}_waveforms.png"
@@ -93,15 +90,15 @@ def plot_spad_sensor_grid(
     # =========================================================
     fig_maps, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     fig_maps.suptitle(f"Reconstruction{scenario_name}", fontsize=16)
-    
-    im1 = ax1.imshow(depth_map_gt, cmap='jet', interpolation='nearest', vmin=vmin_depth, vmax=vmax_depth)
+
+    im1 = ax1.imshow(depth_map_gt, cmap="jet", interpolation="nearest", vmin=vmin_depth, vmax=vmax_depth)
     ax1.set_title("Ground Truth (Ideal)")
     plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
-    
-    im2 = ax2.imshow(depth_map_est, cmap='jet', interpolation='nearest', vmin=vmin_depth, vmax=vmax_depth)
+
+    im2 = ax2.imshow(depth_map_est, cmap="jet", interpolation="nearest", vmin=vmin_depth, vmax=vmax_depth)
     ax2.set_title("Simulator Estimate (Physics-based)")
     plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
-    
+
     plt.tight_layout()
 
     # =========================================================
@@ -109,11 +106,11 @@ def plot_spad_sensor_grid(
     # =========================================================
     fig_ov, ax_ov = plt.subplots(1, 2, figsize=(12, 6))
     fig_ov.suptitle(f"Sensor FOV Overlay{scenario_name}", fontsize=16)
-    
-    ax_ov[0].imshow(albedo_img, cmap='gray')
+
+    ax_ov[0].imshow(albedo_img, cmap="gray")
     ax_ov[0].set_title("RGB/Albedo + FOV Grid")
-    
-    im_ov = ax_ov[1].imshow(depth_img, cmap='jet', vmin=vmin_depth, vmax=vmax_depth) 
+
+    im_ov = ax_ov[1].imshow(depth_img, cmap="jet", vmin=vmin_depth, vmax=vmax_depth)
     ax_ov[1].set_title("High-Res Depth + FOV Grid")
     plt.colorbar(im_ov, ax=ax_ov[1], fraction=0.046, pad=0.04)
 
@@ -127,66 +124,72 @@ def plot_spad_sensor_grid(
                 x_min, x_max = np.min(x_indices), np.max(x_indices)
                 w, h = x_max - x_min, y_max - y_min
                 for ax in ax_ov:
-                    rect = patches.Rectangle((x_min, y_min), w, h, linewidth=1, edgecolor='r', facecolor='none', alpha=0.5)
+                    rect = patches.Rectangle(
+                        (x_min, y_min), w, h, linewidth=1, edgecolor="r", facecolor="none", alpha=0.5
+                    )
                     ax.add_patch(rect)
     plt.tight_layout()
 
     # =========================================================
     # PLOT 3: WAVEFORM GRID (Transient vs EWH)
     # =========================================================
-    MAX_PLOTS = 16 
-    
+    MAX_PLOTS = 16
+
     if rows * cols > MAX_PLOTS:
         # If too many pixels, just plot the 4 corners
         fig_wave, axes = plt.subplots(2, 2, figsize=(10, 8))
-        fig_wave.suptitle(f"Corner Pixels - Waveforms{scenario_name}\nBlue: Transient (Ideal) | Orange: EWH (Noisy)", fontsize=14)
+        fig_wave.suptitle(
+            f"Corner Pixels - Waveforms{scenario_name}\nBlue: Transient (Ideal) | Orange: EWH (Noisy)", fontsize=14
+        )
         corners = [
-            (0, 0, "Top-Left"), (0, cols - 1, "Top-Right"),
-            (rows - 1, 0, "Bottom-Left"), (rows - 1, cols - 1, "Bottom-Right")
+            (0, 0, "Top-Left"),
+            (0, cols - 1, "Top-Right"),
+            (rows - 1, 0, "Bottom-Left"),
+            (rows - 1, cols - 1, "Bottom-Right"),
         ]
         ax_flat = axes.flatten()
-        
+
         for i, (r, c, name) in enumerate(corners):
             idx = r * cols + c
             ax = ax_flat[i]
             if idx < len(transient_data):
                 # Normalize for plotting visibility
                 t_data = transient_data[idx]
-                ax.plot(t_data, color='tab:blue', alpha=0.6, linewidth=1.5, label="Transient")
-                
+                ax.plot(t_data, color="tab:blue", alpha=0.6, linewidth=1.5, label="Transient")
+
                 ax2_w = ax.twinx()
                 e_data = ewh_data[idx]
-                ax2_w.plot(e_data, color='tab:orange', alpha=0.8, linewidth=1.5, label="EWH")
-                
+                ax2_w.plot(e_data, color="tab:orange", alpha=0.8, linewidth=1.5, label="EWH")
+
                 ax.set_title(f"{name} (Row {r}, Col {c})")
                 ax.set_yticks([])
                 ax2_w.set_yticks([])
-                if i == 0: # Legend only on first
+                if i == 0:  # Legend only on first
                     lines_1, labels_1 = ax.get_legend_handles_labels()
                     lines_2, labels_2 = ax2_w.get_legend_handles_labels()
-                    ax.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper right', fontsize='small')
+                    ax.legend(lines_1 + lines_2, labels_1 + labels_2, loc="upper right", fontsize="small")
     else:
         # Plot every single pixel
-        fig_wave, axes = plt.subplots(rows, cols, figsize=(cols*2.5, rows*2), squeeze=False)
+        fig_wave, axes = plt.subplots(rows, cols, figsize=(cols * 2.5, rows * 2), squeeze=False)
         fig_wave.suptitle(f"Pixel-wise Waveforms{scenario_name}", fontsize=16)
-        
+
         for r in range(rows):
             for c in range(cols):
                 idx = r * cols + c
                 ax = axes[r, c]
                 if idx < len(transient_data):
                     t_data = transient_data[idx]
-                    ax.plot(t_data, color='tab:blue', alpha=0.6, linewidth=1)
-                    
+                    ax.plot(t_data, color="tab:blue", alpha=0.6, linewidth=1)
+
                     ax2_w = ax.twinx()
                     e_data = ewh_data[idx]
-                    ax2_w.plot(e_data, color='tab:orange', alpha=0.8, linewidth=1)
-                    
+                    ax2_w.plot(e_data, color="tab:orange", alpha=0.8, linewidth=1)
+
                     ax.set_xticks([])
                     ax.set_yticks([])
                     ax2_w.set_yticks([])
                 else:
-                    ax.axis('off')
+                    ax.axis("off")
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
@@ -196,18 +199,19 @@ def plot_spad_sensor_grid(
     if save_path:
         print(f"Saving reconstruction to {save_path_recon}...")
         fig_maps.savefig(save_path_recon, dpi=150)
-        
+
         print(f"Saving overlay to {save_path_overlay}...")
         fig_ov.savefig(save_path_overlay, dpi=150)
-        
+
         print(f"Saving waveforms to {save_path_waveforms}...")
         fig_wave.savefig(save_path_waveforms, dpi=150)
-        
+
         plt.close(fig_maps)
         plt.close(fig_ov)
         plt.close(fig_wave)
     else:
         plt.show()
+
 
 def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, transients, arrival_rates, ewh_list):
     # print("Min max of depth_frame", depth_frame.min(), depth_frame.max())
@@ -249,7 +253,8 @@ def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, trans
         current_ax.imshow(
             # The depth frame visualization should not be multiplied with a continuous FOV mask
             # The visualization only shows the region of the depth frame that contributes to the transient for a specific pixel
-            depth_frame.detach().cpu().numpy() * (fov_masks[i].detach().cpu().numpy()>0), cmap="jet"
+            depth_frame.detach().cpu().numpy() * (fov_masks[i].detach().cpu().numpy() > 0),
+            cmap="jet",
             # depth_frame.detach().cpu().numpy() * fov_masks[i].detach().cpu().numpy(), cmap="jet"
         )  # Assuming max depth of 10m based on 10.0/255.0 scaling
         current_ax.set_title(f"FOV {i + 1}")
