@@ -1,0 +1,30 @@
+name: Build Docs
+
+on: [push]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install VisionSim and dependencies
+        run: |
+          # Force torch to use CPU
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu 
+          pip install . --group dev --group docs
+      - name: Run Linter
+        run: inv lint
+      - name: Test Stubs
+        run: inv test-stubs
+      - name: Build Docs
+        run : inv build-docs

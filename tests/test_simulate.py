@@ -18,7 +18,9 @@ def get_public_members(obj, module=None):
         module = obj.__name__
 
     for _, child_obj in inspect.getmembers(obj, lambda c: getattr(c, "__module__", None) == module):
-        if child_obj.__name__.startswith("_") and not child_obj.__name__.startswith("__"):
+        name = getattr(child_obj, "__name__", getattr(child_obj, "attrname", None))
+
+        if name.startswith("_") and not name.startswith("__"):
             continue
         elif inspect.isclass(child_obj):
             yield child_obj

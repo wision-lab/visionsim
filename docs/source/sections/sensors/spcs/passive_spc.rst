@@ -31,17 +31,15 @@ While a conventional camera can capture many thousands of photons during a singl
 Due to this, SPCs are fundamentally digital devices. They will output a binary one if one or more photons are received during it's exposure time and a zero otherwise. For a static scene with a radiant flux (photons/second) of :math:`\phi`, the number of incident photons :math:`k` on a pixel during an exposure time :math:`\tau` follows a Poisson distribution given by:
 
 .. math:: 
-    \begin{align*}
-        P(k) = \frac{(\phi\tau)^ke^{-\phi\tau}}{k!} \,.
-    \end{align*}
+    P(k) = \frac{(\phi\tau)^ke^{-\phi\tau}}{k!} \,.
 
 From this, we can infer that the binary pixel measurement :math:`B` will follow a Bernoulli distribution given by [1]_:
 
 .. math:: 
-    \begin{align*}
+    \begin{split}
         P(B=0) &= P(k=0) = e^{-\phi \tau},\\
         P(B=1) &= P(k \ge 1)=1-e^{-\phi \tau}.
-    \end{align*}
+    \end{split}
 
 However, a SPC can run at extremely fast rates, so in practice while each measurement is extremely noisy, and quantized to a single bits-worth of information, we can acquire many thousands of measurements in the time a conventional camera takes for a single exposure. 
 
@@ -55,16 +53,12 @@ Now that we understand the basics of a SPC, how can we recover a "normal" image 
 The key observation is that the previous equation is invertible, so if we have a good photon detection probability estimate :math:`\widehat P`, we can also estimate :math:`\phi`. Namely, the maximum likelihood estimator of :math:`\widehat P` for a **static scene** is simply the average of neighboring binary frames [2]_: 
 
 .. math:: 
-    \begin{align*}
-        \widehat{P} = \frac{1}{n} \sum_{i=1}^n B_i.
-    \end{align*}
+    \widehat{P} = \frac{1}{n} \sum_{i=1}^n B_i.
 
 And by inverting the image formation model above we can get a good estimate of the scene flux:
 
 .. math::
-    \begin{align*}
-        \widehat{\phi}=-\frac{1}{\tau} \ln \left(1-\widehat{P}\right)\,.
-    \end{align*}
+    \widehat{\phi}=-\frac{1}{\tau} \ln \left(1-\widehat{P}\right)\,.
 
 Finally, bear in mind that :math:`\phi` is the scene flux in photons/second, which is proportional to linear intensity, yet most images are typically tonemapped. For more information about this, consider working through `this notebook <https://github.com/cpsiff/SPAD-ICCP-Summer-School/blob/main/part_1_passive_SPADs/activity_hdr.ipynb>`_. 
 

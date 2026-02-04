@@ -101,6 +101,11 @@ def test(c):
 
 
 @task
+def test_stubs(c):
+    _run(c, "stubtest visionsim.simulate.blender --concise --ignore-disjoint-bases")
+
+
+@task
 def precommit(c):
     """Run pre-commit hooks"""
     _run(c, "pre-commit run --all-files")
@@ -154,15 +159,14 @@ def build_docs(c, preview=False, full=False):
     # Run autodocs
     with c.cd(ROOT_DIR):
         # TODO: Make this a project configuration
-        api_exclude = ["visionsim/interpolate/rife"]
+        api_exclude = ["visionsim/interpolate/rife", "visionsim/simulate/compat.py", "visionsim/simulate/nodes"]
         # We have to do this for all the new changes in the docs to be reflected
         console.print(
             '[yellow]Make sure to run "pip install -e .[dev]" or equivalent to make sure docstring changes are reflected!'
         )
-        # Generate API and CLI docs
+        # Generate API, CLI docs
         _run(c, "sphinx-apidoc -f --remove-old -o docs/source/apidocs visionsim " + " ".join(api_exclude))
-        # Move CLI docs to its own folder
-        _run(c, "mv docs/source/apidocs/visionsim.cli.rst docs/source/clidocs")
+        Path("docs/source/apidocs/modules.rst").unlink()
 
     with c.cd(DOCS_DIR):
         _run(c, "make html")
@@ -177,26 +181,35 @@ def generate_stubs(c):
     # Stubgen/stubtest is provided by mypy
     source_path = "visionsim/simulate/blender.py"
     stub_path = "visionsim/simulate/blender.pyi"
-    _run(c, f"stubgen {source_path} --include-docstrings -o .")
+    _run(c, f"stubgen {source_path} --include-docstrings --include-private -o .")
 
     class FixStub(ast.NodeTransformer):
         def __init__(self, path, ignores_from: str | None = None):
-            with open(ignores_from) as f:
-                root = ast.parse(f.read(), ignores_from, type_comments=True)
+            if ignores_from:
+                with open(ignores_from) as f:
+                    root = ast.parse(f.read(), ignores_from, type_comments=True)
 
-            self.type_ignored_mods = set(
-                n.name.split(".")[0]
-                for node in ast.walk(root)
-                if isinstance(node, (ast.Import, ast.ImportFrom))
-                for n in node.names
-                if any(ignore.lineno in range(node.lineno, node.end_lineno + 1) for ignore in root.type_ignores)
-            )
+                self.type_ignored_mods = set(
+                    n.name.split(".")[0]
+                    for node in ast.walk(root)
+                    if isinstance(node, (ast.Import, ast.ImportFrom))
+                    for n in node.names
+                    if any(
+                        ignore.lineno in range(node.lineno, (node.end_lineno or node.lineno) + 1)
+                        for ignore in root.type_ignores
+                    )
+                )
+            else:
+                self.type_ignored_mods = set()
             self.type_ignores = set()
             self.classes = {}
 
             with open(path) as f:
                 self.root = ast.parse(code := f.read(), path, type_comments=True)
                 self.code = code
+            type_check_only = ast.ImportFrom(module="typing", names=[ast.alias(name="type_check_only")], level=0)
+            self.root.body.insert(0, type_check_only)
+            ast.increment_lineno(self.root)
             super().__init__()
 
         def visit_Import(self, node):
@@ -228,6 +241,7 @@ def generate_stubs(c):
 
                         if name not in methods:
                             child = copy.deepcopy(child)
+                            child.decorator_list = [ast.Name(id="type_check_only", ctx=ast.Load())]
                             child.name = name
 
                             if node.name == "BlenderClients":
@@ -259,8 +273,8 @@ def generate_stubs(c):
         f.write(code)
 
     _run(c, f"ruff check --select I --fix {stub_path}")
+    _run(c, f"ruff check --extend-select I --fix {stub_path}")
     _run(c, f"ruff format {stub_path}")
-    # _run(c, "stubtest visionsim.simulate.blender --concise")
 
 
 @task

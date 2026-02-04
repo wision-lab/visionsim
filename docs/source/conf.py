@@ -7,7 +7,7 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "VisionSIM"
-copyright = "VisionSIM developers, 2025"
+copyright = "VisionSIM developers, 2026"
 author = "Sacha Jungerman"
 
 # -- General configuration ---------------------------------------------------
@@ -37,7 +37,7 @@ html_css_files = [
 # -- Options for autodocs ----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html
 autodoc_type_aliases = {"npt.ArrayLike": "npt.ArrayLike"}
-autodoc_mock_imports = ["bpy"]
+autodoc_mock_imports = ["bpy", "visionsim.simulate.nodes"]
 autodoc_default_options = {
     "special-members": "__init__,__call__",
 }

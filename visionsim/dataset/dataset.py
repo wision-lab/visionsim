@@ -255,11 +255,11 @@ class ImgDatasetWriter:
     def __init__(
         self, root: str | os.PathLike, transforms: dict | None = None, pattern: str = "frame_{:06}.png", force=False
     ) -> None:
-        """Initialize `ImgDatasetWriter`.
+        """Initialize ``ImgDatasetWriter``.
 
         Args:
-            root (str | os.PathLike): directory in which to save dataset (both frames/*.png and optionally .json)
-            transforms (dict | None, optional): transforms of source dataset, `frames` are discarded and camera info is kept. Defaults to None.
+            root (str | os.PathLike): directory in which to save dataset (both ``frames/*.png`` and optionally ``.json``)
+            transforms (dict | None, optional): transforms of source dataset, ``frames`` are discarded and camera info is kept. Defaults to None.
             pattern (str, optional): frame filename pattern, will be formatted with frame index. Defaults to "frame_{:06}.png".
             force (bool, optional): if true, overwrite output file(s) if present. Defaults to False.
 

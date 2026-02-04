@@ -1,42 +1,55 @@
-name: CLI Installation
+name: Run Tests
 
 on: [push]
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # python-version: ["3.8", "3.9", "3.10", "3.11"]
         python-version: ["3.10"]
-
+        blender-version: ["3.3", "4.5", "latest"]
+        # os: ["macos-latest", "ubuntu-latest", "windows-latest"]
+        os: ["ubuntu-latest", "windows-latest"]
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Lint with ruff
+      - name: Install ACT dependencies
+        if: ${{ env.ACT }}
         run: |
-          python -m pip install --upgrade pip
-          pip install ruff
-          ruff check --extend-select I tasks.py visionsim/ tests/
-      - name: Install FFmpeg
-        run: |
-          sudo snap install ffmpeg
-          ffmpeg -version
+          # Update docker image
+          apt-get update && apt-get install sudo -y
+          sudo apt-get update -y
+
+          # Packages needed for blender
+          sudo apt-get install -y lsb-release
+          sudo apt-get install -y tar xz-utils git ffmpeg wget nano bzip2 
+          sudo apt-get install -y --no-install-recommends --fix-missing libxi6 libxkbcommon-x11-0 libglfw3-dev libgles2-mesa-dev libsm6
+
+          # Install ffmpeg directly as the setup-ffmpeg needs to interact with the gh cli and have access to gh tokens
+          sudo apt-get install -y ffmpeg
+      - name: Install ffmpeg
+        if: ${{ !env.ACT }}
+        uses: AnimMouse/setup-ffmpeg@v1
       - name: Install Blender
-        run: |
-          sudo snap install blender --classic --channel=3.3lts/stable
-          blender --version
+        uses: bradyajohnston/setup-blender@v5
+        with:
+          version: ${{ matrix.blender-version }}
       - name: Install VisionSim and dependencies
         run: |
-          pip install .[dev]
+          # Force torch to use CPU
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu 
+          pip install -e . --group dev 
           vsim post-install --editable
-      - name: Build Docs
-        run : |
-          inv build-docs
+      - name: Check Dependencies 
+        run: | 
+          blender --version
+          blender --background --python-use-system-env --python-expr "import visionsim"
+          ffmpeg -version 
       - name: Run Tests
         run: |
-          pytest --durations=0
+          pytest --durations=0 -s

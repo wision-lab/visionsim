@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import itertools
 import logging
 import os
@@ -11,6 +12,7 @@ import sys
 import tempfile
 from functools import partial
 from pathlib import Path
+from textwrap import dedent
 
 import imageio.v3 as iio
 import multiprocess
@@ -89,6 +91,96 @@ def sample_scenes(
     return frame_starts, num_frames
 
 
+def dataclass_to_cli_args(config_instance: dataclasses.dataclass, prefix: str = ""):
+    args = []
+    for field in dataclasses.fields(config_instance):
+        value = getattr(config_instance, field.name)
+        if value is not None:
+            if isinstance(value, bool):
+                if value:
+                    args.append(f"--{prefix}{field.name}")
+                else:
+                    args.append(f"--{prefix}no-{field.name}")
+            else:
+                args.append(f"--{prefix}{field.name}={value}")
+    return " ".join(args)
+
+
+@app.command
+def create_dataset_condor(
+    scenes_dir: str | os.PathLike,
+    datasets_dir: str | os.PathLike,
+    render_config: RenderConfig,
+    sequences_per_scene: int = 1,
+    num_frames: int | None = None,
+    batch_size: int = 5,
+    arg_file: str | os.PathLike = "arguments.txt",
+    sub_file: str | os.PathLike = "run.sub",
+    dry_run: bool = False,
+):
+    """Similar to `create_datasets` but instead of rendering anything it outputs an arguments file
+    and condor submit file that when submitted will run the equivalent `blender.render-animation` commands.
+
+    Args:
+        scenes_dir (str | os.PathLike): Directory to search for blend files in (includes sub-directories 1-level deep).
+            Every scene is assumed to be animated between frames 1-600.
+        datasets_dir (str | os.PathLike): Dataset output folder, ground truth renders will be saved in
+            `<datasets_dir>/renders/<scene_name>/<sequence_id>` where `scene_name` is the stem of the blender file (filename
+            without extension), and `sequence_id` is defined as `<keyframe_multiplier>-<frame_start>-<frame_start+num_frames>`.
+        render_config (RenderConfig): Render configuration.
+        sequences_per_scene (int, optional): Number of sequences per scene to render. The start of each sequence is sampled
+            uniformly from the animation range [1, 600].
+        num_frames (int | None, optional): Number of frames to render per sequence. If None, render everything.
+        batch_size (int, Optional): Max number of frames to render per command.
+        dry_run (bool, optional): if true, nothing will be rendered at all.
+    """
+    # Sample sequences and validate args.
+    frame_starts, num_frames = sample_scenes(render_config, sequences_per_scene, num_frames)
+
+    # Find all sequences, i.e: pairs of blend-files and frame ranges (start, start+num-frames)
+    scenes = find_blends(scenes_dir)
+    sequences = list(itertools.product(scenes, frame_starts))
+    log.info(f"Generating {len(sequences)} sequences from {len(scenes)} scenes...")
+
+    # Note: Shuffling the sequences helps with throughput as different scenes are rendered at once
+    random.seed(123456789)
+    random.shuffle(sequences)
+
+    # Define helper to map each sequence to a unique path
+    def get_sequence_dir(scene_name, frame_start):
+        Path(datasets_dir).mkdir(parents=True, exist_ok=True)
+        sequence_id = f"{int(render_config.keyframe_multiplier):03}-{frame_start:05}-{frame_start + num_frames:05}"
+        sequence_dir = Path(datasets_dir) / "renders" / scene_name / sequence_id
+        return sequence_dir.resolve()
+
+    # Get CLI arguments that created current `render_config` and assert they re-parse correctly
+    render_args = dataclass_to_cli_args(render_config)
+    conf, _ = tyro.cli(RenderConfig, args=shlex.split(render_args), return_unknown_args=True)
+    render_args = dataclass_to_cli_args(render_config, prefix="render-config.")
+    assert conf == render_config
+
+    with open(arg_file, "w") as f:
+        for blend_file, frame_start in sequences:
+            sequence_dir = get_sequence_dir(blend_file.stem, frame_start)
+
+            for start, end in itertools.pairwise(range(frame_start, frame_start + num_frames + batch_size, batch_size)):
+                end = min(end, frame_start + num_frames)
+                f.write(f"{blend_file}, {sequence_dir}, {start}, {end}\n")
+
+    with open(sub_file, "w") as f:
+        f.write(
+            dedent(f"""
+                arguments = blender.render-animation $(blend_file) $(sequence_dir) {render_args} --frame-start=$(start) --frame-end=$(end) {"--dry-run" if dry_run else "--no-dry-run"}
+                transfer_input_files = $(blend_file)
+                executable = visionsim
+
+                ... remaining submit details ...
+
+                queue blend_file, sequence_dir, start, end from {arg_file}
+            """)
+        )
+
+
 @app.command
 def create_datasets(
     scenes_dir: str | os.PathLike,
@@ -112,7 +204,7 @@ def create_datasets(
             uniformly from the animation range [1, 600].
         num_frames (int | None, optional): Number of frames to render per sequence. If None, render everything.
         allow_skips (bool, optional): If true, allow skipping over whole sequences if their corresponding root directory exists.
-        dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
+        dry_run (bool, optional): if true, nothing will be rendered at all.
     """
     # Sample sequences and validate args.
     frame_starts, num_frames = sample_scenes(render_config, sequences_per_scene, num_frames)
