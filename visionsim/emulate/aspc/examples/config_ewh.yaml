@@ -1,15 +1,15 @@
 # Histogrammer 
 histogrammer:
-  min_depth: 0.0
-  max_depth: 40.0
+  min_depth: !Quantity 0.0 meters
+  max_depth: !Quantity 10.0 meters
   n_bins: 1000
   shape: [300, 400]  # [height, width] to match sensor size
   strict_units: true
   strict_range: false
-  bin_width: 0.03  # meters per bin
+  bin_width: !Quantity 0.03 meters  # meters per bin
   pixel_fov_list: [[0, 0.4, 0.3, 0.6], [0.2, 0.6, 0.6, 0.9]]
   n_pulses: 10000   # number of laser pulses
-  dead_time_s: 75e-9 # Dead time in seconds
+  dead_time_s: !Quantity 75e-9 seconds # Dead time in seconds
   free_running: False # Free-running mode (True) or gated mode (False) 
 
 # Active Light Source 
@@ -32,19 +32,7 @@ ambient_source:
     light_conditions: "OVERCAST"  # from LightConditions enum
     lambda_pass: !Quantity 550.0 nanometers             # nanometers
     delta_lambda: !Quantity 10.0 nanometers             # nanometers
-    intensity: !Quantity 3.828e26 watts / meter**2      # watts per square meter
-    stability_factor: !Quantity 0.01                    # dimensionless
-    
-  flickering_lamp:
-    enabled: true
-    temperature: !Quantity 2700.0 kelvin           # kelvin (typical incandescent bulb)
-    illuminance: !Quantity 800.0 lux               # lux (typical room lighting)
-    modulation_frequency: !Quantity 120.0 hertz    # hertz (AC power frequency)
-    modulation_amplitude: !Quantity 0.1            # dimensionless (10% flicker)
-    phase: !Quantity 0.0 radians                   # radians
-    pulse_width: !Quantity 0.001 seconds           # seconds
-    pulse_shape: "gaussian"
-    emissivity: 0.9              # dimensionless
+    intensity: !Quantity 3.828e26 watt / meter**2      # watts per square meter
 
 # Sensor
 sensor:

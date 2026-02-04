@@ -1,14 +1,19 @@
 import math
+import sys
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from histogrammers import HistConfig, Histogrammer
 from ruamel.yaml import YAML
-from sensors import SPADSensor
-from sources import LightConditions, PulsedLaser, Sun
-from utils import (
+from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer
+from visionsim.emulate.aspc.sensors import SPADSensor
+from visionsim.emulate.aspc.sources import LightConditions, PulsedLaser, Sun
+from visionsim.emulate.aspc.utils import (
     eval_constructor,
     file_constructor,
     irradiance_photons,
@@ -72,16 +77,25 @@ if __name__ == "__main__":
     # Get signal
     num_pixels = sensor.w * sensor.h
     radiance = active_source.get_scene_radiance(albedo_frames, depth_frames, num_pixels, sensor.omega)
+    print("radiance", radiance)
     irradiance = (radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (
         sensor.pixel_pitch.to(ureg.meter)
     ) ** 2
+    print("irradiance", irradiance)
     irradiance = torch.tensor(irradiance.magnitude, dtype=torch.float32, device=device)
     # Get ambient offset
     ambient_radiance = ambient_source.get_scene_radiance(sensor.omega, albedo_frames, active_source.frequency)
+    print("ambient_radiance", ambient_radiance)
     ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (
         sensor.pixel_pitch.to(ureg.meter)
     ) ** 2
+    print("ambient_radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2", ambient_radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2)
+    print("sensor.pixel_pitch", sensor.pixel_pitch)
+    print("sensor.f_number", sensor.f_number)
+    print("ambient_irradiance", ambient_irradiance)
     offsets = torch.tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=device)
+    print("offsets", offsets)
+    print(f"offsets.sum() / 100", offsets.sum() / 100)
     # Get transients
     transients, ambient_offsets = histogrammer.calculate_transients(
         irradiance,
@@ -96,6 +110,8 @@ if __name__ == "__main__":
         sensor.h,
         sensor.omega,
     )
+    print("transients", transients)
+    print("ambient_offsets", ambient_offsets)
 
     # Calculate arrival rates
     bin_width = 2 * tof2depth(1 / active_source.frequency) / histogrammer.n_bins
@@ -105,45 +121,47 @@ if __name__ == "__main__":
     active_source.plot_kernel(bin_width)
 
     # Simulate EWH
+    dead_time_bins = int(histogrammer.dead_time_s * histogrammer.n_bins * active_source.frequency)
     ewh_list = histogrammer.simulate_ewh(
-        arrival_rates, histogrammer.n_pulses, histogrammer.n_bins, histogrammer.free_running, histogrammer.dead_time_s
+        arrival_rates, histogrammer.n_pulses, histogrammer.n_bins, histogrammer.free_running, dead_time_bins
     )
 
     # Plots
     num_fovs = len(histogrammer.pixel_fov_list)
 
     # # FOV Masks
-    # fig1, ax1 = plt.subplots(1, num_fovs, figsize=(3 * num_fovs, 3))
-    # fig1.suptitle("FOV Masks", fontsize=16)
-    # for i in range(num_fovs):
-    #     current_ax = ax1 if num_fovs == 1 else ax1[i]
-    #     current_ax.imshow(fov_masks[i].cpu().numpy(), cmap="gray")
-    #     current_ax.set_title(f"FOV {i+1}")
-    #     current_ax.axis('off')
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout to prevent suptitle overlap
-    # plt.show()
+    fig1, ax1 = plt.subplots(1, num_fovs, figsize=(3 * num_fovs, 3))
+    fig1.suptitle("FOV Masks", fontsize=16)
+    for i in range(num_fovs):
+        current_ax = ax1 if num_fovs == 1 else ax1[i]
+        current_ax.imshow(fov_masks[i].cpu().numpy(), cmap="gray")
+        current_ax.set_title(f"FOV {i+1}")
+        current_ax.axis('off')
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout to prevent suptitle overlap
+    plt.show()
 
     # # Albedo values for the first frame
-    # fig2, ax2 = plt.subplots(1, num_fovs, figsize=(3 * num_fovs, 3))
-    # fig2.suptitle("Albedo Values (First Frame)", fontsize=16)
-    # for i in range(num_fovs):
-    #     current_ax = ax2 if num_fovs == 1 else ax2[i]
-    #     current_ax.imshow(albedo_frames[0].cpu().numpy() * fov_masks[i].cpu().numpy(), cmap="gray", vmin=0, vmax=1)
-    #     current_ax.set_title(f"FOV {i+1}")
-    #     current_ax.axis('off')
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    # plt.show()
+    fig2, ax2 = plt.subplots(1, num_fovs, figsize=(3 * num_fovs, 3))
+    fig2.suptitle("Albedo Values (First Frame)", fontsize=16)
+    for i in range(num_fovs):
+        current_ax = ax2 if num_fovs == 1 else ax2[i]
+        current_ax.imshow(albedo_frames[0].cpu().numpy() * fov_masks[i].cpu().numpy(), cmap="gray", vmin=0, vmax=1)
+        current_ax.set_title(f"FOV {i+1}")
+        current_ax.axis('off')
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.show()
 
     # # Depth values for the first frame
-    # fig3, ax3 = plt.subplots(1, num_fovs, figsize=(3 * num_fovs, 3))
-    # fig3.suptitle("Depth Values (First Frame)", fontsize=16)
-    # for i in range(num_fovs):
-    #     current_ax = ax3 if num_fovs == 1 else ax3[i]
-    #     current_ax.imshow(depth_frames[0].cpu().numpy() * fov_masks[i].cpu().numpy(), cmap="viridis", vmin=0, vmax=10) # Assuming max depth of 10m based on 10.0/255.0 scaling
-    #     current_ax.set_title(f"FOV {i+1}")
-    #     current_ax.axis('off')
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    # plt.show()
+    fig3, ax3 = plt.subplots(1, num_fovs, figsize=(3 * num_fovs, 3))
+    fig3.suptitle("Depth Values (First Frame)", fontsize=16)
+    for i in range(num_fovs):
+        current_ax = ax3 if num_fovs == 1 else ax3[i]
+        index_mask = fov_masks[i].cpu().numpy() > 0
+        current_ax.imshow(depth_frames[0].cpu().numpy() * index_mask, cmap="viridis", vmin=0, vmax=10) # Assuming max depth of 10m based on 10.0/255.0 scaling
+        current_ax.set_title(f"FOV {i+1}")
+        current_ax.axis('off')
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.show()
 
     # Transients
     fig4, ax4 = plt.subplots(num_fovs, 1, figsize=(8, 2.5 * num_fovs))

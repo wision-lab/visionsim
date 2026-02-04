@@ -6,8 +6,8 @@ import torch.nn.functional as F
 from pint import Quantity
 from torch import Tensor
 from tqdm import tqdm
-from units import validate_units
-from utils import get_irradiance_with_fov, ureg
+from visionsim.emulate.aspc.units import validate_units
+from visionsim.emulate.aspc.utils import get_irradiance_with_fov, ureg
 
 
 class HistogrammerBase:
@@ -146,6 +146,10 @@ class HistogrammerBase:
                 - torch.Tensor: A tensor containing the calculated transients.
                 - list: List of ambient offsets.
         """
+        # check max depth
+        if self.max_depth.magnitude > max_depth:
+            raise ValueError(f"Max depth in config {self.max_depth.magnitude} is more than maximum resolvable depth {max_depth}")
+        
         # Ensure all tensors are on the same device
         device = irradiance_frames.device
         if fov_masks.device != device:
@@ -186,8 +190,8 @@ class HistogrammerBase:
 
                 # Apply vignette weights to irradiance
                 current_irradiance_vals = current_irradiance_vals * fov_mask[index_mask]
-                current_depth_vals = depth_frames[frame_idx][torch.nonzero(fov_mask, as_tuple=True)]
-                masked_offsets = offsets[frame_idx][torch.nonzero(fov_mask, as_tuple=True)]
+                current_depth_vals = depth_frames[frame_idx][torch.nonzero(index_mask, as_tuple=True)]
+                masked_offsets = offsets[frame_idx][torch.nonzero(index_mask, as_tuple=True)]
                 ambient_offsets.append(masked_offsets.sum() / gt_ntime_bins)
 
                 # Extract magnitude only if these are Pint Quantity objects, otherwise use as-is
@@ -259,6 +263,8 @@ class HistogrammerBase:
 
         for idx in current_arrivals_indices:
             # Check for previous photon detection within the dead time window
+            # print("idx dtype", idx.dtype)
+            # print("dead_time_bins dtype", dead_time_bins.dtype)
             start_check = int(max(idx - dead_time_bins, 0))
             end_check = idx  # Up to (but not including) the current photon
 

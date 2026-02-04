@@ -1,16 +1,16 @@
 # Histogrammer 
 histogrammer:
-  min_depth: 0.0
-  max_depth: 15.0 
+  min_depth: !Quantity 0.0 meters
+  max_depth: !Quantity 10.0 meters
   n_bins: 1000
   shape: [100, 100]
   strict_units: true
   strict_range: false
-  bin_width: 0.015
+  bin_width: !Quantity 0.015 meters
   pixel_fov_list: [[0, 0.1, 0, 0.1], [0, 0.1, 0.1, 0.2], [0, 0.1, 0.2, 0.3], [0, 0.1, 0.3, 0.4]]
   vignette: false 
   n_pulses: 10000
-  dead_time_s: 0 
+  dead_time_s: !Quantity 0 seconds
   free_running: False
 
 # Active Light Source 

@@ -7,14 +7,14 @@ import numpy as np
 import torch
 from copy import deepcopy # Important for copying config
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from examples.ascp_plot_utils import plot_ewh_per_pixel, plot_spad_sensor_grid
-from histogrammers import HistConfig, Histogrammer
+from ascp_plot_utils import plot_ewh_per_pixel, plot_spad_sensor_grid
+from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer
 from ruamel.yaml import YAML
-from sensors import SPADSensor
-from sources import PulsedLaser, Sun, get_light_conditions_from_string
-from utils import (
+from visionsim.emulate.aspc.sensors import SPADSensor
+from visionsim.emulate.aspc.sources import PulsedLaser, Sun, get_light_conditions_from_string
+from visionsim.emulate.aspc.utils import (
     eval_constructor,
     irradiance_photons,
     preproc_albedo_intensity_depth_frames,
@@ -144,8 +144,7 @@ def run_simulation_scenario(base_config, scenario_name, output_dir, device="cpu"
     arrival_rates = histogrammer.calculate_arrival_rates(irf_tensor, transients, ambient_offsets, histogrammer.n_bins)
 
     # EWH Simulation
-    freq_hz = active_source.frequency.to(ureg.hertz).magnitude
-    dead_time_bins = int(histogrammer.dead_time_s * histogrammer.n_bins * freq_hz)
+    dead_time_bins = int(histogrammer.dead_time_s * histogrammer.n_bins * active_source.frequency)
     
     ewh_list = histogrammer.simulate_ewh(
         arrival_rates, histogrammer.n_pulses, histogrammer.n_bins, histogrammer.free_running, dead_time_bins,
@@ -179,13 +178,14 @@ if __name__ == "__main__":
     os.makedirs(output_dir, exist_ok=True)
 
     # --- DEFINE SCENARIOS ---
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # Scenario 1: High Fidelity (Your current "nice" settings)
     # Good laser power, average sun
     cfg_1 = deepcopy(base_config)
     cfg_1["active_source"]["pulsed_laser"]["avg_watts"] = 0.05 * ureg.watt
     cfg_1["histogrammer"]["n_pulses"] = 10000
-    run_simulation_scenario(cfg_1, "1_High_Fidelity", output_dir)
+    run_simulation_scenario(cfg_1, "1_High_Fidelity", output_dir, device)
 
     # Scenario 2: Photon Starved (Low SNR)
     # Reduced laser power significantly. Depth estimation should become noisy/patchy.
@@ -193,7 +193,7 @@ if __name__ == "__main__":
     cfg_2 = deepcopy(base_config)
     cfg_2["active_source"]["pulsed_laser"]["avg_watts"] = 0.0005 * ureg.watt # 100x weaker
     cfg_2["histogrammer"]["n_pulses"] = 2000 # Fewer pulses
-    run_simulation_scenario(cfg_2, "2_Photon_Starved", output_dir)
+    run_simulation_scenario(cfg_2, "2_Photon_Starved", output_dir, device)
 
     # Scenario 3: High Ambient Interference
     # Standard laser power, but very intense background light.
@@ -202,6 +202,6 @@ if __name__ == "__main__":
     cfg_3["active_source"]["pulsed_laser"]["avg_watts"] = 0.01 * ureg.watt
     cfg_3["ambient_source"]["sun"]["intensity"] = 1.0e28 * ureg.watt / ureg.meter**2 # Massive sun scaling
     # Alternatively, keep intensity same but increase aperture or exposure if sun scaling is weird physically
-    run_simulation_scenario(cfg_3, "3_High_Ambient", output_dir)
+    run_simulation_scenario(cfg_3, "3_High_Ambient", output_dir, device)
 
     print("All scenarios completed. Check the 'results_comparison' folder.")

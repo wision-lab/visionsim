@@ -1,20 +1,16 @@
 import math
-import os
-import sys
 from pathlib import Path
 
 import numpy as np
 import torch
 from ruamel.yaml import YAML
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 # Import from local modules
-from ascp_plot_utils import plot_edh_per_pixel
-from histogrammers import HistConfig, HistogrammerEDH
-from sensors import SPADSensor
-from sources import PulsedLaser, Sun, get_light_conditions_from_string
-from utils import (
+from visionsim.emulate.aspc.examples.ascp_plot_utils import plot_edh_per_pixel
+from visionsim.emulate.aspc.histogrammers import HistConfig, HistogrammerEDH
+from visionsim.emulate.aspc.sensors import SPADSensor
+from visionsim.emulate.aspc.sources import PulsedLaser, Sun, get_light_conditions_from_string
+from visionsim.emulate.aspc.utils import (
     eval_constructor,
     preproc_albedo_intensity_depth_frames,
     tof2depth,
@@ -107,7 +103,7 @@ if __name__ == "__main__":
         histogrammer.n_pulses,
         histogrammer.n_bins,
         histogrammer.free_running,
-        histogrammer.dead_time_s,
+        histogrammer.dead_time_s.magnitude,
     )
 
     plot_edh_per_pixel(

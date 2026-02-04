@@ -1,19 +1,15 @@
 import math
-import os
-import sys
 from pathlib import Path
 
 import numpy as np
 import torch
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from examples.ascp_plot_utils import plot_ewh_per_pixel
-from histogrammers import HistConfig, Histogrammer
+from visionsim.emulate.aspc.examples.ascp_plot_utils import plot_ewh_per_pixel
+from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer
 from ruamel.yaml import YAML
-from sensors import SPADSensor
-from sources import PulsedLaser, Sun, get_light_conditions_from_string
-from utils import (
+from visionsim.emulate.aspc.sensors import SPADSensor
+from visionsim.emulate.aspc.sources import PulsedLaser, Sun, get_light_conditions_from_string
+from visionsim.emulate.aspc.utils import (
     eval_constructor,
     irradiance_photons,
     preproc_albedo_intensity_depth_frames,
@@ -210,7 +206,7 @@ if __name__ == "__main__":
 
     active_source.plot_kernel(bin_width)
 
-    dead_time_bins = int(histogrammer.dead_time_s*histogrammer.n_bins*freq_hz)
+    dead_time_bins = int(histogrammer.dead_time_s*histogrammer.n_bins*active_source.frequency)
 
     # Simulate EWH with dead time
     ewh_list = histogrammer.simulate_ewh(

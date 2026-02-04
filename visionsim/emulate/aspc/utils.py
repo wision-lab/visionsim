@@ -155,6 +155,8 @@ def preproc_albedo_intensity_depth_frames(
         depth_img = cv2.inpaint(
             depth_img.astype(np.float32), (depth_img > max_depth).astype(np.uint8), 3, cv2.INPAINT_TELEA
         )
+        print("depth_img min", depth_img.min())
+        print("depth_img max", depth_img.max())
 
         # Resize and transform to tensor, scale RGB to [0-1] range
         rgb_img = cv2.resize(rgb_img, (Nc, Nr))

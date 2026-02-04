@@ -13,12 +13,13 @@ import yaml
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from histogrammers import HistConfig, Histogrammer
-from main import get_light_conditions_from_string
 from ruamel.yaml import YAML
-from sensors import SPADSensor
-from sources import PulsedLaser, Sun
-from utils import (
+
+from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer
+from visionsim.emulate.aspc.main import get_light_conditions_from_string
+from visionsim.emulate.aspc.sensors import SPADSensor
+from visionsim.emulate.aspc.sources import PulsedLaser, Sun
+from visionsim.emulate.aspc.utils import (
     eval_constructor,
     irradiance_photons,
     preproc_albedo_intensity_depth_frames,

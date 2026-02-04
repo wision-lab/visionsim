@@ -10,8 +10,8 @@ import numpy as np
 # import torch
 from pint import Quantity
 from scipy.constants import c, h, k, sigma
-from units import validate_units
-from utils import radiance_photons, tof2depth, ureg, watts2photons
+from visionsim.emulate.aspc.units import validate_units
+from visionsim.emulate.aspc.utils import radiance_photons, tof2depth, ureg, watts2photons
 
 
 # See: https://en.wikipedia.org/wiki/Daylight#Intensity_in_different_conditions
@@ -70,27 +70,23 @@ Flickering Lamp - combines dynamic and black body properties
 
 class ConstantSource(LightSource):
     """
-    Light sources with constant output; fluctuations based on stability factor
+    Light sources with constant output
     """
 
     @validate_units()
-    def __init__(self, intensity=ureg.watt / ureg.meter**2, stability_factor=0.01 * ureg.dimensionless):
+    def __init__(self, intensity=ureg.watt / ureg.meter**2):
         super().__init__()
         self.intensity = intensity  # Base intensity in watts / meter^2
-        self.stability_factor = (
-            stability_factor  # close to 0 for high stability (can vary due to temperature, voltage, etc.)
-        )
 
     def get_intensity(self) -> Quantity:
-        fluctuation = 1 + random.uniform(-self.stability_factor, self.stability_factor)
-        return self.intensity * fluctuation
+        return self.intensity
 
     @property
     def params(self):
-        return self.intensity, self.stability_factor
+        return self.intensity
 
     def __repr__(self):
-        return f"ConstantSource(intensity={self.intensity.to(ureg.watt / ureg.meter**2)}, stability_factor={self.stability_factor.to(ureg.dimensionless)})"
+        return f"ConstantSource(intensity={self.intensity.to(ureg.watt / ureg.meter**2)})"
 
 
 class DynamicSource(LightSource):
@@ -101,17 +97,11 @@ class DynamicSource(LightSource):
     @validate_units()
     def __init__(
         self,
-        modulation_frequency=1.0 * ureg.hertz,
-        modulation_amplitude=0.5 * ureg.dimensionless,
-        phase=0.0 * ureg.radian,
         pulse_width=1 * ureg.nanosecond,
         pulse_shape="gaussian",
         pulse_shape_custom: str = "lambda x: np.sinc(x / 2)",
     ):
         super().__init__()
-        self.modulation_frequency = modulation_frequency  # Hz
-        self.modulation_amplitude = modulation_amplitude  # Amplitude of variation (0-1)
-        self.phase = phase  # Phase shift in radians
         self.pulse_width = pulse_width  # Pulse width in seconds
         self.pulse_shape = pulse_shape  # 'gaussian', 'square', 'custom'
         self.pulse_shape_custom = pulse_shape_custom  # Custom pulse shape function
@@ -177,10 +167,10 @@ class DynamicSource(LightSource):
 
     @property
     def params(self):
-        return self.modulation_frequency, self.modulation_amplitude, self.phase, self.pulse_width, self.pulse_shape
+        return self.pulse_width, self.pulse_shape
 
     def __repr__(self):
-        return f"DynamicSource(modulation_frequency={self.modulation_frequency.to(ureg.hertz)}, modulation_amplitude={self.modulation_amplitude.to(ureg.dimensionless)}, phase={self.phase.to(ureg.radian)}, pulse_width={self.pulse_width.to(ureg.nanosecond)}, pulse_shape={self.pulse_shape})"
+        return f"DynamicSource(pulse_width={self.pulse_width.to(ureg.nanosecond)}, pulse_shape={self.pulse_shape})"
 
 
 class CoherentSource(LightSource):
@@ -194,21 +184,15 @@ class CoherentSource(LightSource):
         *,
         wavelength=550 * ureg.nanometer,
         avg_watts=ureg.watt,
-        coherence_length=1e-3 * ureg.meter,
-        beam_divergence=0.001 * ureg.radian,
-        polarization_angle=0.0 * ureg.radian,
+
     ):
         super().__init__()
         self.wavelength = wavelength
         self.avg_watts = avg_watts
-        self.coherence_length = coherence_length  # Spatial coherence in meters
-        self.beam_divergence = beam_divergence  # Beam divergence angle in radians
-        self.polarization_angle = polarization_angle  # Linear polarization angle
-        self.is_collimated = True
 
     @property
     def params(self):
-        return self.wavelength, self.avg_watts, self.coherence_length, self.beam_divergence, self.polarization_angle
+        return self.wavelength, self.avg_watts
 
     def __repr__(self):
         return f"CoherentSource(wavelength={self.wavelength.to(ureg.nanometer)}, avg_watts={self.avg_watts})"
@@ -370,7 +354,7 @@ class Sun(ConstantSource, BlackBodySource):
         light_conditions=LightConditions.BRIGHT_SUNLIGHT,
     ):
         # Initialize both parent classes
-        ConstantSource.__init__(self, intensity=intensity, stability_factor=stability_factor)
+        ConstantSource.__init__(self, intensity=intensity)
         BlackBodySource.__init__(self, temperature=temperature, illuminance=light_conditions)
 
         self.lambda_pass = lambda_pass
@@ -403,6 +387,16 @@ class Sun(ConstantSource, BlackBodySource):
             watts2photons(watts_eff_per_area, 1 / frequency, self.lambda_pass) / ureg.meter**2
         )
         radiance = photons_eff_per_area_per_cycle.to(ureg.count / ureg.meter**2) * (omega * rho_hat) / np.pi
+        print(f"self.c_eff: {self.c_eff}")
+        print(f"self.lux.to(ureg.lux).magnitude: {self.lux.to(ureg.lux).magnitude}")
+        print(f"watts_eff_per_area: {watts_eff_per_area}")
+        print(f"frequency: {frequency}")
+        print(f"self.lambda_pass: {self.lambda_pass}")
+        print(f"photons_eff_per_area_per_cycle: {photons_eff_per_area_per_cycle}")
+        print(f"radiance: {radiance}")
+        print(f"omega: {omega}")
+        print(f"rho_hat: {rho_hat}")
+        print(f"np.pi: {np.pi}")
 
         return radiance.to(radiance_photons)
 
@@ -419,165 +413,6 @@ class Sun(ConstantSource, BlackBodySource):
 
     def __repr__(self):
         return f"Sun(intensity={self.intensity.to(ureg.watt)}, stability_factor={self.stability_factor.to(ureg.dimensionless)}, temperature={self.temperature.to(ureg.kelvin)}, lambda_pass={self.lambda_pass.to(ureg.nanometer)}, delta_lambda={self.delta_lambda.to(ureg.nanometer)}, light_conditions={self.light_conditions})"
-
-
-class FlickeringLamp(DynamicSource, BlackBodySource):
-    """
-    Flickering lamp combining dynamic (time-varying) and black body properties
-
-    This should be modeled as an AMBIENT source:
-    - Provides background lighting with temporal variations
-    - Natural flickering behavior (like incandescent bulbs, fluorescent lights)
-    - Black body spectral characteristics
-    """
-
-    @validate_units()
-    def __init__(
-        self,
-        *,
-        temperature=2700 * ureg.kelvin,  # Typical incandescent bulb temperature
-        illuminance=800 * ureg.lux,  # Typical room lighting
-        modulation_frequency=120 * ureg.hertz,  # AC power frequency (US: 60Hz, EU: 50Hz)
-        modulation_amplitude=0.1 * ureg.dimensionless,  # 10% flicker amplitude
-        phase=0.0 * ureg.radian,
-        pulse_width=1e-3 * ureg.second,  # 1ms pulse width for flicker
-        pulse_shape="gaussian",
-        emissivity=0.9,  # Typical bulb emissivity
-    ):
-        # Initialize both parent classes
-        DynamicSource.__init__(
-            self,
-            modulation_frequency=modulation_frequency,
-            modulation_amplitude=modulation_amplitude,
-            phase=phase,
-            pulse_width=pulse_width,
-            pulse_shape=pulse_shape,
-        )
-        BlackBodySource.__init__(self, temperature=temperature, illuminance=illuminance, emissivity=emissivity)
-
-        # Calculate effective intensity based on black body properties
-        self.effective_intensity = self._calculate_effective_intensity()
-
-    def _calculate_effective_intensity(self) -> Quantity:
-        """Calculate the effective intensity based on black body temperature and illuminance"""
-        # Convert illuminance to watts per square meter using typical conversion
-        # For incandescent bulbs, approximately 0.0079 W/m² per lux
-        watts_per_area = 0.0079 * self.lux.to(ureg.lux).magnitude * ureg.watt / ureg.meter**2
-        return watts_per_area
-
-    def get_intensity(self) -> Quantity:
-        """Get the current intensity with flickering modulation"""
-        base_intensity = self.effective_intensity
-        # Apply dynamic modulation from DynamicSource
-        # Convert time to dimensionless and ensure phase calculation is in radians
-        current_time = time.time() * ureg.second
-        phase_calculation = 2 * np.pi * self.modulation_frequency * current_time + self.phase
-        modulation = 1 + self.modulation_amplitude * np.sin(phase_calculation)
-        return base_intensity * modulation
-
-    @ureg.check(None, ureg.steradian, None, ureg.hertz)
-    def get_scene_radiance(self, omega, rho_hat, frequency):
-        """Get scene radiance due to flickering ambient source"""
-        # Get current modulated intensity (watts per square meter)
-        current_intensity = self.get_intensity()
-
-        # Convert to photons per cycle per area
-        # Note: watts2photons expects total power, so we multiply by 1 m² to get total power
-        # then divide by 1 m² to get back to per-area units
-        photons_per_area_per_cycle = watts2photons(
-            current_intensity * (1 * ureg.meter**2), 1 / frequency, self.lambda_max()
-        ) / (1 * ureg.meter**2)
-
-        # Calculate radiance (assumes lambertian BRDF)
-        radiance = photons_per_area_per_cycle.to(ureg.count / ureg.meter**2) * (omega * rho_hat) / np.pi
-        return radiance.to(radiance_photons)
-
-    @property
-    def params(self):
-        return (
-            self.temperature,
-            self.emissivity,
-            self.lux,
-            self.modulation_frequency,
-            self.modulation_amplitude,
-            self.phase,
-            self.pulse_width,
-            self.pulse_shape,
-        )
-
-    def __repr__(self):
-        return f"FlickeringLamp(temperature={self.temperature.to(ureg.kelvin)}, illuminance={self.lux.to(ureg.lux)}, modulation_frequency={self.modulation_frequency.to(ureg.hertz)}, modulation_amplitude={self.modulation_amplitude.to(ureg.dimensionless)})"
-
-
-class CombinedSource:
-    def __init__(self, *sources):
-        # Filter out None sources
-        self.sources = [s for s in sources if s is not None]
-
-    def get_scene_radiance(self, *args, **kwargs):
-        # Initialize result with the shape of the first source's output
-        if not self.sources:
-            return 0
-
-        # Get the first source's result to determine the shape
-        # Handle different parameter signatures for the first source
-        first_source = self.sources[0]
-        try:
-            first_result = first_source.get_scene_radiance(*args, **kwargs)
-        except (TypeError, KeyError) as e:
-            # Handle different parameter signatures for different source types
-            if isinstance(first_source, PulsedLaser):
-                # PulsedLaser expects: (rho_hat, depth_map, num_pixels, omega, ...)
-                if len(args) >= 3:
-                    omega, rho_hat, _ = args[0], args[1], args[2]
-                    # For PulsedLaser, we need depth_map and num_pixels
-                    # Use rho_hat.size as num_pixels and create a dummy depth_map
-                    depth_map = np.ones_like(rho_hat) * 1.0 * ureg.meter
-                    first_result = first_source.get_scene_radiance(rho_hat, depth_map, rho_hat.size, omega, **kwargs)
-                else:
-                    raise e
-            else:
-                # For other sources, try with the original args
-                first_result = first_source.get_scene_radiance(*args, **kwargs)
-
-        result = np.zeros_like(first_result)
-
-        # Add all sources
-        for i, source in enumerate(self.sources):
-            try:
-                source_result = source.get_scene_radiance(*args, **kwargs)
-            except (TypeError, KeyError) as e:
-                # Handle different parameter signatures for different source types
-                if isinstance(source, PulsedLaser):
-                    # PulsedLaser expects: (rho_hat, depth_map, num_pixels, omega, ...)
-                    if len(args) >= 3:
-                        omega, rho_hat, _ = args[0], args[1], args[2]
-                        # For PulsedLaser, we need depth_map and num_pixels
-                        # Use rho_hat.size as num_pixels and create a dummy depth_map
-                        depth_map = np.ones_like(rho_hat) * 1.0 * ureg.meter
-                        source_result = source.get_scene_radiance(rho_hat, depth_map, rho_hat.size, omega, **kwargs)
-                    else:
-                        raise e
-                else:
-                    # For other sources, try with the original args
-                    source_result = source.get_scene_radiance(*args, **kwargs)
-
-            if source_result.shape != result.shape:
-                print(
-                    f"Warning: Source {i} ({type(source).__name__}) returned shape {source_result.shape}, expected {result.shape}"
-                )
-                # Try to broadcast or resize if possible
-                if hasattr(source_result, "shape") and hasattr(result, "shape"):
-                    try:
-                        # Try broadcasting
-                        result += source_result
-                    except ValueError:
-                        print(f"Error: Cannot broadcast shapes {source_result.shape} and {result.shape}")
-                        raise
-            else:
-                result += source_result
-        return result
-
 
 def get_light_conditions_from_string(condition_str: str) -> LightConditions:
     """Convert string to LightConditions enum value."""
