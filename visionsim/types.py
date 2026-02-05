@@ -93,4 +93,4 @@ MemSize: TypeAlias = Annotated[
 ]
 
 _Matrix4x4 = list[list[float]]
-Matrix4x4 = _Matrix4x4 | npt.NDArray[np.floating]
+Matrix4x4 = list[list[float]] | npt.NDArray[np.floating]
