@@ -5,7 +5,6 @@ import torch
 from visionsim.emulate.aspc.camera import Camera
 
 if __name__ == "__main__":
-
     data_dir = Path("examples/renders/scene1/")
     config_path = "visionsim/emulate/aspc/config.yaml"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

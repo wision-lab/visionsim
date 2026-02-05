@@ -10,10 +10,10 @@ from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer
 from visionsim.emulate.aspc.sensors import SPADSensor
 from visionsim.emulate.aspc.sources import PulsedLaser, Sun, get_light_conditions_from_string
 from visionsim.emulate.aspc.utils import (
-    yaml_constructor,
     irradiance_photons,
     tof2depth,
     ureg,
+    yaml_constructor,
 )
 
 if __name__ == "__main__":

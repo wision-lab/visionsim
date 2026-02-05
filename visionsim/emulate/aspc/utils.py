@@ -83,18 +83,6 @@ def pyramid_solid_angle(a, b):
     return 4 * np.arcsin(np.sin(a / 2) * np.sin(b / 2))
 
 
-def resize_like(src, target):
-    return resize_to(src, target.shape)
-
-
-def resize_to(img, shape):
-    """Reshape image to shape, use cv2.INTER_AREA if we are shrinking, else cv2.INTER_CUBIC"""
-    h, w, *_ = shape
-    img_h, img_w, *_ = img.shape
-    interp = cv2.INTER_AREA if img_h * img_w >= h * w else cv2.INTER_CUBIC
-    return cv2.resize(img, (w, h), interpolation=interp)
-
-
 #############################################
 #              Data loader utils            #
 #############################################

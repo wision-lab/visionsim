@@ -19,6 +19,7 @@ from visionsim.emulate.aspc.utils import (
 
 class Camera:
     """Camera class for ASPC simulation"""
+
     def __init__(self, data_path, config_path, device):
         """Initialize Camera"""
         self.device = device
@@ -57,7 +58,9 @@ class Camera:
 
     def _load_data(self, data_path):
         """Load data from directory"""
-        return preproc_albedo_intensity_depth_frames(root=data_path, device=self.device, config=self.config, start_idx=0, num_frames=1, requires_grad=False)
+        return preproc_albedo_intensity_depth_frames(
+            root=data_path, device=self.device, config=self.config, start_idx=0, num_frames=1, requires_grad=False
+        )
 
     def _get_light_conditions_from_string(self, condition_str):
         """Convert string to LightConditions enum value."""
@@ -67,13 +70,17 @@ class Camera:
         """Get FOV masks"""
         _, img_rows, img_cols = self.depth_frames.shape
         empty_mask = torch.zeros((img_rows, img_cols), dtype=torch.float32, device=self.device)
-        fov_masks = self.histogrammer.get_perpixel_fov_masks(empty_mask, self.histogrammer.pixel_fov_list, device=self.device)
+        fov_masks = self.histogrammer.get_perpixel_fov_masks(
+            empty_mask, self.histogrammer.pixel_fov_list, device=self.device
+        )
         return fov_masks
 
     def _get_signal(self):
         """Get signal from active source"""
         num_pixels = self.sensor.w * self.sensor.h
-        radiance = self.active_source.get_scene_radiance(self.albedo_frames, self.depth_frames, num_pixels, self.sensor.omega)
+        radiance = self.active_source.get_scene_radiance(
+            self.albedo_frames, self.depth_frames, num_pixels, self.sensor.omega
+        )
         irradiance = (radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(irradiance_photons) * (
             self.sensor.pixel_pitch.to(ureg.meter)
         ) ** 2
@@ -82,10 +89,12 @@ class Camera:
 
     def _get_ambient_offset(self):
         """Get ambient offset from ambient source"""
-        ambient_radiance = self.ambient_source.get_scene_radiance(self.sensor.omega, self.albedo_frames, self.active_source.frequency)
-        ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(irradiance_photons) * (
-            self.sensor.pixel_pitch.to(ureg.meter)
-        ) ** 2
+        ambient_radiance = self.ambient_source.get_scene_radiance(
+            self.sensor.omega, self.albedo_frames, self.active_source.frequency
+        )
+        ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(
+            irradiance_photons
+        ) * (self.sensor.pixel_pitch.to(ureg.meter)) ** 2
         offsets = torch.tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=self.device)
         return offsets
 
@@ -114,7 +123,9 @@ class Camera:
         bin_width = 2 * tof2depth(1 / self.active_source.frequency) / self.histogrammer.n_bins
         _, irf = self.active_source.get_kernel(bin_width, None)
         irf_tensor = torch.tensor(irf, dtype=torch.float32, device=self.device)
-        arrival_rates = self.histogrammer.calculate_arrival_rates(irf_tensor, transients, ambient_offsets, self.histogrammer.n_bins)
+        arrival_rates = self.histogrammer.calculate_arrival_rates(
+            irf_tensor, transients, ambient_offsets, self.histogrammer.n_bins
+        )
         # self.active_source.plot_kernel(bin_width)
         return arrival_rates
 
@@ -160,7 +171,9 @@ class Camera:
         fig, ax = plt.subplots(1, num_fovs, figsize=(3 * num_fovs, 3))
         fig.suptitle("Depth Values (First Frame)", fontsize=16)
         for i in range(num_fovs):
-            ax[i].imshow(self.depth_frames[0].cpu().numpy() * fov_masks[i].cpu().numpy(), cmap="viridis", vmin=0, vmax=10)
+            ax[i].imshow(
+                self.depth_frames[0].cpu().numpy() * fov_masks[i].cpu().numpy(), cmap="viridis", vmin=0, vmax=10
+            )
             ax[i].set_title(f"FOV {i + 1}")
             ax[i].axis("off")
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
