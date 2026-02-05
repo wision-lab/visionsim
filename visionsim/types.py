@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Annotated, Literal, Protocol
+from typing import Annotated, Literal, Protocol, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -92,5 +92,5 @@ MemSize: TypeAlias = Annotated[
     else "missing annotation for auto conversion to/from string",
 ]
 
-_Matrix4x4 = list[list[float]]
-Matrix4x4 = list[list[float]] | npt.NDArray[np.floating]
+_Matrix4x4: TypeAlias = list[list[float]]
+Matrix4x4: TypeAlias = Union[_Matrix4x4, npt.NDArray[np.floating]]
