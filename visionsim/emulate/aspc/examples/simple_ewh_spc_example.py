@@ -10,11 +10,10 @@ from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer
 from visionsim.emulate.aspc.sensors import SPADSensor
 from visionsim.emulate.aspc.sources import PulsedLaser, Sun, get_light_conditions_from_string
 from visionsim.emulate.aspc.utils import (
-    eval_constructor,
+    yaml_constructor,
     irradiance_photons,
     tof2depth,
     ureg,
-    ureg_constructor,
 )
 
 if __name__ == "__main__":
@@ -30,8 +29,8 @@ if __name__ == "__main__":
     # Load config
     yaml = YAML()
     safe_builtins = {"__builtins__": {"list": list, "dict": dict, "tuple": tuple}, "np": np, "math": math}
-    yaml.Constructor.add_constructor(tag="!Quantity", constructor=ureg_constructor(ureg.Quantity))
-    yaml.Constructor.add_constructor(tag="!expr", constructor=eval_constructor(eval, safe_builtins))
+    yaml.Constructor.add_constructor(tag="!Quantity", constructor=yaml_constructor(ureg.Quantity))
+    yaml.Constructor.add_constructor(tag="!expr", constructor=yaml_constructor(eval, safe_builtins))
     config = yaml.load(open(config_path))
 
     # Extract the rows, columns of pixels

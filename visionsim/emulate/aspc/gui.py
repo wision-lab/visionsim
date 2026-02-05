@@ -4,21 +4,20 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from histogrammers import HistConfig, Histogrammer
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PyQt5 import QtCore, QtWidgets
 from ruamel.yaml import YAML
-from sensors import SPADSensor
-from sources import LightConditions, PulsedLaser, Sun
-from utils import (
-    eval_constructor,
-    file_constructor,
+
+from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer
+from visionsim.emulate.aspc.sensors import SPADSensor
+from visionsim.emulate.aspc.sources import LightConditions, PulsedLaser, Sun
+from visionsim.emulate.aspc.utils import (
+    yaml_constructor,
     irradiance_photons,
     preproc_albedo_intensity_depth_frames,
     tof2depth,
     ureg,
-    ureg_constructor,
 )
 
 
@@ -210,9 +209,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.config_path = config_path
         self.yaml = YAML()
         safe_builtins = {"__builtins__": {"list": list, "dict": dict, "tuple": tuple}, "np": np, "math": math}
-        self.yaml.Constructor.add_constructor(tag="!Quantity", constructor=ureg_constructor(ureg.Quantity))
-        self.yaml.Constructor.add_constructor(tag="!expr", constructor=eval_constructor(eval, safe_builtins))
-        self.yaml.Constructor.add_constructor(tag="!file", constructor=file_constructor(self.config_path))
+        self.yaml.Constructor.add_constructor(tag="!Quantity", constructor=yaml_constructor(ureg.Quantity))
+        self.yaml.Constructor.add_constructor(tag="!expr", constructor=yaml_constructor(eval, safe_builtins))
+        self.yaml.Constructor.add_constructor(tag="!file", constructor=yaml_constructor(self.config_path))
 
         self.config = self.yaml.load(open(self.config_path))
 

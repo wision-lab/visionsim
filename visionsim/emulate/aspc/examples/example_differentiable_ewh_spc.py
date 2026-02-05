@@ -1,6 +1,4 @@
 import math
-import os
-import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -9,9 +7,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import yaml
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ruamel.yaml import YAML
 
@@ -22,12 +17,11 @@ from visionsim.emulate.aspc.main import get_light_conditions_from_string
 from visionsim.emulate.aspc.sensors import SPADSensor
 from visionsim.emulate.aspc.sources import PulsedLaser, Sun
 from visionsim.emulate.aspc.utils import (
-    eval_constructor,
     irradiance_photons,
     preproc_albedo_intensity_depth_frames,
     tof2depth,
     ureg,
-    ureg_constructor,
+    yaml_constructor,
 )
 
 
@@ -104,8 +98,8 @@ if __name__ == "__main__":
     # Load config
     yaml = YAML()
     safe_builtins = {"__builtins__": {"list": list, "dict": dict, "tuple": tuple}, "np": np, "math": math}
-    yaml.Constructor.add_constructor(tag="!Quantity", constructor=ureg_constructor(ureg.Quantity))
-    yaml.Constructor.add_constructor(tag="!expr", constructor=eval_constructor(eval, safe_builtins))
+    yaml.Constructor.add_constructor(tag="!Quantity", constructor=yaml_constructor(ureg.Quantity))
+    yaml.Constructor.add_constructor(tag="!expr", constructor=yaml_constructor(eval, safe_builtins))
     config = yaml.load(open(config_path))
 
     albedo_frames, intensity_frames, depth_frames = preproc_albedo_intensity_depth_frames(
