@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import re
+from typing import Annotated, Literal, Protocol
 
-from typing_extensions import Annotated, Literal, Protocol, TypeAlias
+import numpy as np
+import numpy.typing as npt
+from typing_extensions import TypeAlias
 
 try:
     # Note: Keep import requirements to only stdlib
@@ -88,3 +91,6 @@ MemSize: TypeAlias = Annotated[
     if tyro is not None
     else "missing annotation for auto conversion to/from string",
 ]
+
+_Matrix4x4 = list[list[float]]
+Matrix4x4 = _Matrix4x4 | npt.NDArray[np.floating]

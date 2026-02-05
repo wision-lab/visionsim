@@ -10,10 +10,12 @@ import numpy as np
 import OpenEXR
 import pytest
 from docstring_parser import parse_from_object
+from playhouse.sqlite_ext import SqliteExtDatabase
 
-from visionsim.dataset import IMG_SCHEMA, read_and_validate
+from visionsim.dataset import Dataset, Metadata
 from visionsim.simulate import blender, config
 from visionsim.simulate.blender import INDEX_PADDING, ITEMS_PER_SUBFOLDER, BlenderClients
+from visionsim.simulate.schema import MODELS, Data
 
 
 def get_public_members(obj, module=None):
@@ -74,7 +76,8 @@ def test_docstrings(obj):
 
 
 def test_render_layout(cube_dataset):
-    assert (cube_dataset / "transforms.json").exists()
+    assert not (cube_dataset / "transforms.json").exists()
+    assert not (cube_dataset / "transforms.db").exists()
 
     for gt_type in [
         "composites",
@@ -85,12 +88,13 @@ def test_render_layout(cube_dataset):
         "segmentations",
         "previews/depths",
         "previews/normals",
-        "previews/flows",
+        "previews/flows/forward",
         "previews/segmentations",
     ]:
         subdir = cube_dataset / gt_type
         assert subdir.exists()
         assert not (subdir / "transforms.json").exists()
+        assert (subdir / "transforms.db").exists()
 
         if gt_type in ("frames", "composites") or "previews" in gt_type:
             assert len(list(subdir.glob("**/*.png"))) == 5
@@ -102,10 +106,10 @@ def test_render_layout(cube_dataset):
     "subdir, channels", [("depths", ["V"]), ("normals", ["RGB"]), ("flows", ["RGBA"]), ("segmentations", ["V"])]
 )
 def test_groundtruth_exrs(cube_dataset, subdir, channels):
-    for file in cube_dataset.glob(f"{subdir}/*.exr"):
+    for file in cube_dataset.glob(f"{subdir}/**/*.exr"):
         with OpenEXR.File(str(file)) as f:
-            # Before v4.3.0 exr's couldn't be single channel, they were saved as
-            # RGB with duplicated channels. Yet, in 4.2 and 4.1, they still get saved as "V"
+            # Before v4 exr's couldn't be single channel, they were saved as
+            # RGB with duplicated channels.
             if channels == ["V"] and "V" not in f.channels():
                 assert "RGB" in f.channels()
                 data = f.channels()["RGB"].pixels.transpose(2, 0, 1)
@@ -118,8 +122,18 @@ def test_groundtruth_exrs(cube_dataset, subdir, channels):
                 assert np.issubdtype(f.channels()[channel].pixels.dtype, np.floating)
 
 
+@pytest.mark.parametrize(
+    "subdir, shape",
+    [("depths", (50, 50, 1)), ("normals", (50, 50, 3)), ("flows", (50, 50, 4)), ("segmentations", (50, 50, 1))],
+)
+def test_load_exrs(cube_dataset, subdir, shape):
+    for file in cube_dataset.glob(f"{subdir}/**/*.exr"):
+        assert Dataset.load_data(file).shape == shape
+
+
 def test_transforms_schema(cube_dataset):
-    read_and_validate(path=cube_dataset / "transforms.json", schema=IMG_SCHEMA)
+    for path in cube_dataset.glob("**/*.db"):
+        Metadata.load(path)
 
 
 @pytest.mark.parametrize(
@@ -141,6 +155,15 @@ def test_output_configs(func, conf):
     assert sig_params == conf_params
 
 
+def test_data_paths_exist(cube_dataset):
+    for db_path in cube_dataset.glob("**/*.db"):
+        db = SqliteExtDatabase(db_path)
+        with db.connection_context():
+            with db.bind_ctx(MODELS):
+                for data in Data.select():
+                    assert (db_path.parent / data.path).exists()
+
+
 def test_database_threading(tmp_path_factory):
     tmpdir = tmp_path_factory.mktemp("renders")
     log_dir = tmp_path_factory.mktemp("logs")
@@ -160,3 +183,11 @@ def test_database_threading(tmp_path_factory):
             frame.parent.mkdir(exist_ok=True, parents=True)
             frame.touch()
         clients.render_animation()
+
+
+def test_metadata_roundtrip_from_db(cube_dataset):
+    for path in cube_dataset.glob("**/*.db"):
+        meta = Metadata.load(path)
+        meta.save(path.parent / "transforms.json")
+
+        assert Metadata.load(path.parent / "transforms.json").model_dump() == meta.model_dump()

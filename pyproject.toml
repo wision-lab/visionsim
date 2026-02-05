@@ -20,7 +20,6 @@ classifiers = [
     "Operating System :: OS Independent"
 ]
 dependencies = [
-    "opencv-python",
     "imageio",
     "more_itertools",
     "numpy",
@@ -30,8 +29,6 @@ dependencies = [
     "invoke",
     "natsort",
     "rich",
-    "jsonschema",
-    "torchvision",
     "OpenEXR",
     "multiprocess",
     "rpyc",
@@ -39,6 +36,7 @@ dependencies = [
     "tyro",
     "ephemeral-port-reserve",
     "peewee",
+    "pydantic",
 ]
 license = "MIT"
 license-files = ["LICEN[CS]E*"]

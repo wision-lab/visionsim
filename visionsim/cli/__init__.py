@@ -9,12 +9,12 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+from typing import overload
 
 import tyro
 from natsort import natsorted
 from rich.logging import RichHandler
 from rich.traceback import install
-from typing_extensions import overload
 
 from . import blender, dataset, emulate, ffmpeg, interpolate, transforms
 

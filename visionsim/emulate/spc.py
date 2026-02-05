@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import numpy.typing as npt
 import torch
-from typing_extensions import cast
 
 
 def emulate_spc(

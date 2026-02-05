@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import bpy  # type: ignore
 
@@ -42,6 +43,9 @@ def file_output_node(
         node.format.compression = 90
         node.format.color_depth = "8"
         node.format.color_mode = color_mode
+
+        for slot in slots:
+            slot.name = str(Path(slot.name).with_suffix(".png"))
 
         # Important! Set the view settings to raw otherwise result is tonemapped
         if bpy.app.version >= (3, 2, 0):

@@ -8,7 +8,7 @@ from contextlib import ExitStack, contextmanager
 from multiprocessing import Process
 from pathlib import Path
 from types import TracebackType
-from typing import type_check_only
+from typing import Any, Literal, type_check_only
 
 import bpy  # type: ignore
 import multiprocess  # type: ignore
@@ -18,7 +18,7 @@ import rpyc  # type: ignore
 import rpyc.utils.registry  # type: ignore
 import rpyc.utils.server  # type: ignore
 from _typeshed import Incomplete
-from typing_extensions import Any, Concatenate, Literal, ParamSpec, Self
+from typing_extensions import Concatenate, ParamSpec, Self
 
 from visionsim.types import COLOR_MODES, EXR_CODECS, FILE_FORMATS, UpdateFn
 

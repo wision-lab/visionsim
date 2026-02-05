@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
-
-from typing_extensions import Literal
+from pathlib import Path
+from typing import Literal
 
 from visionsim.types import EXR_CODECS, FILE_FORMATS, MemSize
 
@@ -96,7 +95,7 @@ class SegmentationsConfig:
 
 @dataclass
 class RenderConfig:
-    executable: str | os.PathLike | None = None
+    executable: Path | None = None
     """Path to blender executable"""
     height: int = 512
     """Height of rendered frames"""
@@ -143,7 +142,7 @@ class RenderConfig:
     """Maximum number of samples per pixel to take"""
     use_denoising: bool = True
     """If enabled, a denoising pass will be used"""
-    log_dir: str | os.PathLike = "logs/"
+    log_dir: Path = Path("logs/")
     """Directory to use for logging"""
     allow_skips: bool = True
     """If true, skip rendering a frame if it already exists"""

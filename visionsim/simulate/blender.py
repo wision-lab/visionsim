@@ -17,9 +17,7 @@ import time
 from contextlib import ExitStack, contextmanager, nullcontext
 from multiprocessing import Process
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
-
-from typing_extensions import Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 # Import only when type checking as to not introduce
 # dependency for blender. Block module typechecking.
@@ -30,7 +28,7 @@ if TYPE_CHECKING:
     import multiprocess  # type: ignore
     import multiprocess.pool  # type: ignore
     import numpy.typing as npt
-    from typing_extensions import Any, Concatenate, ParamSpec, Self
+    from typing_extensions import Concatenate, ParamSpec, Self
 
     from visionsim.types import COLOR_MODES, EXR_CODECS, FILE_FORMATS, UpdateFn  # noqa
 
@@ -77,7 +75,7 @@ import rpyc.utils.registry  # type: ignore
 import rpyc.utils.server  # type: ignore
 from playhouse.sqlite_ext import SqliteExtDatabase
 
-from visionsim.simulate.schema import Camera, Frame
+from visionsim.simulate.schema import DEFAULT_PRAGMAS, MODELS, Camera, Data, Frame
 
 # Enable server-side logging
 logging.basicConfig(level=logging.WARNING, format="%(message)s", datefmt="[%X]", handlers=handlers)
@@ -524,17 +522,7 @@ class BlenderService(rpyc.Service):
             self.log.info(f"Database at {db_path} already exists, overwriting...")
             db_path.unlink()
 
-        # https://docs.peewee-orm.com/en/latest/peewee/database.html#recommended-settings
-        db = SqliteExtDatabase(
-            db_path,
-            pragmas={
-                "journal_mode": "wal",
-                "cache_size": -1 * 64000,
-                "foreign_keys": 1,
-                "ignore_check_constraints": 0,
-                "synchronous": 0,
-            },
-        )
+        db = SqliteExtDatabase(db_path, pragmas=DEFAULT_PRAGMAS)
         self._outputs[subpath] = (node, slot, db, camera_defaults)
 
     def _save_metadata(
@@ -559,10 +547,11 @@ class BlenderService(rpyc.Service):
         for subpath, (_, _, db, defaults) in self._outputs.items():
             with db.connection_context():
                 with db.atomic("IMMEDIATE"):
-                    with db.bind_ctx([Camera, Frame]):
-                        db.create_tables([Camera, Frame], safe=True)
+                    with db.bind_ctx(MODELS):
+                        db.create_tables(MODELS, safe=True)
                         camera, _ = Camera.get_or_create(**(defaults | camera_info))
-                        Frame.create(index=index, camera=camera, transform_matrix=transform_matrix, path=paths[subpath])
+                        data = Data.create(path=paths[subpath])
+                        Frame.create(id=index, camera=camera, transform_matrix=transform_matrix, data=data)
 
     @property
     @require_initialized_service
@@ -977,6 +966,7 @@ class BlenderService(rpyc.Service):
         normal_output_node.format.exr_codec = exr_codec
         normal_output_node.format.color_mode = "RGB"
         normal_output_node.format.color_depth = str(bit_depth)
+        normal_slot.name = str(Path(normal_slot.name).with_suffix(".exr"))
 
         vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
         vec2rgba.label = "Vector2RGBA"
@@ -1086,6 +1076,7 @@ class BlenderService(rpyc.Service):
         flow_output_node.format.exr_codec = exr_codec
         flow_output_node.format.color_mode = "RGBA"
         flow_output_node.format.color_depth = str(bit_depth)
+        flow_slot.name = str(Path(flow_slot.name).with_suffix(".exr"))
 
         vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
         vec2rgba.label = "Vector2RGBA"
@@ -1173,6 +1164,7 @@ class BlenderService(rpyc.Service):
         segmentation_output_node.format.file_format = "OPEN_EXR"
         segmentation_output_node.format.exr_codec = exr_codec
         segmentation_output_node.format.color_depth = str(bit_depth)
+        segmentation_slot.name = str(Path(segmentation_slot.name).with_suffix(".exr"))
 
         if bpy.app.version < (4, 3, 0):
             segmentation_output_node.format.color_mode = "RGB"
@@ -1580,9 +1572,12 @@ class BlenderService(rpyc.Service):
                 self.scene.render.filepath = str(self.root_path / subpath / folder_index / frame_index)
                 paths[subpath] = Path(self.scene.render.filepath).with_suffix(self.scene.render.file_extension)
             else:
-                node.directory = str(self.root_path / subpath / folder_index)
+                if bpy.app.version >= (5, 0, 0):
+                    node.directory = str(self.root_path / subpath / folder_index)
+                else:
+                    node.base_path = str(self.root_path / subpath / folder_index)
                 slot.name = str(Path(slot.name).with_stem(frame_index).name)
-                paths[subpath] = Path(node.directory) / slot.name
+                paths[subpath] = self.root_path / subpath / folder_index / slot.name
 
         for path in paths.values():
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -1592,6 +1587,15 @@ class BlenderService(rpyc.Service):
             if not allow_skips or any(not Path(self.root_path / p).exists() for p in paths.values()):
                 # If `write_still` is false, depth/normals/etc can be written but composites will be skipped
                 bpy.ops.render.render(animation=False, write_still="composites" in self._outputs)
+
+        # Before Blender 5.0 file output nodes ALWAYS appended the frame number
+        # to the filename making our path incorrect, here we rename the file.
+        # This does not apply to composites as they are not saved via a output file node.
+        # See: https://projects.blender.org/blender/blender/issues/134920
+        if bpy.app.version < (5, 0, 0):
+            for subpath, path in paths.items():
+                if subpath != "composites":
+                    path.with_stem(f"{self.scene.frame_current:04}").rename(path)
 
         # Update databases with frame paths and camera info
         self._save_metadata(

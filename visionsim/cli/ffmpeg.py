@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 
 def animate(
-    input_dir: str | os.PathLike,
+    input_dir: Path,
     pattern: str = "frame_*.png",
-    outfile: str | os.PathLike = "out.mp4",
+    outfile: Path = Path("out.mp4"),
     fps: int = 25,
     crf: int = 22,
     vcodec: str = "libx264",
@@ -39,7 +38,7 @@ def animate(
     if _run("ffmpeg -version").returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
 
-    *_, _, in_files = _validate_directories(input_dir, Path(outfile).parent, pattern=pattern)
+    *_, _, in_files = _validate_directories(input_dir, outfile.parent, pattern=pattern)
 
     # See: https://stackoverflow.com/questions/52804749
     strip_alpha_filter = (
@@ -60,7 +59,7 @@ def animate(
         # want to include and point ffmpeg to those.
 
         tmpdirname = Path(tmpdir)
-        ext = str(Path(pattern).suffix)
+        ext = Path(pattern).suffix
 
         # No transformation needed, simply symlink files
         for i, p in enumerate(in_files[::step]):
@@ -79,7 +78,7 @@ def animate(
 
 def combine(
     matrix: str,
-    outfile: str = "combined.mp4",
+    outfile: Path = Path("combined.mp4"),
     mode: str = "shortest",
     color: str = "white",
     multiple: int = 2,
@@ -120,7 +119,7 @@ def combine(
 
     from visionsim.cli import _log, _run
 
-    if Path(outfile).is_file() and not force:
+    if outfile.is_file() and not force:
         raise RuntimeError("Output file already exists, either specify different output path or `--force` to override.")
 
     if _run("ffmpeg -version").returncode != 0:
@@ -239,11 +238,11 @@ def combine(
 
 
 def grid(
-    input_dir: str | os.PathLike,
+    input_dir: Path,
     width: int = -1,
     height: int = -1,
     pattern: str = "*.mp4",
-    outfile: str = "combined.mp4",
+    outfile: Path = Path("combined.mp4"),
     force: bool = False,
 ):
     """Make a mosaic from videos in a folder, organizing them in a grid
@@ -259,7 +258,7 @@ def grid(
     import numpy as np
     from natsort import natsorted
 
-    files = natsorted(Path(input_dir).glob(pattern))
+    files = natsorted(input_dir.glob(pattern))
 
     if width <= 0 and height <= 0:
         candidates = [
@@ -285,7 +284,7 @@ def grid(
     combine(str(matrix), outfile, force=force)
 
 
-def count_frames(input_file: str | os.PathLike):
+def count_frames(input_file: Path, /):
     """Count the number of frames a video file contains using ffprobe
 
     Args:
@@ -306,7 +305,7 @@ def count_frames(input_file: str | os.PathLike):
     return int(result.stdout.strip())
 
 
-def duration(input_file: str | os.PathLike, /):
+def duration(input_file: Path, /):
     """Return duration (in seconds) of first video stream in file using ffprobe
 
 
@@ -328,7 +327,7 @@ def duration(input_file: str | os.PathLike, /):
     return float(result.stdout.strip())
 
 
-def dimensions(input_file: str | os.PathLike):
+def dimensions(input_file: Path):
     """Return size (WxH in pixels) of first video stream in file using ffprobe
 
     Args:
@@ -346,7 +345,7 @@ def dimensions(input_file: str | os.PathLike):
     return tuple(int(dim) for dim in result.stdout.strip().split("x"))
 
 
-def extract(input_file: str | os.PathLike, output_dir: str | os.PathLike, pattern: str = "frames_%06d.png"):
+def extract(input_file: Path, output_dir: Path, pattern: str = "frames_%06d.png"):
     """Extract frames from video file
 
     Args:
@@ -358,8 +357,8 @@ def extract(input_file: str | os.PathLike, output_dir: str | os.PathLike, patter
 
     if _run("ffmpeg -version").returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
-    if not Path(input_file).is_file():
+    if not input_file.is_file():
         raise FileNotFoundError(f"File {input_file} not found.")
 
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-    _run(f"ffmpeg -i {input_file} {Path(output_dir) / pattern}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _run(f"ffmpeg -i {input_file} {output_dir / pattern}")

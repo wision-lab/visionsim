@@ -24,7 +24,9 @@ class Model:
         if torch.cuda.is_available():
             self.flownet.load_state_dict(convert(torch.load("{}/flownet.pkl".format(path), weights_only=True)))
         else:
-            self.flownet.load_state_dict(convert(torch.load("{}/flownet.pkl".format(path), map_location="cpu", weights_only=True)))
+            self.flownet.load_state_dict(
+                convert(torch.load("{}/flownet.pkl".format(path), map_location="cpu", weights_only=True))
+            )
 
     def inference(self, img0, img1, scale=1.0):
         imgs = torch.cat((img0, img1), 1)
