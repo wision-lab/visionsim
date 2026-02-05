@@ -7,65 +7,22 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from ruamel.yaml import YAML
 
 # Import aspc package first to enable aspc.* imports
 import visionsim.emulate.aspc  # noqa: F401
-from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer
-from visionsim.emulate.aspc.main import get_light_conditions_from_string
-from visionsim.emulate.aspc.sensors import SPADSensor
-from visionsim.emulate.aspc.sources import PulsedLaser, Sun
-from visionsim.emulate.aspc.utils import (
-    irradiance_photons,
-    preproc_albedo_intensity_depth_frames,
-    tof2depth,
-    ureg,
-    yaml_constructor,
-)
+from visionsim.emulate.aspc.camera import Camera
+from visionsim.emulate.aspc.utils import tof2depth
 
 
 def forward_pass_ewh_diff(
-    albedo_frames, intensity_frames, depth_frames, active_source, ambient_source, fov_masks, config, irf_tensor
+    histogrammer,
+    transients,
+    ambient_offsets,
+    irf_tensor,
 ):
-    sensor_config = config["sensor"]
-    hist_config = HistConfig(**config["histogrammer"])
-    histogrammer = Histogrammer(hist_config)
-    num_pixels = sensor_config["size"][0] * sensor_config["size"][1]
-    sensor = SPADSensor(**sensor_config)
-
-    # Get device from input tensors
-    # device = albedo_frames.device
-
     assert histogrammer.dead_time_s == 0, "Current differentiable EWH does not support non-zero dead time"
 
-    # Get transients
-    # Convert tensors to Pint quantities for active source
-    albedo_quantity = albedo_frames * ureg.dimensionless
-    depth_quantity = depth_frames
-
-    radiance = active_source.get_scene_radiance(albedo_quantity, depth_quantity, num_pixels, sensor.omega)
-    irradiance = (radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (
-        sensor.pixel_pitch.to(ureg.meter)
-    ) ** 2
-    irradiance_tensor = irradiance.magnitude
-
-    ambient_radiance = ambient_source.get_scene_radiance(sensor.omega, albedo_quantity, active_source.frequency)
-    ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / sensor.f_number) ** 2).to(irradiance_photons) * (
-        sensor.pixel_pitch.to(ureg.meter)
-    ) ** 2
-    offsets = ambient_irradiance.magnitude
-    transients, ambient_offsets = histogrammer.calculate_transients(
-        irradiance_tensor,
-        depth_frames,
-        offsets,
-        fov_masks,
-        histogrammer.n_bins,
-        active_source.max_resolvable_depth.magnitude,
-    )
-
-    # Calculate arrival rates
     arrival_rates = histogrammer.calculate_arrival_rates(irf_tensor, transients, ambient_offsets, histogrammer.n_bins)
-
     ewh_list = histogrammer.simulate_ewh_diff(
         arrival_rates,
         histogrammer.n_pulses,
@@ -74,8 +31,7 @@ def forward_pass_ewh_diff(
         histogrammer.dead_time_s,
     )
 
-    return transients, arrival_rates, ewh_list
-
+    return ewh_list
 
 def compute_rmse(pred, gt):
     rmse = torch.mean(torch.mean((pred - gt) ** 2, axis=-1) ** 0.5)
@@ -85,82 +41,29 @@ def compute_rmse(pred, gt):
 if __name__ == "__main__":
     ## Setting simulation parameters
 
-    root = Path("examples/renders/scene1/")
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = "cpu"
-    requires_grad = False
-    start_idx = 0
-    num_frames = 1
-    data_dir = "data"
+    data_dir = Path("examples/renders/scene1/")
     config_path = "visionsim/emulate/aspc/examples/config_diff_ewh.yaml"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    requires_grad = True
 
-    # Load config
-    yaml = YAML()
-    safe_builtins = {"__builtins__": {"list": list, "dict": dict, "tuple": tuple}, "np": np, "math": math}
-    yaml.Constructor.add_constructor(tag="!Quantity", constructor=yaml_constructor(ureg.Quantity))
-    yaml.Constructor.add_constructor(tag="!expr", constructor=yaml_constructor(eval, safe_builtins))
-    config = yaml.load(open(config_path))
+    camera = Camera(data_dir, config_path, device, requires_grad)
+    transients, ambient_offsets = camera.get_transients()
 
-    albedo_frames, intensity_frames, depth_frames = preproc_albedo_intensity_depth_frames(
-        root, device, config, start_idx, num_frames=num_frames, requires_grad=requires_grad
-    )
+    bin_width = 2 * tof2depth(1 / camera.active_source.frequency) / camera.histogrammer.n_bins
+    _, irf = camera.active_source.get_kernel(bin_width)
+    irf_tensor_gt = torch.tensor(irf, dtype=torch.float32, device=device)
+    camera.active_source.plot_kernel(bin_width)
 
-    # Active source
-    active_config = config["active_source"]["pulsed_laser"]
-    active_enable = active_config.pop("enabled")
-    if active_enable:
-        active_source = PulsedLaser(**active_config)
-
-    # Ambient source
-    ambient_config = config["ambient_source"]["sun"]
-    ambient_config["light_conditions"] = get_light_conditions_from_string(ambient_config["light_conditions"])
-    ambient_enable = ambient_config.pop("enabled")
-    if ambient_enable:
-        ambient_source = Sun(**ambient_config)
-
-    # Histogrammer
-    hist_config = config["histogrammer"]
-    hist_config = HistConfig(**hist_config)
-    histogrammer = Histogrammer(hist_config)
-
-    # FOV masks
-    _, img_rows, img_cols = depth_frames.shape
-    empty_mask = torch.zeros((img_rows, img_cols), dtype=bool, device=device)
-    fov_masks = histogrammer.get_perpixel_fov_masks(empty_mask, histogrammer.pixel_fov_list, device=device)
-
-    bin_width = 2 * tof2depth(1 / active_source.frequency) / histogrammer.n_bins
-    _, irf = active_source.get_kernel(bin_width)
-    irf_tensor_gt = torch.tensor(irf, dtype=float, device=device)
-    active_source.plot_kernel(bin_width)
-
-    transients, arrival_rates, ewh_list_gt = forward_pass_ewh_diff(
-        albedo_frames, intensity_frames, depth_frames, active_source, ambient_source, fov_masks, config, irf_tensor_gt
+    ewh_list_gt = forward_pass_ewh_diff(
+        camera.histogrammer,
+        transients,
+        ambient_offsets,
+        irf_tensor_gt,
     )
 
     ewh_list_measurement = ewh_list_gt
+    print("Part 1: Forward pass complete")
     ########################################################################
-    requires_grad = True
-
-    albedo_frames2, intensity_frames2, depth_frames2 = preproc_albedo_intensity_depth_frames(
-        root, device, config, start_idx, num_frames=num_frames, requires_grad=requires_grad
-    )
-
-    # Active source
-    if active_enable:
-        active_source2 = PulsedLaser(**active_config)
-
-    bin_width = 2 * tof2depth(1 / active_source2.frequency) / histogrammer.n_bins
-    _, irf = active_source2.get_kernel(bin_width)
-    irf_tensor_gt = torch.tensor(irf, dtype=float, device=device)
-
-    if ambient_enable:
-        ambient_source2 = Sun(**ambient_config)
-
-    # FOV masks
-    _, img_rows, img_cols = depth_frames.shape
-    empty_mask = torch.zeros((img_rows, img_cols), dtype=bool, device=device)
-    fov_masks2 = histogrammer.get_perpixel_fov_masks(empty_mask, histogrammer.pixel_fov_list, device=device)
-
     irf_init = [0.1, 0.1, 0.1, 0.4, 0.8, 0.9, 0.9, 0.9, 0.8, 0.4, 0.1, 0.1, 0.1]
 
     irf_tensor_estim = nn.Parameter(
@@ -171,14 +74,11 @@ if __name__ == "__main__":
 
     for epoch in range(100):
         optimizer.zero_grad()
-        transients_pred, arrival_rates_pred, ewh_list_pred = forward_pass_ewh_diff(
-            albedo_frames2,
-            intensity_frames2,
-            depth_frames2,
-            active_source2,
-            ambient_source2,
-            fov_masks2,
-            config,
+        transients_pred, ambient_offsets_pred = camera.get_transients()
+        ewh_list_pred = forward_pass_ewh_diff(
+            camera.histogrammer,
+            transients_pred,
+            ambient_offsets_pred,
             F.relu(irf_tensor_estim),
         )
 

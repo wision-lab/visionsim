@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from ruamel.yaml import YAML
 
-from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer
+from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer, HistogrammerEDH
 from visionsim.emulate.aspc.sensors import SPADSensor
 from visionsim.emulate.aspc.sources import LightConditions, PulsedLaser, Sun
 from visionsim.emulate.aspc.utils import (
@@ -20,11 +20,12 @@ from visionsim.emulate.aspc.utils import (
 class Camera:
     """Camera class for ASPC simulation"""
 
-    def __init__(self, data_path, config_path, device):
+    def __init__(self, data_path, config_path, device, requires_grad=False):
         """Initialize Camera"""
         self.device = device
         self.config = self._load_config(config_path)
-        self.albedo_frames, self.intensity_frames, self.depth_frames = self._load_data(data_path)
+        self.requires_grad = requires_grad
+        self.albedo_frames, self.intensity_frames, self.depth_frames = self._load_data(data_path, requires_grad)
 
         # Active source
         active_config = self.config["active_source"]["pulsed_laser"]
@@ -40,12 +41,13 @@ class Camera:
             self.ambient_source = Sun(**ambient_config)
 
         # Histogrammer
-        hist_config = HistConfig(**self.config["histogrammer"])
-        self.histogrammer = Histogrammer(hist_config)
+        if "type" in self.config["histogrammer"] and self.config["histogrammer"]["type"] == "edh":
+            self.histogrammer = HistogrammerEDH(HistConfig(**self.config["histogrammer"]))
+        else:
+            self.histogrammer = Histogrammer(HistConfig(**self.config["histogrammer"]))
 
         # Sensor
-        sensor_config = self.config["sensor"]
-        self.sensor = SPADSensor(**sensor_config)
+        self.sensor = SPADSensor(**self.config["sensor"])
 
     def _load_config(self, config_path):
         """Load configuration from YAML file"""
@@ -56,17 +58,17 @@ class Camera:
         yaml.Constructor.add_constructor(tag="!file", constructor=yaml_constructor(config_path))
         return yaml.load(open(config_path))
 
-    def _load_data(self, data_path):
+    def _load_data(self, data_path, requires_grad=False):
         """Load data from directory"""
         return preproc_albedo_intensity_depth_frames(
-            root=data_path, device=self.device, config=self.config, start_idx=0, num_frames=1, requires_grad=False
+            root=data_path, device=self.device, config=self.config, start_idx=0, num_frames=1, requires_grad=requires_grad
         )
 
     def _get_light_conditions_from_string(self, condition_str):
         """Convert string to LightConditions enum value."""
         return getattr(LightConditions, condition_str)
 
-    def _get_fov_masks(self):
+    def get_fov_masks(self):
         """Get FOV masks"""
         _, img_rows, img_cols = self.depth_frames.shape
         empty_mask = torch.zeros((img_rows, img_cols), dtype=torch.float32, device=self.device)
@@ -102,7 +104,7 @@ class Camera:
         """Get transient data from histogrammer"""
         irradiance = self._get_signal()
         offsets = self._get_ambient_offset()
-        fov_masks = self._get_fov_masks()
+        fov_masks = self.get_fov_masks()
         return self.histogrammer.calculate_transients(
             irradiance,
             self.depth_frames,
@@ -172,7 +174,7 @@ class Camera:
         fig.suptitle("Depth Values (First Frame)", fontsize=16)
         for i in range(num_fovs):
             ax[i].imshow(
-                self.depth_frames[0].cpu().numpy() * fov_masks[i].cpu().numpy(), cmap="viridis", vmin=0, vmax=10
+                self.depth_frames[0].cpu().numpy() * (fov_masks[i].detach().cpu().numpy() > 0), cmap="viridis", vmin=0, vmax=10
             )
             ax[i].set_title(f"FOV {i + 1}")
             ax[i].axis("off")
@@ -226,7 +228,7 @@ class Camera:
         arrival_rates = self.get_arrival_rates()
         ewh_list = self.get_ewh()
         num_fovs = len(self.histogrammer.pixel_fov_list)
-        fov_masks = self._get_fov_masks()
+        fov_masks = self.get_fov_masks()
         self._plot_fov_masks(num_fovs, fov_masks)
         self._plot_albedo_frames(num_fovs, fov_masks)
         self._plot_depth_frames(num_fovs, fov_masks)
