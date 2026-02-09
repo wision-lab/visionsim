@@ -37,7 +37,7 @@ if __name__ == "__main__":
     commands = [
         f"{Path(sys.executable).as_posix()} -m ensurepip",
         f"{Path(sys.executable).as_posix()} -m pip install -U pip",
-        f"{Path(sys.executable).as_posix()} -m pip install rpyc peewee",
+        f"{Path(sys.executable).as_posix()} -m pip install rpyc peewee typing-extensions",
         f"{Path(sys.executable).as_posix()} -m pip install --no-warn-script-location --force-reinstall --no-dependencies --verbose {module_spec}",
     ]
 

@@ -75,7 +75,7 @@ class Frame(BaseModel):
     offset = IntegerField(null=True)
 
 
-MODELS: tuple[BaseModel] = (Camera, Data, Frame)
+MODELS: tuple[type[BaseModel], ...] = (Camera, Data, Frame)
 
 
 class Metadata:
@@ -100,14 +100,14 @@ class Metadata:
 
                     for index, transform in enumerate(transforms):
                         camera, _ = Camera.get_or_create(
-                            **{k: v for k, v in transform.items() if k in Camera._meta.fields}
+                            **{k: v for k, v in transform.items() if k in Camera._meta.fields}  # type: ignore
                         )
-                        data, _ = Data.get_or_create(**{k: v for k, v in transform.items() if k in Data._meta.fields})
+                        data, _ = Data.get_or_create(**{k: v for k, v in transform.items() if k in Data._meta.fields})  # type: ignore
                         Frame.create(
                             id=index,
                             camera=camera,
                             data=data,
-                            **{k: v for k, v in transform.items() if k in Frame._meta.fields},
+                            **{k: v for k, v in transform.items() if k in Frame._meta.fields},  # type: ignore
                         )
         return cls(path)
 

@@ -15,7 +15,7 @@ def render(client, blend_file, tick):
 
 if __name__ == "__main__":
     with (
-        BlenderClients.pool(2, log_dir="logs", timeout=30) as pool,
+        BlenderClients.pool(2, log="logs", timeout=30) as pool,
         PoolProgress() as progress,
     ):
         for blend_file in ["assets/monkey.blend", "assets/cube.blend", "assets/metaballs.blend"]:

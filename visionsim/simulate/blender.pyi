@@ -20,7 +20,7 @@ import rpyc.utils.server  # type: ignore
 from _typeshed import Incomplete
 from typing_extensions import Concatenate, ParamSpec, Self
 
-from visionsim.types import COLOR_MODES, EXR_CODECS, FILE_FORMATS, UpdateFn
+from visionsim.types import COLOR_MODES, EXR_CODECS, FILE, FILE_FORMATS, UpdateFn
 
 _P = ParamSpec("_P")
 handlers: Iterable[logging.Handler] | None
@@ -136,7 +136,7 @@ class BlenderServer(rpyc.utils.server.Server):
     def spawn(
         jobs: int = 1,
         timeout: float = -1.0,
-        log_dir: str | os.PathLike | None = None,
+        log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
     ) -> Iterator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:
@@ -146,7 +146,14 @@ class BlenderServer(rpyc.utils.server.Server):
         where ``blender.py`` initializes and ``start``\\s a server instance. Proper logging and termination of
         these processes is also taken care of.
 
-        Note: The returned processes and connection settings are not guaranteed to be in the same order.
+        Note:
+            The returned processes and connection settings are not guaranteed to be in the same order.
+
+        Warning:
+            If ``log`` is a file handle or descriptor, such as redirecting Blender logs to subprocess.STDOUT,
+            the writing process might get overwhelmed which can cause silent errors, dropped logs and locked
+            processes. It is thus not recommended for long render jobs to set ``log`` to anything but DEVNULL
+            or a directory.
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
@@ -155,9 +162,9 @@ class BlenderServer(rpyc.utils.server.Server):
                 spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
                 this context manager will immediately yield, even if the server is not yet ready to accept
                 incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
-            log_dir (str | os.PathLike | None, optional): path to log directory,
-                stdout/err will be captured if set, otherwise outputs will go to os.devnull.
-                Defaults to None (devnull).
+            log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
+                descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
+                Defaults to subprocess.DEVNULL for both stdout/stderr.
             autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
                 For more, see blender's CLI documentation. Defaults to False.
             executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
@@ -880,7 +887,7 @@ class BlenderClient:
     def spawn(
         cls,
         timeout: float = -1.0,
-        log_dir: str | os.PathLike | None = None,
+        log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
     ) -> Iterator[Self]:
@@ -893,9 +900,9 @@ class BlenderClient:
                 spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
                 this context manager will immediately yield, even if the server is not yet ready to accept
                 incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
-            log_dir (str | os.PathLike | None, optional): path to log directory,
-                stdout/err will be captured if set, otherwise outputs will go to os.devnull.
-                Defaults to None (devnull).
+            log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
+                descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
+                Defaults to subprocess.DEVNULL for both stdout/stderr.
             autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
                 For more, see blender's CLI documentation. Defaults to False.
             executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
@@ -1507,7 +1514,7 @@ class BlenderClients(tuple):
         cls,
         jobs: int = 1,
         timeout: float = -1.0,
-        log_dir: str | os.PathLike | None = None,
+        log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
     ) -> Iterator[Self]:
@@ -1521,9 +1528,9 @@ class BlenderClients(tuple):
                 spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
                 this context manager will immediately yield, even if the server is not yet ready to accept
                 incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
-            log_dir (str | os.PathLike | None, optional): path to log directory,
-                stdout/err will be captured if set, otherwise outputs will go to os.devnull.
-                Defaults to None (devnull).
+            log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
+                descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
+                Defaults to subprocess.DEVNULL for both stdout/stderr.
             autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
                 For more, see blender's CLI documentation. Defaults to False.
             executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
@@ -1540,7 +1547,7 @@ class BlenderClients(tuple):
     def pool(
         jobs: int = 1,
         timeout: float = -1.0,
-        log_dir: str | os.PathLike | None = None,
+        log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
         conns: list[tuple[str, int]] | None = None,
@@ -1572,9 +1579,9 @@ class BlenderClients(tuple):
                 spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
                 this context manager will immediately yield, even if the server is not yet ready to accept
                 incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
-            log_dir (str | os.PathLike | None, optional): path to log directory,
-                stdout/err will be captured if set, otherwise outputs will go to os.devnull.
-                Defaults to None (devnull).
+            log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
+                descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
+                Defaults to subprocess.DEVNULL for both stdout/stderr.
             autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
                 For more, see blender's CLI documentation. Defaults to False.
             executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Annotated, Literal, Protocol, Union
+from typing import IO, Annotated, Any, Literal, Protocol, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -35,6 +35,7 @@ FILE_FORMATS = Literal[
     "TIFF",
     "WEBP",
 ]
+FILE: TypeAlias = None | int | IO[Any]
 EXR_CODECS = Literal["NONE", "PXR24", "ZIP", "PIZ", "RLE", "ZIPS", "DWAA", "DWAB"]
 COLOR_MODES = Literal["BW", "RGB", "RGBA"]
 

@@ -13,6 +13,6 @@ def render(client, blend_file):
 
 
 if __name__ == "__main__":
-    with BlenderClients.pool(2, log_dir="logs", timeout=30) as pool:
+    with BlenderClients.pool(2, log="logs", timeout=30) as pool:
         # Note: The client will be automagically passed to `render` here.
         pool.map(render, ["assets/monkey.blend", "assets/cube.blend", "assets/metaballs.blend"])

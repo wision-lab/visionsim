@@ -1,4 +1,6 @@
 import json
+import os
+import sys
 import warnings
 from importlib.metadata import Distribution
 from pathlib import Path
@@ -47,7 +49,9 @@ def cube_dataset(tmp_path_factory, executable) -> Path:
     log_dir = tmp_path_factory.mktemp("logs")
     scene = Path(__file__).parent / "test_files" / "scenes" / "cube.blend"
 
-    with BlenderClient.spawn(executable=executable, timeout=30, log_dir=log_dir) as client:
+    with BlenderClient.spawn(
+        executable=executable, timeout=30, log=sys.stdout if os.getenv("CI") == "true" else log_dir
+    ) as client:
         client.initialize(scene.resolve(), tmpdir.resolve())
         client.move_keyframes(scale=1 / 5)
         client.set_animation_range(10, 15)

@@ -37,6 +37,7 @@ dependencies = [
     "ephemeral-port-reserve",
     "peewee",
     "pydantic",
+    "typing-extensions",
 ]
 license = "MIT"
 license-files = ["LICEN[CS]E*"]

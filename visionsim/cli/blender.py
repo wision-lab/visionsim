@@ -69,7 +69,7 @@ def render_animation(
     with (
         BlenderClients.spawn(
             jobs=config.jobs,
-            log_dir=config.log_dir,
+            log=config.log_dir,
             timeout=config.timeout,
             executable=config.executable,
             autoexec=config.autoexec,
