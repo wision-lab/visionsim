@@ -94,6 +94,11 @@ def test_stubs(c):
 
 
 @task
+def type_check(c):
+    _run(c, f"mypy {SOURCE_DIR} {__file__}")
+
+
+@task
 def precommit(c):
     """Run pre-commit hooks"""
     _run(c, "pre-commit run --all-files")
@@ -189,8 +194,8 @@ def generate_stubs(c):
                 )
             else:
                 self.type_ignored_mods = set()
-            self.type_ignores = set()
-            self.classes = {}
+            self.type_ignores: set[int] = set()
+            self.classes: dict[str, ast.ClassDef] = {}
 
             with open(path) as f:
                 self.root = ast.parse(code := f.read(), path, type_comments=True)
