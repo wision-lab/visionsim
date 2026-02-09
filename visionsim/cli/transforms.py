@@ -79,7 +79,7 @@ def colorize_depths(
 
     for in_file in track(in_files):
         # Open with imageio, convert to color using matplotlib's cmaps and save as png.
-        depth = cast(npt.NDarray, Dataset.load_data(in_file))
+        depth = cast(npt.NDArray, Dataset.load_data(in_file))
         depth[depth >= DEPTH_CUTOFF] = np.nan
         img = (colormap(norm(depth)) * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem

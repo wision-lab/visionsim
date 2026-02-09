@@ -13,6 +13,7 @@ import glob
 import os
 import platform
 import shutil
+import sys
 import webbrowser
 from pathlib import Path
 
@@ -95,7 +96,8 @@ def test_stubs(c):
 
 @task
 def type_check(c):
-    _run(c, f"mypy {SOURCE_DIR} {__file__}")
+    flags = "--follow-untyped-imports" if sys.version_info < (3, 10, 0) else ""
+    _run(c, f"mypy {SOURCE_DIR} {__file__} {flags}")
 
 
 @task

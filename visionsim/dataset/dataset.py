@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import itertools
 import os
 from collections.abc import Callable, Sequence
 from functools import cached_property
@@ -9,6 +8,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import imageio.v3 as iio
+import more_itertools as mitertools
 import natsort
 import numpy as np
 import numpy.typing as npt
@@ -28,7 +28,7 @@ class PathTransforms:
             lengths = [len(paths)]
 
         self.iter_npys = iter_npys
-        self.cumulative_lengths = np.cumulative_sum(lengths)
+        self.cumulative_lengths = np.cumsum(lengths)
         self.lengths = lengths
         self.paths = paths
         self.kwargs = kwargs
@@ -240,7 +240,7 @@ class Dataset(torch.utils.data.Dataset):
                     elif (
                         auto_collapse
                         and data.ndim == 3
-                        and all(np.allclose(a, b) for a, b in itertools.pairwise(data.transpose(2, 0, 1)))
+                        and all(np.allclose(a, b) for a, b in mitertools.pairwise(data.transpose(2, 0, 1)))
                     ):
                         data = data[..., :1]
                 else:

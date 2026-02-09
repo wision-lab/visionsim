@@ -102,9 +102,9 @@ def dataset(
         _log.info("Interpolating poses...")
         interp_poses = interpolate_poses(dataset.poses, n=n)
         interp_paths = natsorted(output_dir.glob("**/*.png"))
-        Metadata.from_frames_and_camera(
-            camera=next(iter(dataset.cameras)),
+        Metadata.from_frames(
             frames=[
                 dict(file_path=p.relative_to(output_dir), transform_matrix=m) for p, m in zip(interp_paths, interp_poses)
             ],
+            camera=next(iter(dataset.cameras)),
         ).save(output_dir / "transforms.json")

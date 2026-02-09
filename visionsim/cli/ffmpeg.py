@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 
 def animate(
@@ -116,6 +117,7 @@ def combine(
     import tempfile
 
     import numpy as np
+    import numpy.typing as npt
 
     from visionsim.cli import _log, _run
 
@@ -167,9 +169,12 @@ def combine(
             filter_inputs_str = "".join(
                 f"[{i}:v] setpts=PTS-STARTPTS, scale=qvga [a{i}]; " for i, _ in enumerate(in_paths)
             )
-            W, H = np.meshgrid(
-                ["+".join(f"w{i}" for i in range(j)) or "0" for j in range(num_cols.pop())],
-                ["+".join(f"h{i}" for i in range(j)) or "0" for j in range(len(matrix))],
+            W, H = cast(
+                tuple[npt.NDArray, ...],
+                np.meshgrid(
+                    ["+".join(f"w{i}" for i in range(j)) or "0" for j in range(num_cols.pop())],
+                    ["+".join(f"h{i}" for i in range(j)) or "0" for j in range(len(matrix))],
+                ),
             )
             layout_spec = "|".join(f"{i}_{j}" for i, j in zip(W.flatten(), H.flatten()))
             placement = (

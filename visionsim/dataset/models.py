@@ -26,33 +26,51 @@ class Camera(BaseModel):
     model_config = ConfigDict(extra="allow", frozen=True)
 
     camera_model: Literal["OPENCV", "OPENCV_FISHEYE"] | None = None
+    """camera model type"""
     fl_x: float | None = None
+    """focal length x"""
     fl_y: float | None = None
+    """focal length y"""
     cx: float | None = None
+    """principal point x"""
     cy: float | None = None
+    """principal point y"""
     h: int | None = None
+    """image height"""
     w: int | None = None
+    """image width"""
     c: int | None = None
+    """image channels"""
     k1: float | None = None
+    """first radial distortion parameter, used by [OPENCV, OPENCV_FISHEYE]"""
     k2: float | None = None
+    """second radial distortion parameter, used by [OPENCV, OPENCV_FISHEYE]"""
     k3: float | None = None
+    """third radial distortion parameter, used by [OPENCV_FISHEYE]"""
     k4: float | None = None
+    """fourth radial distortion parameter, used by [OPENCV_FISHEYE]"""
     p1: float | None = None
+    """first tangential distortion parameter, used by [OPENCV]"""
     p2: float | None = None
+    """second tangential distortion parameter, used by [OPENCV]"""
 
 
 class Data(BaseModel):
     model_config = ConfigDict(extra="allow", frozen=True)
 
     file_path: Path | None = None
+    """path to data, usually an image or ndarray file"""
     bitpack_dim: int | None = None
+    """dimension that has been bitpacked"""
 
 
 class Frame(Camera, Data):
     model_config = ConfigDict(frozen=True)
 
     transform_matrix: Annotated[_Matrix4x4, AfterValidator(_validate_transform_matrix)]
+    """camera pose (orientation and position) as a 4x4 matrix"""
     offset: int | None = None
+    """index of frame, used when ``file_path`` is an ``.npy`` file"""
 
 
 class Metadata(Camera):
@@ -66,10 +84,12 @@ class Metadata(Camera):
     _path: Path | None
 
     model_config = ConfigDict(extra="allow", frozen=True)
+
     frames: list[Frame]
+    """per-frame data, intrinsics and extrinsics parameters"""
 
     @model_validator(mode="after")
-    def validate_data_paths(self) -> Self:
+    def _validate_data_paths(self) -> Self:
         per_frame_paths = set(
             tuple(field for field in Data.model_fields.keys() if getattr(frame, field)) for frame in self.frames
         )
@@ -80,7 +100,7 @@ class Metadata(Camera):
         return self
 
     @model_validator(mode="after")
-    def validate_intrinsics_usage(self) -> Self:
+    def _validate_intrinsics_usage(self) -> Self:
         # Check camera intrinsics are either per-frame or global, allow mixed usage such as global focal-length and per-frame distortion.
         per_frame_intrinsics = set(
             tuple(field for field in Camera.model_fields.keys() if getattr(frame, field)) for frame in self.frames
@@ -117,6 +137,20 @@ class Metadata(Camera):
 
     @classmethod
     def load(cls, path: str | os.PathLike, as_data_type: str = "file_path") -> Self:
+        """Load metadata from a ``.json`` or ``.db`` transforms file.
+
+        Args:
+            path (str | os.PathLike): Path to load metadata from.
+            as_data_type (str, optional): Load data paths from a ``.db`` file as a different key.
+                Defaults to "file_path".
+
+        Raises:
+            RuntimeError: raised if loading camera configurations fail.
+            ValueError: raised if file format is not understood.
+
+        Returns:
+            Self: instantiated Metadata object
+        """
         if Path(path).suffix.lower() == ".json":
             with open(path, "r") as f:
                 data = json.load(f)
@@ -125,7 +159,7 @@ class Metadata(Camera):
                 return instance
         elif Path(path).suffix.lower() == ".db":
             ds = schema.Metadata(path)
-            dense_transforms = list(ds.iter_dense_transforms(as_data_type=as_data_type))
+            dense_transforms = ds.to_dense_transforms(as_data_type=as_data_type)
             instance = cls.from_dense_transforms(dense_transforms)
             if len(instance.cameras) != len(ds.cameras):
                 # Note: This really shouldn't occur, but better catch it early if it does!
@@ -154,16 +188,17 @@ class Metadata(Camera):
             instance = cls.load(path=candidates.pop(), as_data_type=as_data_type)
         return instance
 
-    def save(self, path: str | os.PathLike, *, indent: int = 2, data_type: str | None = None) -> None:
+    def save(self, path: str | os.PathLike, *, indent: int = 2) -> None:
+        """Save metadata to a ``.json`` or ``.db`` transforms file.
+
+        Args:
+            path (str | os.PathLike): Path to save metadata to.
+            indent (int, optional): Indent amount to use when saving JSON file. Defaults to 2.
+        """
         if Path(path).suffix.lower() == ".json":
             with open(path, "w") as f:
                 f.write(self.model_dump_json(exclude_unset=True, indent=indent))
         elif Path(path).suffix.lower() == ".db":
-            if len(self.data_types) != 1:
-                raise ValueError(
-                    f"Can only save as a database when there is a single data type, got {self.data_types} instead."
-                )
-
             data_type = next(iter(self.data_types))
             schema.Metadata.from_dense_transforms(path=path, transforms=self.iter_dense_transforms(data_type=data_type))
         else:
@@ -171,6 +206,16 @@ class Metadata(Camera):
 
     @classmethod
     def from_dense_transforms(cls, transforms: Sequence[dict[str, Any]]) -> Self:
+        """Load metadata from a sequence of dictionary which contain all frame and camera information.
+
+        Args:
+            transforms (Sequence[dict[str, Any]]): Dictionaries containing frame information such as
+                "file_path", "transform_matrix" and camera parameters.
+
+        Returns:
+            Self: instantiated Metadata object
+        """
+
         def is_equal(a, b):
             if isinstance(a, np.ndarray) or isinstance(b, np.ndarray):
                 return np.allclose(a, b)
@@ -189,15 +234,36 @@ class Metadata(Camera):
         return cls(frames=frames, **global_fields)
 
     @classmethod
-    def from_frames_and_camera(
-        cls, camera: Camera | dict[str, Any], frames: Sequence[Frame] | Sequence[dict[str, Any]]
+    def from_frames(
+        cls, frames: Sequence[Frame] | Sequence[dict[str, Any]], camera: Camera | dict[str, Any] | None = None
     ) -> Self:
+        """Load metadata from Frame objects (or their model dicts) and a single Camera object (or model dict).
+
+        Args:
+            frames (Sequence[Frame] | Sequence[dict[str, Any]]): Frame instances to load from.
+            camera (Camera | dict[str, Any] | None, optional): Global camera to use, if multiple cameras are needed,
+                pass them as parts of the frames. Defaults to None (use frame cameras).
+
+        Returns:
+            Self: instantiated Metadata object
+        """
         return cls(
             frames=[Frame.model_validate(f) for f in frames],
             **Camera.model_validate(camera).model_dump(exclude_unset=True),
         )
 
     def iter_dense_transforms(self, data_type: str | None = None, rename_to: str = "path") -> Iterator[dict[str, Any]]:
+        """Yield dictionaries containing all frame and camera information, one per frame.
+
+        Args:
+            data_type (str | None, optional): Select which data type to iterate over, since there
+                might be multiple ("file_path", "mask_path", etc). Defaults to None (all available).
+            rename_to (str, optional): Rename key of iterated data, for instance from "file_path" to "path".
+                Only used if ``data_type`` is set. Defaults to "path".
+
+        Yields:
+            Iterator[dict[str, Any]]: Dictionaries containing all relevant frame data
+        """
         if data_type:
             if data_type not in self.data_types:
                 raise ValueError(f"Data type {data_type} is not defined for every frame, or at all.")
@@ -216,20 +282,25 @@ class Metadata(Camera):
             yield transform
 
     def to_dense_transforms(self, *args, **kwargs) -> list[dict[str, Any]]:
+        """Same as :meth:`iter_dense_transforms` but returns a list instead of a generator."""
         return list(self.iter_dense_transforms(*args, **kwargs))
 
     @property
     def data_types(self) -> set[str]:
+        """Data types that are defined for each frame, such as ``file_path`` of ``depth_file_path``."""
         return self._data_types
 
     @property
     def cameras(self) -> set[Camera]:
+        """Set of defined cameras."""
         return self._cameras
 
     @property
     def poses(self) -> list[Matrix4x4]:
+        """Pose matrices of all frames."""
         return [np.array(f.transform_matrix) for f in self.frames]
 
     @property
     def path(self) -> Path | None:
+        """Path to loaded metadata file, may be undefined."""
         return self._path
