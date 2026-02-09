@@ -35,7 +35,7 @@ FILE_FORMATS = Literal[
     "TIFF",
     "WEBP",
 ]
-FILE: TypeAlias = None | int | IO[Any]
+FILE: TypeAlias = Union[None, int , IO[Any]]
 EXR_CODECS = Literal["NONE", "PXR24", "ZIP", "PIZ", "RLE", "ZIPS", "DWAA", "DWAB"]
 COLOR_MODES = Literal["BW", "RGB", "RGBA"]
 
