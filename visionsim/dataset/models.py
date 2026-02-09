@@ -4,6 +4,7 @@ import copy
 import functools
 import json
 import os
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated, Any, ClassVar, Iterator, Literal
 
@@ -21,8 +22,8 @@ def _validate_transform_matrix(matrix: _Matrix4x4) -> _Matrix4x4:
     return matrix
 
 
-class Camera(BaseModel, frozen=True):
-    model_config = ConfigDict(extra="allow")
+class Camera(BaseModel):
+    model_config = ConfigDict(extra="allow", frozen=True)
 
     camera_model: Literal["OPENCV", "OPENCV_FISHEYE"] | None = None
     fl_x: float | None = None
@@ -41,13 +42,15 @@ class Camera(BaseModel, frozen=True):
 
 
 class Data(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", frozen=True)
 
     file_path: Path | None = None
     bitpack_dim: int | None = None
 
 
 class Frame(Camera, Data):
+    model_config = ConfigDict(frozen=True)
+
     transform_matrix: Annotated[_Matrix4x4, AfterValidator(_validate_transform_matrix)]
     offset: int | None = None
 
@@ -57,12 +60,12 @@ class Metadata(Camera):
     ``transforms.json`` format with a few additional fields such as additional data paths (eg: flow/segmentation)
     and a channels dimension."""
 
-    _REQUIRED_FIELDS: ClassVar[tuple[str]] = ("fl_x", "fl_y", "cx", "cy", "h", "w")
+    _REQUIRED_FIELDS: ClassVar[tuple[str, ...]] = ("fl_x", "fl_y", "cx", "cy", "h", "w")
     _data_types: set[str]
     _cameras: set[Camera]
     _path: Path | None
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", frozen=True)
     frames: list[Frame]
 
     @model_validator(mode="after")
@@ -122,7 +125,7 @@ class Metadata(Camera):
                 return instance
         elif Path(path).suffix.lower() == ".db":
             ds = schema.Metadata(path)
-            dense_transforms = ds.iter_dense_transforms(as_data_type=as_data_type)
+            dense_transforms = list(ds.iter_dense_transforms(as_data_type=as_data_type))
             instance = cls.from_dense_transforms(dense_transforms)
             if len(instance.cameras) != len(ds.cameras):
                 # Note: This really shouldn't occur, but better catch it early if it does!
@@ -140,7 +143,7 @@ class Metadata(Camera):
         where `path` can also be the directory containing the metadata file."""
 
         try:
-            return cls.load(path=path, as_data_type=as_data_type)
+            instance = cls.load(path=path, as_data_type=as_data_type)
         except ValueError:
             candidates = list(Path(path).glob("*.db")) + list(Path(path).glob("*.json"))
 
@@ -148,7 +151,8 @@ class Metadata(Camera):
                 raise RuntimeError(
                     f"Ambiguous dataset root. Found multiple metadata sources ({[c.relative_to(path) for c in candidates]})."
                 )
-            return cls.load(path=candidates.pop(), as_data_type=as_data_type)
+            instance = cls.load(path=candidates.pop(), as_data_type=as_data_type)
+        return instance
 
     def save(self, path: str | os.PathLike, *, indent: int = 2, data_type: str | None = None) -> None:
         if Path(path).suffix.lower() == ".json":
@@ -166,13 +170,12 @@ class Metadata(Camera):
             raise ValueError(f"Can only save metadata as `.json` or `.db`, tried to save as `{Path(path).suffix}`.")
 
     @classmethod
-    def from_dense_transforms(cls, transforms: Iterator[dict[str, Any]]) -> Self:
+    def from_dense_transforms(cls, transforms: Sequence[dict[str, Any]]) -> Self:
         def is_equal(a, b):
             if isinstance(a, np.ndarray) or isinstance(b, np.ndarray):
                 return np.allclose(a, b)
             return a == b
 
-        transforms = list(transforms)
         global_fields = functools.reduce(
             lambda a, b: {k: a[k] for k in set(a.keys()) & set(b.keys()) if is_equal(a[k], b[k])}, transforms
         )
@@ -187,7 +190,7 @@ class Metadata(Camera):
 
     @classmethod
     def from_frames_and_camera(
-        cls, camera: Camera | dict[str, Any], frames: Iterator[Frame] | Iterator[dict[str, Any]]
+        cls, camera: Camera | dict[str, Any], frames: Sequence[Frame] | Sequence[dict[str, Any]]
     ) -> Self:
         return cls(
             frames=[Frame.model_validate(f) for f in frames],

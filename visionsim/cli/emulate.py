@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import shutil
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -49,7 +50,7 @@ def spad(
 
     rng = np.random.default_rng(int(seed))
     output_dir.mkdir(exist_ok=True, parents=True)
-    transforms = []
+    transforms: list[dict[str, Any]] = []
 
     with ElapsedProgress() as progress:
         task = progress.add_task("Writing SPAD frames", total=len(dataset))

@@ -36,7 +36,7 @@ def video(input_file: Path, output_file: Path, method: str = "rife", n: int = 2)
 
     with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as dst_dir:
         # Extract all frames
-        extract(input_file, src_dir, pattern="frames_%06d.png")
+        extract(Path(input_file), Path(src_dir), pattern="frames_%06d.png")
 
         # Interpolate them
         with ElapsedProgress() as progress:
@@ -45,7 +45,7 @@ def video(input_file: Path, output_file: Path, method: str = "rife", n: int = 2)
             rife(img_paths, dst_dir, exp=np.log2(n).astype(int), update_fn=partial(progress.update, task))
 
         # Assemble final video at correct frame-rate
-        animate(dst_dir, pattern="frames_*.png", outfile=output_file, fps=int(avg_fps))
+        animate(Path(dst_dir), pattern="frames_*.png", outfile=output_file, fps=int(avg_fps))
 
 
 def dataset(
@@ -82,9 +82,6 @@ def dataset(
     else:
         dataset = Dataset.from_path(input_dir)
 
-        if dataset.cameras is None or len(dataset.cameras) != 1:
-            raise NotImplementedError("Cannot emulate an RGB camera from multiple cameras.")
-
     with ElapsedProgress() as progress:
         task = progress.add_task(f"Interpolating with {method}...")
 
@@ -99,7 +96,9 @@ def dataset(
         else:
             raise NotImplementedError("Requested interpolation method is not supported at this time.")
 
-    if not pattern:
+    if dataset.cameras is None or len(dataset.cameras) != 1:
+        _log.warning("Cannot emulate an RGB camera from multiple cameras, not saving transforms.")
+    elif dataset.poses is not None:
         _log.info("Interpolating poses...")
         interp_poses = interpolate_poses(dataset.poses, n=n)
         interp_paths = natsorted(output_dir.glob("**/*.png"))

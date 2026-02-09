@@ -29,6 +29,8 @@ def convert(
             shutil.rmtree(output_dir, ignore_errors=True)
 
     meta = Metadata.from_path(input_dir)
+    assert meta.path is not None
+
     rel_path = meta.path.relative_to(input_dir.resolve())
     meta_path = rel_path.with_suffix(".db" if meta.path.suffix == ".json" else ".json")
 

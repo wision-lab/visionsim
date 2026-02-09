@@ -6,7 +6,7 @@ import os
 from collections.abc import Callable, Sequence
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import imageio.v3 as iio
 import natsort
@@ -21,7 +21,7 @@ from visionsim.types import Matrix4x4
 
 
 class PathTransforms:
-    def __init__(self, paths: list[Path], iter_npys: bool = True, **kwargs):
+    def __init__(self, paths: Sequence[Path], iter_npys: bool = True, **kwargs):
         if iter_npys:
             lengths = [len(np.load(str(path), mmap_mode="r")) if path.suffix.lower() == ".npy" else 1 for path in paths]
         else:
@@ -38,7 +38,7 @@ class PathTransforms:
 
     def __getitem__(self, idx: int) -> dict[str, int | Path]:
         if self.iter_npys:
-            path_idx = np.searchsorted(self.cumulative_lengths, idx, side="right")
+            path_idx = int(np.searchsorted(self.cumulative_lengths, idx, side="right"))
             transform = {"file_path": self.paths[path_idx]}
 
             if self.paths[path_idx].suffix.lower() == ".npy":
@@ -51,11 +51,11 @@ class PathTransforms:
 class Dataset(torch.utils.data.Dataset):
     def __init__(
         self,
-        dense_transforms: Sequence[dict[str, Any]],
+        transforms: Sequence[dict[str, Any]],
         root: str | os.PathLike | None = None,
         cameras: set[Camera] | None = None,
     ) -> None:
-        self.dense_transforms = dense_transforms
+        self.transforms = transforms
         self.root = Path(root).resolve() if root else None
         self.cameras = cameras
 
@@ -78,8 +78,8 @@ class Dataset(torch.utils.data.Dataset):
             root = root.parent
 
         metadata = Metadata.load(metadata_path)
-        dense_transforms = metadata.to_dense_transforms()
-        return cls(root=root, cameras=metadata.cameras, dense_transforms=dense_transforms)
+        transforms = metadata.to_dense_transforms()
+        return cls(root=root, cameras=metadata.cameras, transforms=transforms)
 
     @classmethod
     def from_paths(
@@ -96,7 +96,7 @@ class Dataset(torch.utils.data.Dataset):
             raise ValueError("Paths are expected to be absolute or relative to `root`.")
 
         transforms = PathTransforms(paths=paths, iter_npys=iter_npys, **kwargs)
-        return cls(dense_transforms=transforms, root=root, cameras=cameras)
+        return cls(transforms=cast(Sequence, transforms), root=root, cameras=cameras)
 
     @classmethod
     def from_pattern(
@@ -113,11 +113,11 @@ class Dataset(torch.utils.data.Dataset):
 
     @cached_property
     def paths(self) -> list[Path]:
-        return [(self.root or Path("")) / t["file_path"] for t in self.dense_transforms]
+        return [(self.root or Path("")) / t["file_path"] for t in self.transforms]
 
     @cached_property
     def poses(self) -> list[Matrix4x4] | None:
-        poses = [np.array(t["transform_matrix"]) for t in self.dense_transforms if "transform_matrix" in t]
+        poses = [np.array(t["transform_matrix"]) for t in self.transforms if "transform_matrix" in t]
 
         if poses:
             if len(self) == len(poses):
@@ -128,7 +128,7 @@ class Dataset(torch.utils.data.Dataset):
     @staticmethod
     def _slice_bitpacked_array(
         data: npt.NDArray,
-        idx: tuple[int | slice] = tuple(),
+        idx: tuple[int | slice, ...] = tuple(),
         bitpack_dim: Literal[0, 1, 2] | None = None,
         unpacked_size: int | None = None,
     ) -> int | npt.NDArray:
@@ -187,7 +187,7 @@ class Dataset(torch.utils.data.Dataset):
     @staticmethod
     def load_data(
         path: str | os.PathLike,
-        idx: tuple[int | slice] = tuple(),
+        idx: tuple[int | slice, ...] = tuple(),
         auto_collapse: bool = True,
         bitpack_dim: Literal[0, 1, 2] | None = None,
         unpacked_size: int | None = None,
@@ -252,7 +252,11 @@ class Dataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return len(self.paths)
 
-    def __getitem__(self, idx: npt.ArrayLike) -> tuple[int | float | npt.NDArray, dict[str, Any]]:
+    def __getitem__(
+        self, idx: npt.ArrayLike
+    ) -> tuple[
+        int | float | npt.NDArray | tuple[int | float | npt.NDArray, ...], dict[str, Any] | tuple[dict[str, Any], ...]
+    ]:
         # Split index into the idx of the frame and the frame sub-slice
         frame_idx, *sub_slice = idx = np.atleast_1d(idx)
         frame_idx = np.arange(len(self))[frame_idx]
@@ -266,22 +270,23 @@ class Dataset(torch.utils.data.Dataset):
         # Return data from single frame/path
         # We must read and decode the whole image even if we are only indexing a pixel...
         if isinstance(frame_idx, (int, np.integer)):
-            transforms = copy.copy(self.dense_transforms[frame_idx])
-            transforms["file_path"] = self.paths[frame_idx]
+            transform = copy.copy(self.transforms[int(frame_idx)])
+            transform["file_path"] = self.paths[frame_idx]
 
             if self.poses:
-                transforms["transform_matrix"] = self.poses[frame_idx]
+                transform["transform_matrix"] = self.poses[frame_idx]
 
-            sub_slice = tuple([transforms["offset"]] + sub_slice) if "offset" in transforms else sub_slice
+            sub_slice = tuple([transform["offset"]] + sub_slice) if "offset" in transform else sub_slice
 
-            bitpack_dim = transforms.get("bitpack_dim")
-            full_shape = (len(self), transforms.get("h"), transforms.get("w"), transforms.get("c"))
+            bitpack_dim = transform.get("bitpack_dim")
+            full_shape = (len(self), transform.get("h"), transform.get("w"), transform.get("c"))
             unpacked_size = full_shape[bitpack_dim] if bitpack_dim is not None else None
 
             data = self.load_data(
-                transforms["file_path"], sub_slice, bitpack_dim=bitpack_dim, unpacked_size=unpacked_size
+                transform["file_path"], sub_slice, bitpack_dim=bitpack_dim, unpacked_size=unpacked_size
             )
-            return data, transforms
+            return data, transform
         elif frame_idx.size:
-            return zip(*(self[tuple(np.atleast_1d(i).tolist() + sub_slice)] for i in frame_idx))
+            data, transform = zip(*(self[tuple(np.atleast_1d(i).tolist() + sub_slice)] for i in frame_idx))
+            return data, transform
         return tuple(), tuple()

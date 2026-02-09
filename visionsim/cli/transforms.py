@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 import numpy as np
+import numpy.typing as npt
 from rich.progress import track
 
 
@@ -78,7 +79,7 @@ def colorize_depths(
 
     for in_file in track(in_files):
         # Open with imageio, convert to color using matplotlib's cmaps and save as png.
-        depth = Dataset.load_data(in_file)
+        depth = cast(npt.NDarray, Dataset.load_data(in_file))
         depth[depth >= DEPTH_CUTOFF] = np.nan
         img = (colormap(norm(depth)) * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
@@ -136,7 +137,7 @@ def colorize_flows(
         _log.info(f"Using a maximum magnitude of {vmax:0.2f}\n")
 
     for in_file in track(in_files):
-        fx, fy, bx, by = Dataset.load_data(in_file)
+        fx, fy, bx, by = cast(npt.NDArray, Dataset.load_data(in_file))
         x, y = (fx, fy) if direction.lower() == "forward" else (bx, by)
         h = np.arctan2(y, x) / (2 * np.pi) + 0.5
         v = np.minimum(np.sqrt(x**2 + y**2) / vmax, 1.0)
@@ -173,7 +174,7 @@ def colorize_normals(
     in_files = in_files[::step]
 
     for in_file in track(in_files):
-        img = Dataset.load_data(in_file).transpose(1, 2, 0) / 2 + 0.5
+        img = cast(npt.NDArray, Dataset.load_data(in_file)).transpose(1, 2, 0) / 2 + 0.5
         img = (img * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
         iio.imwrite(str(path.with_suffix(ext)), img)
@@ -229,7 +230,7 @@ def colorize_segmentations(
     r, g, b = np.insert(r, 0, 0), np.insert(g, 0, 0), np.insert(b, 0, 0)
 
     for in_file in track(in_files):
-        idx = Dataset.load_data(in_file).astype(int).squeeze()
+        idx = cast(npt.NDArray, Dataset.load_data(in_file)).astype(int).squeeze()
 
         if idx.shape[-1] != 1 and idx.ndim == 3:
             idx = idx[..., 0]
@@ -267,7 +268,7 @@ def tonemap_frames(
 
     for in_file in track(in_files):
         img = Dataset.load_data(in_file)
-        high, low = np.quantile(img, [1 - hdr_quantile, hdr_quantile])
+        high, low = cast(list[float], np.quantile(img, [1 - hdr_quantile, hdr_quantile]))
         img = linearrgb_to_srgb(img)
         img = (np.clip(img, 0, 1) * 255).astype(np.uint8)
         hdrs.append(high / low)

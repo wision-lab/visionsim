@@ -126,7 +126,7 @@ def combine(
         raise RuntimeError("No ffmpeg installation found on path!")
 
     matrix = ast.literal_eval(matrix) if isinstance(matrix, str) else matrix
-    flat_mat = [path for row in matrix for path in row]
+    flat_mat = [Path(path) for row in matrix for path in row]
 
     try:
         if any(not Path(p).is_file() for p in flat_mat):
@@ -146,7 +146,7 @@ def combine(
         row_paths: list[Path] = []
 
         # Keep track of all original dimensions
-        sizes = {path: dimensions(path) for path in flat_mat}
+        sizes = {str(path): dimensions(path) for path in flat_mat}
 
         # Find longest video and pad all to this length
         if mode.lower() == "pad":
@@ -157,8 +157,8 @@ def combine(
                 out_path = Path(tmpdir) / Path(path).name
                 out_path = out_path.with_name(f"{out_path.stem}_padded{out_path.suffix}")
                 cmd = f"ffmpeg -i {path} -vf tpad=stop=-1=color={color},trim=end={max_duration} {out_path} -y"
+                mapping[str(path)] = out_path
                 _run(cmd)
-                mapping[path] = out_path
 
         # If the matrix is not jagged, we can use ffmpeg's xstack instead
         if len(num_cols := set(len(row) for row in matrix)) == 1:
@@ -183,14 +183,15 @@ def combine(
         for i, row in enumerate(matrix):
             # Resize videos in each row
             max_height = max(sizes[path][1] for path in row)
-            for path in row:
-                if sizes[path][1] != max_height:
-                    _log.info(f"Resizing {path}...")
-                    in_path = mapping.get(path, path)
-                    out_path = Path(tmpdir) / Path(path).name
+
+            for p in row:
+                if sizes[p][1] != max_height:
+                    _log.info(f"Resizing {p}...")
+                    in_path = mapping.get(p, p)
+                    out_path = Path(tmpdir) / Path(p).name
                     out_path = out_path.with_name(f"{out_path.stem}_height_resize{out_path.suffix}")
                     _run(f"ffmpeg -i {in_path} -vf scale=-{multiple}:{max_height} {out_path} -y")
-                    mapping[path] = out_path
+                    mapping[p] = out_path
 
             # Combine all videos in the row
             if len(row) >= 2:
