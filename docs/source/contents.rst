@@ -14,6 +14,7 @@
    sections/interpolation
    sections/emulation 
    sections/datasets
+   sections/conventions
 
 .. toctree::
    :hidden:
