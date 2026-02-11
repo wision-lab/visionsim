@@ -21,6 +21,12 @@ from visionsim.types import Matrix4x4
 
 
 class PathTransforms:
+    """Given a sequence of paths to load from, yield the minimal transforms dictionary for each path.
+
+    Specifically, for image paths we just yield ``{"file_path": paths[idx]}`` for every index, but if some of the paths 
+    are numpy arrays, and ``iter_npys`` is true, we unpack the array's first dimension, and return the corresponding 
+    ``offset`` as well. For instance, if ``paths`` points to a png, a npy of shape (4, H, W, C), and another png, an 
+    index of 3 will return the path to the numpy file and an offset of 3."""
     def __init__(self, paths: Sequence[Path], iter_npys: bool = True, **kwargs):
         if iter_npys:
             lengths = [len(np.load(str(path), mmap_mode="r")) if path.suffix.lower() == ".npy" else 1 for path in paths]
@@ -49,18 +55,44 @@ class PathTransforms:
 
 
 class Dataset(torch.utils.data.Dataset):
+    """Main dataset class for loading a ``.db``/``.json`` dataset or a set of image/exr/npy files."""
     def __init__(
         self,
         transforms: Sequence[dict[str, Any]],
         root: str | os.PathLike | None = None,
         cameras: set[Camera] | None = None,
     ) -> None:
+        """Initialize a dataset object.
+
+        Note:
+            No data validation is performed here, you likely want to use one of the 
+            classmethods such as :meth:`from_path` or :meth:`from_pattern` instead.
+
+        Args:
+            transforms (Sequence[dict[str, Any]]): A sequence of transforms dicts, which at a 
+                minimum should have a ``file_path`` key defined.
+            root (str | os.PathLike | None, optional): Dataset root directory, if supplied all ``file_path``\\s 
+                are assumed to be relative to it. Defaults to None.
+            cameras (set[Camera] | None, optional): Set of camera objects. Defaults to None.
+        """
         self.transforms = transforms
         self.root = Path(root).resolve() if root else None
         self.cameras = cameras
 
     @classmethod
     def from_path(cls, root: str | os.PathLike) -> Self:
+        """Load a dataset from a path. 
+
+        Args:
+            root (str | os.PathLike): Path to dataset file (either a ``.db`` or ``.json`` file) 
+                or a directory containing a valid dataset.
+
+        Raises:
+            RuntimeError: raised if a dataset is not found at the provided path, or if multiple datasets are found.
+
+        Returns:
+            Self: instantiated Dataset object
+        """
         root = Path(root).resolve()
 
         if root.is_dir():
@@ -90,10 +122,26 @@ class Dataset(torch.utils.data.Dataset):
         cameras: set[Camera] | None = None,
         **kwargs,
     ) -> Self:
+        """Create a dataset object from a collection of data files.
+
+        Args:
+            paths (Sequence[Path]): Paths to load data from.
+            iter_npys (bool, optional): If true, step into the first dimension of any numpy files 
+                when iterating over data. Defaults to True.
+            root (str | os.PathLike | None, optional): Dataset root directory, if supplied all ``file_path``\\s 
+                are assumed to be relative to it. Defaults to None.
+            cameras (set[Camera] | None, optional): Set of camera objects. Defaults to None.
+
+        Raises:
+            ValueError: raised if provided paths do not exist or if they are not subpaths of root (when provided).
+
+        Returns:
+            Self: instantiated Dataset object
+        """
         if (root is None and any(not p.exists() for p in paths)) or (
             root is not None and any(not p.is_relative_to(root) for p in paths)
         ):
-            raise ValueError("Paths are expected to be absolute or relative to `root`.")
+            raise ValueError("Some paths do not exist or are not relative to `root`.")
 
         transforms = PathTransforms(paths=paths, iter_npys=iter_npys, **kwargs)
         return cls(transforms=cast(Sequence, transforms), root=root, cameras=cameras)
@@ -108,21 +156,23 @@ class Dataset(torch.utils.data.Dataset):
         key: Callable[[Any], Any] = natsort.natsort_key,
         **kwargs,
     ) -> Self:
+        """Same as :meth:`from_paths` but will search for all paths that match the provided pattern 
+        (as found by `pathlib's glob <https://docs.python.org/3/library/pathlib.html#pathlib.Path.glob>`_)"""
         paths = sorted(Path(root).glob(pattern), key=key)
         return cls.from_paths(paths=paths, iter_npys=iter_npys, root=root, cameras=cameras, **kwargs)
 
     @cached_property
     def paths(self) -> list[Path]:
+        """List of all data file paths (normalized)"""
         return [(self.root or Path("")) / t["file_path"] for t in self.transforms]
 
     @cached_property
     def poses(self) -> list[Matrix4x4] | None:
+        """List of all camera poses, if available"""
         poses = [np.array(t["transform_matrix"]) for t in self.transforms if "transform_matrix" in t]
 
-        if poses:
-            if len(self) == len(poses):
-                return poses
-            raise ValueError("Some poses are missing!")
+        if len(self) == len(poses):
+            return poses
         return None
 
     @staticmethod
