@@ -55,14 +55,14 @@ class Camera(_BaseModel):
 
     h = IntegerField()
     w = IntegerField()
-    c = IntegerField()
+    c = IntegerField(null=True)
 
     fl_x = FloatField()
     fl_y = FloatField()
 
     cx = FloatField()
     cy = FloatField()
-    fps = FloatField()
+    fps = FloatField(null=True)
 
 
 class Data(_BaseModel):
