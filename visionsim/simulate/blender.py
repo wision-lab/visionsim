@@ -702,14 +702,14 @@ class BlenderService(rpyc.Service):
                     yield fcurve
 
     @require_initialized_service
-    def exposed_get_original_fps(self) -> int:
+    def exposed_get_original_fps(self) -> float:
         """Get effective framerate (fps/fps_base).
 
         Returns:
-            int: Frame rate of scene.
+            float: Frame rate of scene.
         """
         # Note: Exposed properties are not supported by rpyc.
-        return int(round(self.scene.render.fps / self.scene.render.fps_base))
+        return self.scene.render.fps / self.scene.render.fps_base
 
     @require_initialized_service
     def exposed_animation_range(self) -> range:
@@ -1434,6 +1434,7 @@ class BlenderService(rpyc.Service):
         info["shift_y"] *= self.scene.render.resolution_y * scale
         info["cx"] = 1 / 2 * self.scene.render.resolution_x * scale + info["shift_x"]
         info["cy"] = 1 / 2 * self.scene.render.resolution_y * scale + info["shift_y"]
+        info["fps"] = self.exposed_get_original_fps()
         return info
 
     @require_initialized_service

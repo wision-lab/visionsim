@@ -9,21 +9,21 @@ visionsim.dataset.dataset module
 
 .. automodule:: visionsim.dataset.dataset
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:
 
 visionsim.dataset.models module
 -------------------------------
 
 .. automodule:: visionsim.dataset.models
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:
 
 Module contents
 ---------------
 
 .. automodule:: visionsim.dataset
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

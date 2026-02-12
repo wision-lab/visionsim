@@ -62,6 +62,7 @@ class Camera(_BaseModel):
 
     cx = FloatField()
     cy = FloatField()
+    fps = FloatField()
 
 
 class Data(_BaseModel):

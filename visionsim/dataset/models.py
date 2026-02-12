@@ -53,6 +53,7 @@ class Camera(BaseModel):
     """first tangential distortion parameter, used by [OPENCV]"""
     p2: float | None = None
     """second tangential distortion parameter, used by [OPENCV]"""
+    fps: float | None = None
 
 
 class Data(BaseModel):
