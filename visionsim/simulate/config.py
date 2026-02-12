@@ -97,9 +97,9 @@ class SegmentationsConfig:
 class RenderConfig:
     executable: Path | None = None
     """Path to blender executable"""
-    height: int = 512
+    height: int | None = None
     """Height of rendered frames"""
-    width: int = 512
+    width: int | None = None
     """Width of rendered frames"""
     include_composites: bool = False
     """If true, enable composited outputs"""
