@@ -7,7 +7,7 @@ from typing import Literal
 import numpy as np
 
 
-def video(input_file: Path, output_file: Path, method: str = "rife", n: int = 2):
+def video(input_file: Path, output_file: Path, method: str = "rife", n: int = 2) -> None:
     """Interpolate video by extracting all frames, performing frame-wise interpolation and re-assembling video
 
     Args:
@@ -54,7 +54,7 @@ def dataset(
     pattern: str | None = None,
     method: Literal["rife"] = "rife",
     n: int = 2,
-):
+) -> None:
     """Interpolate between a series of frames or a dataset (both it's images and poses)
 
     Note:
@@ -65,7 +65,7 @@ def dataset(
         input_dir: directory in which to look for frames
         output_dir: directory in which to save interpolated frames
         pattern: used to find source image files to interpolate from,
-            not needed when `input_dir` points to a valid dataset.
+            not needed when ``input_dir`` points to a valid dataset.
         method: interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife'
         n: interpolation factor, must be a multiple of 2, default: 2
     """

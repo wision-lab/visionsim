@@ -32,7 +32,7 @@ def colorize_depths(
     vmax: float | None = None,
     quantile: float = 0.01,
     step: int = 1,
-):
+) -> None:
     """Convert .exr depth maps into color-coded images for visualization
 
     Args:
@@ -95,7 +95,7 @@ def colorize_flows(
     vmax: float | None = None,
     quantile: float = 0.01,
     step: int = 1,
-):
+) -> None:
     """Convert .exr optical flow maps into color-coded images for visualization
 
     Args:
@@ -153,7 +153,7 @@ def colorize_normals(
     pattern: str = "**/*.exr",
     ext: str = ".png",
     step: int = 1,
-):
+) -> None:
     """Convert .exr normal maps into color-coded images for visualization
 
     Args:
@@ -189,7 +189,7 @@ def colorize_segmentations(
     shuffle: bool = True,
     seed: int = 1234,
     step: int = 1,
-):
+) -> None:
     """Convert .exr segmentation maps into color-coded images for visualization
 
     Args:
@@ -247,7 +247,7 @@ def tonemap_frames(
     pattern: str = "**/*.exr",
     ext: str = ".png",
     hdr_quantile: float = 0.01,
-):
+) -> None:
     """Convert .exr linear intensity frames (or composites) into tone-mapped sRGB images
 
     Args:

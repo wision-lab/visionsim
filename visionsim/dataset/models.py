@@ -23,6 +23,8 @@ def _validate_transform_matrix(matrix: _Matrix4x4) -> _Matrix4x4:
 
 
 class Camera(BaseModel):
+    """Camera Intrinsics"""
+
     model_config = ConfigDict(extra="allow", frozen=True)
 
     camera_model: Literal["OPENCV", "OPENCV_FISHEYE"] | None = None
@@ -58,6 +60,8 @@ class Camera(BaseModel):
 
 
 class Data(BaseModel):
+    """Frame data"""
+
     model_config = ConfigDict(extra="allow", frozen=True)
 
     file_path: Path | None = None
@@ -67,6 +71,8 @@ class Data(BaseModel):
 
 
 class Frame(Camera, Data):
+    """Frame information"""
+
     model_config = ConfigDict(frozen=True)
 
     transform_matrix: Annotated[_Matrix4x4, AfterValidator(_validate_transform_matrix)]
@@ -176,7 +182,7 @@ class Metadata(Camera):
     @classmethod
     def from_path(cls, path: str | os.PathLike, as_data_type: str = "file_path") -> Self:
         """Same as :meth:`load` with the added bonus of path disambiguation,
-        where `path` can also be the directory containing the metadata file."""
+        where ``path`` can also be the directory containing the metadata file."""
 
         try:
             instance = cls.load(path=path, as_data_type=as_data_type)

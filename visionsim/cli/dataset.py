@@ -8,8 +8,8 @@ def convert(
     input_dir: Path,
     output_dir: Path | None = None,
     force: bool = False,
-):
-    """Convert a `.db` database to a `.json` or vice-versa.
+) -> None:
+    """Convert a ``.db`` database to a ``.json`` or vice-versa.
 
     Args:
         input_dir: directory in which to look for dataset

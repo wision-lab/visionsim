@@ -34,6 +34,7 @@ class _BaseModel(Model):
 
 class Camera(_BaseModel):
     """A database model that mirrors :class:`models.Camera <visionsim.dataset.models.Camera>` with added blender-specific fields."""
+
     angle = FloatField(null=True)
     angle_x = FloatField(null=True)
     angle_y = FloatField(null=True)
@@ -67,12 +68,14 @@ class Camera(_BaseModel):
 
 class Data(_BaseModel):
     """A database model that mirrors :class:`models.Data <visionsim.dataset.models.Data>`."""
+
     path = TextField()
     bitpack_dim = IntegerField(null=True)
 
 
 class Frame(_BaseModel):
     """A database model that mirrors :class:`models.Frame <visionsim.dataset.models.Frame>`."""
+
     data = ForeignKeyField(Data, backref="frames", on_delete="CASCADE", index=True)
     camera = ForeignKeyField(Camera, backref="frames", on_delete="CASCADE", index=True)
     transform_matrix = JSONField()
@@ -83,6 +86,7 @@ MODELS: tuple[type[_BaseModel], ...] = (Camera, Data, Frame)
 
 
 class Metadata:
+    """The ``.db`` equivalent of :class:`models.Metadata <visionsim.dataset.models.Metadata>`"""
     def __init__(self, path: str | os.PathLike):
         """Initialize a metadata instance.
 
@@ -102,18 +106,18 @@ class Metadata:
 
         Warning:
             This will overwrite any pre-existing dataset found at ``path``.
-        
+
         Warning:
-            This method can be slow, as it inserts rows into the database on at a time which is suboptimal. 
+            This method can be slow, as it inserts rows into the database on at a time which is suboptimal.
             However, it ensures correctness as camera and data rows are checked for uniqueness.
 
         Args:
             path (str | os.PathLike): Metadata dataset path
-            transforms (Iterator[dict[str, Any]]): Dictionary containing frame and camera data. Keys are filtered 
-                before inserting rows, so only keys that correspond to valid columns will be saved.  
+            transforms (Iterator[dict[str, Any]]): Dictionary containing frame and camera data. Keys are filtered
+                before inserting rows, so only keys that correspond to valid columns will be saved.
 
         Returns:
-            Self: new metadata database object, with all data persisting on disk. 
+            Self: new metadata database object, with all data persisting on disk.
         """
         if Path(path).exists():
             Path(path).unlink()

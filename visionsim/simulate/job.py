@@ -25,8 +25,8 @@ def render_job(
 
     Args:
         client (BlenderClient | BlenderClients): The blender client(s) which will be used for rendering.
-            These should already be connected to a `BlenderServer`, and will get automagically passed
-            in when using this function with `BlenderClients.pool` or similar.
+            These should already be connected to a ``BlenderServer``, and will get automagically passed
+            in when using this function with ``BlenderClients.pool`` or similar.
         blend_file (str | os.PathLike): Path to blender file to use.
         root (str | os.PathLike): Location at which to save all outputs.
         config (RenderConfig): Render configuration.
@@ -40,8 +40,8 @@ def render_job(
             this path. Helpful for troubleshooting. Defaults to not saving.
         dry_run (bool, optional): If enabled, do not render any frames or ground truth annotations.
         update_fn (UpdateFn | None, optional): callback function to track render progress.
-            Will first be called with `total` kwarg, indicating number of steps to be taken,
-            then will be called with `advance=1` at every step. Closely mirrors the `rich.Progress
+            Will first be called with ``total`` kwarg, indicating number of steps to be taken,
+            then will be called with ``advance=1`` at every step. Closely mirrors the `rich.Progress
             API <https://rich.readthedocs.io/en/stable/reference/progress.html#rich.progress.Progress.update>`_.
     """
     client.initialize(blend_file, root)

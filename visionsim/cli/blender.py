@@ -17,7 +17,7 @@ def render_animation(
     frame_end: int | None = None,
     output_file: Path | None = None,
     dry_run: bool = False,
-):
+) -> None:
     """Create datasets by rendering out a sequence from a single blend-file.
 
     Args:

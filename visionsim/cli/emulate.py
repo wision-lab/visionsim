@@ -16,14 +16,14 @@ def spad(
     seed: int = 2147483647,
     max_size: int = 1000,
     force: bool = False,
-):
+) -> None:
     """Perform bernoulli sampling on linearized RGB frames to yield binary frames
 
     Args:
         input_dir: directory in which to look for frames
         output_dir: directory in which to save binary frames
         pattern: used to find source image files to convert to binary frames,
-            not needed when `input_dir` points to a valid dataset.
+            not needed when ``input_dir`` points to a valid dataset.
         factor: multiplicative factor controlling dynamic range of output
         seed: random seed to use while sampling, ensures reproducibility
         max_size: maximum number of frames per output array before rolling over to new file
@@ -112,7 +112,7 @@ def events(
     shot_noise_rate_hz: float = 10.0,
     seed: int = 2147483647,
     force: bool = False,
-):
+) -> None:
     """Emulate an event camera using v2e and high speed input frames
 
     Args:
@@ -120,7 +120,7 @@ def events(
         output_dir: directory in which to save events
         fps: frame rate of input sequence
         pattern: used to find source image files to convert to events,
-            not needed when `input_dir` points to a valid dataset.
+            not needed when ``input_dir`` points to a valid dataset.
         pos_thres: nominal threshold of triggering positive event in log intensity
         neg_thres: nominal threshold of triggering negative event in log intensity
         sigma_thres: std deviation of threshold in log intensity
@@ -204,7 +204,7 @@ def rgb(
     duplicate: float = 1.0,
     pattern: str | None = None,
     force: bool = False,
-):
+) -> None:
     """Simulate real camera, adding read/poisson noise and tonemapping
 
     Args:
@@ -215,9 +215,9 @@ def rgb(
         readout_std: standard deviation of gaussian read noise
         fwc: full well capacity of sensor in arbitrary units (relative to factor & chunk_size)
         duplicate: when chunk size is too small, this model is ill-suited and creates unrealistic noise.
-            This parameter artificially increases the chunk size by using each input image `duplicate` number of times
+            This parameter artificially increases the chunk size by using each input image ``duplicate`` number of times
         pattern: used to find source image files to convert to rgb frames,
-            not needed when `input_dir` points to a valid dataset.
+            not needed when ``input_dir`` points to a valid dataset.
         force: if true, overwrite output file(s) if present
     """
     import imageio.v3 as iio
@@ -300,7 +300,7 @@ def imu(
     std_acc: float = 8e-3,
     std_gyro: float = 1.2e-3,
     force: bool = False,
-):
+) -> None:
     """Simulate data from a co-located IMU using the poses in a ``transforms.json`` or ``transforms.db`` file.
 
     Args:

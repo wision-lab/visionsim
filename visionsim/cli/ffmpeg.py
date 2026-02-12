@@ -16,7 +16,7 @@ def animate(
     force: bool = False,
     bg_color: str = "black",
     strip_alpha: bool = False,
-):
+) -> None:
     """Combine generated frames into an MP4 using ffmpeg wizardry
 
     Args:
@@ -84,7 +84,7 @@ def combine(
     color: str = "white",
     multiple: int = 2,
     force: bool = False,
-):
+) -> None:
     """Combine multiple videos into one by stacking, padding and resizing them using ffmpeg.
 
     Internally this task will first optionally pad all videos to length using ffmpeg's ``tpad`` filter,
@@ -250,7 +250,7 @@ def grid(
     pattern: str = "*.mp4",
     outfile: Path = Path("combined.mp4"),
     force: bool = False,
-):
+) -> None:
     """Make a mosaic from videos in a folder, organizing them in a grid
 
     Args:
@@ -290,11 +290,14 @@ def grid(
     combine(str(matrix), outfile, force=force)
 
 
-def count_frames(input_file: Path, /):
+def count_frames(input_file: Path, /) -> int:
     """Count the number of frames a video file contains using ffprobe
 
     Args:
         input_file: video file input
+
+    Returns:
+        int: Number of frames in video.
     """
     from visionsim.cli import _log, _run
 
@@ -311,12 +314,14 @@ def count_frames(input_file: Path, /):
     return int(result.stdout.strip())
 
 
-def duration(input_file: Path, /):
+def duration(input_file: Path, /) -> float:
     """Return duration (in seconds) of first video stream in file using ffprobe
-
 
     Args:
         input_file: video file input
+
+    Returns:
+        float: Video duration in seconds.
     """
     from visionsim.cli import _log, _run
 
@@ -333,11 +338,14 @@ def duration(input_file: Path, /):
     return float(result.stdout.strip())
 
 
-def dimensions(input_file: Path):
+def dimensions(input_file: Path) -> tuple[int, int]:
     """Return size (WxH in pixels) of first video stream in file using ffprobe
 
     Args:
         input_file: video file input
+
+    Returns:
+        tuple[int, int]: Video size as a (width, height) tuple.
     """
     from visionsim.cli import _log, _run
 
@@ -351,7 +359,7 @@ def dimensions(input_file: Path):
     return tuple(int(dim) for dim in result.stdout.strip().split("x"))
 
 
-def extract(input_file: Path, output_dir: Path, pattern: str = "frames_%06d.png"):
+def extract(input_file: Path, output_dir: Path, pattern: str = "frames_%06d.png") -> None:
     """Extract frames from video file
 
     Args:

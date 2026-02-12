@@ -23,11 +23,19 @@ from visionsim.types import Matrix4x4
 class PathTransforms:
     """Given a sequence of paths to load from, yield the minimal transforms dictionary for each path.
 
-    Specifically, for image paths we just yield ``{"file_path": paths[idx]}`` for every index, but if some of the paths 
-    are numpy arrays, and ``iter_npys`` is true, we unpack the array's first dimension, and return the corresponding 
-    ``offset`` as well. For instance, if ``paths`` points to a png, a npy of shape (4, H, W, C), and another png, an 
+    Specifically, for image paths we just yield ``{"file_path": paths[idx]}`` for every index, but if some of the paths
+    are numpy arrays, and ``iter_npys`` is true, we unpack the array's first dimension, and return the corresponding
+    ``offset`` as well. For instance, if ``paths`` points to a png, a npy of shape (4, H, W, C), and another png, an
     index of 3 will return the path to the numpy file and an offset of 3."""
+
     def __init__(self, paths: Sequence[Path], iter_npys: bool = True, **kwargs):
+        """Initialize a sequence of "dummy" transform dictionaries from a set of paths.
+
+        Args:
+            paths (Sequence[Path]): Paths to yield from
+            iter_npys (bool, optional): If true, yield from numpy arrays will before
+                moving on to next path. Defaults to True.
+        """
         if iter_npys:
             lengths = [len(np.load(str(path), mmap_mode="r")) if path.suffix.lower() == ".npy" else 1 for path in paths]
         else:
@@ -40,9 +48,19 @@ class PathTransforms:
         self.kwargs = kwargs
 
     def __len__(self) -> int:
+        """Length of dataset"""
         return self.cumulative_lengths[-1]
 
     def __getitem__(self, idx: int) -> dict[str, int | Path]:
+        """Return dummy transform dict at provided index.
+
+        Args:
+            idx (int): Index of item to return
+
+        Returns:
+            dict[str, int | Path]: transforms dictionary containing "file_path" of data
+                and "offset" amount if loading from a numpy array.
+        """
         if self.iter_npys:
             path_idx = int(np.searchsorted(self.cumulative_lengths, idx, side="right"))
             transform = {"file_path": self.paths[path_idx]}
@@ -56,6 +74,7 @@ class PathTransforms:
 
 class Dataset(torch.utils.data.Dataset):
     """Main dataset class for loading a ``.db``/``.json`` dataset or a set of image/exr/npy files."""
+
     def __init__(
         self,
         transforms: Sequence[dict[str, Any]],
@@ -65,13 +84,13 @@ class Dataset(torch.utils.data.Dataset):
         """Initialize a dataset object.
 
         Note:
-            No data validation is performed here, you likely want to use one of the 
+            No data validation is performed here, you likely want to use one of the
             classmethods such as :meth:`from_path` or :meth:`from_pattern` instead.
 
         Args:
-            transforms (Sequence[dict[str, Any]]): A sequence of transforms dicts, which at a 
+            transforms (Sequence[dict[str, Any]]): A sequence of transforms dicts, which at a
                 minimum should have a ``file_path`` key defined.
-            root (str | os.PathLike | None, optional): Dataset root directory, if supplied all ``file_path``\\s 
+            root (str | os.PathLike | None, optional): Dataset root directory, if supplied all ``file_path``\\s
                 are assumed to be relative to it. Defaults to None.
             cameras (set[Camera] | None, optional): Set of camera objects. Defaults to None.
         """
@@ -81,10 +100,10 @@ class Dataset(torch.utils.data.Dataset):
 
     @classmethod
     def from_path(cls, root: str | os.PathLike) -> Self:
-        """Load a dataset from a path. 
+        """Load a dataset from a path.
 
         Args:
-            root (str | os.PathLike): Path to dataset file (either a ``.db`` or ``.json`` file) 
+            root (str | os.PathLike): Path to dataset file (either a ``.db`` or ``.json`` file)
                 or a directory containing a valid dataset.
 
         Raises:
@@ -126,9 +145,9 @@ class Dataset(torch.utils.data.Dataset):
 
         Args:
             paths (Sequence[Path]): Paths to load data from.
-            iter_npys (bool, optional): If true, step into the first dimension of any numpy files 
+            iter_npys (bool, optional): If true, step into the first dimension of any numpy files
                 when iterating over data. Defaults to True.
-            root (str | os.PathLike | None, optional): Dataset root directory, if supplied all ``file_path``\\s 
+            root (str | os.PathLike | None, optional): Dataset root directory, if supplied all ``file_path``\\s
                 are assumed to be relative to it. Defaults to None.
             cameras (set[Camera] | None, optional): Set of camera objects. Defaults to None.
 
@@ -156,7 +175,7 @@ class Dataset(torch.utils.data.Dataset):
         key: Callable[[Any], Any] = natsort.natsort_key,
         **kwargs,
     ) -> Self:
-        """Same as :meth:`from_paths` but will search for all paths that match the provided pattern 
+        """Same as :meth:`from_paths` but will search for all paths that match the provided pattern
         (as found by `pathlib's glob <https://docs.python.org/3/library/pathlib.html#pathlib.Path.glob>`_)"""
         paths = sorted(Path(root).glob(pattern), key=key)
         return cls.from_paths(paths=paths, iter_npys=iter_npys, root=root, cameras=cameras, **kwargs)
@@ -300,6 +319,7 @@ class Dataset(torch.utils.data.Dataset):
         return data[tuple(idx)] if idx else data
 
     def __len__(self) -> int:
+        """Length of dataset"""
         return len(self.paths)
 
     def __getitem__(
@@ -307,6 +327,20 @@ class Dataset(torch.utils.data.Dataset):
     ) -> tuple[
         int | float | npt.NDArray | tuple[int | float | npt.NDArray, ...], dict[str, Any] | tuple[dict[str, Any], ...]
     ]:
+        """Fetch an item from the dataset and return it's data and associated metadata.
+
+        Args:
+            idx (npt.ArrayLike): Index of item, usually an integer, but more complex indices are supported.
+
+        Raises:
+            NotImplementedError: raised when trying to slice using Ellipses, np.NewAxis, or integer/boolean arrays.
+
+        Returns:
+            tuple[int | float | npt.NDArray | tuple[int | float | npt.NDArray, ...], dict[str, Any] | tuple[dict[str, Any], ...]]:
+                returns a tuple containing the data (as an array or number) and a dictionary containing metadata such as
+                the "file_path" data was loaded from, and camera info if applicable. If the requested index spans multiple
+                files, a tuple of data and tuple of dicts will be returned.
+        """
         # Split index into the idx of the frame and the frame sub-slice
         frame_idx, *sub_slice = idx = np.atleast_1d(idx)
         frame_idx = np.arange(len(self))[frame_idx]
