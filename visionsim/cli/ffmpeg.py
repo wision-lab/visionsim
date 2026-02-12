@@ -356,7 +356,7 @@ def dimensions(input_file: Path) -> tuple[int, int]:
     cmd = f"ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 {input_file}"
     result = _run(cmd)
     _log.info(f"Video has size {result.stdout.strip()}.")
-    return tuple(int(dim) for dim in result.stdout.strip().split("x"))
+    return cast(tuple[int, int], tuple(int(dim) for dim in result.stdout.strip().split("x")))
 
 
 def extract(input_file: Path, output_dir: Path, pattern: str = "frames_%06d.png") -> None:
