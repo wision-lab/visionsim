@@ -20,7 +20,7 @@ def render_job(
     output_blend_file: str | os.PathLike | None = None,
     dry_run: bool = False,
     update_fn: UpdateFn | None = None,
-):
+) -> None:
     """Render a sequence from a given blender-file.
 
     Args:

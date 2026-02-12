@@ -28,13 +28,14 @@ class PathTransforms:
     ``offset`` as well. For instance, if ``paths`` points to a png, a npy of shape (4, H, W, C), and another png, an
     index of 3 will return the path to the numpy file and an offset of 3."""
 
-    def __init__(self, paths: Sequence[Path], iter_npys: bool = True, **kwargs):
+    def __init__(self, paths: Sequence[Path], iter_npys: bool = True, **kwargs) -> None:
         """Initialize a sequence of "dummy" transform dictionaries from a set of paths.
 
         Args:
             paths (Sequence[Path]): Paths to yield from
             iter_npys (bool, optional): If true, yield from numpy arrays will before
                 moving on to next path. Defaults to True.
+            **kwargs (dict[str, Any]): Additional key/value pairs to include in each transform dict.
         """
         if iter_npys:
             lengths = [len(np.load(str(path), mmap_mode="r")) if path.suffix.lower() == ".npy" else 1 for path in paths]
@@ -150,6 +151,7 @@ class Dataset(torch.utils.data.Dataset):
             root (str | os.PathLike | None, optional): Dataset root directory, if supplied all ``file_path``\\s
                 are assumed to be relative to it. Defaults to None.
             cameras (set[Camera] | None, optional): Set of camera objects. Defaults to None.
+            **kwargs (dict[str, Any]): Optional keyword arguments passed to :class:`PathTransforms`
 
         Raises:
             ValueError: raised if provided paths do not exist or if they are not subpaths of root (when provided).

@@ -85,12 +85,12 @@ def interpolate_poses(poses: list[Matrix4x4], normalize: bool = False, n: int = 
     """Interpolate between pose matrices
 
     Args:
-        transforms (list[Matrix4x4]): List of pose matrices to interpolate between
+        poses (list[Matrix4x4]): List of pose matrices to interpolate between
         normalize (bool): Whether the interpolation should be normalized or not
         n (int): Number of poses to interpolate between existing poses
         k (int): Order of spline interpolation, see :class:`pose_interp <visionsim.interpolate.pose.pose_interp>`
 
-    Return:
+    Returns:
         list[Matrix4x4]: List of interpolated poses
     """
     indices = np.arange(len(poses))

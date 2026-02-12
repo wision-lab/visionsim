@@ -87,7 +87,8 @@ MODELS: tuple[type[_BaseModel], ...] = (Camera, Data, Frame)
 
 class Metadata:
     """The ``.db`` equivalent of :class:`models.Metadata <visionsim.dataset.models.Metadata>`"""
-    def __init__(self, path: str | os.PathLike):
+
+    def __init__(self, path: str | os.PathLike) -> None:
         """Initialize a metadata instance.
 
         Args:

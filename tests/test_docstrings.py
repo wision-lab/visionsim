@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 import inspect
 import re
 import warnings
@@ -9,8 +8,8 @@ from docstring_parser import parse_from_object
 
 from visionsim.cli import _cli_modules
 from visionsim.dataset import dataset, models
-from visionsim.simulate import blender, install, job, schema
 from visionsim.interpolate import pose
+from visionsim.simulate import blender, install, job, schema
 
 
 def get_public_members(obj, module=None):
@@ -40,9 +39,9 @@ def get_public_members(obj, module=None):
 )
 def test_docstrings(obj):
     if inspect.isclass(obj) and issubclass(obj, peewee.DoesNotExist):
-        # Peewee dynamically creates error classes per-table 
-        return 
-    
+        # Peewee dynamically creates error classes per-table
+        return
+
     docs = parse_from_object(obj)
 
     assert obj.__doc__, "Missing docstring."
@@ -57,7 +56,7 @@ def test_docstrings(obj):
         # We expect the __init__ to have the arg's docstring, so we early out.
         return
 
-    if sum(1 for l in obj.__doc__ if not l.strip()):
+    if not sum(1 for line in obj.__doc__.splitlines() if not line.strip()):
         # Skip further validation for short descriptions
         return
 
@@ -84,10 +83,11 @@ def test_docstrings(obj):
             assert doc_returns, "Missing docstring return info."
 
             # # Does this issue still occur??
-            # if docs.returns.type_name is None:
+            # if doc_returns.type_name is None:
             #     # Return types using | cause issues, so here we just match the type string verbatim instead.
             #     # See: https://github.com/rr-/docstring_parser/issues/81
-            #     assert return_annotation not in obj.__doc__[obj.__doc__.index("Returns:"):]
+            #     print(obj.__doc__[obj.__doc__.index("Returns:"):])
+            #     assert return_annotation in obj.__doc__[obj.__doc__.index("Returns:"):]
             # else:
             assert return_annotation == doc_returns.type_name, "Missing or incorrect docstring return type."
 
