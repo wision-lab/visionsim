@@ -25,7 +25,7 @@ def _estimate_distribution(in_files, transform=None):
 def colorize_depths(
     input_dir: Path,
     output_dir: Path,
-    pattern: str = "depth_*.exr",
+    pattern: str = "**/*.exr",
     cmap: str = "turbo",
     ext: str = ".png",
     vmin: float | None = None,
@@ -79,7 +79,7 @@ def colorize_depths(
 
     for in_file in track(in_files):
         # Open with imageio, convert to color using matplotlib's cmaps and save as png.
-        depth = cast(npt.NDArray, Dataset.load_data(in_file))
+        depth = cast(npt.NDArray, Dataset.load_data(in_file)).squeeze()
         depth[depth >= DEPTH_CUTOFF] = np.nan
         img = (colormap(norm(depth)) * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
@@ -126,7 +126,7 @@ def colorize_flows(
     convert = np.vectorize(colorsys.hsv_to_rgb)
 
     def magnitude(flows):
-        fx, fy, bx, by = flows
+        fx, fy, bx, by = flows.transpose(2, 0, 1)
         x, y = (fx, fy) if direction.lower() == "forward" else (bx, by)
         mag = np.sqrt(x**2 + y**2)
         return mag.flatten()
@@ -137,7 +137,7 @@ def colorize_flows(
         _log.info(f"Using a maximum magnitude of {vmax:0.2f}\n")
 
     for in_file in track(in_files):
-        fx, fy, bx, by = cast(npt.NDArray, Dataset.load_data(in_file))
+        fx, fy, bx, by = cast(npt.NDArray, Dataset.load_data(in_file)).transpose(2, 0, 1)
         x, y = (fx, fy) if direction.lower() == "forward" else (bx, by)
         h = np.arctan2(y, x) / (2 * np.pi) + 0.5
         v = np.minimum(np.sqrt(x**2 + y**2) / vmax, 1.0)

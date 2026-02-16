@@ -6,7 +6,7 @@ from typing import cast
 
 def animate(
     input_dir: Path,
-    pattern: str = "frame_*.png",
+    pattern: str = "**/*.png",
     outfile: Path = Path("out.mp4"),
     fps: int = 25,
     crf: int = 22,

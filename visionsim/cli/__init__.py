@@ -19,7 +19,7 @@ from rich.traceback import install
 from . import blender, dataset, emulate, ffmpeg, interpolate, transforms
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=os.environ.get("VSIM_LOG_LEVEL", "INFO").upper(),
     format="%(message)s",
     datefmt="[%X]",
     handlers=[RichHandler(rich_tracebacks=True)],
