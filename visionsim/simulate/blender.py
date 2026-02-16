@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 from contextlib import ExitStack, contextmanager, nullcontext
-from multiprocessing import Process
+from multiprocessing import Process, set_start_method
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -83,6 +83,10 @@ from visionsim.simulate.schema import DEFAULT_PRAGMAS, MODELS, Camera, Data, Fra
 logging.basicConfig(level=logging.WARNING, format="%(message)s", datefmt="[%X]", handlers=handlers)
 server_log: logging.Logger = logging.getLogger(__name__)
 server_log.setLevel(logging.INFO)
+
+# Change multiprocessing start method to "fork", starting with python 3.14
+# the default changed to "spawn" (from "fork") and this seems to cause issues
+set_start_method("fork")
 
 EXPOSED_PREFIX: str = "exposed_"
 REGISTRY: tuple[Process, rpyc.utils.registry.UDPRegistryClient] | None = None
