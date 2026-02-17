@@ -144,12 +144,12 @@ class Metadata(Camera):
         return self
 
     @classmethod
-    def load(cls, path: str | os.PathLike, as_data_type: str = "file_path") -> Self:
+    def load(cls, path: str | os.PathLike, rename_to: str = "file_path") -> Self:
         """Load metadata from a ``.json`` or ``.db`` transforms file.
 
         Args:
             path (str | os.PathLike): Path to load metadata from.
-            as_data_type (str, optional): Load data paths from a ``.db`` file as a different key.
+            rename_to (str, optional): Load data paths from a ``.db`` file as a different key.
                 Defaults to "file_path".
 
         Raises:
@@ -167,7 +167,7 @@ class Metadata(Camera):
                 return instance
         elif Path(path).suffix.lower() == ".db":
             ds = schema.Metadata(path)
-            dense_transforms = ds.to_dense_transforms(as_data_type=as_data_type)
+            dense_transforms = ds.to_dense_transforms(rename_to=rename_to)
             instance = cls.from_dense_transforms(dense_transforms)
             if len(instance.cameras) != len(ds.cameras):
                 # Note: This really shouldn't occur, but better catch it early if it does!
@@ -177,23 +177,27 @@ class Metadata(Camera):
                 )
             instance._path = Path(path).resolve()
             return instance
-        raise ValueError(f"Can only load metadata from `.json` or `.db`, tried to load a `{Path(path).suffix}` file.")
+        raise ValueError(
+            f"Can only load metadata from `.json` or `.db`, tried to load a `{Path(path).suffix}` file (from {path})."
+        )
 
     @classmethod
-    def from_path(cls, path: str | os.PathLike, as_data_type: str = "file_path") -> Self:
+    def from_path(cls, path: str | os.PathLike, rename_to: str = "file_path") -> Self:
         """Same as :meth:`load` with the added bonus of path disambiguation,
         where ``path`` can also be the directory containing the metadata file."""
 
         try:
-            instance = cls.load(path=path, as_data_type=as_data_type)
+            instance = cls.load(path=path, rename_to=rename_to)
         except ValueError:
             candidates = list(Path(path).glob("*.db")) + list(Path(path).glob("*.json"))
 
+            if not candidates:
+                raise RuntimeError(f"No dataset found at '{path}'.")
             if len(candidates) != 1:
                 raise RuntimeError(
-                    f"Ambiguous dataset root. Found multiple metadata sources ({[c.relative_to(path) for c in candidates]})."
+                    f"Ambiguous dataset root. Found multiple metadata sources in {path} {tuple([str(c.relative_to(path)) for c in candidates])}."
                 )
-            instance = cls.load(path=candidates.pop(), as_data_type=as_data_type)
+            instance = cls.load(path=candidates.pop(), rename_to=rename_to)
         return instance
 
     def save(self, path: str | os.PathLike, *, indent: int = 2) -> None:
@@ -260,7 +264,9 @@ class Metadata(Camera):
             **Camera.model_validate(camera).model_dump(exclude_unset=True),
         )
 
-    def iter_dense_transforms(self, data_type: str | None = None, rename_to: str = "path") -> Iterator[dict[str, Any]]:
+    def iter_dense_transforms(
+        self, data_type: str | None = None, rename_to: str = "path", relative_to: Path | None = None
+    ) -> Iterator[dict[str, Any]]:
         """Yield dictionaries containing all frame and camera information, one per frame.
 
         Args:
@@ -268,6 +274,8 @@ class Metadata(Camera):
                 might be multiple ("file_path", "mask_path", etc). Defaults to None (all available).
             rename_to (str, optional): Rename key of iterated data, for instance from "file_path" to "path".
                 Only used if ``data_type`` is set. Defaults to "path".
+            relative_to (Path | None, optional): Make data paths relative to provided path.
+                Defaults to not modifying paths (None).
 
         Yields:
             Iterator[dict[str, Any]]: Dictionaries containing all relevant frame data
@@ -284,7 +292,10 @@ class Metadata(Camera):
             transform = self.model_dump(exclude_unset=True, exclude=exclude | {"frames"}) | frame.model_dump(
                 exclude_unset=True, exclude=exclude
             )
-
+            if relative_to:
+                for dt in self.data_types:
+                    # Note: Path(".").parent == Path('.')
+                    transform[dt] = ((self._path or Path(".")).parent / transform[dt]).relative_to(relative_to)
             if data_type:
                 transform[rename_to] = transform.pop(data_type)
             yield transform
@@ -292,6 +303,10 @@ class Metadata(Camera):
     def to_dense_transforms(self, *args, **kwargs) -> list[dict[str, Any]]:
         """Same as :meth:`iter_dense_transforms` but returns a list instead of a generator."""
         return list(self.iter_dense_transforms(*args, **kwargs))
+
+    def __len__(self) -> int:
+        """Return the number of frames in dataset"""
+        return len(self.frames)
 
     @property
     def data_types(self) -> set[str]:

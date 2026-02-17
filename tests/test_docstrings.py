@@ -77,18 +77,17 @@ def test_docstrings(obj):
             return_annotation = sig.return_annotation.removeprefix("Iterator[").removesuffix("]")
         else:
             return_annotation = sig.return_annotation
-        doc_returns = docs.returns or docs.yields
+        doc_returns = docs.returns or getattr(docs, "yields", None)
 
         if return_annotation != "None" and return_annotation != "Self":
             assert doc_returns, "Missing docstring return info."
 
-            # # Does this issue still occur??
-            # if doc_returns.type_name is None:
-            #     # Return types using | cause issues, so here we just match the type string verbatim instead.
-            #     # See: https://github.com/rr-/docstring_parser/issues/81
-            #     print(obj.__doc__[obj.__doc__.index("Returns:"):])
-            #     assert return_annotation in obj.__doc__[obj.__doc__.index("Returns:"):]
-            # else:
-            assert return_annotation == doc_returns.type_name, "Missing or incorrect docstring return type."
+            if doc_returns.type_name is None:
+                # Return types using "|"" (as opposed to explicit Union[]) cause issues,
+                # so here we just match the type string verbatim instead.
+                # See: https://github.com/rr-/docstring_parser/issues/81
+                assert return_annotation in obj.__doc__[obj.__doc__.index("Returns:") :]
+            else:
+                assert return_annotation == doc_returns.type_name, "Missing or incorrect docstring return type."
 
     assert documented_params == all_params, "Not all arguments are in docstring."

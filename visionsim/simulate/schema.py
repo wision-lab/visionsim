@@ -143,13 +143,11 @@ class Metadata:
                         )
         return cls(path)
 
-    def iter_dense_transforms(
-        self, as_data_type: str = "file_path", exclude_none: bool = True
-    ) -> Iterator[dict[str, Any]]:
+    def iter_dense_transforms(self, rename_to: str = "file_path", exclude_none: bool = True) -> Iterator[dict[str, Any]]:
         """Yield dictionaries containing all frame and camera information, one per frame.
 
         Args:
-            as_data_type (str, optional): What to rename "path" key to. Defaults to "file_path".
+            rename_to (str, optional): What to rename "path" key to. Defaults to "file_path".
             exclude_none (bool, optional): If true, exclude columns that have a null value. Defaults to True.
 
         Yields:
@@ -169,7 +167,7 @@ class Metadata:
                         for k in none_keys:
                             transform.pop(k)
 
-                    transform[as_data_type] = transform.pop("path")
+                    transform[rename_to] = transform.pop("path")
                     yield transform
 
     def to_dense_transforms(self, *args, **kwargs) -> list[dict[str, Any]]:
