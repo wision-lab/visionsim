@@ -64,6 +64,7 @@ class Camera(_BaseModel):
     cx = FloatField()
     cy = FloatField()
     fps = FloatField(null=True)
+    keyframe_scale = FloatField(null=True)
 
 
 class Data(_BaseModel):

@@ -451,6 +451,7 @@ class BlenderService(rpyc.Service):
         self._conn: rpyc.Connection | None = None
         self.log: logging.Logger = server_log
         self._initialized: bool = False
+        self._keyframe_scale: float = 1.0
         self._warned_no_outputs: bool = False
         self._outputs: dict[str, Any] = {}
 
@@ -491,6 +492,7 @@ class BlenderService(rpyc.Service):
         bpy.ops.wm.read_factory_settings()
         self._clear_cached_properties()
         self._initialized = False
+        self._keyframe_scale = 1.0
         self._warned_no_outputs = False
         self._outputs = {}
 
@@ -1356,7 +1358,10 @@ class BlenderService(rpyc.Service):
         #   See: https://blender.stackexchange.com/questions/111644
         if scale == 1.0 and shift == 0.0:
             return
-
+        
+        if self._keyframe_scale != 1.0:
+            raise NotImplementedError("Rescaling keyframes multiple times is currently unsupported.")
+        
         # No idea why, but if we don't break this out into separate
         # variables the value we store is incorrect, often off by one.
         # We add, then remove one because frame_start and frame_end are inclusive,
@@ -1373,6 +1378,7 @@ class BlenderService(rpyc.Service):
             )
         self.scene.frame_start = start
         self.scene.frame_end = end
+        self._keyframe_scale = scale
 
         for fcurve in self.exposed_iter_fcurves():
             for kfp in fcurve.keyframe_points or []:
@@ -1435,6 +1441,7 @@ class BlenderService(rpyc.Service):
         info["cx"] = 1 / 2 * self.scene.render.resolution_x * scale + info["shift_x"]
         info["cy"] = 1 / 2 * self.scene.render.resolution_y * scale + info["shift_y"]
         info["fps"] = self.exposed_get_original_fps()
+        info["keyframe_scale"] = self._keyframe_scale
         return info
 
     @require_initialized_service
