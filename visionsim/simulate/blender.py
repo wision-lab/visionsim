@@ -1358,10 +1358,10 @@ class BlenderService(rpyc.Service):
         #   See: https://blender.stackexchange.com/questions/111644
         if scale == 1.0 and shift == 0.0:
             return
-        
+
         if self._keyframe_scale != 1.0:
             raise NotImplementedError("Rescaling keyframes multiple times is currently unsupported.")
-        
+
         # No idea why, but if we don't break this out into separate
         # variables the value we store is incorrect, often off by one.
         # We add, then remove one because frame_start and frame_end are inclusive,

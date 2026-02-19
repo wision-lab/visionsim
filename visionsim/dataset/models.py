@@ -327,3 +327,10 @@ class Metadata(Camera):
     def path(self) -> Path | None:
         """Path to loaded metadata file, may be undefined."""
         return self._path
+
+    @functools.cached_property
+    def arclength(self) -> float:
+        """Calculate the length of the trajectory"""
+        points = np.array(self.poses)[:, :3, -1]
+        dp = np.diff(points, axis=0)
+        return np.sqrt((dp**2).sum(axis=1)).sum()
