@@ -12,7 +12,7 @@ from playhouse.sqlite_ext import SqliteExtDatabase
 from visionsim.dataset import Dataset, Metadata
 from visionsim.simulate import blender, config
 from visionsim.simulate.blender import INDEX_PADDING, ITEMS_PER_SUBFOLDER, BlenderClients
-from visionsim.simulate.schema import MODELS, Data
+from visionsim.simulate.schema import _MODELS, _Data
 
 
 def test_render_layout(cube_dataset):
@@ -99,8 +99,8 @@ def test_data_paths_exist(cube_dataset):
     for db_path in cube_dataset.glob("**/*.db"):
         db = SqliteExtDatabase(db_path)
         with db.connection_context():
-            with db.bind_ctx(MODELS):
-                for data in Data.select():
+            with db.bind_ctx(_MODELS):
+                for data in _Data.select():
                     assert (db_path.parent / data.path).exists()
 
 
