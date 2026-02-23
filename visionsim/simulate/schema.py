@@ -100,7 +100,25 @@ class _Metadata:
     @classmethod
     def load(cls, path: str | os.PathLike) -> Self:
         """Same as :meth:`__init__`, added to better mirror :class:`models.Metadata <visionsim.dataset.models.Metadata>`"""
-        return cls(path)
+        instance = cls(path)
+        instance._migrate()
+        return instance
+
+    def _migrate(self) -> None:
+        """Apply any necessary database migrations."""
+        # TODO: Implement database migrations if needed. Below is an example of how to do it for a new "date" field in _Camera model.
+
+        # from playhouse.migrate import SqliteMigrator, migrate
+
+        # db = SqliteExtDatabase(self.path, pragmas=_DEFAULT_PRAGMAS)
+        # with db.connection_context():
+        #     columns = db.get_columns(_Camera._meta.table_name)
+        #     column_names = [c.name for c in columns]
+
+        #     if "date" not in column_names:
+        #         migrator = SqliteMigrator(db)
+        #         with db.atomic():
+        #             migrate(migrator.add_column(_Camera._meta.table_name, "date", _Camera.date))
 
     @classmethod
     def from_dense_transforms(cls, path: str | os.PathLike, transforms: Iterator[dict[str, Any]]) -> Self:

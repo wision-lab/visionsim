@@ -57,6 +57,8 @@ class Camera(BaseModel):
     """second tangential distortion parameter, used by [OPENCV]"""
     fps: float | None = None
     """framerate of camera"""
+    date: str | None = None
+    """creation date of the dataset"""
 
 
 class Data(BaseModel):
@@ -166,7 +168,7 @@ class Metadata(Camera):
                 instance._path = Path(path).resolve()
                 return instance
         elif Path(path).suffix.lower() == ".db":
-            ds = schema._Metadata(path)
+            ds = schema._Metadata.load(path)
             dense_transforms = ds.to_dense_transforms(rename_to=rename_to)
             instance = cls.from_dense_transforms(dense_transforms)
             if len(instance.cameras) != len(ds.cameras):
