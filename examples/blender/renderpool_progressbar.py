@@ -7,6 +7,7 @@ from visionsim.utils.progress import PoolProgress
 def render(client, blend_file, tick):
     root = Path("renders") / Path(blend_file).stem
     client.initialize(blend_file, root)
+    client.include_frames()
     client.set_resolution((512, 512))
     client.move_keyframes(scale=0.5)
     client.render_animation(update_fn=tick)
@@ -14,7 +15,7 @@ def render(client, blend_file, tick):
 
 if __name__ == "__main__":
     with (
-        BlenderClients.pool(2, log_dir="logs", timeout=30) as pool,
+        BlenderClients.pool(2, log="logs", timeout=30) as pool,
         PoolProgress() as progress,
     ):
         for blend_file in ["assets/monkey.blend", "assets/cube.blend", "assets/metaballs.blend"]:

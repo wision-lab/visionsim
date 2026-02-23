@@ -14,7 +14,7 @@ build:
       # Since the install step is overridden, pip is no longer updated automatically.
       - pip install --upgrade pip
       # Force torch to use CPU
-      - pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu 
+      - pip install torch --index-url https://download.pytorch.org/whl/cpu 
       - pip install . --group docs
 
 # Build documentation in the "docs/" directory with Sphinx

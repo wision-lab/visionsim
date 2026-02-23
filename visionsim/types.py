@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import re
+from typing import IO, Annotated, Any, Literal, Protocol, Union
 
-from typing_extensions import Annotated, Protocol, TypeAlias
+import numpy as np
+import numpy.typing as npt
+from typing_extensions import TypeAlias
 
 try:
     # Note: Keep import requirements to only stdlib
@@ -17,6 +20,24 @@ _SIZE_SYMBOLS = ("B", "K", "M", "G", "T", "P", "E", "Z", "Y")
 _SIZE_BOUNDS = [(1024**i, sym) for i, sym in enumerate(_SIZE_SYMBOLS)]
 _SIZE_DICT = {sym: val for val, sym in _SIZE_BOUNDS}
 _SIZE_RANGES = list(zip(_SIZE_BOUNDS, _SIZE_BOUNDS[1:]))
+
+FILE_FORMATS = Literal[
+    "BMP",
+    "IRIS",
+    "PNG",
+    "JPEG",
+    "JPEG2000",
+    "TARGA",
+    "CINEON",
+    "DPX",
+    "OPEN_EXR",
+    "HDR",
+    "TIFF",
+    "WEBP",
+]
+FILE: TypeAlias = Union[None, int, IO[Any]]
+EXR_CODECS = Literal["NONE", "PXR24", "ZIP", "PIZ", "RLE", "ZIPS", "DWAA", "DWAB"]
+COLOR_MODES = Literal["BW", "RGB", "RGBA"]
 
 
 def _bytes_from_str(size: str | list[str]) -> int:
@@ -71,3 +92,6 @@ MemSize: TypeAlias = Annotated[
     if tyro is not None
     else "missing annotation for auto conversion to/from string",
 ]
+
+_Matrix4x4: TypeAlias = list[list[float]]
+Matrix4x4: TypeAlias = Union[_Matrix4x4, npt.NDArray[np.floating]]

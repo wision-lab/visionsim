@@ -107,8 +107,6 @@ Next, we can emulate a single-photon camera using ``emulate.spad``, at the same 
    :language: bash 
    :lines: 7
 
-Here, we pass in ``--mode=img`` to save individual binary frames as PNGs, this makes for easy visualization but requires a lot of disk space as single photon images are not well compressed by standard image formats. See :ref:`the-npy-format` for a better alternative. 
-
 Finally, let's emulate an event camera using ``emulate.events``, which responds to local changes in scene intensity:
 
 .. literalinclude:: ../../examples/quickstart.sh 

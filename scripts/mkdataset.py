@@ -229,7 +229,7 @@ def create_datasets(
     with (
         BlenderClients.pool(
             jobs=render_config.jobs,
-            log_dir=Path(render_config.log_dir),
+            log=Path(render_config.log_dir),
             timeout=render_config.timeout,
             executable=render_config.executable,
             autoexec=render_config.autoexec,

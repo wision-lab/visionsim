@@ -20,11 +20,13 @@ jobs:
       - name: Install VisionSim and dependencies
         run: |
           # Force torch to use CPU
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu 
+          pip install torch --index-url https://download.pytorch.org/whl/cpu 
           pip install . --group dev --group docs
       - name: Run Linter
         run: inv lint
       - name: Test Stubs
         run: inv test-stubs
+      - name: Type check
+        run: inv type-check
       - name: Build Docs
         run : inv build-docs

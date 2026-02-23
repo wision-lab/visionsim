@@ -13,6 +13,7 @@ import glob
 import os
 import platform
 import shutil
+import sys
 import webbrowser
 from pathlib import Path
 
@@ -85,12 +86,18 @@ def lint(c):
 @task
 def test(c):
     """Run tests"""
-    _run(c, "pytest")
+    _run(c, "pytest -s")
 
 
 @task
 def test_stubs(c):
     _run(c, "stubtest visionsim.simulate.blender --concise --ignore-disjoint-bases")
+
+
+@task
+def type_check(c):
+    flags = "--follow-untyped-imports" if sys.version_info < (3, 10, 0) else ""
+    _run(c, f"mypy {SOURCE_DIR} {__file__} {flags}")
 
 
 @task
@@ -189,8 +196,8 @@ def generate_stubs(c):
                 )
             else:
                 self.type_ignored_mods = set()
-            self.type_ignores = set()
-            self.classes = {}
+            self.type_ignores: set[int] = set()
+            self.classes: dict[str, ast.ClassDef] = {}
 
             with open(path) as f:
                 self.root = ast.parse(code := f.read(), path, type_comments=True)

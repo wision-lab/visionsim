@@ -1,27 +1,30 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
+from typing import cast
 
 
 def animate(
-    input_dir: str | os.PathLike,
-    pattern: str = "frame_*.png",
-    outfile: str | os.PathLike = "out.mp4",
+    input_dir: Path,
+    pattern: str | None = None,
+    outfile: Path = Path("out.mp4"),
     fps: int = 25,
     crf: int = 22,
     vcodec: str = "libx264",
     step: int = 1,
-    multiple: int = 2,
+    multiple: int | None = None,
     force: bool = False,
     bg_color: str = "black",
     strip_alpha: bool = False,
-):
-    """Combine generated frames into an MP4 using ffmpeg wizardry
+) -> None:
+    """Combine generated frames into an MP4 using ffmpeg wizardry.
+
+    This is roughly equivalent to running the "image2" demuxer in ffmpeg, with the added benefit of being able to
+    skip frames using a step size, strip alpha channels from PNGs, and automatically handling the case where the input frames are numpy arrays.
 
     Args:
         input_dir: directory in which to look for frames,
-        pattern: filenames of frames should match this
+        pattern: If provided search for files matching this pattern. Otherwise, look for a valid dataset in the input directory.
         outfile: where to save generated mp4
         fps: frames per second in video
         crf: constant rate factor for video encoding (0-51), lower is better quality but more memory
@@ -34,12 +37,32 @@ def animate(
     """
     import tempfile  # Lazy import
 
-    from visionsim.cli import _run, _validate_directories
+    import imageio.v3 as iio
+    import numpy as np
+    from rich.progress import track
 
-    if _run("ffmpeg -version").returncode != 0:
+    from visionsim.cli import _run
+    from visionsim.dataset import Dataset
+
+    if _run("ffmpeg -version", hide=True).returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
 
-    *_, _, in_files = _validate_directories(input_dir, Path(outfile).parent, pattern=pattern)
+    if not force and outfile.exists():
+        raise FileExistsError(f"Output file {outfile} already exists. Use `force` to overwrite.")
+
+    outfile.parent.mkdir(parents=True, exist_ok=True)
+
+    if pattern:
+        dataset = Dataset.from_pattern(input_dir, pattern)
+    else:
+        dataset = Dataset.from_path(input_dir)
+
+    exts = {p.suffix for p in dataset.paths}
+
+    if len(exts) != 1:
+        raise ValueError(f"Input directory must contain files of a single extension. Found: {exts}")
+
+    ext = next(iter(exts))
 
     # See: https://stackoverflow.com/questions/52804749
     strip_alpha_filter = (
@@ -47,7 +70,7 @@ def animate(
             f'-filter_complex "color={bg_color},format=rgb24[c];[c][0]scale2ref[c][i];'
             f'[c][i]overlay=format=auto:shortest=1,setsar=1" '
         )
-        if pattern.endswith(".png") and strip_alpha
+        if ext.lower() == ".png" and strip_alpha
         else ""
     )
 
@@ -58,16 +81,21 @@ def animate(
         # with images or leads to errors.
         # As a quick fix, we create a tmpdir with symlinks to the frames we
         # want to include and point ffmpeg to those.
-
         tmpdirname = Path(tmpdir)
-        ext = str(Path(pattern).suffix)
 
-        # No transformation needed, simply symlink files
-        for i, p in enumerate(in_files[::step]):
-            (tmpdirname / f"{i:09}{ext}").symlink_to(p, target_is_directory=False)
+        # Iterate over dataset with step and extract frame from npy if neccesary
+        if ext.lower() == ".npy":
+            for i, idx in enumerate(track(range(0, len(dataset), step), description="Extracting frames")):
+                data, transform = dataset[idx]
+                if cast(dict, transform).get("bitpack_dim"):
+                    data = np.array(data * 255).astype(np.uint8)
+                iio.imwrite(tmpdirname / f"{i:09}.png", data)
+        else:
+            for i, p in enumerate(dataset.paths[::step]):
+                (tmpdirname / f"{i:09}{ext}").symlink_to(p, target_is_directory=False)
 
         cmd = (
-            f"ffmpeg -framerate {fps} -f image2 -i {tmpdirname / ('%09d' + ext)} {strip_alpha_filter}"
+            f"ffmpeg -framerate {fps} -f image2 -i {tmpdirname / ('%09d' + (ext if ext.lower() != '.npy' else '.png'))} {strip_alpha_filter}"
             f"{'-y' if force else ''} -vcodec {vcodec} -crf {crf} -pix_fmt yuv420p "
         )
         if multiple:
@@ -79,12 +107,12 @@ def animate(
 
 def combine(
     matrix: str,
-    outfile: str = "combined.mp4",
+    outfile: Path = Path("combined.mp4"),
     mode: str = "shortest",
     color: str = "white",
     multiple: int = 2,
     force: bool = False,
-):
+) -> None:
     """Combine multiple videos into one by stacking, padding and resizing them using ffmpeg.
 
     Internally this task will first optionally pad all videos to length using ffmpeg's ``tpad`` filter,
@@ -94,8 +122,8 @@ def combine(
     Args:
         matrix: Way to specify videos to combine as a 2D matrix of file paths
         outfile: where to save generated mp4
-        mode: if 'shortest' combined video will last as long s shortest input video. 
-            If 'static', the last frame of videos that are shorter than the longest input video will be repeated. 
+        mode: if 'shortest' combined video will last as long s shortest input video.
+            If 'static', the last frame of videos that are shorter than the longest input video will be repeated.
             If 'pad', all videos as padded with frames of ``color`` to last the same duration.
         color: color to pad videos with, only used if mode is 'pad'
         multiple: some codecs require size to be a multiple of n
@@ -106,7 +134,7 @@ def combine(
         The input videos can also be specified in a 2D array using the ``--matrix`` argument like so:
 
         .. code-block:: bash
-    
+
             $ visionsim ffmpeg.combine --matrix='[["a.mp4", "b.mp4"]]' --outfile="output.mp4"
     """
     # TODO: Allow borders and use xstack for better performance
@@ -117,17 +145,18 @@ def combine(
     import tempfile
 
     import numpy as np
+    import numpy.typing as npt
 
     from visionsim.cli import _log, _run
 
-    if Path(outfile).is_file() and not force:
+    if outfile.is_file() and not force:
         raise RuntimeError("Output file already exists, either specify different output path or `--force` to override.")
 
-    if _run("ffmpeg -version").returncode != 0:
+    if _run("ffmpeg -version", hide=True).returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
 
     matrix = ast.literal_eval(matrix) if isinstance(matrix, str) else matrix
-    flat_mat = [path for row in matrix for path in row]
+    flat_mat = [Path(path) for row in matrix for path in row]
 
     try:
         if any(not Path(p).is_file() for p in flat_mat):
@@ -147,7 +176,7 @@ def combine(
         row_paths: list[Path] = []
 
         # Keep track of all original dimensions
-        sizes = {path: dimensions(path) for path in flat_mat}
+        sizes = {str(path): dimensions(path) for path in flat_mat}
 
         # Find longest video and pad all to this length
         if mode.lower() == "pad":
@@ -158,8 +187,8 @@ def combine(
                 out_path = Path(tmpdir) / Path(path).name
                 out_path = out_path.with_name(f"{out_path.stem}_padded{out_path.suffix}")
                 cmd = f"ffmpeg -i {path} -vf tpad=stop=-1=color={color},trim=end={max_duration} {out_path} -y"
+                mapping[str(path)] = out_path
                 _run(cmd)
-                mapping[path] = out_path
 
         # If the matrix is not jagged, we can use ffmpeg's xstack instead
         if len(num_cols := set(len(row) for row in matrix)) == 1:
@@ -168,9 +197,12 @@ def combine(
             filter_inputs_str = "".join(
                 f"[{i}:v] setpts=PTS-STARTPTS, scale=qvga [a{i}]; " for i, _ in enumerate(in_paths)
             )
-            W, H = np.meshgrid(
-                ["+".join(f"w{i}" for i in range(j)) or "0" for j in range(num_cols.pop())],
-                ["+".join(f"h{i}" for i in range(j)) or "0" for j in range(len(matrix))],
+            W, H = cast(
+                tuple[npt.NDArray, ...],
+                np.meshgrid(
+                    ["+".join(f"w{i}" for i in range(j)) or "0" for j in range(num_cols.pop())],
+                    ["+".join(f"h{i}" for i in range(j)) or "0" for j in range(len(matrix))],
+                ),
             )
             layout_spec = "|".join(f"{i}_{j}" for i, j in zip(W.flatten(), H.flatten()))
             placement = (
@@ -178,20 +210,21 @@ def combine(
                 + f"xstack=inputs={len(in_paths)}:layout={layout_spec}[out]"
             )
             cmd = f'ffmpeg {in_paths_str} -filter_complex "{filter_inputs_str} {placement}" -map "[out]" -c:v libx264 {outfile}'
-            _run(cmd, echo=True)
+            _run(cmd)
             return
 
         for i, row in enumerate(matrix):
             # Resize videos in each row
             max_height = max(sizes[path][1] for path in row)
-            for path in row:
-                if sizes[path][1] != max_height:
-                    _log.info(f"Resizing {path}...")
-                    in_path = mapping.get(path, path)
-                    out_path = Path(tmpdir) / Path(path).name
+
+            for p in row:
+                if sizes[p][1] != max_height:
+                    _log.info(f"Resizing {p}...")
+                    in_path = mapping.get(p, p)
+                    out_path = Path(tmpdir) / Path(p).name
                     out_path = out_path.with_name(f"{out_path.stem}_height_resize{out_path.suffix}")
                     _run(f"ffmpeg -i {in_path} -vf scale=-{multiple}:{max_height} {out_path} -y")
-                    mapping[path] = out_path
+                    mapping[p] = out_path
 
             # Combine all videos in the row
             if len(row) >= 2:
@@ -239,13 +272,13 @@ def combine(
 
 
 def grid(
-    input_dir: str | os.PathLike,
+    input_dir: Path,
     width: int = -1,
     height: int = -1,
     pattern: str = "*.mp4",
-    outfile: str = "combined.mp4",
+    outfile: Path = Path("combined.mp4"),
     force: bool = False,
-):
+) -> None:
     """Make a mosaic from videos in a folder, organizing them in a grid
 
     Args:
@@ -259,7 +292,7 @@ def grid(
     import numpy as np
     from natsort import natsorted
 
-    files = natsorted(Path(input_dir).glob(pattern))
+    files = natsorted(input_dir.glob(pattern))
 
     if width <= 0 and height <= 0:
         candidates = [
@@ -285,68 +318,76 @@ def grid(
     combine(str(matrix), outfile, force=force)
 
 
-def count_frames(input_file: str | os.PathLike):
+def count_frames(input_file: Path, /) -> int:
     """Count the number of frames a video file contains using ffprobe
 
     Args:
         input_file: video file input
+
+    Returns:
+        int: Number of frames in video.
     """
     from visionsim.cli import _log, _run
 
     # See: https://stackoverflow.com/questions/2017843
-    if _run("ffprobe -version").returncode != 0:
+    if _run("ffprobe -version", hide=True).returncode != 0:
         raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = (
         f"ffprobe -v error -select_streams v:0 -count_packets -show_entries "
         f"stream=nb_read_packets -of csv=p=0 {input_file}"
     )
-    result = _run(cmd)
-    _log.info(f"Video contains {int(result.stdout.strip())} frames.")
-    return int(result.stdout.strip())
+    result = int(_run(cmd).stdout.strip())
+    _log.info(f"Video contains {result} frames.")
+    return result
 
 
-def duration(input_file: str | os.PathLike, /):
+def duration(input_file: Path, /) -> float:
     """Return duration (in seconds) of first video stream in file using ffprobe
-
 
     Args:
         input_file: video file input
+
+    Returns:
+        float: Video duration in seconds.
     """
     from visionsim.cli import _log, _run
 
     # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
-    if _run("ffprobe -version").returncode != 0:
+    if _run("ffprobe -version", hide=True).returncode != 0:
         raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = (
         f"ffprobe -v error -select_streams v:0 -show_entries stream=duration "
         f"-of default=noprint_wrappers=1:nokey=1 {input_file}"
     )
-    result = _run(cmd)
-    _log.info(f"Video lasts {float(result.stdout.strip())} seconds.")
-    return float(result.stdout.strip())
+    result = float(_run(cmd).stdout.strip())
+    _log.info(f"Video lasts {result} seconds.")
+    return result
 
 
-def dimensions(input_file: str | os.PathLike):
+def dimensions(input_file: Path) -> tuple[int, int]:
     """Return size (WxH in pixels) of first video stream in file using ffprobe
 
     Args:
         input_file: video file input
+
+    Returns:
+        tuple[int, int]: Video size as a (width, height) tuple.
     """
     from visionsim.cli import _log, _run
 
     # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
-    if _run("ffprobe -version").returncode != 0:
+    if _run("ffprobe -version", hide=True).returncode != 0:
         raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = f"ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 {input_file}"
-    result = _run(cmd)
-    _log.info(f"Video has size {result.stdout.strip()}.")
-    return tuple(int(dim) for dim in result.stdout.strip().split("x"))
+    result = _run(cmd).stdout.strip()
+    _log.info(f"Video has size {result}.")
+    return cast(tuple[int, int], tuple(int(dim) for dim in result.split("x")))
 
 
-def extract(input_file: str | os.PathLike, output_dir: str | os.PathLike, pattern: str = "frames_%06d.png"):
+def extract(input_file: Path, output_dir: Path, pattern: str = "frames_%06d.png") -> None:
     """Extract frames from video file
 
     Args:
@@ -356,10 +397,10 @@ def extract(input_file: str | os.PathLike, output_dir: str | os.PathLike, patter
     """
     from visionsim.cli import _run
 
-    if _run("ffmpeg -version").returncode != 0:
+    if _run("ffmpeg -version", hide=True).returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
-    if not Path(input_file).is_file():
+    if not input_file.is_file():
         raise FileNotFoundError(f"File {input_file} not found.")
 
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-    _run(f"ffmpeg -i {input_file} {Path(output_dir) / pattern}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _run(f"ffmpeg -i {input_file} {output_dir / pattern}")
