@@ -82,7 +82,7 @@ The ``transforms.db`` Format
 
 The above format is fairly standard, yet a bit limiting. For instance, when rendering ground truth data using Blender there's a lot of extra information we could store that is incompatible with this json schema, and adding arbitrary data to it would just result in bloat. Additionally, storing all metadata in a single json file can cause data integrity issues when multiple parallel workers try to access the file.    
 
-Because of this, the output format used when rendering a scene is a SQLite database, usually named ``transforms.db``, which loosely mirrors the above format yet enables access from many threads. This database format, which contains tree tables :class:`Camera <visionsim.simulate.schema.Camera>`, :class:`Frame <visionsim.simulate.schema.Frame>` and :class:`Data <visionsim.simulate.schema.Data>`, is mainly meant as an internal format but conversions to and from are possible using the :meth:`dataset.convert CLI <visionsim.cli.dataset.convert>`.  
+Because of this, the output format used when rendering a scene is a SQLite database, usually named ``transforms.db``, which loosely mirrors the above format yet enables access from many threads. This database format, which contains three tables (``_Camera``, ``_Frame`` and ``_Data``), is mainly meant as an internal format but conversions to and from are possible using the :meth:`dataset.convert CLI <visionsim.cli.dataset.convert>`.  
 
 |
 
