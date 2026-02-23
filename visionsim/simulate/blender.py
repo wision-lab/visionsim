@@ -77,7 +77,7 @@ import rpyc.utils.registry  # type: ignore
 import rpyc.utils.server  # type: ignore
 from playhouse.sqlite_ext import SqliteExtDatabase
 
-from visionsim.simulate.schema import DEFAULT_PRAGMAS, _MODELS, _Camera, _Data, _Frame
+from visionsim.simulate.schema import _DEFAULT_PRAGMAS, _MODELS, _Camera, _Data, _Frame
 
 # Enable server-side logging
 logging.basicConfig(level=logging.WARNING, format="%(message)s", datefmt="[%X]", handlers=handlers)
@@ -531,7 +531,7 @@ class BlenderService(rpyc.Service):
             self.log.info(f"Database at {db_path} already exists, overwriting...")
             db_path.unlink()
 
-        db = SqliteExtDatabase(db_path, pragmas=DEFAULT_PRAGMAS)
+        db = SqliteExtDatabase(db_path, pragmas=_DEFAULT_PRAGMAS)
         self._outputs[subpath] = (node, slot, db, camera_defaults)
 
     def _save_metadata(

@@ -17,9 +17,9 @@ def animate(
     bg_color: str = "black",
     strip_alpha: bool = False,
 ) -> None:
-    """Combine generated frames into an MP4 using ffmpeg wizardry. 
+    """Combine generated frames into an MP4 using ffmpeg wizardry.
 
-    This is roughly equivalent to running the "image2" demuxer in ffmpeg, with the added benefit of being able to 
+    This is roughly equivalent to running the "image2" demuxer in ffmpeg, with the added benefit of being able to
     skip frames using a step size, strip alpha channels from PNGs, and automatically handling the case where the input frames are numpy arrays.
 
     Args:
@@ -37,16 +37,16 @@ def animate(
     """
     import tempfile  # Lazy import
 
-    import numpy as np
     import imageio.v3 as iio
+    import numpy as np
     from rich.progress import track
 
-    from visionsim.cli import _log, _run
+    from visionsim.cli import _run
     from visionsim.dataset import Dataset
 
     if _run("ffmpeg -version", hide=True).returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
-    
+
     if not force and outfile.exists():
         raise FileExistsError(f"Output file {outfile} already exists. Use `force` to overwrite.")
 
@@ -87,15 +87,15 @@ def animate(
         if ext.lower() == ".npy":
             for i, idx in enumerate(track(range(0, len(dataset), step), description="Extracting frames")):
                 data, transform = dataset[idx]
-                if transform.get("bitpack_dim"):
-                    data = (data * 255).astype(np.uint8)
+                if cast(dict, transform).get("bitpack_dim"):
+                    data = np.array(data * 255).astype(np.uint8)
                 iio.imwrite(tmpdirname / f"{i:09}.png", data)
         else:
             for i, p in enumerate(dataset.paths[::step]):
                 (tmpdirname / f"{i:09}{ext}").symlink_to(p, target_is_directory=False)
 
         cmd = (
-            f"ffmpeg -framerate {fps} -f image2 -i {tmpdirname / ('%09d' + (ext if ext.lower() != ".npy" else ".png"))} {strip_alpha_filter}"
+            f"ffmpeg -framerate {fps} -f image2 -i {tmpdirname / ('%09d' + (ext if ext.lower() != '.npy' else '.png'))} {strip_alpha_filter}"
             f"{'-y' if force else ''} -vcodec {vcodec} -crf {crf} -pix_fmt yuv420p "
         )
         if multiple:

@@ -18,7 +18,7 @@ from playhouse.sqlite_ext import JSONField, SqliteExtDatabase
 from typing_extensions import Self
 
 # https://docs.peewee-orm.com/en/latest/peewee/database.html#recommended-settings
-DEFAULT_PRAGMAS = {
+_DEFAULT_PRAGMAS = {
     "journal_mode": "wal",
     "cache_size": -1 * 64000,
     "foreign_keys": 1,
@@ -124,7 +124,7 @@ class _Metadata:
         if Path(path).exists():
             Path(path).unlink()
 
-        db = SqliteExtDatabase(path, pragmas=DEFAULT_PRAGMAS)
+        db = SqliteExtDatabase(path, pragmas=_DEFAULT_PRAGMAS)
 
         with db.connection_context():
             with db.atomic():
@@ -154,7 +154,7 @@ class _Metadata:
         Yields:
             Iterator[dict[str, Any]]: Dictionaries containing all relevant frame data
         """
-        db = SqliteExtDatabase(self.path, pragmas=DEFAULT_PRAGMAS)
+        db = SqliteExtDatabase(self.path, pragmas=_DEFAULT_PRAGMAS)
         with db.connection_context():
             with db.bind_ctx(_MODELS):
                 for transform in _Frame.select(*_MODELS).join(_Camera).switch(_Frame).join(_Data).dicts():
@@ -178,7 +178,7 @@ class _Metadata:
     @cached_property
     def cameras(self) -> list[dict[str, Any]]:
         """List of defined cameras."""
-        db = SqliteExtDatabase(self.path, pragmas=DEFAULT_PRAGMAS)
+        db = SqliteExtDatabase(self.path, pragmas=_DEFAULT_PRAGMAS)
         with db.connection_context():
             with db.bind_ctx(_MODELS):
                 return list(_Camera.select().dicts())
