@@ -57,8 +57,6 @@ class Camera(BaseModel):
     """second tangential distortion parameter, used by [OPENCV]"""
     fps: float | None = None
     """framerate of camera"""
-    date: str | None = None
-    """creation date of the dataset"""
 
 
 class Data(BaseModel):
