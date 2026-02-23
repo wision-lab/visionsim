@@ -6,22 +6,25 @@ from typing import cast
 
 def animate(
     input_dir: Path,
-    pattern: str = "**/*.png",
+    pattern: str | None = None,
     outfile: Path = Path("out.mp4"),
     fps: int = 25,
     crf: int = 22,
     vcodec: str = "libx264",
     step: int = 1,
-    multiple: int = 2,
+    multiple: int | None = None,
     force: bool = False,
     bg_color: str = "black",
     strip_alpha: bool = False,
 ) -> None:
-    """Combine generated frames into an MP4 using ffmpeg wizardry
+    """Combine generated frames into an MP4 using ffmpeg wizardry. 
+
+    This is roughly equivalent to running the "image2" demuxer in ffmpeg, with the added benefit of being able to 
+    skip frames using a step size, strip alpha channels from PNGs, and automatically handling the case where the input frames are numpy arrays.
 
     Args:
         input_dir: directory in which to look for frames,
-        pattern: filenames of frames should match this
+        pattern: If provided search for files matching this pattern. Otherwise, look for a valid dataset in the input directory.
         outfile: where to save generated mp4
         fps: frames per second in video
         crf: constant rate factor for video encoding (0-51), lower is better quality but more memory
@@ -34,12 +37,32 @@ def animate(
     """
     import tempfile  # Lazy import
 
-    from visionsim.cli import _run, _validate_directories
+    import numpy as np
+    import imageio.v3 as iio
+    from rich.progress import track
 
-    if _run("ffmpeg -version").returncode != 0:
+    from visionsim.cli import _log, _run
+    from visionsim.dataset import Dataset
+
+    if _run("ffmpeg -version", hide=True).returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
+    
+    if not force and outfile.exists():
+        raise FileExistsError(f"Output file {outfile} already exists. Use `force` to overwrite.")
 
-    *_, _, in_files = _validate_directories(input_dir, outfile.parent, pattern=pattern)
+    outfile.parent.mkdir(parents=True, exist_ok=True)
+
+    if pattern:
+        dataset = Dataset.from_pattern(input_dir, pattern)
+    else:
+        dataset = Dataset.from_path(input_dir)
+
+    exts = {p.suffix for p in dataset.paths}
+
+    if len(exts) != 1:
+        raise ValueError(f"Input directory must contain files of a single extension. Found: {exts}")
+
+    ext = next(iter(exts))
 
     # See: https://stackoverflow.com/questions/52804749
     strip_alpha_filter = (
@@ -47,7 +70,7 @@ def animate(
             f'-filter_complex "color={bg_color},format=rgb24[c];[c][0]scale2ref[c][i];'
             f'[c][i]overlay=format=auto:shortest=1,setsar=1" '
         )
-        if pattern.endswith(".png") and strip_alpha
+        if ext.lower() == ".png" and strip_alpha
         else ""
     )
 
@@ -58,16 +81,21 @@ def animate(
         # with images or leads to errors.
         # As a quick fix, we create a tmpdir with symlinks to the frames we
         # want to include and point ffmpeg to those.
-
         tmpdirname = Path(tmpdir)
-        ext = Path(pattern).suffix
 
-        # No transformation needed, simply symlink files
-        for i, p in enumerate(in_files[::step]):
-            (tmpdirname / f"{i:09}{ext}").symlink_to(p, target_is_directory=False)
+        # Iterate over dataset with step and extract frame from npy if neccesary
+        if ext.lower() == ".npy":
+            for i, idx in enumerate(track(range(0, len(dataset), step), description="Extracting frames")):
+                data, transform = dataset[idx]
+                if transform.get("bitpack_dim"):
+                    data = (data * 255).astype(np.uint8)
+                iio.imwrite(tmpdirname / f"{i:09}.png", data)
+        else:
+            for i, p in enumerate(dataset.paths[::step]):
+                (tmpdirname / f"{i:09}{ext}").symlink_to(p, target_is_directory=False)
 
         cmd = (
-            f"ffmpeg -framerate {fps} -f image2 -i {tmpdirname / ('%09d' + ext)} {strip_alpha_filter}"
+            f"ffmpeg -framerate {fps} -f image2 -i {tmpdirname / ('%09d' + (ext if ext.lower() != ".npy" else ".png"))} {strip_alpha_filter}"
             f"{'-y' if force else ''} -vcodec {vcodec} -crf {crf} -pix_fmt yuv420p "
         )
         if multiple:
@@ -124,7 +152,7 @@ def combine(
     if outfile.is_file() and not force:
         raise RuntimeError("Output file already exists, either specify different output path or `--force` to override.")
 
-    if _run("ffmpeg -version").returncode != 0:
+    if _run("ffmpeg -version", hide=True).returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
 
     matrix = ast.literal_eval(matrix) if isinstance(matrix, str) else matrix
@@ -182,7 +210,7 @@ def combine(
                 + f"xstack=inputs={len(in_paths)}:layout={layout_spec}[out]"
             )
             cmd = f'ffmpeg {in_paths_str} -filter_complex "{filter_inputs_str} {placement}" -map "[out]" -c:v libx264 {outfile}'
-            _run(cmd, echo=True)
+            _run(cmd)
             return
 
         for i, row in enumerate(matrix):
@@ -302,16 +330,16 @@ def count_frames(input_file: Path, /) -> int:
     from visionsim.cli import _log, _run
 
     # See: https://stackoverflow.com/questions/2017843
-    if _run("ffprobe -version").returncode != 0:
+    if _run("ffprobe -version", hide=True).returncode != 0:
         raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = (
         f"ffprobe -v error -select_streams v:0 -count_packets -show_entries "
         f"stream=nb_read_packets -of csv=p=0 {input_file}"
     )
-    result = _run(cmd)
-    _log.info(f"Video contains {int(result.stdout.strip())} frames.")
-    return int(result.stdout.strip())
+    result = int(_run(cmd).stdout.strip())
+    _log.info(f"Video contains {result} frames.")
+    return result
 
 
 def duration(input_file: Path, /) -> float:
@@ -326,16 +354,16 @@ def duration(input_file: Path, /) -> float:
     from visionsim.cli import _log, _run
 
     # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
-    if _run("ffprobe -version").returncode != 0:
+    if _run("ffprobe -version", hide=True).returncode != 0:
         raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = (
         f"ffprobe -v error -select_streams v:0 -show_entries stream=duration "
         f"-of default=noprint_wrappers=1:nokey=1 {input_file}"
     )
-    result = _run(cmd)
-    _log.info(f"Video lasts {float(result.stdout.strip())} seconds.")
-    return float(result.stdout.strip())
+    result = float(_run(cmd).stdout.strip())
+    _log.info(f"Video lasts {result} seconds.")
+    return result
 
 
 def dimensions(input_file: Path) -> tuple[int, int]:
@@ -350,13 +378,13 @@ def dimensions(input_file: Path) -> tuple[int, int]:
     from visionsim.cli import _log, _run
 
     # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
-    if _run("ffprobe -version").returncode != 0:
+    if _run("ffprobe -version", hide=True).returncode != 0:
         raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = f"ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 {input_file}"
-    result = _run(cmd)
-    _log.info(f"Video has size {result.stdout.strip()}.")
-    return cast(tuple[int, int], tuple(int(dim) for dim in result.stdout.strip().split("x")))
+    result = _run(cmd).stdout.strip()
+    _log.info(f"Video has size {result}.")
+    return cast(tuple[int, int], tuple(int(dim) for dim in result.split("x")))
 
 
 def extract(input_file: Path, output_dir: Path, pattern: str = "frames_%06d.png") -> None:
@@ -369,7 +397,7 @@ def extract(input_file: Path, output_dir: Path, pattern: str = "frames_%06d.png"
     """
     from visionsim.cli import _run
 
-    if _run("ffmpeg -version").returncode != 0:
+    if _run("ffmpeg -version", hide=True).returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
     if not input_file.is_file():
         raise FileNotFoundError(f"File {input_file} not found.")

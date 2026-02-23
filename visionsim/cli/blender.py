@@ -36,7 +36,7 @@ def render_animation(
     from visionsim.utils.progress import ElapsedProgress
 
     # Runtime checks and gard rails
-    if _run(f"{config.executable or 'blender'} --version", shell=True).returncode != 0:
+    if _run(f"{config.executable or 'blender'} --version", shell=True, hide=True).returncode != 0:
         raise RuntimeError("No blender installation found on path!")
     if not (blend_file := blend_file.resolve()).exists():
         raise FileNotFoundError(f"Blender file {blend_file} not found.")

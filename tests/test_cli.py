@@ -13,7 +13,7 @@ from visionsim.dataset.models import Metadata
 def test_completions(tmpdir):
     # Note: If this test fails, it most likely means one of the arguments of a CLI method is
     #   not annotated properly. Logs will be saved to the temp dir, and should show what's going on.
-    shell_name = Path(_run("echo $SHELL", shell=True, check=True).stdout.strip()).stem
+    shell_name = Path(_run("echo $SHELL", shell=True, check=True, hide=True).stdout.strip()).stem
 
     if shell_name not in ("bash", "zsh", "tcsh"):
         pytest.skip(f"Unsupported shell, got {shell_name}, expected on of 'bash', 'zsh', 'tcsh'.")
