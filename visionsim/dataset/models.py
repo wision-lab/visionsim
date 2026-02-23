@@ -166,7 +166,7 @@ class Metadata(Camera):
                 instance._path = Path(path).resolve()
                 return instance
         elif Path(path).suffix.lower() == ".db":
-            ds = schema.Metadata(path)
+            ds = schema._Metadata(path)
             dense_transforms = ds.to_dense_transforms(rename_to=rename_to)
             instance = cls.from_dense_transforms(dense_transforms)
             if len(instance.cameras) != len(ds.cameras):
@@ -212,7 +212,7 @@ class Metadata(Camera):
                 f.write(self.model_dump_json(exclude_unset=True, indent=indent))
         elif Path(path).suffix.lower() == ".db":
             data_type = next(iter(self.data_types))
-            schema.Metadata.from_dense_transforms(path=path, transforms=self.iter_dense_transforms(data_type=data_type))
+            schema._Metadata.from_dense_transforms(path=path, transforms=self.iter_dense_transforms(data_type=data_type))
         else:
             raise ValueError(f"Can only save metadata as `.json` or `.db`, tried to save as `{Path(path).suffix}`.")
 

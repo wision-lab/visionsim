@@ -77,7 +77,7 @@ import rpyc.utils.registry  # type: ignore
 import rpyc.utils.server  # type: ignore
 from playhouse.sqlite_ext import SqliteExtDatabase
 
-from visionsim.simulate.schema import DEFAULT_PRAGMAS, MODELS, Camera, Data, Frame
+from visionsim.simulate.schema import DEFAULT_PRAGMAS, _MODELS, _Camera, _Data, _Frame
 
 # Enable server-side logging
 logging.basicConfig(level=logging.WARNING, format="%(message)s", datefmt="[%X]", handlers=handlers)
@@ -556,11 +556,11 @@ class BlenderService(rpyc.Service):
         for subpath, (_, _, db, defaults) in self._outputs.items():
             with db.connection_context():
                 with db.atomic("IMMEDIATE"):
-                    with db.bind_ctx(MODELS):
-                        db.create_tables(MODELS, safe=True)
-                        camera, _ = Camera.get_or_create(**(defaults | camera_info))
-                        data = Data.create(path=paths[subpath])
-                        Frame.create(id=index, camera=camera, transform_matrix=transform_matrix, data=data)
+                    with db.bind_ctx(_MODELS):
+                        db.create_tables(_MODELS, safe=True)
+                        camera, _ = _Camera.get_or_create(**(defaults | camera_info))
+                        data = _Data.create(path=paths[subpath])
+                        _Frame.create(id=index, camera=camera, transform_matrix=transform_matrix, data=data)
 
     @property
     @require_initialized_service

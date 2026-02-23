@@ -32,7 +32,7 @@ class _BaseModel(Model):
         model_metadata_class = ThreadSafeDatabaseMetadata
 
 
-class Camera(_BaseModel):
+class _Camera(_BaseModel):
     """A database model that mirrors :class:`models.Camera <visionsim.dataset.models.Camera>` with added blender-specific fields."""
 
     angle = FloatField(null=True)
@@ -67,26 +67,26 @@ class Camera(_BaseModel):
     keyframe_scale = FloatField(null=True)
 
 
-class Data(_BaseModel):
+class _Data(_BaseModel):
     """A database model that mirrors :class:`models.Data <visionsim.dataset.models.Data>`."""
 
     path = TextField()
     bitpack_dim = IntegerField(null=True)
 
 
-class Frame(_BaseModel):
+class _Frame(_BaseModel):
     """A database model that mirrors :class:`models.Frame <visionsim.dataset.models.Frame>`."""
 
-    data = ForeignKeyField(Data, backref="frames", on_delete="CASCADE", index=True)
-    camera = ForeignKeyField(Camera, backref="frames", on_delete="CASCADE", index=True)
+    data = ForeignKeyField(_Data, backref="frames", on_delete="CASCADE", index=True)
+    camera = ForeignKeyField(_Camera, backref="frames", on_delete="CASCADE", index=True)
     transform_matrix = JSONField()
     offset = IntegerField(null=True)
 
 
-MODELS: tuple[type[_BaseModel], ...] = (Camera, Data, Frame)
+_MODELS: tuple[type[_BaseModel], ...] = (_Camera, _Data, _Frame)
 
 
-class Metadata:
+class _Metadata:
     """The ``.db`` equivalent of :class:`models.Metadata <visionsim.dataset.models.Metadata>`"""
 
     def __init__(self, path: str | os.PathLike) -> None:
@@ -128,19 +128,19 @@ class Metadata:
 
         with db.connection_context():
             with db.atomic():
-                with db.bind_ctx(MODELS):
-                    db.create_tables(MODELS, safe=True)
+                with db.bind_ctx(_MODELS):
+                    db.create_tables(_MODELS, safe=True)
 
                     for index, transform in enumerate(transforms):
-                        camera, _ = Camera.get_or_create(
-                            **{k: v for k, v in transform.items() if k in Camera._meta.fields}  # type: ignore
+                        camera, _ = _Camera.get_or_create(
+                            **{k: v for k, v in transform.items() if k in _Camera._meta.fields}  # type: ignore
                         )
-                        data, _ = Data.get_or_create(**{k: v for k, v in transform.items() if k in Data._meta.fields})  # type: ignore
-                        Frame.create(
+                        data, _ = _Data.get_or_create(**{k: v for k, v in transform.items() if k in _Data._meta.fields})  # type: ignore
+                        _Frame.create(
                             id=index,
                             camera=camera,
                             data=data,
-                            **{k: v for k, v in transform.items() if k in Frame._meta.fields},  # type: ignore
+                            **{k: v for k, v in transform.items() if k in _Frame._meta.fields},  # type: ignore
                         )
         return cls(path)
 
@@ -156,8 +156,8 @@ class Metadata:
         """
         db = SqliteExtDatabase(self.path, pragmas=DEFAULT_PRAGMAS)
         with db.connection_context():
-            with db.bind_ctx(MODELS):
-                for transform in Frame.select(*MODELS).join(Camera).switch(Frame).join(Data).dicts():
+            with db.bind_ctx(_MODELS):
+                for transform in _Frame.select(*_MODELS).join(_Camera).switch(_Frame).join(_Data).dicts():
                     # Remove database-specific IDs and Foreign Keys
                     transform.pop("id")
                     transform.pop("camera")
@@ -180,5 +180,5 @@ class Metadata:
         """List of defined cameras."""
         db = SqliteExtDatabase(self.path, pragmas=DEFAULT_PRAGMAS)
         with db.connection_context():
-            with db.bind_ctx(MODELS):
-                return list(Camera.select().dicts())
+            with db.bind_ctx(_MODELS):
+                return list(_Camera.select().dicts())
