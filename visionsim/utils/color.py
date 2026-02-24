@@ -169,10 +169,14 @@ def raw_to_rgb_bayer(
                 # via a sequence of 1D convolutions, probably not worth it in hindsight...
                 h_avg_nhood_x = np.array([[0.5, 0.0, 0.5]])
 
-                av_R = correlate(correlate(R, h_avg_nhood_x, mode="nearest"), h_avg_nhood_x.T, mode="nearest")
+                av_R: npt.NDArray = correlate(
+                    correlate(R, h_avg_nhood_x, mode="nearest"), h_avg_nhood_x.T, mode="nearest"
+                )
                 diff_R = R - av_R
 
-                av_B = correlate(correlate(B, h_avg_nhood_x, mode="nearest"), h_avg_nhood_x.T, mode="nearest")
+                av_B: npt.NDArray = correlate(
+                    correlate(B, h_avg_nhood_x, mode="nearest"), h_avg_nhood_x.T, mode="nearest"
+                )
                 diff_B = B - av_B
 
                 rgb[::2, ::2, 1] += (1 / 2) * diff_R
@@ -180,12 +184,14 @@ def raw_to_rgb_bayer(
                 rgb[1::2, 1::2, 1] += (1 / 2) * diff_B
                 rgb[1::2, 1::2, 0] += (3 / 4) * diff_R
 
-                av_G2_at_G1 = correlate(correlate(G2, h_avg_fw_x, mode="nearest"), h_avg_bw_x.T, mode="nearest")
+                av_G2_at_G1: npt.NDArray = correlate(
+                    correlate(G2, h_avg_fw_x, mode="nearest"), h_avg_bw_x.T, mode="nearest"
+                )
 
                 av_G1_at_G1_R = correlate(G1, h_avg_nhood_x, mode="nearest") - correlate(
                     G1, 0.5 * h_avg_nhood_x.T, mode="nearest"
                 )
-                av_G1_R = (1 / 5) * (2 * av_G1_at_G1_R + 4 * av_G2_at_G1)
+                av_G1_R: npt.NDArray = (1 / 5) * (2 * av_G1_at_G1_R + 4 * av_G2_at_G1)
                 diff_G1_R = G1 - av_G1_R
                 rgb[::2, 1::2, 0] += (5 / 8) * diff_G1_R
 
@@ -196,7 +202,9 @@ def raw_to_rgb_bayer(
                 diff_G1_B = G1 - av_G1_B
                 rgb[::2, 1::2, 2] += (5 / 8) * diff_G1_B
 
-                av_G1_at_G2 = correlate(correlate(G1, h_avg_bw_x, mode="nearest"), h_avg_fw_x.T, mode="nearest")
+                av_G1_at_G2: npt.NDArray = correlate(
+                    correlate(G1, h_avg_bw_x, mode="nearest"), h_avg_fw_x.T, mode="nearest"
+                )
 
                 av_G2_at_G2_R = correlate(G2, h_avg_nhood_x.T, mode="nearest") - correlate(
                     G2, 0.5 * h_avg_nhood_x, mode="nearest"

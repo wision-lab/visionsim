@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import numpy.typing as npt
 from scipy.ndimage import gaussian_filter
@@ -70,7 +72,7 @@ def emulate_rgb_from_sequence(
     # Roughly translating the model in Eqs. (1,2) and Fig. 1 of Hasinoff et al.
     # Perform poisson sampling
     rng = np.random.default_rng() if rng is None else rng
-    patch = rng.poisson(patch).astype(float)
+    patch = cast(np.ndarray, rng.poisson(patch)).astype(float)
     # full-well capacity
     patch = np.clip(patch, 0, fwc)
     # readout noise
