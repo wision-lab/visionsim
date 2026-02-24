@@ -8,7 +8,7 @@ from contextlib import ExitStack, contextmanager
 from multiprocessing import Process
 from pathlib import Path
 from types import TracebackType
-from typing import type_check_only
+from typing import Any, Literal, type_check_only
 
 import bpy  # type: ignore
 import multiprocess  # type: ignore
@@ -17,15 +17,20 @@ import numpy.typing as npt
 import rpyc  # type: ignore
 import rpyc.utils.registry  # type: ignore
 import rpyc.utils.server  # type: ignore
-from typing_extensions import Any, Concatenate, ParamSpec, Self
+from _typeshed import Incomplete
+from typing_extensions import Concatenate, ParamSpec, Self
 
-from visionsim.types import UpdateFn
+from visionsim.types import COLOR_MODES, EXR_CODECS, FILE, FILE_FORMATS, UpdateFn
 
 _P = ParamSpec("_P")
 handlers: Iterable[logging.Handler] | None
 server_log: logging.Logger
 EXPOSED_PREFIX: str
 REGISTRY: tuple[Process, rpyc.utils.registry.UDPRegistryClient] | None
+ITEMS_PER_SUBFOLDER: int
+INDEX_PADDING: int
+FORMATS: dict[str, str]
+COLOR_MODE_CHANNELS: Incomplete
 
 def require_connected_client(
     func: Callable[Concatenate[BlenderClient, _P], Any],
@@ -33,13 +38,13 @@ def require_connected_client(
     """Decorator which ensures a client is connected.
 
     Args:
-        func (Callable[Concatenate[BlenderClient, P], Any]): Function to decorate
+        func (Callable[Concatenate[BlenderClient, _P], Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if client is not connected.
 
     Returns:
-        Callable[Concatenate[BlenderClient, P], Any]: Decorated function.
+        Callable[Concatenate[BlenderClient, _P], Any]: Decorated function.
     """
 
 def require_connected_clients(
@@ -48,13 +53,13 @@ def require_connected_clients(
     """Decorator which ensures all clients are connected.
 
     Args:
-        func (Callable[Concatenate[BlenderClients, P], Any]): Function to decorate
+        func (Callable[Concatenate[BlenderClients, _P], Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if at least one client is not connected.
 
     Returns:
-        Callable[Concatenate[BlenderClients, P], Any]: Decorated function.
+        Callable[Concatenate[BlenderClients, _P], Any]: Decorated function.
     """
 
 def require_initialized_service(
@@ -63,13 +68,13 @@ def require_initialized_service(
     """Decorator which ensures the render service was initialized.
 
     Args:
-        func (Callable[Concatenate[BlenderService, P], Any]): Function to decorate
+        func (Callable[Concatenate[BlenderService, _P], Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if :meth:`client.initialize <BlenderService.exposed_initialize>` has not been previously called.
 
     Returns:
-        Callable[Concatenate[BlenderService, P], Any]: Decorated function.
+        Callable[Concatenate[BlenderService, _P], Any]: Decorated function.
     """
 
 def validate_camera_moved(
@@ -78,10 +83,10 @@ def validate_camera_moved(
     """Decorator which emits a warning if the camera was not moved.
 
     Args:
-        func (Callable[Concatenate[BlenderService, P], Any]): Function to decorate
+        func (Callable[Concatenate[BlenderService, _P], Any]): Function to decorate
 
     Returns:
-        Callable[Concatenate[BlenderService, P], Any]: Decorated function.
+        Callable[Concatenate[BlenderService, _P], Any]: Decorated function.
     """
 
 class BlenderServer(rpyc.utils.server.Server):
@@ -131,17 +136,24 @@ class BlenderServer(rpyc.utils.server.Server):
     def spawn(
         jobs: int = 1,
         timeout: float = -1.0,
-        log_dir: str | os.PathLike | None = None,
+        log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
     ) -> Iterator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:
         """Spawn one or more blender instances and start a :class:`BlenderServer` in each.
 
         This is roughly equivalent to calling ``blender -b --python blender.py`` in many subprocesses,
-        where ``blender.py`` initializes and ``start``s a server instance. Proper logging and termination of
+        where ``blender.py`` initializes and ``start``\\s a server instance. Proper logging and termination of
         these processes is also taken care of.
 
-        Note: The returned processes and connection settings are not guaranteed to be in the same order.
+        Note:
+            The returned processes and connection settings are not guaranteed to be in the same order.
+
+        Warning:
+            If ``log`` is a file handle or descriptor, such as redirecting Blender logs to subprocess.STDOUT,
+            the writing process might get overwhelmed which can cause silent errors, dropped logs and locked
+            processes. It is thus not recommended for long render jobs to set ``log`` to anything but DEVNULL
+            or a directory.
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
@@ -150,9 +162,9 @@ class BlenderServer(rpyc.utils.server.Server):
                 spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
                 this context manager will immediately yield, even if the server is not yet ready to accept
                 incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
-            log_dir (str | os.PathLike | None, optional): path to log directory,
-                stdout/err will be captured if set, otherwise outputs will go to os.devnull.
-                Defaults to None (devnull).
+            log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
+                descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
+                Defaults to subprocess.DEVNULL for both stdout/stderr.
             autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
                 For more, see blender's CLI documentation. Defaults to False.
             executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
@@ -184,7 +196,7 @@ class BlenderServer(rpyc.utils.server.Server):
     def _launch_registry() -> None: ...
     @staticmethod
     def discover() -> list[tuple[str, int]]:
-        """Discover any :class:`BlenderServer`s that are already running and return their connection parameters.
+        """Discover any :class:`BlenderServer`\\s that are already running and return their connection parameters.
 
         Note:
             A discoverable server might already be in use and can refuse connection attempts.
@@ -205,7 +217,9 @@ class BlenderService(rpyc.Service):
     ALIASES: tuple[str]
     _conn: rpyc.Connection | None
     log: logging.Logger
-    initialized: bool
+    _initialized: bool
+    _warned_no_outputs: bool
+    _outputs: dict[str, Any]
 
     def __init__(self) -> None:
         """Initialize render service.
@@ -236,6 +250,52 @@ class BlenderService(rpyc.Service):
         De-initialize service by restoring blender to it's startup state,
         ensuring any cached attributes are cleaned (otherwise objects will be stale),
         and resetting any instance variables that were previously initialized.
+        """
+
+    def register_output_type(
+        self,
+        subpath: str,
+        node: bpy.types.CompositorNodeOutputFile,
+        slot: bpy.types.NodeOutputFileSlotFile | bpy.types.NodeCompositorFileOutputItem,
+        **camera_defaults,
+    ) -> None:
+        """Register a new output datatype. If this is not called by an ``include_`` method, the
+        metadata for that datatype will not be saved to the database and the path to which the data
+        is saved will not be updated at every render.
+
+        Warning:
+            You must pass in the slot instance that was returned when a new ``file_output_item``
+            was created and not simply one of the `node.file_output_items <https://docs.blender.org/api/
+            current/bpy.types.CompositorNodeOutputFile.html#bpy.types.CompositorNodeOutputFile.file_output_items>`_
+            as these are readonly!
+
+        Args:
+            subpath (str): Path suffix, from root data directory, of the new datatype (eg: "previews/depths")
+            node (bpy.types.CompositorNodeOutputFile): Output file node responsible for saving
+            slot (bpy.types.NodeOutputFileSlotFile | bpy.types.NodeCompositorFileOutputItem): Slot of node which
+                will save the output data.
+            **camera_defaults: Any addition camera information that will be added by default. Commonly,
+                the number of output channels is passed in (eg: c=4 for RGBA).
+
+        Raises:
+            RuntimeError: raised if output type has already been registered.
+        """
+
+    def _save_metadata(
+        self,
+        paths: dict[str, Path],
+        camera_info: dict[str, str | float | int],
+        transform_matrix: list[float],
+        index: int,
+    ) -> None:
+        """Post-render callback responsible for saving frame metadata to each database.
+
+        Args:
+            paths (dict[str, Path]): A dictionary mapping the data type's subpath to the recently rendered file.
+                For example, ``{"frames": "0001/321.png", "depths": "0001/321.exr"}``.
+            camera_info (dict[str, str  |  float  |  int]): Camera info at current index, as retrieved by ``BlenderService.camera_info``.
+            transform_matrix (list[float]): Current camera extrinsic matrix.
+            index (int): Current frame index.
         """
 
     @property
@@ -280,16 +340,10 @@ class BlenderService(rpyc.Service):
         Args:
             log (logging.Logger): Logger to use for messages
         """
-    blend_file: Path
     root_path: Path
-    depth_path: bpy.types.CompositorNodeOutputFile | None
-    normal_path: bpy.types.CompositorNodeOutputFile | None
-    flow_path: bpy.types.CompositorNodeOutputFile | None
-    segmentation_path: bpy.types.CompositorNodeOutputFile | None
-    depth_extension: str
-    unbind_camera: bool
-    use_animation: bool
-    disabled_fcurves: set[bpy.types.Action]
+    blend_file: Path
+    _use_animation: bool
+    _disabled_fcurves: set[bpy.types.Action]
 
     def exposed_initialize(self, blend_file: str | os.PathLike, root_path: str | os.PathLike, **kwargs) -> None:
         """Initialize BlenderService and load blendfile.
@@ -317,16 +371,7 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
-    def exposed_empty_transforms(self) -> dict[str, Any]:
-        """Return a dictionary with camera intrinsics. Forms the basis of
-        a ``transforms.json`` file, but contains no frame data.
-
-        Returns:
-            dict[str, Any]: empty transforms dictionary containing only camera parameters.
-        """
-
-    @require_initialized_service
-    def exposed_original_fps(self) -> int:
+    def exposed_get_original_fps(self) -> int:
         """Get effective framerate (fps/fps_base).
 
         Returns:
@@ -350,54 +395,124 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
-    def exposed_include_depths(self, debug: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP") -> None:
-        """Sets up Blender compositor to include depth map for rendered images.
+    def exposed_include_composites(
+        self,
+        file_format: FILE_FORMATS | None = None,
+        color_mode: COLOR_MODES | None = None,
+        exr_codec: EXR_CODECS | None = None,
+        bit_depth: Literal[8, 16, 32] | None = None,
+    ) -> None:
+        """Sets up Blender to include the outputs of any existing compositor nodes groups.
+
+        Note: A default arguments of ``None`` means do not change setting inherited from the blendfile's ``Output`` settings.
 
         Args:
-            debug (bool, optional): if true, colorized depth maps, helpful for quick visualizations,
-                will be generated alongside ground-truth depth maps. Defaults to True.
-            file_format (str, optional): format of depth maps, one of "OPEN_EXR" or "HDR". The former
-                is lossless, but can require significant storage, the later is lossy and more compressed.
-                If depth is needed to compute scene-flow, use open-exr. Defaults to "OPEN_EXR".
-            exr_codec (str, optional): codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+            file_format (str | None, optional): Format to save composited render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP'). Defaults to None.
+            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
+            exr_codec (str | None, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
                 options vary depending on the version of Blender, with the following being broadly available:
-                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "ZIP".
-
-        Note:
-            The debug colormap is re-normalized on a per-frame basis, to visually
-            compare across frames, apply colorization after rendering using the CLI.
-
-        Raises:
-            ValueError: raise if file-format nor understood.
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to None.
+            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
         """
 
     @require_initialized_service
-    def exposed_include_normals(self, debug: bool = True, exr_codec: str = "ZIP") -> None:
+    def exposed_include_frames(
+        self,
+        file_format: FILE_FORMATS = "PNG",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 8,
+    ) -> None:
+        """Sets up Blender compositor to include ground truth rendered images, bypassing any existing compositor nodes.
+
+        Note:
+            For linear intensity renders, use the "OPEN_EXR" format with and 32 or 16 bits.
+
+        Args:
+            file_format (str, optional): Format to save ground truth render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP'). Defaults to "PNG".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 8 bits.
+
+        Raises:
+            ValueError: raised when file-format not understood.
+        """
+
+    @require_initialized_service
+    def exposed_include_depths(
+        self,
+        preview: bool = True,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include depth map for rendered images.
+
+        Note:
+            The preview colormap is re-normalized on a per-frame basis, to visually
+            compare across frames, apply colorization after rendering using the CLI.
+
+        Args:
+            preview (bool, optional): If true, colorized depth maps, helpful for quick visualizations,
+                will be generated alongside ground-truth depth maps. Defaults to True.
+            file_format (str, optional): Format of depth maps, one of "OPEN_EXR" or "HDR". Defaults to "OPEN_EXR".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 32 bits.
+
+        Raises:
+            ValueError: raised when file-format not understood.
+        """
+
+    @require_initialized_service
+    def exposed_include_normals(
+        self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
+    ) -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
         Args:
-            debug (bool, optional): if true, colorized normal maps will also be generated with each vector
-                component being remapped from [-1, 1] to [0-255] with xyz becoming rgb. Defaults to True.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            preview (bool, optional): If true, colorized normal maps will also be generated with each vector
+                component being remapped from [-1, 1] to [0-255] where XYZ coordinates are mapped channel-wise to RGB.
+                Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Either 16 or 32 bits. Defaults to 32 bits.
         """
 
     @require_initialized_service
-    def exposed_include_flows(self, direction: str = "forward", debug: bool = True, exr_codec: str = "ZIP") -> None:
+    def exposed_include_flows(
+        self,
+        preview: bool = True,
+        direction: Literal["forward", "backward", "both"] = "forward",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
         Args:
+            preview (bool, optional): If true, also save preview visualizations of flow. Defaults to True.
             direction (str, optional): One of 'forward', 'backward' or 'both'. Direction of flow to colorize
-                for debug visualization. Only used when debug is true, otherwise both forward and backward
+                for preview visualization. Only used when ``preview`` is true, otherwise both forward and backward
                 flows are saved. Defaults to "forward".
-            debug (bool, optional): If true, also save debug visualizations of flow. Defaults to True.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 32 bits.
 
         Note:
-            The debug colormap is re-normalized on a per-frame basis, to visually
+            The preview colormap is re-normalized on a per-frame basis, to visually
             compare across frames, apply colorization after rendering using the CLI.
 
         Raises:
@@ -407,21 +522,28 @@ class BlenderService(rpyc.Service):
 
     @require_initialized_service
     def exposed_include_segmentations(
-        self, shuffle: bool = True, debug: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
     ) -> None:
         """Sets up Blender compositor to include segmentation maps for rendered images.
 
-        The debug visualization simply assigns a color to each object ID by mapping the
+        The preview visualization simply assigns a color to each object ID by mapping the
         objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
         for the background which will have a value of 0 to ensure it is black).
 
         Args:
-            shuffle (bool, optional): shuffle debug colors, helps differentiate object instances. Defaults to True.
-            debug (bool, optional): If true, also save debug visualizations of segmentation. Defaults to True.
-            seed (int, optional): random seed used when shuffling colors. Defaults to 1234.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate object instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
@@ -451,30 +573,14 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
-    def exposed_image_settings(
-        self, file_format: str | None = None, bit_depth: int | None = None, color_mode: str | None = None
-    ) -> None:
-        """Set the render's output format and bit-depth.
-        Useful for linear intensity renders, using "OPEN_EXR" and 32 or 16 bits.
-
-        Note: A default arguments of ``None`` means do not change setting inherited from blendfile.
-
-        Args:
-            file_format (str | None, optional): Format to save render as. Options vary depending on the version of Blender,
-                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
-                'CINEON', 'DPX', 'OPEN_EXR_MULTILAYER', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP', 'AVI_JPEG', 'AVI_RAW', 'FFMPEG').
-                Defaults to None.
-            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
-                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
-            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
-        """
-
-    @require_initialized_service
     def exposed_use_motion_blur(self, enable: bool) -> None:
         """Enable/disable motion blur.
 
         Args:
             enable (bool): If true, enable motion blur.
+
+        Raises:
+            RuntimeError: raised when motion blur is enabled as flow cannot be computed.
         """
 
     @require_initialized_service
@@ -546,22 +652,19 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
+    def exposed_camera_info(self) -> dict[str, Any]:
+        """Return a dictionary with camera intrinsics.
+
+        Returns:
+            dict[str, Any]: dictionary containing camera parameters.
+        """
+
+    @require_initialized_service
     def exposed_camera_extrinsics(self) -> npt.NDArray[np.floating]:
         """Get the 4x4 transform matrix encoding the current camera pose.
 
         Returns:
             npt.NDArray[np.floating]: Current camera pose in matrix form.
-        """
-
-    @require_initialized_service
-    def exposed_camera_intrinsics(self) -> npt.NDArray[np.floating]:
-        """Get the 3x3 camera intrinsics matrix for active camera,
-        which defines how 3D points are projected onto 2D.
-
-        Note: Assumes pinhole camera model.
-
-        Returns:
-            npt.NDArray[np.floating]: Camera intrinsics matrix based on camera properties.
         """
 
     @require_initialized_service
@@ -627,21 +730,22 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
-    def exposed_render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> dict[str, Any]:
+    def exposed_render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> None:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
+
+        Note:
+            This method renders the current frame as-is, it assumes the camera position,
+            frame number and all other parameters have been set.
 
         Args:
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-
-        Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
 
     @require_initialized_service
-    def exposed_render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> dict[str, Any]:
+    def exposed_render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> None:
         """Same as first setting current frame then rendering it.
 
         Warning:
@@ -652,9 +756,6 @@ class BlenderService(rpyc.Service):
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-
-        Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
 
     @require_initialized_service
@@ -664,7 +765,7 @@ class BlenderService(rpyc.Service):
         allow_skips: bool = True,
         dry_run: bool = False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Render all requested frames and return associated transforms dictionary.
 
         Args:
@@ -679,9 +780,6 @@ class BlenderService(rpyc.Service):
 
         Raises:
             RuntimeError: raised if trying to render frames beyond blender's limits.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
     @require_initialized_service
@@ -693,7 +791,7 @@ class BlenderService(rpyc.Service):
         allow_skips: bool = True,
         dry_run: bool = False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Determines frame range to render, sets camera positions and orientations, and renders all frames in animation range.
 
         Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
@@ -711,9 +809,6 @@ class BlenderService(rpyc.Service):
 
         Raises:
             ValueError: raised if scene and camera are entirely static.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
     @require_initialized_service
@@ -792,7 +887,7 @@ class BlenderClient:
     def spawn(
         cls,
         timeout: float = -1.0,
-        log_dir: str | os.PathLike | None = None,
+        log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
     ) -> Iterator[Self]:
@@ -805,9 +900,9 @@ class BlenderClient:
                 spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
                 this context manager will immediately yield, even if the server is not yet ready to accept
                 incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
-            log_dir (str | os.PathLike | None, optional): path to log directory,
-                stdout/err will be captured if set, otherwise outputs will go to os.devnull.
-                Defaults to None (devnull).
+            log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
+                descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
+                Defaults to subprocess.DEVNULL for both stdout/stderr.
             autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
                 For more, see blender's CLI documentation. Defaults to False.
             executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
@@ -919,16 +1014,7 @@ class BlenderClient:
         """
 
     @type_check_only
-    def empty_transforms(self) -> dict[str, Any]:
-        """Return a dictionary with camera intrinsics. Forms the basis of
-        a ``transforms.json`` file, but contains no frame data.
-
-        Returns:
-            dict[str, Any]: empty transforms dictionary containing only camera parameters.
-        """
-
-    @type_check_only
-    def original_fps(self) -> int:
+    def get_original_fps(self) -> int:
         """Get effective framerate (fps/fps_base).
 
         Returns:
@@ -952,54 +1038,124 @@ class BlenderClient:
         """
 
     @type_check_only
-    def include_depths(self, debug: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP") -> None:
-        """Sets up Blender compositor to include depth map for rendered images.
+    def include_composites(
+        self,
+        file_format: FILE_FORMATS | None = None,
+        color_mode: COLOR_MODES | None = None,
+        exr_codec: EXR_CODECS | None = None,
+        bit_depth: Literal[8, 16, 32] | None = None,
+    ) -> None:
+        """Sets up Blender to include the outputs of any existing compositor nodes groups.
+
+        Note: A default arguments of ``None`` means do not change setting inherited from the blendfile's ``Output`` settings.
 
         Args:
-            debug (bool, optional): if true, colorized depth maps, helpful for quick visualizations,
-                will be generated alongside ground-truth depth maps. Defaults to True.
-            file_format (str, optional): format of depth maps, one of "OPEN_EXR" or "HDR". The former
-                is lossless, but can require significant storage, the later is lossy and more compressed.
-                If depth is needed to compute scene-flow, use open-exr. Defaults to "OPEN_EXR".
-            exr_codec (str, optional): codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+            file_format (str | None, optional): Format to save composited render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP'). Defaults to None.
+            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
+            exr_codec (str | None, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
                 options vary depending on the version of Blender, with the following being broadly available:
-                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "ZIP".
-
-        Note:
-            The debug colormap is re-normalized on a per-frame basis, to visually
-            compare across frames, apply colorization after rendering using the CLI.
-
-        Raises:
-            ValueError: raise if file-format nor understood.
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to None.
+            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
         """
 
     @type_check_only
-    def include_normals(self, debug: bool = True, exr_codec: str = "ZIP") -> None:
+    def include_frames(
+        self,
+        file_format: FILE_FORMATS = "PNG",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 8,
+    ) -> None:
+        """Sets up Blender compositor to include ground truth rendered images, bypassing any existing compositor nodes.
+
+        Note:
+            For linear intensity renders, use the "OPEN_EXR" format with and 32 or 16 bits.
+
+        Args:
+            file_format (str, optional): Format to save ground truth render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP'). Defaults to "PNG".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 8 bits.
+
+        Raises:
+            ValueError: raised when file-format not understood.
+        """
+
+    @type_check_only
+    def include_depths(
+        self,
+        preview: bool = True,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include depth map for rendered images.
+
+        Note:
+            The preview colormap is re-normalized on a per-frame basis, to visually
+            compare across frames, apply colorization after rendering using the CLI.
+
+        Args:
+            preview (bool, optional): If true, colorized depth maps, helpful for quick visualizations,
+                will be generated alongside ground-truth depth maps. Defaults to True.
+            file_format (str, optional): Format of depth maps, one of "OPEN_EXR" or "HDR". Defaults to "OPEN_EXR".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 32 bits.
+
+        Raises:
+            ValueError: raised when file-format not understood.
+        """
+
+    @type_check_only
+    def include_normals(
+        self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
+    ) -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
         Args:
-            debug (bool, optional): if true, colorized normal maps will also be generated with each vector
-                component being remapped from [-1, 1] to [0-255] with xyz becoming rgb. Defaults to True.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            preview (bool, optional): If true, colorized normal maps will also be generated with each vector
+                component being remapped from [-1, 1] to [0-255] where XYZ coordinates are mapped channel-wise to RGB.
+                Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Either 16 or 32 bits. Defaults to 32 bits.
         """
 
     @type_check_only
-    def include_flows(self, direction: str = "forward", debug: bool = True, exr_codec: str = "ZIP") -> None:
+    def include_flows(
+        self,
+        preview: bool = True,
+        direction: Literal["forward", "backward", "both"] = "forward",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
         Args:
+            preview (bool, optional): If true, also save preview visualizations of flow. Defaults to True.
             direction (str, optional): One of 'forward', 'backward' or 'both'. Direction of flow to colorize
-                for debug visualization. Only used when debug is true, otherwise both forward and backward
+                for preview visualization. Only used when ``preview`` is true, otherwise both forward and backward
                 flows are saved. Defaults to "forward".
-            debug (bool, optional): If true, also save debug visualizations of flow. Defaults to True.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 32 bits.
 
         Note:
-            The debug colormap is re-normalized on a per-frame basis, to visually
+            The preview colormap is re-normalized on a per-frame basis, to visually
             compare across frames, apply colorization after rendering using the CLI.
 
         Raises:
@@ -1009,21 +1165,28 @@ class BlenderClient:
 
     @type_check_only
     def include_segmentations(
-        self, shuffle: bool = True, debug: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
     ) -> None:
         """Sets up Blender compositor to include segmentation maps for rendered images.
 
-        The debug visualization simply assigns a color to each object ID by mapping the
+        The preview visualization simply assigns a color to each object ID by mapping the
         objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
         for the background which will have a value of 0 to ensure it is black).
 
         Args:
-            shuffle (bool, optional): shuffle debug colors, helps differentiate object instances. Defaults to True.
-            debug (bool, optional): If true, also save debug visualizations of segmentation. Defaults to True.
-            seed (int, optional): random seed used when shuffling colors. Defaults to 1234.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate object instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
@@ -1051,30 +1214,14 @@ class BlenderClient:
         """
 
     @type_check_only
-    def image_settings(
-        self, file_format: str | None = None, bit_depth: int | None = None, color_mode: str | None = None
-    ) -> None:
-        """Set the render's output format and bit-depth.
-        Useful for linear intensity renders, using "OPEN_EXR" and 32 or 16 bits.
-
-        Note: A default arguments of ``None`` means do not change setting inherited from blendfile.
-
-        Args:
-            file_format (str | None, optional): Format to save render as. Options vary depending on the version of Blender,
-                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
-                'CINEON', 'DPX', 'OPEN_EXR_MULTILAYER', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP', 'AVI_JPEG', 'AVI_RAW', 'FFMPEG').
-                Defaults to None.
-            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
-                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
-            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
-        """
-
-    @type_check_only
     def use_motion_blur(self, enable: bool) -> None:
         """Enable/disable motion blur.
 
         Args:
             enable (bool): If true, enable motion blur.
+
+        Raises:
+            RuntimeError: raised when motion blur is enabled as flow cannot be computed.
         """
 
     @type_check_only
@@ -1146,22 +1293,19 @@ class BlenderClient:
         """
 
     @type_check_only
+    def camera_info(self) -> dict[str, Any]:
+        """Return a dictionary with camera intrinsics.
+
+        Returns:
+            dict[str, Any]: dictionary containing camera parameters.
+        """
+
+    @type_check_only
     def camera_extrinsics(self) -> npt.NDArray[np.floating]:
         """Get the 4x4 transform matrix encoding the current camera pose.
 
         Returns:
             npt.NDArray[np.floating]: Current camera pose in matrix form.
-        """
-
-    @type_check_only
-    def camera_intrinsics(self) -> npt.NDArray[np.floating]:
-        """Get the 3x3 camera intrinsics matrix for active camera,
-        which defines how 3D points are projected onto 2D.
-
-        Note: Assumes pinhole camera model.
-
-        Returns:
-            npt.NDArray[np.floating]: Camera intrinsics matrix based on camera properties.
         """
 
     @type_check_only
@@ -1223,21 +1367,22 @@ class BlenderClient:
         """
 
     @type_check_only
-    def render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> dict[str, Any]:
+    def render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> None:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
+
+        Note:
+            This method renders the current frame as-is, it assumes the camera position,
+            frame number and all other parameters have been set.
 
         Args:
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-
-        Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
 
     @type_check_only
-    def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> dict[str, Any]:
+    def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> None:
         """Same as first setting current frame then rendering it.
 
         Warning:
@@ -1248,9 +1393,6 @@ class BlenderClient:
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-
-        Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
 
     @type_check_only
@@ -1260,7 +1402,7 @@ class BlenderClient:
         allow_skips: bool = True,
         dry_run: bool = False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Render all requested frames and return associated transforms dictionary.
 
         Args:
@@ -1275,9 +1417,6 @@ class BlenderClient:
 
         Raises:
             RuntimeError: raised if trying to render frames beyond blender's limits.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
     @type_check_only
@@ -1289,7 +1428,7 @@ class BlenderClient:
         allow_skips: bool = True,
         dry_run: bool = False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Determines frame range to render, sets camera positions and orientations, and renders all frames in animation range.
 
         Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
@@ -1307,9 +1446,6 @@ class BlenderClient:
 
         Raises:
             ValueError: raised if scene and camera are entirely static.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
     @type_check_only
@@ -1378,7 +1514,7 @@ class BlenderClients(tuple):
         cls,
         jobs: int = 1,
         timeout: float = -1.0,
-        log_dir: str | os.PathLike | None = None,
+        log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
     ) -> Iterator[Self]:
@@ -1392,9 +1528,9 @@ class BlenderClients(tuple):
                 spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
                 this context manager will immediately yield, even if the server is not yet ready to accept
                 incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
-            log_dir (str | os.PathLike | None, optional): path to log directory,
-                stdout/err will be captured if set, otherwise outputs will go to os.devnull.
-                Defaults to None (devnull).
+            log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
+                descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
+                Defaults to subprocess.DEVNULL for both stdout/stderr.
             autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
                 For more, see blender's CLI documentation. Defaults to False.
             executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
@@ -1411,7 +1547,7 @@ class BlenderClients(tuple):
     def pool(
         jobs: int = 1,
         timeout: float = -1.0,
-        log_dir: str | os.PathLike | None = None,
+        log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
         conns: list[tuple[str, int]] | None = None,
@@ -1443,9 +1579,9 @@ class BlenderClients(tuple):
                 spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
                 this context manager will immediately yield, even if the server is not yet ready to accept
                 incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
-            log_dir (str | os.PathLike | None, optional): path to log directory,
-                stdout/err will be captured if set, otherwise outputs will go to os.devnull.
-                Defaults to None (devnull).
+            log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
+                descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
+                Defaults to subprocess.DEVNULL for both stdout/stderr.
             autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
                 For more, see blender's CLI documentation. Defaults to False.
             executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
@@ -1490,7 +1626,7 @@ class BlenderClients(tuple):
         allow_skips: bool = True,
         dry_run: bool = False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Render all requested frames by distributing workload across connected clients and return associated transforms dictionary.
 
         Warning:
@@ -1509,9 +1645,6 @@ class BlenderClients(tuple):
 
         Raises:
             RuntimeError: raised if trying to render frames beyond blender's limits.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
     @require_connected_clients
@@ -1523,7 +1656,7 @@ class BlenderClients(tuple):
         allow_skips: bool = True,
         dry_run: bool = False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Determines frame range to render, sets camera positions and orientations, and renders all frames in animation range by distributing
         workload onto all connected clients.
 
@@ -1542,9 +1675,6 @@ class BlenderClients(tuple):
 
         Raises:
             ValueError: raised if scene and camera are entirely static.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
     @require_connected_clients
@@ -1599,16 +1729,7 @@ class BlenderClients(tuple):
         """
 
     @type_check_only
-    def empty_transforms(self) -> tuple[dict[str, Any],]:
-        """Return a dictionary with camera intrinsics. Forms the basis of
-        a ``transforms.json`` file, but contains no frame data.
-
-        Returns:
-            dict[str, Any]: empty transforms dictionary containing only camera parameters.
-        """
-
-    @type_check_only
-    def original_fps(self) -> tuple[int,]:
+    def get_original_fps(self) -> tuple[int,]:
         """Get effective framerate (fps/fps_base).
 
         Returns:
@@ -1632,54 +1753,124 @@ class BlenderClients(tuple):
         """
 
     @type_check_only
-    def include_depths(self, debug: bool = True, file_format: str = "OPEN_EXR", exr_codec: str = "ZIP") -> None:
-        """Sets up Blender compositor to include depth map for rendered images.
+    def include_composites(
+        self,
+        file_format: FILE_FORMATS | None = None,
+        color_mode: COLOR_MODES | None = None,
+        exr_codec: EXR_CODECS | None = None,
+        bit_depth: Literal[8, 16, 32] | None = None,
+    ) -> None:
+        """Sets up Blender to include the outputs of any existing compositor nodes groups.
+
+        Note: A default arguments of ``None`` means do not change setting inherited from the blendfile's ``Output`` settings.
 
         Args:
-            debug (bool, optional): if true, colorized depth maps, helpful for quick visualizations,
-                will be generated alongside ground-truth depth maps. Defaults to True.
-            file_format (str, optional): format of depth maps, one of "OPEN_EXR" or "HDR". The former
-                is lossless, but can require significant storage, the later is lossy and more compressed.
-                If depth is needed to compute scene-flow, use open-exr. Defaults to "OPEN_EXR".
-            exr_codec (str, optional): codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+            file_format (str | None, optional): Format to save composited render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP'). Defaults to None.
+            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
+            exr_codec (str | None, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
                 options vary depending on the version of Blender, with the following being broadly available:
-                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "ZIP".
-
-        Note:
-            The debug colormap is re-normalized on a per-frame basis, to visually
-            compare across frames, apply colorization after rendering using the CLI.
-
-        Raises:
-            ValueError: raise if file-format nor understood.
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to None.
+            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
         """
 
     @type_check_only
-    def include_normals(self, debug: bool = True, exr_codec: str = "ZIP") -> None:
+    def include_frames(
+        self,
+        file_format: FILE_FORMATS = "PNG",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 8,
+    ) -> None:
+        """Sets up Blender compositor to include ground truth rendered images, bypassing any existing compositor nodes.
+
+        Note:
+            For linear intensity renders, use the "OPEN_EXR" format with and 32 or 16 bits.
+
+        Args:
+            file_format (str, optional): Format to save ground truth render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP'). Defaults to "PNG".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 8 bits.
+
+        Raises:
+            ValueError: raised when file-format not understood.
+        """
+
+    @type_check_only
+    def include_depths(
+        self,
+        preview: bool = True,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include depth map for rendered images.
+
+        Note:
+            The preview colormap is re-normalized on a per-frame basis, to visually
+            compare across frames, apply colorization after rendering using the CLI.
+
+        Args:
+            preview (bool, optional): If true, colorized depth maps, helpful for quick visualizations,
+                will be generated alongside ground-truth depth maps. Defaults to True.
+            file_format (str, optional): Format of depth maps, one of "OPEN_EXR" or "HDR". Defaults to "OPEN_EXR".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 32 bits.
+
+        Raises:
+            ValueError: raised when file-format not understood.
+        """
+
+    @type_check_only
+    def include_normals(
+        self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
+    ) -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
         Args:
-            debug (bool, optional): if true, colorized normal maps will also be generated with each vector
-                component being remapped from [-1, 1] to [0-255] with xyz becoming rgb. Defaults to True.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            preview (bool, optional): If true, colorized normal maps will also be generated with each vector
+                component being remapped from [-1, 1] to [0-255] where XYZ coordinates are mapped channel-wise to RGB.
+                Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Either 16 or 32 bits. Defaults to 32 bits.
         """
 
     @type_check_only
-    def include_flows(self, direction: str = "forward", debug: bool = True, exr_codec: str = "ZIP") -> None:
+    def include_flows(
+        self,
+        preview: bool = True,
+        direction: Literal["forward", "backward", "both"] = "forward",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
         Args:
+            preview (bool, optional): If true, also save preview visualizations of flow. Defaults to True.
             direction (str, optional): One of 'forward', 'backward' or 'both'. Direction of flow to colorize
-                for debug visualization. Only used when debug is true, otherwise both forward and backward
+                for preview visualization. Only used when ``preview`` is true, otherwise both forward and backward
                 flows are saved. Defaults to "forward".
-            debug (bool, optional): If true, also save debug visualizations of flow. Defaults to True.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 32 bits.
 
         Note:
-            The debug colormap is re-normalized on a per-frame basis, to visually
+            The preview colormap is re-normalized on a per-frame basis, to visually
             compare across frames, apply colorization after rendering using the CLI.
 
         Raises:
@@ -1689,21 +1880,28 @@ class BlenderClients(tuple):
 
     @type_check_only
     def include_segmentations(
-        self, shuffle: bool = True, debug: bool = True, seed: int = 1234, exr_codec: str = "ZIP"
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
     ) -> None:
         """Sets up Blender compositor to include segmentation maps for rendered images.
 
-        The debug visualization simply assigns a color to each object ID by mapping the
+        The preview visualization simply assigns a color to each object ID by mapping the
         objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
         for the background which will have a value of 0 to ensure it is black).
 
         Args:
-            shuffle (bool, optional): shuffle debug colors, helps differentiate object instances. Defaults to True.
-            debug (bool, optional): If true, also save debug visualizations of segmentation. Defaults to True.
-            seed (int, optional): random seed used when shuffling colors. Defaults to 1234.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate object instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
@@ -1731,30 +1929,14 @@ class BlenderClients(tuple):
         """
 
     @type_check_only
-    def image_settings(
-        self, file_format: str | None = None, bit_depth: int | None = None, color_mode: str | None = None
-    ) -> None:
-        """Set the render's output format and bit-depth.
-        Useful for linear intensity renders, using "OPEN_EXR" and 32 or 16 bits.
-
-        Note: A default arguments of ``None`` means do not change setting inherited from blendfile.
-
-        Args:
-            file_format (str | None, optional): Format to save render as. Options vary depending on the version of Blender,
-                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
-                'CINEON', 'DPX', 'OPEN_EXR_MULTILAYER', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP', 'AVI_JPEG', 'AVI_RAW', 'FFMPEG').
-                Defaults to None.
-            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
-                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
-            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
-        """
-
-    @type_check_only
     def use_motion_blur(self, enable: bool) -> None:
         """Enable/disable motion blur.
 
         Args:
             enable (bool): If true, enable motion blur.
+
+        Raises:
+            RuntimeError: raised when motion blur is enabled as flow cannot be computed.
         """
 
     @type_check_only
@@ -1826,22 +2008,19 @@ class BlenderClients(tuple):
         """
 
     @type_check_only
+    def camera_info(self) -> tuple[dict[str, Any],]:
+        """Return a dictionary with camera intrinsics.
+
+        Returns:
+            dict[str, Any]: dictionary containing camera parameters.
+        """
+
+    @type_check_only
     def camera_extrinsics(self) -> tuple[npt.NDArray[np.floating],]:
         """Get the 4x4 transform matrix encoding the current camera pose.
 
         Returns:
             npt.NDArray[np.floating]: Current camera pose in matrix form.
-        """
-
-    @type_check_only
-    def camera_intrinsics(self) -> tuple[npt.NDArray[np.floating],]:
-        """Get the 3x3 camera intrinsics matrix for active camera,
-        which defines how 3D points are projected onto 2D.
-
-        Note: Assumes pinhole camera model.
-
-        Returns:
-            npt.NDArray[np.floating]: Camera intrinsics matrix based on camera properties.
         """
 
     @type_check_only
@@ -1903,21 +2082,22 @@ class BlenderClients(tuple):
         """
 
     @type_check_only
-    def render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> tuple[dict[str, Any],]:
+    def render_current_frame(self, allow_skips: bool = True, dry_run: bool = False) -> None:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
+
+        Note:
+            This method renders the current frame as-is, it assumes the camera position,
+            frame number and all other parameters have been set.
 
         Args:
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-
-        Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
 
     @type_check_only
-    def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> tuple[dict[str, Any],]:
+    def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> None:
         """Same as first setting current frame then rendering it.
 
         Warning:
@@ -1928,7 +2108,4 @@ class BlenderClients(tuple):
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-
-        Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """

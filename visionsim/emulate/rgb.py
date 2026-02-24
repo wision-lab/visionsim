@@ -5,7 +5,7 @@ import numpy.typing as npt
 from scipy.ndimage import gaussian_filter
 from typing_extensions import Literal
 
-from visionsim.utils.color import linearrgb_to_srgb, raw_to_rgb_bayer, rgb_to_raw_bayer
+from visionsim.utils.color import raw_to_rgb_bayer, rgb_to_raw_bayer
 from visionsim.utils.imgproc import unsharp_mask
 
 
@@ -25,12 +25,12 @@ def emulate_rgb_from_sequence(
 ) -> npt.NDArray:
     """Emulates a conventional RGB camera from a sequence of intensity frames.
 
-    For camera model see [1]. For demosaicing details see docs for `utils/color/raw_to_rgb_bayer`.
+    For camera model see [1]. For demosaicing details see :func:`raw_to_rgb_bayer <visionsim.utils.color.raw_to_rgb_bayer>`.
 
     Note:
         Motion-blur is approximated by averaging consecutive ground truth frames,
         this can be done more efficiently if optical flow is available.
-        See `emulate_rgb_from_flow` for more.
+        See :func:`emulate_rgb_from_flow <visionsim.emulate.rgb.emulate_rgb_from_flow>` for more.
 
     Args:
         sequence (npt.ArrayLike): Input sequence of linear-intensity frames, can be a collection of frames,
@@ -39,8 +39,8 @@ def emulate_rgb_from_sequence(
         readout_std (float, optional): Standard deviation of zero mean Gaussian read noise. Defaults to 0.0.
         fwc (float, optional): Full well capacity, used for normalization. Defaults to 10000.0.
         adc_bitdepth (int, optional): Resolution of ADC in bits. Defaults to 12.
-        flux_gain (float, optional): factor to scale the input [0, 1] image _before_ Poisson rng
-        iso_gain (float, optional): factor to scale the photo-electron reading _after_ Poisson rng
+        flux_gain (float, optional): factor to scale the input [0, 1] image _before_ Poisson sampling
+        iso_gain (float, optional): factor to scale the photo-electron reading _after_ Poisson sampling
         mosaic (bool, optional): implement one array with mosaiced R-/G-/B-sensitive pixels or an innately 3-channel sensor
         demosaic (string, optional): demosaicing method to use if "mosaic" is set (default "off")
         denoise_sigma (float, optional): Gaussian blur kernel sigma (disabled if 0.0)
@@ -48,7 +48,7 @@ def emulate_rgb_from_sequence(
         rng (np.random.Generator, optional): Optional random number generator. Defaults to none.
 
     Returns:
-        Quantized sRGB patch is returned as _uint8_ array (range [0, 255])
+        npt.NDArray: Quantized linear-intensity RGB patch as floating point array (range [0, 1])
 
     References:
         ..  [1] S. W. Hasinoff, F. Durand, and W. T. Freeman,
@@ -79,7 +79,7 @@ def emulate_rgb_from_sequence(
     patch *= iso_gain
     # assume perfect quantization in ADC
     patch = np.round(np.clip(patch, 0, (2**adc_bitdepth - 1)))
-    patch = patch * (1.0 / (2**adc_bitdepth - 1))
+    patch = patch / (2**adc_bitdepth - 1)
 
     # de-mosaicing: necessary if data is mosaiced, so can't be `None`.
     # ("off" is not a no-op, it still creates a full 3-channel image from 1,
@@ -93,9 +93,6 @@ def emulate_rgb_from_sequence(
     if sharpen_weight != 0.0:
         patch = unsharp_mask(patch, sigma=max(1, denoise_sigma), amount=sharpen_weight)
 
-    # Convert to sRGB color space for viewing and quantize to 8-bits
-    patch = linearrgb_to_srgb(patch.astype(np.double))
-    patch = np.round(patch * 255).astype(np.uint8)
     if not has_color:  # fake it anyway, because this is emulate____rgb____
         if len(patch.shape) < 3:
             patch = np.atleast_3d(patch)

@@ -12,10 +12,10 @@ visionsim.utils.color module
    :show-inheritance:
    :undoc-members:
 
-visionsim.utils.pose module
----------------------------
+visionsim.utils.imgproc module
+------------------------------
 
-.. automodule:: visionsim.utils.pose
+.. automodule:: visionsim.utils.imgproc
    :members:
    :show-inheritance:
    :undoc-members:

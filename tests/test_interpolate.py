@@ -5,7 +5,7 @@ from numpy import float64
 from PIL import Image
 from scipy.spatial.transform import Rotation as R
 
-from visionsim.interpolate import interpolate_frames, interpolate_poses
+from visionsim.interpolate import interpolate_poses, rife
 
 
 def test_interpolate_rotation_matrix():
@@ -14,14 +14,10 @@ def test_interpolate_rotation_matrix():
     # Pose at (1,1,1) with 45 degree rotation around x axis
     end_pose = np.eye(4, dtype=float64)
     end_pose[:3, -1] = [1, 1, 1]
-    # Add rotation matrix
     end_pose[:3, :3] = R.from_euler("x", 45, degrees=True).as_matrix()
-    # Put test matrices in transforms format
-    transforms = {
-        "frames": [{"file_path": "0", "transform_matrix": start_pose}, {"file_path": "1", "transform_matrix": end_pose}]
-    }
+
     # Interpolate the poses
-    new_poses = interpolate_poses(transforms, normalize=True, k=1)
+    new_poses = interpolate_poses([start_pose, end_pose], normalize=True, k=1)
     interpolated_start, interpolated_pose, interpolated_end = new_poses
 
     # Make sure first and last pose haven't changed
@@ -50,7 +46,7 @@ def test_interpolate_frames(tmp_path):
     black_square.save(tmp_path / "frames/1.png")
 
     # Interpolate the test frames
-    interpolate_frames(tmp_path, tmp_path, n=8)
+    rife(tmp_path, tmp_path, exp=3)
 
     # Check to make sure each image is getting darker
     # In grayscale white=255, black=0

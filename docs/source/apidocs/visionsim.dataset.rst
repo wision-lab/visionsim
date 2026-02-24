@@ -12,10 +12,10 @@ visionsim.dataset.dataset module
    :show-inheritance:
    :undoc-members:
 
-visionsim.dataset.schema module
+visionsim.dataset.models module
 -------------------------------
 
-.. automodule:: visionsim.dataset.schema
+.. automodule:: visionsim.dataset.models
    :members:
    :show-inheritance:
    :undoc-members:

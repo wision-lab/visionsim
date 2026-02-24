@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-import os
+from functools import partial
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
-from typing_extensions import Literal
-
-from visionsim.dataset import IMG_SCHEMA, read_and_validate
-from visionsim.interpolate import interpolate_frames, interpolate_poses, poses_and_frames_to_json
 
 
-def video(input_file: str | os.PathLike, output_file: str | os.PathLike, method: str = "rife", n: int = 2):
+def video(input_file: Path, output_file: Path, method: str = "rife", n: int = 2) -> None:
     """Interpolate video by extracting all frames, performing frame-wise interpolation and re-assembling video
 
     Args:
@@ -25,6 +22,7 @@ def video(input_file: str | os.PathLike, output_file: str | os.PathLike, method:
 
     from visionsim.cli import _log
     from visionsim.interpolate import rife
+    from visionsim.utils.progress import ElapsedProgress
 
     from .ffmpeg import animate, count_frames, duration, extract
 
@@ -38,43 +36,75 @@ def video(input_file: str | os.PathLike, output_file: str | os.PathLike, method:
 
     with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as dst_dir:
         # Extract all frames
-        extract(input_file, src_dir, pattern="frames_%06d.png")
+        extract(Path(input_file), Path(src_dir), pattern="frames_%06d.png")
 
         # Interpolate them
-        img_paths = [str(p) for p in natsorted(Path(src_dir).glob("frames_*.png"))]
-        rife(img_paths, dst_dir, exp=np.log2(n).astype(int))
+        with ElapsedProgress() as progress:
+            task = progress.add_task("Interpolating with rife...")
+            img_paths = [str(p) for p in natsorted(Path(src_dir).glob("frames_*.png"))]
+            rife(img_paths, dst_dir, exp=np.log2(n).astype(int), update_fn=partial(progress.update, task))
 
         # Assemble final video at correct frame-rate
-        animate(dst_dir, pattern="frames_*.png", outfile=output_file, fps=avg_fps)
+        animate(Path(dst_dir), pattern="frames_*.png", outfile=output_file, fps=int(avg_fps))
 
 
-def frames(
-    input_dir: str | os.PathLike,
-    output_dir: str | os.PathLike,
+def dataset(
+    input_dir: Path,
+    output_dir: Path,
+    pattern: str | None = None,
     method: Literal["rife"] = "rife",
-    file_name: str = "transforms.json",
     n: int = 2,
-):
-    """Interpolate poses and frames separately, then combine into transforms.json file
+) -> None:
+    """Interpolate between a series of frames or a dataset (both it's images and poses)
+
+    Note:
+        This only works if the dataset has a single camera, as interpolating camera settings
+        or types is not possible. Further, the data needs to be saved as images.
 
     Args:
-        input_dir: directory in which to look for frames,
-        output_dir: directory in which to save interpolated frames,
-        method: interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife',
-        file_name: name of file containing transforms, default: 'transforms.json',
-        n: interpolation factor, must be a multiple of 2, default: 2,
+        input_dir: directory in which to look for frames
+        output_dir: directory in which to save interpolated frames
+        pattern: used to find source image files to interpolate from,
+            not needed when ``input_dir`` points to a valid dataset.
+        method: interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife'
+        n: interpolation factor, must be a multiple of 2, default: 2
     """
-    from visionsim.cli import _log, _validate_directories
+    from natsort import natsorted
 
-    # Extract transforms from transforms.json file
-    input_path, output_path, *_ = _validate_directories(input_dir, output_dir)
-    transforms = read_and_validate(path=input_path / file_name, schema=IMG_SCHEMA)
+    from visionsim.cli import _log
+    from visionsim.dataset import Dataset, Metadata
+    from visionsim.interpolate import rife
+    from visionsim.interpolate.pose import interpolate_poses
+    from visionsim.utils.progress import ElapsedProgress
 
-    _log.info("Interpolating poses...")
-    interpolated_poses = interpolate_poses(transforms, n=n)
+    if pattern:
+        dataset = Dataset.from_pattern(input_dir, pattern)
+    else:
+        dataset = Dataset.from_path(input_dir)
 
-    _log.info("Interpolating frames...")
-    interpolate_frames(input_path, output_path, method, n)
+    with ElapsedProgress() as progress:
+        task = progress.add_task(f"Interpolating with {method}...")
 
-    _log.info(f"Generating {file_name}")
-    poses_and_frames_to_json(transforms, interpolated_poses, output_path, file_name="transforms.json")
+        if method.lower() == "rife":
+            rife(
+                input_dir,
+                output_dir,
+                input_files=dataset.paths,
+                exp=np.log2(n).astype(int),
+                update_fn=partial(progress.update, task),
+            )
+        else:
+            raise NotImplementedError("Requested interpolation method is not supported at this time.")
+
+    if dataset.cameras is None or len(dataset.cameras) != 1:
+        _log.warning("Cannot emulate an RGB camera from multiple cameras, not saving transforms.")
+    elif dataset.poses is not None:
+        _log.info("Interpolating poses...")
+        interp_poses = interpolate_poses(dataset.poses, n=n)
+        interp_paths = natsorted(output_dir.glob("**/*.png"))
+        Metadata.from_frames(
+            frames=[
+                dict(file_path=p.relative_to(output_dir), transform_matrix=m) for p, m in zip(interp_paths, interp_poses)
+            ],
+            camera=next(iter(dataset.cameras)),
+        ).save(output_dir / "transforms.json")

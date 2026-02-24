@@ -20,7 +20,6 @@ classifiers = [
     "Operating System :: OS Independent"
 ]
 dependencies = [
-    "opencv-python",
     "imageio",
     "more_itertools",
     "numpy",
@@ -30,14 +29,15 @@ dependencies = [
     "invoke",
     "natsort",
     "rich",
-    "jsonschema",
-    "torchvision",
     "OpenEXR",
     "multiprocess",
     "rpyc",
     "fastdigest",
     "tyro",
     "ephemeral-port-reserve",
+    "peewee",
+    "pydantic",
+    "typing-extensions",
 ]
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
@@ -76,6 +76,7 @@ dev = [
     "types-jsonschema",
     'scipy-stubs; python_version >= "3.10"',
     "psutil",
+    "types-peewee",
 ]
 docs = [
     "invoke",

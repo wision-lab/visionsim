@@ -10,7 +10,7 @@ from .common import COMBXYZ_NODE, MATH_NODE, SEPXYZ_NODE, new_socket, set_clamp
 
 
 # initialize NormalDebug node group
-def normaldebug_node_group():
+def normal_preview_node_group():
     normaldebug = bpy.data.node_groups.new(type="CompositorNodeTree", name="NormalDebug")
 
     if bpy.app.version >= (4, 3, 0):

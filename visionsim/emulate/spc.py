@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import numpy.typing as npt
 import torch
-from typing_extensions import cast
 
 
 def emulate_spc(
@@ -15,17 +16,17 @@ def emulate_spc(
     """Perform bernoulli sampling on linearized RGB frames to yield binary frames.
 
     Args:
-        img (npt.ArrayLike): Linear intensity image to sample binary frame from.
-        flux_gain(float, default=1): scale factor to convert img in [0, 1] range to other flux levels
-        bitdepth (int, default=1): representing a SPAD sensor that averages `2^bitdepth - 1` binary samples internally for each measurement, operating at framerate `(1 / (2^bitdepth - 1))` of a binary SPAD sensor
+        img (npt.NDArray[np.floating]): Linear intensity image to sample binary frame from.
+        flux_gain(float, optional): scale factor to convert img in [0, 1] range to other flux levels. Defaults to 1.0.
+        bitdepth (int, optional): representing a SPAD sensor that sums ``2**bitdepth - 1`` binary samples internally
+            for each measurement, operating at framerate ``1 / (2**bitdepth - 1)`` of a binary SPAD sensor. Defaults to 1.
         rng (np.random.Generator, optional): Optional random number generator. Defaults to none.
 
     Returns:
-        binomial-distributed single-photon frame
+        npt.NDArray[np.integer]: binomial-distributed single-photon frame
     """
     rng = np.random.default_rng() if rng is None else rng
-    N = int(2**bitdepth) - 1
-    return (1.0 / N) * rng.binomial(cast(npt.NDArray[np.integer], N), 1.0 - np.exp(-img * flux_gain))
+    return rng.binomial(cast(npt.NDArray[np.integer], 2**bitdepth - 1), 1.0 - np.exp(-img * flux_gain))
 
 
 def spc_avg_to_rgb(
@@ -52,7 +53,7 @@ def spc_avg_to_rgb(
             Defaults to None (no normalization/clipping).
 
     Returns:
-        Conventional intensity image
+        torch.Tensor | npt.NDArray: Conventional intensity image
     """
     module = torch if torch.is_tensor(mean_binary_patch) else np
     intensity = -module.log(module.clip(1 - mean_binary_patch, epsilon, 1)) / factor

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from typing import Literal
+
 import numpy as np
 import numpy.typing as npt
 import torch
 from scipy.ndimage import correlate
-from typing_extensions import Literal
 
 
 def srgb_to_linearrgb(img: torch.Tensor | npt.NDArray[np.floating]) -> torch.Tensor | npt.NDArray[np.floating]:
@@ -15,7 +16,7 @@ def srgb_to_linearrgb(img: torch.Tensor | npt.NDArray[np.floating]) -> torch.Ten
         img (torch.Tensor | npt.NDArray): Image to un-tonemap.
 
     Returns:
-        linear rgb image.
+        torch.Tensor | npt.NDArray: linear rgb image.
     """
     # https://github.com/blender/blender/blob/master/source/blender/blenlib/intern/math_color.c
     module, img = (torch, img.clone()) if torch.is_tensor(img) else (np, np.copy(img))
@@ -32,7 +33,7 @@ def linearrgb_to_srgb(img: torch.Tensor | npt.NDArray) -> torch.Tensor | npt.NDA
         img (torch.Tensor | npt.NDArray): Image to tonemap.
 
     Returns:
-        tonemapped rgb image.
+        torch.Tensor | npt.NDArray: tonemapped rgb image.
     """
     # https://github.com/blender/blender/blob/master/source/blender/blenlib/intern/math_color.c
     module, img = (torch, img.clone()) if torch.is_tensor(img) else (np, np.copy(img))
@@ -43,19 +44,41 @@ def linearrgb_to_srgb(img: torch.Tensor | npt.NDArray) -> torch.Tensor | npt.NDA
     return img
 
 
-def rgb_to_raw_bayer(
-    rgb: torch.Tensor | npt.NDArray, cfa_pattern: Literal["rggb"] = "rggb"
-) -> torch.Tensor | npt.NDArray:
+def rgb_to_grayscale(img: npt.NDArray[np.floating]) -> npt.NDArray[np.floating]:
+    """Performs RGB to grayscale color space conversion.
+
+    Note:
+        If there is 4 channels, it is assumed that the last channel is alpha and it is preserved.
+
+    Args:
+        img (npt.NDArray): Image to convert, expected to be in HWC format and normalized to [0, 1].
+
+    Returns:
+        npt.NDArray: grayscale image as HWC where C is 1 or 2 (if alpha channel is present).
+    """
+    # Values from http://en.wikipedia.org/wiki/Grayscale
+    r, g, b, *a = img.transpose(2, 0, 1)
+    luma = 0.0722 * b + 0.7152 * g + 0.2126 * r
+
+    if len(a):
+        luma = np.stack([luma, *a], axis=-1)
+    if luma.ndim < 3:
+        luma = luma[..., None]
+
+    return luma
+
+
+def rgb_to_raw_bayer(rgb: npt.NDArray, cfa_pattern: Literal["rggb"] = "rggb") -> npt.NDArray:
     """Mosaicing
 
     Realizes a mosaiced CFA image as would be sampled by a real Bayer-patterned sensor
 
     Args:
-        rgb: hypothetical true RGB signal
-        cfa_pattern: Bayer pattern (only RGGB implemented for now)
+        rgb (npt.NDArray): hypothetical true RGB signal
+        cfa_pattern (Literal["rggb"]): Bayer pattern (only RGGB implemented for now)
 
     Returns:
-        raw: CFA mosaiced data
+        npt.NDArray: CFA mosaiced data
     """
     if cfa_pattern == "rggb":
         raw = np.copy(rgb[:, :, 0])
@@ -68,11 +91,11 @@ def rgb_to_raw_bayer(
 
 
 def raw_to_rgb_bayer(
-    raw: torch.Tensor | npt.NDArray,
+    raw: npt.NDArray,
     cfa_pattern: Literal["rggb"] = "rggb",
     method: Literal["off", "bilinear", "MHC04"] = "bilinear",
-) -> torch.Tensor | npt.NDArray:
-    """Demosaicing
+) -> npt.NDArray:
+    """Bayer Demosaicing
 
     Convolution-based implementation as suggested by Malvar et al. [1].
 
@@ -86,14 +109,15 @@ def raw_to_rgb_bayer(
     which appear to give similar results but could run faster (not benchmarked).
 
     Args:
-        raw: input array (has to be exactly 2D)
-        cfa_pattern: Bayer pattern shape (only RGGB implemented for now)
+        raw (npt.NDArray): input array (has to be exactly 2D)
+        cfa_pattern (Literal["rggb"]): Bayer pattern (only RGGB implemented for now)
 
     Returns:
-        rgb: demosaiced RGB image
+        npt.NDArray: demosaiced RGB image
 
     References:
-        .. [1] Malvar et al. (2004), "High-quality linear interpolation for demosaicing of Bayer-patterned color images", ICASSP 2004. <https://home.cis.rit.edu/~cnspci/references/dip/demosaicking/malvar2004.pdf>
+        .. [1] Malvar et al. (2004), "High-quality linear interpolation for demosaicing of Bayer-patterned color images",
+            ICASSP 2004. <https://home.cis.rit.edu/~cnspci/references/dip/demosaicking/malvar2004.pdf>
     """
 
     if cfa_pattern == "rggb":

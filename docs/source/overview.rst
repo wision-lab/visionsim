@@ -5,7 +5,7 @@ This framework is made up of four layers and accessible as both a CLI and librar
 
 - **World Simulation:** Using existing high-quality assets and rendering engines render ground truth RGB images, depth maps, segmentation maps, normal maps, etc. 
 
-- **Interpolation:** Using simulated data or data :doc:`from an existing dataset <tutorials/preexisting-ds>` optionally interpolate it to yield higher framerate datasets. This step can greatly help reduce the computational cost of emulating high speed sensors.
+- **Interpolation:** Using simulated data or data from an existing dataset optionally interpolate it to yield higher framerate datasets. This step can greatly help reduce the computational cost of emulating high speed sensors.
 
 - **Sensor Emulation:** Apply realistic sensor modeling to the ground truth data to emulate different sensor modalities such as single photon cameras (both passive and active), event cameras and IMUs. 
 

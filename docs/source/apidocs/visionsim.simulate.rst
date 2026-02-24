@@ -36,6 +36,14 @@ visionsim.simulate.job module
    :show-inheritance:
    :undoc-members:
 
+visionsim.simulate.schema module
+--------------------------------
+
+.. automodule:: visionsim.simulate.schema
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 Module contents
 ---------------
 

@@ -29,7 +29,7 @@ class ElapsedProgress(Progress):
 
 
 class PoolProgress(Progress):
-    """Convenience wrapper around rich's `Progress` to enable progress bars when
+    """Convenience wrapper around rich's ``Progress`` to enable progress bars when
     using multiple processes. All progressbar updates are carried out by the main
     process, and worker processes communicate their state via a callback obtained
     when a task gets added.
@@ -62,10 +62,11 @@ class PoolProgress(Progress):
     """
 
     def __init__(self, *args, auto_visible=True, description="[green]Total progress:", **kwargs) -> None:
-        """Initialize a `PoolProgress` instance.
+        """Initialize a ``PoolProgress`` instance.
 
         Note:
-            All other *args and **kwargs are passed as is to `rich.progress.Progress`.
+            All other \\*args and \\*\\*kwargs are passed as is to
+            `rich.progress.Progress <https://rich.readthedocs.io/en/latest/reference/progress.html#rich.progress.Progress>`_.
 
         Args:
             auto_visible (bool, optional): if true, automatically hides tasks that have not started
@@ -84,7 +85,7 @@ class PoolProgress(Progress):
 
     @classmethod
     def get_default_columns(cls) -> tuple[ProgressColumn, ...]:
-        """Overrides `rich.progress.Progress`'s default columns to enable showing elapsed time when finished."""
+        """Overrides ``rich.progress.Progress``\'s default columns to enable showing elapsed time when finished."""
         return (
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),

@@ -1,12 +1,12 @@
 Interpolation
 =============
 
-Interpolation refers to filling in the gaps between observations, in our case we use ``frame`` -based video interpolation methods, along with pose interpolation, to speed up rendering.   
+Interpolation refers to filling in the gaps between observations, in our case we use ``frame``\-based video interpolation methods, along with pose interpolation, to speed up rendering.   
 
 Methods
 -------
 
-Many ``frame`` -based interpolation methods exist, currently we support the following:
+Many ``frame``\-based interpolation methods exist, currently we support the following:
 
 * `RIFE (ECCV 2022) <https://github.com/hzwer/ECCV2022-RIFE>`_
 * ... more to come!
