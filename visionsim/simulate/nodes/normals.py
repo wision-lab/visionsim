@@ -202,14 +202,17 @@ def normal_preview_node_group():
             fcurves = node.outputs[0].driver_add("default_value")
 
         for col, fcurve in enumerate(fcurves):
-            mat = fcurve.driver.variables.new()
-            mat.name = "camera_world_matrix"
-            mat.targets[0].id = bpy.context.scene.camera
-            mat.targets[0].data_path = "matrix_world"
+            value = fcurve.driver.variables.new()
+            value.type = "CONTEXT_PROP"
+            value.name = "value"
+
+            for target in value.targets:
+                target.context_property = "ACTIVE_SCENE"
+                target.data_path = f"camera.matrix_world[{col}][{row}]"
 
             # Only negate to counter the bug for pre-v5.0
             if bpy.app.version >= (5, 0, 0):
-                fcurve.driver.expression = f"camera_world_matrix[{col}][{row}]"
+                fcurve.driver.expression = f"value"
             else:
-                fcurve.driver.expression = f"-camera_world_matrix[{col}][{row}]"
+                fcurve.driver.expression = f"-value"
     return normaldebug
