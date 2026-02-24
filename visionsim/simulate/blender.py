@@ -454,6 +454,7 @@ class BlenderService(rpyc.Service):
         self._keyframe_scale: float = 1.0
         self._warned_no_outputs: bool = False
         self._outputs: dict[str, Any] = {}
+        self._camera: bpy.types.Camera | None = None
 
     def _clear_cached_properties(self) -> None:
         # Based on: https://stackoverflow.com/a/71579485
@@ -495,6 +496,7 @@ class BlenderService(rpyc.Service):
         self._keyframe_scale = 1.0
         self._warned_no_outputs = False
         self._outputs = {}
+        self._camera = None
 
     def register_output_type(
         self,
@@ -594,20 +596,34 @@ class BlenderService(rpyc.Service):
             raise ValueError("Expected at least one view layer, cannot render without it. Please add one manually.")
         return bpy.context.view_layer
 
-    @functools.cached_property
+    @property
     @require_initialized_service
     def camera(self) -> bpy.types.Camera:
-        """Get and cache active camera"""
-        # Make sure there's a camera
-        cameras = [ob for ob in self.scene.objects if ob.type == "CAMERA"]
-        if not cameras:
-            raise RuntimeError("No camera found, please add one manually.")
-        elif len(cameras) > 1 and self.scene.camera:
-            self.log.warning(f"Multiple cameras found. Using active camera named: '{self.scene.camera.name}'.")
-            return self.scene.camera
-        else:
-            self.log.warning(f"No active camera was found. Using camera named: '{cameras[0].name}'.")
-            return cameras[0]
+        """Get active camera, detect when it changes."""
+        if self._camera is None:
+            cameras = [ob for ob in self.scene.objects if ob.type == "CAMERA"]
+            if not cameras:
+                raise RuntimeError("No camera found, please add one manually.")
+
+            if len(cameras) > 1 and self.scene.camera:
+                current_active = self.scene.camera
+            else:
+                current_active = cameras[0]
+
+            if len(cameras) > 1:
+                if self.scene.camera:
+                    self.log.warning(f"Multiple cameras found. Using active camera named: '{self.scene.camera.name}'.")
+                else:
+                    self.log.warning(f"No active camera was found. Using camera named: '{cameras[0].name}'.")
+            self._camera = current_active
+        elif self._camera != self.scene.camera:
+            self.log.warning(
+                f"Active camera changed from '{self._camera.name}' to '{self.scene.camera.name}' "
+                f"at frame {self.scene.frame_current}."
+            )
+            self._camera = self.scene.camera
+
+        return self._camera
 
     @require_initialized_service
     def get_parents(self, obj: bpy.types.Object) -> list[bpy.types.Object]:
