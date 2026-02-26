@@ -69,6 +69,8 @@ def render_job(
         client.include_flows(**asdict(config.flows))
     if config.include_segmentations:
         client.include_segmentations(**asdict(config.segmentations))
+    if config.include_materials:
+        client.include_materials(**asdict(config.materials))
 
     if config.unbind_camera:
         client.unbind_camera()

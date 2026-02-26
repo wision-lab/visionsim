@@ -212,7 +212,7 @@ def normal_preview_node_group():
 
             # Only negate to counter the bug for pre-v5.0
             if bpy.app.version >= (5, 0, 0):
-                fcurve.driver.expression = f"value"
+                fcurve.driver.expression = "value"
             else:
-                fcurve.driver.expression = f"-value"
+                fcurve.driver.expression = "-value"
     return normaldebug

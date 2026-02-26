@@ -62,6 +62,7 @@ def cube_dataset(tmp_path_factory, executable) -> Path:
         client.include_normals()
         client.include_flows()
         client.include_segmentations()
+        client.include_materials()
         client.render_animation()
         client.save_file(tmpdir / "cube_out.blend")
     return tmpdir

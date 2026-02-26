@@ -1046,27 +1046,19 @@ class BlenderService(rpyc.Service):
                 split_flow = self.tree.nodes.new(type="CompositorNodeSepRGBA")
             self.tree.links.new(self.render_layers.outputs["Vector"], split_flow.inputs["Image"])
 
-            # Create output nodes
-            preview_fwd_flow_output_node, (preview_fwd_flow_socket,), (preview_fwd_flow_slot,) = file_output_node(
-                self.tree,
-                self.root_path / "previews" / "flows" / "forward" / "0000",
-                label="Forward Flow Preview Output",
-                preview=True,
-                color_mode="RGB",
-            )
-            preview_bwd_flow_output_node, (preview_bwd_flow_socket,), (preview_bwd_flow_slot,) = file_output_node(
-                self.tree,
-                self.root_path / "previews" / "flows" / "backward" / "0000",
-                label="Backward Flow Preview Output",
-                preview=True,
-                color_mode="RGB",
-            )
-
             # Instantiate flow preview node group(s) and connect them
             if direction.lower() in ("forward", "both"):
                 flow_group = self.tree.nodes.new("CompositorNodeGroup")
                 flow_group.node_tree = flow_preview_node_group()
                 flow_group.label = "Forward Flow Preview"
+
+                preview_fwd_flow_output_node, (preview_fwd_flow_socket,), (preview_fwd_flow_slot,) = file_output_node(
+                    self.tree,
+                    self.root_path / "previews" / "flows" / "forward" / "0000",
+                    label="Forward Flow Preview Output",
+                    preview=True,
+                    color_mode="RGB",
+                )
 
                 self.tree.links.new(split_flow.outputs[0], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs[1], flow_group.inputs["y"])
@@ -1078,6 +1070,14 @@ class BlenderService(rpyc.Service):
                 flow_group = self.tree.nodes.new("CompositorNodeGroup")
                 flow_group.node_tree = flow_preview_node_group()
                 flow_group.label = "Backward Flow Preview"
+
+                preview_bwd_flow_output_node, (preview_bwd_flow_socket,), (preview_bwd_flow_slot,) = file_output_node(
+                    self.tree,
+                    self.root_path / "previews" / "flows" / "backward" / "0000",
+                    label="Backward Flow Preview Output",
+                    preview=True,
+                    color_mode="RGB",
+                )
 
                 self.tree.links.new(split_flow.outputs[2], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs[3], flow_group.inputs["y"])
@@ -1202,6 +1202,93 @@ class BlenderService(rpyc.Service):
             segmentation_output_node,
             segmentation_slot,
             c=COLOR_MODE_CHANNELS.get(segmentation_output_node.format.color_mode),
+        )
+
+    @require_initialized_service
+    def exposed_include_materials(
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include material ID maps for rendered images.
+
+        The preview visualization simply assigns a color to each material ID by mapping the
+        materials ID value to a hue using a HSV node with saturation=1 and value=1 (except
+        for the background which will have a value of 0 to ensure it is black).
+
+        Args:
+            preview (bool, optional): If true, also save preview visualizations of material IDs. Defaults to True.
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate material instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
+                with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
+
+        Raises:
+            RuntimeError: raised when not using CYCLES, as other renderers do not support a material ID pass.
+        """
+        if self.scene.render.engine.upper() != "CYCLES":
+            raise RuntimeError("Cannot produce material ID maps when not using CYCLES.")
+
+        self.view_layer.use_pass_material_index = True
+        material_index_name = "Material Index" if bpy.app.version >= (5, 0, 0) else "IndexMA"
+
+        # Assign IDs to every material (background will be 0)
+        indices = np.arange(len(bpy.data.materials))
+
+        if shuffle:
+            np.random.seed(seed=seed)
+            np.random.shuffle(indices)
+
+        for i, mat in zip(indices, bpy.data.materials):
+            mat.pass_index = i + 1
+
+        if preview:
+            mat_group = self.tree.nodes.new("CompositorNodeGroup")
+            mat_group.label = "Material Preview"
+            mat_group.node_tree = segmentation_preview_node_group()
+            mat_group.node_tree.nodes["NormalizeIdx"].inputs["From Max"].default_value = len(bpy.data.materials)
+
+            preview_material_output_node, (preview_material_socket,), (preview_material_slot,) = file_output_node(
+                self.tree,
+                self.root_path / "previews" / "materials" / "0000",
+                label="Materials Preview Output",
+                preview=True,
+                color_mode="RGB",
+            )
+
+            self.tree.links.new(self.render_layers.outputs[material_index_name], mat_group.inputs["Value"])
+            self.tree.links.new(mat_group.outputs["Image"], preview_material_socket)
+            self.register_output_type("previews/materials", preview_material_output_node, preview_material_slot, c=3)
+
+        material_output_node, (material_socket,), (material_slot,) = file_output_node(
+            self.tree, self.root_path / "materials" / "0000", label="Materials Output"
+        )
+
+        if bpy.app.version >= (3, 2, 0):
+            material_output_node.format.color_management = "OVERRIDE"
+            material_output_node.format.linear_colorspace_settings.name = "Non-Color"
+        material_output_node.format.file_format = "OPEN_EXR"
+        material_output_node.format.exr_codec = exr_codec
+        material_output_node.format.color_depth = str(bit_depth)
+        material_slot.name = str(Path(material_slot.name).with_suffix(".exr"))
+
+        if bpy.app.version < (4, 3, 0):
+            material_output_node.format.color_mode = "RGB"
+        else:
+            material_output_node.format.color_mode = "BW"
+
+        self.tree.links.new(self.render_layers.outputs[material_index_name], material_socket)
+        self.register_output_type(
+            "materials",
+            material_output_node,
+            material_slot,
+            c=COLOR_MODE_CHANNELS.get(material_output_node.format.color_mode),
         )
 
     @require_initialized_service

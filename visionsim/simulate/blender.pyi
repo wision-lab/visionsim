@@ -218,8 +218,10 @@ class BlenderService(rpyc.Service):
     _conn: rpyc.Connection | None
     log: logging.Logger
     _initialized: bool
+    _keyframe_scale: float
     _warned_no_outputs: bool
     _outputs: dict[str, Any]
+    _camera: bpy.types.Camera | None
 
     def __init__(self) -> None:
         """Initialize render service.
@@ -318,10 +320,10 @@ class BlenderService(rpyc.Service):
     def view_layer(self) -> bpy.types.ViewLayer:
         """Get current view layer"""
 
-    @functools.cached_property
+    @property
     @require_initialized_service
     def camera(self) -> bpy.types.Camera:
-        """Get and cache active camera"""
+        """Get active camera, detect when it changes."""
 
     @require_initialized_service
     def get_parents(self, obj: bpy.types.Object) -> list[bpy.types.Object]:
@@ -371,11 +373,11 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
-    def exposed_get_original_fps(self) -> int:
+    def exposed_get_original_fps(self) -> float:
         """Get effective framerate (fps/fps_base).
 
         Returns:
-            int: Frame rate of scene.
+            float: Frame rate of scene.
         """
 
     @require_initialized_service
@@ -547,6 +549,35 @@ class BlenderService(rpyc.Service):
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
+        """
+
+    @require_initialized_service
+    def exposed_include_materials(
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include material ID maps for rendered images.
+
+        The preview visualization simply assigns a color to each material ID by mapping the
+        materials ID value to a hue using a HSV node with saturation=1 and value=1 (except
+        for the background which will have a value of 0 to ensure it is black).
+
+        Args:
+            preview (bool, optional): If true, also save preview visualizations of material IDs. Defaults to True.
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate material instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
+                with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
+
+        Raises:
+            RuntimeError: raised when not using CYCLES, as other renderers do not support a material ID pass.
         """
 
     @require_initialized_service
@@ -1014,11 +1045,11 @@ class BlenderClient:
         """
 
     @type_check_only
-    def get_original_fps(self) -> int:
+    def get_original_fps(self) -> float:
         """Get effective framerate (fps/fps_base).
 
         Returns:
-            int: Frame rate of scene.
+            float: Frame rate of scene.
         """
 
     @type_check_only
@@ -1190,6 +1221,35 @@ class BlenderClient:
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
+        """
+
+    @type_check_only
+    def include_materials(
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include material ID maps for rendered images.
+
+        The preview visualization simply assigns a color to each material ID by mapping the
+        materials ID value to a hue using a HSV node with saturation=1 and value=1 (except
+        for the background which will have a value of 0 to ensure it is black).
+
+        Args:
+            preview (bool, optional): If true, also save preview visualizations of material IDs. Defaults to True.
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate material instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
+                with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
+
+        Raises:
+            RuntimeError: raised when not using CYCLES, as other renderers do not support a material ID pass.
         """
 
     @type_check_only
@@ -1729,11 +1789,11 @@ class BlenderClients(tuple):
         """
 
     @type_check_only
-    def get_original_fps(self) -> tuple[int,]:
+    def get_original_fps(self) -> tuple[float,]:
         """Get effective framerate (fps/fps_base).
 
         Returns:
-            int: Frame rate of scene.
+            float: Frame rate of scene.
         """
 
     @type_check_only
@@ -1905,6 +1965,35 @@ class BlenderClients(tuple):
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
+        """
+
+    @type_check_only
+    def include_materials(
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include material ID maps for rendered images.
+
+        The preview visualization simply assigns a color to each material ID by mapping the
+        materials ID value to a hue using a HSV node with saturation=1 and value=1 (except
+        for the background which will have a value of 0 to ensure it is black).
+
+        Args:
+            preview (bool, optional): If true, also save preview visualizations of material IDs. Defaults to True.
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate material instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
+                with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
+
+        Raises:
+            RuntimeError: raised when not using CYCLES, as other renderers do not support a material ID pass.
         """
 
     @type_check_only

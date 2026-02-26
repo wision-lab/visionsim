@@ -30,6 +30,8 @@ def test_render_layout(cube_dataset):
         "previews/normals",
         "previews/flows/forward",
         "previews/segmentations",
+        "previews/materials",
+        "materials",
     ]:
         subdir = cube_dataset / gt_type
         assert subdir.exists()
@@ -43,7 +45,14 @@ def test_render_layout(cube_dataset):
 
 
 @pytest.mark.parametrize(
-    "subdir, channels", [("depths", ["V"]), ("normals", ["RGB"]), ("flows", ["RGBA"]), ("segmentations", ["V"])]
+    "subdir, channels",
+    [
+        ("depths", ["V"]),
+        ("normals", ["RGB"]),
+        ("flows", ["RGBA"]),
+        ("segmentations", ["V"]),
+        ("materials", ["V"]),
+    ],
 )
 def test_groundtruth_exrs(cube_dataset, subdir, channels):
     for file in cube_dataset.glob(f"{subdir}/**/*.exr"):
@@ -64,7 +73,13 @@ def test_groundtruth_exrs(cube_dataset, subdir, channels):
 
 @pytest.mark.parametrize(
     "subdir, shape",
-    [("depths", (50, 50, 1)), ("normals", (50, 50, 3)), ("flows", (50, 50, 4)), ("segmentations", (50, 50, 1))],
+    [
+        ("depths", (50, 50, 1)),
+        ("normals", (50, 50, 3)),
+        ("flows", (50, 50, 4)),
+        ("segmentations", (50, 50, 1)),
+        ("materials", (50, 50, 1)),
+    ],
 )
 def test_load_exrs(cube_dataset, subdir, shape):
     for file in cube_dataset.glob(f"{subdir}/**/*.exr"):
@@ -85,6 +100,7 @@ def test_transforms_schema(cube_dataset):
         (blender.BlenderService.exposed_include_normals, config.NormalsConfig),
         (blender.BlenderService.exposed_include_flows, config.FlowsConfig),
         (blender.BlenderService.exposed_include_segmentations, config.SegmentationsConfig),
+        (blender.BlenderService.exposed_include_materials, config.MaterialsConfig),
     ],
 )
 def test_output_configs(func, conf):

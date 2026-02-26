@@ -94,6 +94,22 @@ class SegmentationsConfig:
 
 
 @dataclass
+class MaterialsConfig:
+    """For more information see :meth:`include_materials <visionsim.simulate.blender.BlenderService.exposed_include_materials>`."""
+
+    preview: bool = True
+    """Also save colorized material passes as PNGs"""
+    shuffle: bool = True
+    """Shuffle preview colors, helps differentiate material instances"""
+    seed: int = 1234
+    """Random seed used when shuffling colors"""
+    exr_codec: EXR_CODECS = "DWAA"
+    """Encoding used to compress EXRs"""
+    bit_depth: Literal[16, 32] = 32
+    """Bit depth used for saving material maps"""
+
+
+@dataclass
 class RenderConfig:
     executable: Path | None = None
     """Path to blender executable"""
@@ -125,6 +141,10 @@ class RenderConfig:
     """If true, enable segmentation map outputs"""
     segmentations: SegmentationsConfig = field(default_factory=SegmentationsConfig)
     """Segmentation maps configuration options"""
+    include_materials: bool = False
+    """If true, enable material map outputs"""
+    materials: MaterialsConfig = field(default_factory=MaterialsConfig)
+    """Material maps configuration options"""
     previews: bool = True
     """If false, disable all preview visualizations of auxiliary outputs"""
     keyframe_multiplier: float = 1.0
@@ -170,3 +190,4 @@ class RenderConfig:
         self.normals.preview &= self.previews
         self.flows.preview &= self.previews
         self.segmentations.preview &= self.previews
+        self.materials.preview &= self.previews
