@@ -523,6 +523,18 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
+    def _include_ids(
+        self,
+        id_type: Literal["segmentations", "materials"],
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Shared logic for including segmentation or material ID maps."""
+
+    @require_initialized_service
     def exposed_include_segmentations(
         self,
         preview: bool = True,

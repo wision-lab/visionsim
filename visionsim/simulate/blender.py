@@ -54,9 +54,9 @@ except ImportError:
 try:
     from visionsim.simulate.compat import file_output_node
     from visionsim.simulate.nodes import (  # type: ignore
+        colorize_indices_node_group,
         flow_preview_node_group,
         normal_preview_node_group,
-        segmentation_preview_node_group,
         vec2rgba_node_group,
     )
 except ImportError:
@@ -1112,6 +1112,88 @@ class BlenderService(rpyc.Service):
         self.register_output_type("flows", flow_output_node, flow_slot, c=4)
 
     @require_initialized_service
+    def _include_ids(
+        self,
+        id_type: Literal["segmentations", "materials"],
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Shared logic for including segmentation or material ID maps."""
+        # TODO: Enable assignment of custom IDs for certain objects via a dictionary.
+
+        if self.scene.render.engine.upper() != "CYCLES":
+            raise RuntimeError(f"Cannot produce {id_type} map when not using CYCLES.")
+
+        if id_type == "segmentations":
+            self.view_layer.use_pass_object_index = True
+            pass_idx_name = "Object Index" if bpy.app.version >= (5, 0, 0) else "IndexOB"
+            data = bpy.data.objects
+            label = "Segmentation"
+        elif id_type == "materials":
+            self.view_layer.use_pass_material_index = True
+            pass_idx_name = "Material Index" if bpy.app.version >= (5, 0, 0) else "IndexMA"
+            data = bpy.data.materials
+            label = "Material"
+        else:
+            raise ValueError(f"Unknown id_type: {id_type}")
+
+        # Assign IDs to every object/material (background will be 0)
+        indices = np.arange(len(data))
+
+        if shuffle:
+            np.random.seed(seed=seed)
+            np.random.shuffle(indices)
+
+        for i, item in zip(indices, data):
+            item.pass_index = i + 1
+
+        if preview:
+            group = self.tree.nodes.new("CompositorNodeGroup")
+            group.label = f"{label} Preview"
+            group.node_tree = colorize_indices_node_group()
+            group.node_tree.nodes["NormalizeIdx"].inputs["From Max"].default_value = len(data)
+
+            preview_output_node, (preview_socket,), (preview_slot,) = file_output_node(
+                self.tree,
+                self.root_path / "previews" / id_type / "0000",
+                label=f"{label}s Preview Output",
+                preview=True,
+                color_mode="RGB",
+            )
+
+            self.tree.links.new(self.render_layers.outputs[pass_idx_name], group.inputs["Value"])
+            self.tree.links.new(group.outputs["Image"], preview_socket)
+            self.register_output_type(f"previews/{id_type}", preview_output_node, preview_slot, c=3)
+
+        output_node, (socket,), (slot,) = file_output_node(
+            self.tree, self.root_path / id_type / "0000", label=f"{label}s Output"
+        )
+
+        if bpy.app.version >= (3, 2, 0):
+            output_node.format.color_management = "OVERRIDE"
+            output_node.format.linear_colorspace_settings.name = "Non-Color"
+        output_node.format.file_format = "OPEN_EXR"
+        output_node.format.exr_codec = exr_codec
+        output_node.format.color_depth = str(bit_depth)
+        slot.name = str(Path(slot.name).with_suffix(".exr"))
+
+        if bpy.app.version < (4, 3, 0):
+            output_node.format.color_mode = "RGB"
+        else:
+            output_node.format.color_mode = "BW"
+
+        self.tree.links.new(self.render_layers.outputs[pass_idx_name], socket)
+        self.register_output_type(
+            id_type,
+            output_node,
+            slot,
+            c=COLOR_MODE_CHANNELS.get(output_node.format.color_mode),
+        )
+
+    @require_initialized_service
     def exposed_include_segmentations(
         self,
         preview: bool = True,
@@ -1139,69 +1221,13 @@ class BlenderService(rpyc.Service):
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
         """
-        # TODO: Enable assignment of custom IDs for certain objects via a dictionary.
-
-        if self.scene.render.engine.upper() != "CYCLES":
-            raise RuntimeError("Cannot produce segmentation maps when not using CYCLES.")
-
-        self.view_layer.use_pass_object_index = True
-        object_index_name = "Object Index" if bpy.app.version >= (5, 0, 0) else "IndexOB"
-
-        # Assign IDs to every object (background will be 0)
-        indices = np.arange(len(bpy.data.objects))
-
-        if shuffle:
-            np.random.seed(seed=seed)
-            np.random.shuffle(indices)
-
-        for i, obj in zip(indices, bpy.data.objects):
-            obj.pass_index = i + 1
-
-        if preview:
-            seg_group = self.tree.nodes.new("CompositorNodeGroup")
-            seg_group.label = "Segmentation Preview"
-            seg_group.node_tree = segmentation_preview_node_group()
-            seg_group.node_tree.nodes["NormalizeIdx"].inputs["From Max"].default_value = len(bpy.data.objects)
-
-            preview_segmentation_output_node, (preview_segmentation_socket,), (preview_segmentation_slot,) = (
-                file_output_node(
-                    self.tree,
-                    self.root_path / "previews" / "segmentations" / "0000",
-                    label="Segmentations Preview Output",
-                    preview=True,
-                    color_mode="RGB",
-                )
-            )
-
-            self.tree.links.new(self.render_layers.outputs[object_index_name], seg_group.inputs["Value"])
-            self.tree.links.new(seg_group.outputs["Image"], preview_segmentation_socket)
-            self.register_output_type(
-                "previews/segmentations", preview_segmentation_output_node, preview_segmentation_slot, c=3
-            )
-
-        segmentation_output_node, (segmentation_socket,), (segmentation_slot,) = file_output_node(
-            self.tree, self.root_path / "segmentations" / "0000", label="Segmentations Output"
-        )
-
-        if bpy.app.version >= (3, 2, 0):
-            segmentation_output_node.format.color_management = "OVERRIDE"
-            segmentation_output_node.format.linear_colorspace_settings.name = "Non-Color"
-        segmentation_output_node.format.file_format = "OPEN_EXR"
-        segmentation_output_node.format.exr_codec = exr_codec
-        segmentation_output_node.format.color_depth = str(bit_depth)
-        segmentation_slot.name = str(Path(segmentation_slot.name).with_suffix(".exr"))
-
-        if bpy.app.version < (4, 3, 0):
-            segmentation_output_node.format.color_mode = "RGB"
-        else:
-            segmentation_output_node.format.color_mode = "BW"
-
-        self.tree.links.new(self.render_layers.outputs[object_index_name], segmentation_socket)
-        self.register_output_type(
+        self._include_ids(
             "segmentations",
-            segmentation_output_node,
-            segmentation_slot,
-            c=COLOR_MODE_CHANNELS.get(segmentation_output_node.format.color_mode),
+            preview=preview,
+            shuffle=shuffle,
+            seed=seed,
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
         )
 
     @require_initialized_service
@@ -1232,63 +1258,13 @@ class BlenderService(rpyc.Service):
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a material ID pass.
         """
-        if self.scene.render.engine.upper() != "CYCLES":
-            raise RuntimeError("Cannot produce material ID maps when not using CYCLES.")
-
-        self.view_layer.use_pass_material_index = True
-        material_index_name = "Material Index" if bpy.app.version >= (5, 0, 0) else "IndexMA"
-
-        # Assign IDs to every material (background will be 0)
-        indices = np.arange(len(bpy.data.materials))
-
-        if shuffle:
-            np.random.seed(seed=seed)
-            np.random.shuffle(indices)
-
-        for i, mat in zip(indices, bpy.data.materials):
-            mat.pass_index = i + 1
-
-        if preview:
-            mat_group = self.tree.nodes.new("CompositorNodeGroup")
-            mat_group.label = "Material Preview"
-            mat_group.node_tree = segmentation_preview_node_group()
-            mat_group.node_tree.nodes["NormalizeIdx"].inputs["From Max"].default_value = len(bpy.data.materials)
-
-            preview_material_output_node, (preview_material_socket,), (preview_material_slot,) = file_output_node(
-                self.tree,
-                self.root_path / "previews" / "materials" / "0000",
-                label="Materials Preview Output",
-                preview=True,
-                color_mode="RGB",
-            )
-
-            self.tree.links.new(self.render_layers.outputs[material_index_name], mat_group.inputs["Value"])
-            self.tree.links.new(mat_group.outputs["Image"], preview_material_socket)
-            self.register_output_type("previews/materials", preview_material_output_node, preview_material_slot, c=3)
-
-        material_output_node, (material_socket,), (material_slot,) = file_output_node(
-            self.tree, self.root_path / "materials" / "0000", label="Materials Output"
-        )
-
-        if bpy.app.version >= (3, 2, 0):
-            material_output_node.format.color_management = "OVERRIDE"
-            material_output_node.format.linear_colorspace_settings.name = "Non-Color"
-        material_output_node.format.file_format = "OPEN_EXR"
-        material_output_node.format.exr_codec = exr_codec
-        material_output_node.format.color_depth = str(bit_depth)
-        material_slot.name = str(Path(material_slot.name).with_suffix(".exr"))
-
-        if bpy.app.version < (4, 3, 0):
-            material_output_node.format.color_mode = "RGB"
-        else:
-            material_output_node.format.color_mode = "BW"
-
-        self.tree.links.new(self.render_layers.outputs[material_index_name], material_socket)
-        self.register_output_type(
+        self._include_ids(
             "materials",
-            material_output_node,
-            material_slot,
-            c=COLOR_MODE_CHANNELS.get(material_output_node.format.color_mode),
+            preview=preview,
+            shuffle=shuffle,
+            seed=seed,
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
         )
 
     @require_initialized_service

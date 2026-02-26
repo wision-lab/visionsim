@@ -9,6 +9,7 @@ Many types of ground truth annotations can be generated, some during the main re
 - **Normal Maps:** Surface normal vectors for each pixel. Each normal vector is of unit length and expressed in the camera's coordinate frame, with +X pointing to the right, +Y pointing up and +Z pointing into the camera (since the camera looks in the -Z direction, using the OpenGL/Blender coordinate system). These vectors are saved as floats in a 3-channel EXR file. 
 - **Optical Flow:** 2D flow vector tracking the motion of each pixel between the current and next/previous frame. The former is dubbed forward flow, and the latter backwards flow. Both of these are saved as a 4-channel (RGBA) floating point EXR file, with the forward flow packed as RG and backwards flow as BA. 
 - **Segmentation Maps:** Assign a unique object ID to each pixel. These are saved as single-channel integer EXR file. Multiple objects can be assigned the same ID if they are instances or made with modifiers (i.e: array modifier).
+- **Material Maps:** Assign a unique material ID to each pixel. Similar to segmentation maps, these are saved as single-channel integer EXR files. Multiple objects can be assigned the same material ID if they share the same material.
 - **Camera Intrinsics & Extrinsics:** Camera intrinsic parameters such as focal lengths, camera model, distortion coefficients, principal point, and camera positions (extrinsics) are automatically recorded for every rendered frame and saved in a ``transforms.json`` file.  
 
 .. admonition:: Note
@@ -149,7 +150,7 @@ Segmentation Maps
    :width: 50% 
    :class: only-dark
 
-To generate segmentation maps, the following compositor nodes are added. The object index pass is enabled, which is directly saved as an EXR, or optionally colorized using the ``SegmentationDebug`` node shown below which assigns a unique color to each object index. 
+To generate segmentation maps, the following compositor nodes are added. The object index pass is enabled, which is directly saved as an EXR, or optionally colorized using the ``ColorizeIndices`` node shown below which assigns a unique color to each object index. 
 
 See :meth:`include_segmentations <visionsim.simulate.blender.BlenderService.exposed_include_segmentations>` for more. 
 
@@ -162,6 +163,15 @@ See :meth:`include_segmentations <visionsim.simulate.blender.BlenderService.expo
    :class: only-dark
 
 .. caution:: The ``From Max`` value of the Map Range node above determines which colors to sample. Internally, upon initialization this value is set to ``len(bpy.data.objects)``, however, if more objects are added after the fact then their colors might coincide. 
+
+| 
+
+Material Maps
+-------------
+
+To generate material ID maps, the material index pass is enabled, which is directly saved as an EXR, or optionally colorized using the same ``ColorizeIndices`` node as segmentation maps to assign a unique color to each material index for previewing.
+
+See :meth:`include_materials <visionsim.simulate.blender.BlenderService.exposed_include_materials>` for more.
 
 | 
 
