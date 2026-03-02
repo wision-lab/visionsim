@@ -145,6 +145,8 @@ class RenderConfig:
     """If true, enable material map outputs"""
     materials: MaterialsConfig = field(default_factory=MaterialsConfig)
     """Material maps configuration options"""
+    include_all: bool = False
+    """If true, enable all ground truth outputs"""
     previews: bool = True
     """If false, disable all preview visualizations of auxiliary outputs"""
     keyframe_multiplier: float = 1.0
@@ -186,6 +188,15 @@ class RenderConfig:
         # Note: Using post init with tyro is not best practice, as it will be called multiple
         #   times. However here we are just propagating values of aliases, so it should be ok.
         # See: https://brentyi.github.io/tyro/examples/overriding_configs/#dataclasses-defaults
+        if self.include_all:
+            self.include_composites = True
+            self.include_frames = True
+            self.include_depths = True
+            self.include_normals = True
+            self.include_flows = True
+            self.include_segmentations = True
+            self.include_materials = True
+
         self.depths.preview &= self.previews
         self.normals.preview &= self.previews
         self.flows.preview &= self.previews
