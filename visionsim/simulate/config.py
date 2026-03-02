@@ -110,6 +110,34 @@ class MaterialsConfig:
 
 
 @dataclass
+class DiffusePassConfig:
+    """For more information see :meth:`include_diffuse_pass <visionsim.simulate.blender.BlenderService.exposed_include_diffuse_pass>`."""
+
+    file_format: FILE_FORMATS = "OPEN_EXR"
+    """File format used to save diffuse passes"""
+    color_mode: Literal["BW", "RGB", "RGBA"] = "RGB"
+    """Mode to save diffuse passes in: grayscale, color or color+alpha"""
+    exr_codec: EXR_CODECS = "DWAA"
+    """Encoding used to compress EXRs"""
+    bit_depth: Literal[8, 16, 32] = 32
+    """Bit depth used for saving diffuse passes"""
+
+
+@dataclass
+class SpecularPassConfig:
+    """For more information see :meth:`include_specular_pass <visionsim.simulate.blender.BlenderService.exposed_include_specular_pass>`."""
+
+    file_format: FILE_FORMATS = "OPEN_EXR"
+    """File format used to save specular passes"""
+    color_mode: Literal["BW", "RGB", "RGBA"] = "RGB"
+    """Mode to save specular passes in: grayscale, color or color+alpha"""
+    exr_codec: EXR_CODECS = "DWAA"
+    """Encoding used to compress EXRs"""
+    bit_depth: Literal[8, 16, 32] = 32
+    """Bit depth used for saving specular passes"""
+
+
+@dataclass
 class RenderConfig:
     executable: Path | None = None
     """Path to blender executable"""
@@ -145,6 +173,14 @@ class RenderConfig:
     """If true, enable material map outputs"""
     materials: MaterialsConfig = field(default_factory=MaterialsConfig)
     """Material maps configuration options"""
+    include_diffuse_pass: bool = False
+    """If true, enable diffuse light pass outputs"""
+    diffuse_pass: DiffusePassConfig = field(default_factory=DiffusePassConfig)
+    """Diffuse light passes configuration options"""
+    include_specular_pass: bool = False
+    """If true, enable specular light pass outputs"""
+    specular_pass: SpecularPassConfig = field(default_factory=SpecularPassConfig)
+    """Specular light passes configuration options"""
     include_all: bool = False
     """If true, enable all ground truth outputs"""
     previews: bool = True
@@ -196,6 +232,8 @@ class RenderConfig:
             self.include_flows = True
             self.include_segmentations = True
             self.include_materials = True
+            self.include_diffuse_pass = True
+            self.include_specular_pass = True
 
         self.depths.preview &= self.previews
         self.normals.preview &= self.previews

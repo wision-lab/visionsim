@@ -283,6 +283,32 @@ class BlenderService(rpyc.Service):
             RuntimeError: raised if output type has already been registered.
         """
 
+    def _include_output(
+        self,
+        subpath: str,
+        source_socket: bpy.types.NodeSocket,
+        label: str | None = None,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: int = 32,
+        preview: bool = False,
+        c: int | None = None,
+    ) -> None:
+        """Helper function to create a file output node, link it, and register the output type.
+
+        Args:
+            subpath (str): Subpath to save output in.
+            source_socket (bpy.types.NodeSocket): Socket to link to output node.
+            label (str, optional): Label for output node. Defaults to None.
+            file_format (str, optional): Format to save output as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Color mode to save output as. Defaults to "RGB".
+            exr_codec (str, optional): EXR codec to use. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth to use. Defaults to 32.
+            preview (bool, optional): If true, output node will be configured for preview. Defaults to False.
+            c (int, optional): Number of channels for registration. Defaults to None (inferred from color_mode).
+        """
+
     def _save_metadata(
         self,
         paths: dict[str, Path],
@@ -590,6 +616,46 @@ class BlenderService(rpyc.Service):
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a material ID pass.
+        """
+
+    @require_initialized_service
+    def exposed_include_diffuse_pass(
+        self,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include diffuse light passes for rendered images.
+
+        For CYCLES, this includes: Diffuse Direct, Diffuse Indirect and Diffuse Color.
+        For EEVEE, this includes: Diffuse Light and Diffuse Color.
+
+        Args:
+            file_format (str, optional): Format to save diffuse passes as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+        """
+
+    @require_initialized_service
+    def exposed_include_specular_pass(
+        self,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include specular light passes for rendered images.
+
+        For CYCLES, this includes: Glossy Direct, Glossy Indirect and Glossy Color.
+        For EEVEE, this includes: Specular Light and Specular Color.
+
+        Args:
+            file_format (str, optional): Format to save specular passes as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
         """
 
     @require_initialized_service
@@ -1262,6 +1328,46 @@ class BlenderClient:
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a material ID pass.
+        """
+
+    @type_check_only
+    def include_diffuse_pass(
+        self,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include diffuse light passes for rendered images.
+
+        For CYCLES, this includes: Diffuse Direct, Diffuse Indirect and Diffuse Color.
+        For EEVEE, this includes: Diffuse Light and Diffuse Color.
+
+        Args:
+            file_format (str, optional): Format to save diffuse passes as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+        """
+
+    @type_check_only
+    def include_specular_pass(
+        self,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include specular light passes for rendered images.
+
+        For CYCLES, this includes: Glossy Direct, Glossy Indirect and Glossy Color.
+        For EEVEE, this includes: Specular Light and Specular Color.
+
+        Args:
+            file_format (str, optional): Format to save specular passes as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
         """
 
     @type_check_only
@@ -2006,6 +2112,46 @@ class BlenderClients(tuple):
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a material ID pass.
+        """
+
+    @type_check_only
+    def include_diffuse_pass(
+        self,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include diffuse light passes for rendered images.
+
+        For CYCLES, this includes: Diffuse Direct, Diffuse Indirect and Diffuse Color.
+        For EEVEE, this includes: Diffuse Light and Diffuse Color.
+
+        Args:
+            file_format (str, optional): Format to save diffuse passes as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+        """
+
+    @type_check_only
+    def include_specular_pass(
+        self,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include specular light passes for rendered images.
+
+        For CYCLES, this includes: Glossy Direct, Glossy Indirect and Glossy Color.
+        For EEVEE, this includes: Specular Light and Specular Color.
+
+        Args:
+            file_format (str, optional): Format to save specular passes as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
         """
 
     @type_check_only

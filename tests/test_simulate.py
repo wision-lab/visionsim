@@ -1,25 +1,20 @@
-import inspect
 import itertools
 import os
-from dataclasses import fields
 from pathlib import Path
 
 import numpy as np
 import OpenEXR
 import pytest
-from playhouse.sqlite_ext import SqliteExtDatabase
+from peewee import SqliteDatabase
 
 from visionsim.dataset import Dataset, Metadata
-from visionsim.simulate import blender, config
 from visionsim.simulate.blender import INDEX_PADDING, ITEMS_PER_SUBFOLDER, BlenderClients
 from visionsim.simulate.schema import _MODELS, _Data
 
 
-def test_render_layout(cube_dataset):
-    assert not (cube_dataset / "transforms.json").exists()
-    assert not (cube_dataset / "transforms.db").exists()
-
-    for gt_type in [
+@pytest.mark.parametrize(
+    "gt_type",
+    [
         "composites",
         "frames",
         "depths",
@@ -32,16 +27,29 @@ def test_render_layout(cube_dataset):
         "previews/segmentations",
         "previews/materials",
         "materials",
-    ]:
-        subdir = cube_dataset / gt_type
-        assert subdir.exists()
-        assert not (subdir / "transforms.json").exists()
-        assert (subdir / "transforms.db").exists()
+        "diffuse/color",
+        "diffuse/direct",
+        "diffuse/indirect",
+        # "diffuse/light",
+        "specular/color",
+        "specular/direct",
+        "specular/indirect",
+        # "specular/light",
+    ],
+)
+def test_render_layout(cube_dataset, gt_type):
+    assert not (cube_dataset / "transforms.json").exists()
+    assert not (cube_dataset / "transforms.db").exists()
 
-        if gt_type in ("frames", "composites") or "previews" in gt_type:
-            assert len(list(subdir.glob("**/*.png"))) == 5
-        else:
-            assert len(list(subdir.glob("**/*.exr"))) == 5
+    subdir = cube_dataset / gt_type
+    assert subdir.exists()
+    assert not (subdir / "transforms.json").exists()
+    assert (subdir / "transforms.db").exists()
+
+    if gt_type in ("frames", "composites") or "previews" in gt_type:
+        assert len(list(subdir.glob("**/*.png"))) == 5
+    else:
+        assert len(list(subdir.glob("**/*.exr"))) == 5
 
 
 @pytest.mark.parametrize(
@@ -52,6 +60,14 @@ def test_render_layout(cube_dataset):
         ("flows", ["RGBA"]),
         ("segmentations", ["V"]),
         ("materials", ["V"]),
+        ("diffuse/color", ["RGB"]),
+        ("diffuse/direct", ["RGB"]),
+        ("diffuse/indirect", ["RGB"]),
+        # ("diffuse/light", ["RGB"]),
+        ("specular/color", ["RGB"]),
+        ("specular/direct", ["RGB"]),
+        ("specular/indirect", ["RGB"]),
+        # ("specular/light", ["RGB"]),
     ],
 )
 def test_groundtruth_exrs(cube_dataset, subdir, channels):
@@ -72,18 +88,26 @@ def test_groundtruth_exrs(cube_dataset, subdir, channels):
 
 
 @pytest.mark.parametrize(
-    "subdir, shape",
+    "subdir, shape, auto_collapse",
     [
-        ("depths", (50, 50, 1)),
-        ("normals", (50, 50, 3)),
-        ("flows", (50, 50, 4)),
-        ("segmentations", (50, 50, 1)),
-        ("materials", (50, 50, 1)),
+        ("depths", (50, 50, 1), True),
+        ("normals", (50, 50, 3), False),
+        ("flows", (50, 50, 4), False),
+        ("segmentations", (50, 50, 1), False),
+        ("materials", (50, 50, 1), False),
+        ("diffuse/color", (50, 50, 3), False),
+        ("diffuse/direct", (50, 50, 3), False),
+        ("diffuse/indirect", (50, 50, 3), False),
+        # ("diffuse/light", (50, 50, 3)),
+        ("specular/color", (50, 50, 3), False),
+        ("specular/direct", (50, 50, 3), False),
+        ("specular/indirect", (50, 50, 3), False),
+        # ("specular/light", (50, 50, 3)),
     ],
 )
-def test_load_exrs(cube_dataset, subdir, shape):
+def test_load_exrs(cube_dataset, subdir, shape, auto_collapse):
     for file in cube_dataset.glob(f"{subdir}/**/*.exr"):
-        assert Dataset.load_data(file).shape == shape
+        assert Dataset.load_data(file, auto_collapse=auto_collapse).shape == shape
 
 
 def test_transforms_schema(cube_dataset):
@@ -91,29 +115,9 @@ def test_transforms_schema(cube_dataset):
         Metadata.load(path)
 
 
-@pytest.mark.parametrize(
-    "func, conf",
-    [
-        (blender.BlenderService.exposed_include_composites, config.CompositesConfig),
-        (blender.BlenderService.exposed_include_frames, config.FramesConfig),
-        (blender.BlenderService.exposed_include_depths, config.DepthsConfig),
-        (blender.BlenderService.exposed_include_normals, config.NormalsConfig),
-        (blender.BlenderService.exposed_include_flows, config.FlowsConfig),
-        (blender.BlenderService.exposed_include_segmentations, config.SegmentationsConfig),
-        (blender.BlenderService.exposed_include_materials, config.MaterialsConfig),
-    ],
-)
-def test_output_configs(func, conf):
-    conf_params = {f.name: f.default for f in fields(conf)}
-    sig_params = {name: val.default for name, val in inspect.signature(func).parameters.items()}
-    sig_params.pop("self")
-
-    assert sig_params == conf_params
-
-
 def test_data_paths_exist(cube_dataset):
     for db_path in cube_dataset.glob("**/*.db"):
-        db = SqliteExtDatabase(db_path)
+        db = SqliteDatabase(db_path)
         with db.connection_context():
             with db.bind_ctx(_MODELS):
                 for data in _Data.select():

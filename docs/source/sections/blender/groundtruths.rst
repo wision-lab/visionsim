@@ -10,7 +10,9 @@ Many types of ground truth annotations can be generated, some during the main re
 - **Optical Flow:** 2D flow vector tracking the motion of each pixel between the current and next/previous frame. The former is dubbed forward flow, and the latter backwards flow. Both of these are saved as a 4-channel (RGBA) floating point EXR file, with the forward flow packed as RG and backwards flow as BA. 
 - **Segmentation Maps:** Assign a unique object ID to each pixel. These are saved as single-channel integer EXR file. Multiple objects can be assigned the same ID if they are instances or made with modifiers (i.e: array modifier).
 - **Material Maps:** Assign a unique material ID to each pixel. Similar to segmentation maps, these are saved as single-channel integer EXR files. Multiple objects can be assigned the same material ID if they share the same material.
-- **Camera Intrinsics & Extrinsics:** Camera intrinsic parameters such as focal lengths, camera model, distortion coefficients, principal point, and camera positions (extrinsics) are automatically recorded for every rendered frame and saved in a ``transforms.json`` file.  
+- **Diffuse Passes:** Light reflected off surfaces in a non-directional way. For CYCLES, this includes Direct, Indirect, and Color passes. For EEVEE, this includes Light and Color passes. These are saved as 3-channel EXR files.
+- **Specular Passes:** Light reflected off surfaces in a directional/shiny way. For CYCLES, this refers to Glossy Direct, Indirect, and Color passes. For EEVEE, this includes Specular Light and Color passes. These are saved as 3-channel EXR files.
+- **Camera Intrinsics & Extrinsics:** Camera intrinsic parameters such as focal lengths, camera model, distortion coefficients, principal point, and camera positions (extrinsics) are automatically recorded for every rendered frame and saved in a ``transforms.json`` file.
 
 .. admonition:: Note
 
@@ -173,7 +175,43 @@ To generate material ID maps, the material index pass is enabled, which is direc
 
 See :meth:`include_materials <visionsim.simulate.blender.BlenderService.exposed_include_materials>` for more.
 
-| 
+|
+
+Diffuse Passes
+--------------
+
+Diffuse passes capture the light that is reflected uniformly in all directions. When enabled, multiple passes are captured depending on the render engine.
+
+For CYCLES:
+- **Diffuse Direct:** Light from sources that hits surfaces directly.
+- **Diffuse Indirect:** Light that has bounced off other surfaces before hitting the current surface.
+- **Diffuse Color:** The base color of the surfaces.
+
+For EEVEE:
+- **Diffuse Light:** The combined direct and indirect diffuse lighting.
+- **Diffuse Color:** The base color of the surfaces.
+
+See :meth:`include_diffuse_pass <visionsim.simulate.blender.BlenderService.exposed_include_diffuse_pass>` and the `Blender documentation <https://docs.blender.org/manual/en/latest/render/layers/passes.html#light>`_ for more.
+
+|
+
+Specular Passes
+---------------
+
+Specular passes capture the directional reflection of light, often seen as "highlights" or "shininess". When enabled, multiple passes are captured depending on the render engine.
+
+For CYCLES (these are called "Glossy" passes):
+- **Glossy Direct:** Directional light from sources.
+- **Glossy Indirect:** Directional light from other surfaces (reflections).
+- **Glossy Color:** The color of the specular reflection.
+
+For EEVEE:
+- **Specular Light:** The combined specular lighting.
+- **Specular Color:** The color of the specular reflection.
+
+See :meth:`include_specular_pass <visionsim.simulate.blender.BlenderService.exposed_include_specular_pass>` and the `Blender documentation <https://docs.blender.org/manual/en/latest/render/layers/passes.html#light>`_ for more.
+
+|
 
 Camera Intrinsics & Extrinsics
 ------------------------------
