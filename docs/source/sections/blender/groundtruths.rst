@@ -236,5 +236,5 @@ Intrinsics refer to camera parameters such as focal length, width and height, an
 
 |
 
-.. [1] `Beyond Depth: Positions are what you need for 3D Vision <https://arxiv.org/abs/2403.07343>`_
+.. [1] `VGGT: Visual Geometry Grounded Transformer <https://arxiv.org/abs/2503.11651>`_
 .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
