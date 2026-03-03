@@ -35,7 +35,7 @@ def _ply_stream(path: Path, binary: bool = False):
             nonlocal total_points
             if binary:
                 num = len(points)
-                dtype = np.dtype([("pos", "f4", (3,)), ("color", "u1", (3,))])
+                dtype: np.dtype = np.dtype([("pos", "f4", (3,)), ("color", "u1", (3,))])
                 data: np.ndarray = np.empty(num, dtype=dtype)
                 data["pos"] = points.astype(np.float32)
                 data["color"] = colors[..., :3].astype(np.uint8)
