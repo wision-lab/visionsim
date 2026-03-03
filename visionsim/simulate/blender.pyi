@@ -662,20 +662,20 @@ class BlenderService(rpyc.Service):
     def exposed_include_points(
         self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
     ) -> None:
-        """Sets up Blender compositor to include a world-space point map for cada frame.
+        """Sets up Blender compositor to include a world-space point map for each frame.
 
         Note:
             The point map corresponds to world-space positions, like those used in VGGT [1]_,
             and not the camera-centric positions used in DUSt3R [2]_.
-
-            .. [1] `Beyond Depth: Positions are what you need for 3D Vision <https://arxiv.org/abs/2403.07343>`_
-            .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
 
         Args:
             preview (bool, optional): If true, colorized point maps will also be generated, where colors are
                 assigned based on the absolute fractional world coordinates. Defaults to True.
             exr_codec (str, optional): Codec used to compress exr file. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth per channel. Either 16 or 32 bits. Defaults to 32 bits.
+
+        .. [1] `VGGT: Visual Geometry Grounded Transformer <https://arxiv.org/abs/2503.11651>`_
+        .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
         """
 
     @require_initialized_service
@@ -1394,20 +1394,20 @@ class BlenderClient:
     def include_points(
         self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
     ) -> None:
-        """Sets up Blender compositor to include a world-space point map for cada frame.
+        """Sets up Blender compositor to include a world-space point map for each frame.
 
         Note:
             The point map corresponds to world-space positions, like those used in VGGT [1]_,
             and not the camera-centric positions used in DUSt3R [2]_.
-
-            .. [1] `Beyond Depth: Positions are what you need for 3D Vision <https://arxiv.org/abs/2403.07343>`_
-            .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
 
         Args:
             preview (bool, optional): If true, colorized point maps will also be generated, where colors are
                 assigned based on the absolute fractional world coordinates. Defaults to True.
             exr_codec (str, optional): Codec used to compress exr file. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth per channel. Either 16 or 32 bits. Defaults to 32 bits.
+
+        .. [1] `VGGT: Visual Geometry Grounded Transformer <https://arxiv.org/abs/2503.11651>`_
+        .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
         """
 
     @type_check_only
@@ -2198,20 +2198,20 @@ class BlenderClients(tuple):
     def include_points(
         self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
     ) -> None:
-        """Sets up Blender compositor to include a world-space point map for cada frame.
+        """Sets up Blender compositor to include a world-space point map for each frame.
 
         Note:
             The point map corresponds to world-space positions, like those used in VGGT [1]_,
             and not the camera-centric positions used in DUSt3R [2]_.
-
-            .. [1] `Beyond Depth: Positions are what you need for 3D Vision <https://arxiv.org/abs/2403.07343>`_
-            .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
 
         Args:
             preview (bool, optional): If true, colorized point maps will also be generated, where colors are
                 assigned based on the absolute fractional world coordinates. Defaults to True.
             exr_codec (str, optional): Codec used to compress exr file. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth per channel. Either 16 or 32 bits. Defaults to 32 bits.
+
+        .. [1] `VGGT: Visual Geometry Grounded Transformer <https://arxiv.org/abs/2503.11651>`_
+        .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
         """
 
     @type_check_only

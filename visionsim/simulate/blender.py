@@ -1361,7 +1361,7 @@ class BlenderService(rpyc.Service):
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: Literal[16, 32] = 32,
     ) -> None:
-        """Sets up Blender compositor to include a world-space point map for cada frame.
+        """Sets up Blender compositor to include a world-space point map for each frame.
 
         Note:
             The point map corresponds to world-space positions, like those used in VGGT [1]_,
@@ -1398,9 +1398,14 @@ class BlenderService(rpyc.Service):
                 c=3,
             )
 
+        vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
+        vec2rgba.label = "Vector2RGBA"
+        vec2rgba.node_tree = vec2rgba_node_group()
+
+        self.tree.links.new(self.render_layers.outputs["Position"], vec2rgba.inputs["Image"])
         self._include_output(
             "points",
-            self.render_layers.outputs["Position"],
+            vec2rgba.outputs["Image"],
             label="Points Output",
             file_format="OPEN_EXR",
             color_mode="RGB",
