@@ -35,6 +35,8 @@ from visionsim.simulate.schema import _MODELS, _Data
         "specular/direct",
         "specular/indirect",
         # "specular/light",
+        "points",
+        "previews/points",
     ],
 )
 def test_render_layout(cube_dataset, gt_type):
@@ -68,6 +70,7 @@ def test_render_layout(cube_dataset, gt_type):
         ("specular/direct", ["RGB"]),
         ("specular/indirect", ["RGB"]),
         # ("specular/light", ["RGB"]),
+        ("points", ["RGB"]),
     ],
 )
 def test_groundtruth_exrs(cube_dataset, subdir, channels):
@@ -93,8 +96,8 @@ def test_groundtruth_exrs(cube_dataset, subdir, channels):
         ("depths", (50, 50, 1), True),
         ("normals", (50, 50, 3), False),
         ("flows", (50, 50, 4), False),
-        ("segmentations", (50, 50, 1), False),
-        ("materials", (50, 50, 1), False),
+        ("segmentations", (50, 50, 1), True),
+        ("materials", (50, 50, 1), True),
         ("diffuse/color", (50, 50, 3), False),
         ("diffuse/direct", (50, 50, 3), False),
         ("diffuse/indirect", (50, 50, 3), False),
@@ -103,6 +106,7 @@ def test_groundtruth_exrs(cube_dataset, subdir, channels):
         ("specular/direct", (50, 50, 3), False),
         ("specular/indirect", (50, 50, 3), False),
         # ("specular/light", (50, 50, 3)),
+        ("points", (50, 50, 3), False),
     ],
 )
 def test_load_exrs(cube_dataset, subdir, shape, auto_collapse):
@@ -124,14 +128,14 @@ def test_data_paths_exist(cube_dataset):
                     assert (db_path.parent / data.path).exists()
 
 
-def test_database_threading(tmp_path_factory):
+def test_database_threading(tmp_path_factory, executable):
     tmpdir = tmp_path_factory.mktemp("renders")
     log_dir = tmp_path_factory.mktemp("logs")
     scene = Path(__file__).parent / "test_files" / "scenes" / "cube.blend"
 
     # Spoof frames to bypass render, only save metadata, from a bunch of blender instances.
     # This forces a lot of database writes, which helps test for any potential "Database is locked" errors.
-    with BlenderClients.spawn(jobs=os.cpu_count() or 5, timeout=30, log=log_dir) as clients:
+    with BlenderClients.spawn(jobs=os.cpu_count() or 5, executable=executable, timeout=30, log=log_dir) as clients:
         clients.initialize(scene.resolve(), tmpdir.resolve())
         clients.include_frames()
         clients.move_keyframes(scale=5)

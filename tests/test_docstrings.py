@@ -42,6 +42,7 @@ def get_public_members(obj, module=None):
         (blender.BlenderService.exposed_include_materials, config.MaterialsConfig),
         (blender.BlenderService.exposed_include_diffuse_pass, config.DiffusePassConfig),
         (blender.BlenderService.exposed_include_specular_pass, config.SpecularPassConfig),
+        (blender.BlenderService.exposed_include_points, config.PointsConfig),
     ],
 )
 def test_output_configs(func, conf):

@@ -75,6 +75,8 @@ def render_job(
         client.include_diffuse_pass(**asdict(config.diffuse_pass))
     if config.include_specular_pass:
         client.include_specular_pass(**asdict(config.specular_pass))
+    if config.include_points:
+        client.include_points(**asdict(config.points))
 
     if config.unbind_camera:
         client.unbind_camera()

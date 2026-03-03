@@ -25,6 +25,20 @@ def set_clamp(node, enable):
 
 
 def new_socket(nodegroup, *, name, in_out, socket_type, attribute_domain="POINT", subtype=None):
+    """
+    Create a new socket on a node group.
+
+    Args:
+        nodegroup: The node group to add the socket to.
+        name: The name of the socket.
+        in_out: The direction of the socket ("INPUT" or "OUTPUT").
+        socket_type: The type of the socket (e.g., "NodeSocketVector").
+        attribute_domain: The attribute domain of the socket (default: "POINT").
+        subtype: The subtype of the socket (default: None).
+
+    Returns:
+        The new socket.
+    """
     if bpy.app.version < (4, 0, 0):
         if in_out == "INPUT":
             socket = nodegroup.inputs.new(name=name, type=socket_type)

@@ -659,6 +659,26 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
+    def exposed_include_points(
+        self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
+    ) -> None:
+        """Sets up Blender compositor to include a world-space point map for cada frame.
+
+        Note:
+            The point map corresponds to world-space positions, like those used in VGGT [1]_,
+            and not the camera-centric positions used in DUSt3R [2]_.
+
+            .. [1] `Beyond Depth: Positions are what you need for 3D Vision <https://arxiv.org/abs/2403.07343>`_
+            .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
+
+        Args:
+            preview (bool, optional): If true, colorized point maps will also be generated, where colors are
+                assigned based on the absolute fractional world coordinates. Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Either 16 or 32 bits. Defaults to 32 bits.
+        """
+
+    @require_initialized_service
     def exposed_load_addons(self, *addons: str) -> None:
         """Load blender addons by name (case-insensitive).
 
@@ -1368,6 +1388,26 @@ class BlenderClient:
             color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
             exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+        """
+
+    @type_check_only
+    def include_points(
+        self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
+    ) -> None:
+        """Sets up Blender compositor to include a world-space point map for cada frame.
+
+        Note:
+            The point map corresponds to world-space positions, like those used in VGGT [1]_,
+            and not the camera-centric positions used in DUSt3R [2]_.
+
+            .. [1] `Beyond Depth: Positions are what you need for 3D Vision <https://arxiv.org/abs/2403.07343>`_
+            .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
+
+        Args:
+            preview (bool, optional): If true, colorized point maps will also be generated, where colors are
+                assigned based on the absolute fractional world coordinates. Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Either 16 or 32 bits. Defaults to 32 bits.
         """
 
     @type_check_only
@@ -2152,6 +2192,26 @@ class BlenderClients(tuple):
             color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
             exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+        """
+
+    @type_check_only
+    def include_points(
+        self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
+    ) -> None:
+        """Sets up Blender compositor to include a world-space point map for cada frame.
+
+        Note:
+            The point map corresponds to world-space positions, like those used in VGGT [1]_,
+            and not the camera-centric positions used in DUSt3R [2]_.
+
+            .. [1] `Beyond Depth: Positions are what you need for 3D Vision <https://arxiv.org/abs/2403.07343>`_
+            .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
+
+        Args:
+            preview (bool, optional): If true, colorized point maps will also be generated, where colors are
+                assigned based on the absolute fractional world coordinates. Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Either 16 or 32 bits. Defaults to 32 bits.
         """
 
     @type_check_only

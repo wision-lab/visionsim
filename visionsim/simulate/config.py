@@ -138,6 +138,18 @@ class SpecularPassConfig:
 
 
 @dataclass
+class PointsConfig:
+    """For more information see :meth:`include_points <visionsim.simulate.blender.BlenderService.exposed_include_points>`."""
+
+    preview: bool = True
+    """Also save colorized point maps as PNGs"""
+    exr_codec: EXR_CODECS = "DWAA"
+    """Encoding used to compress EXRs"""
+    bit_depth: Literal[16, 32] = 32
+    """Bit depth used for saving point maps"""
+
+
+@dataclass
 class RenderConfig:
     executable: Path | None = None
     """Path to blender executable"""
@@ -181,6 +193,10 @@ class RenderConfig:
     """If true, enable specular light pass outputs"""
     specular_pass: SpecularPassConfig = field(default_factory=SpecularPassConfig)
     """Specular light passes configuration options"""
+    include_points: bool = False
+    """If true, enable world-space point map outputs"""
+    points: PointsConfig = field(default_factory=PointsConfig)
+    """Point maps configuration options"""
     include_all: bool = False
     """If true, enable all ground truth outputs"""
     previews: bool = True
@@ -234,9 +250,11 @@ class RenderConfig:
             self.include_materials = True
             self.include_diffuse_pass = True
             self.include_specular_pass = True
+            self.include_points = True
 
         self.depths.preview &= self.previews
         self.normals.preview &= self.previews
         self.flows.preview &= self.previews
         self.segmentations.preview &= self.previews
         self.materials.preview &= self.previews
+        self.points.preview &= self.previews

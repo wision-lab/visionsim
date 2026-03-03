@@ -57,6 +57,7 @@ try:
         colorize_indices_node_group,
         flow_preview_node_group,
         normal_preview_node_group,
+        point_preview_node_group,
         vec2rgba_node_group,
     )
 except ImportError:
@@ -1352,6 +1353,61 @@ class BlenderService(rpyc.Service):
                 exr_codec=exr_codec,
                 bit_depth=bit_depth,
             )
+
+    @require_initialized_service
+    def exposed_include_points(
+        self,
+        preview: bool = True,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include a world-space point map for cada frame.
+
+        Note:
+            The point map corresponds to world-space positions, like those used in VGGT [1]_,
+            and not the camera-centric positions used in DUSt3R [2]_.
+
+        Args:
+            preview (bool, optional): If true, colorized point maps will also be generated, where colors are
+                assigned based on the absolute fractional world coordinates. Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Either 16 or 32 bits. Defaults to 32 bits.
+
+        .. [1] `Beyond Depth: Positions are what you need for 3D Vision <https://arxiv.org/abs/2403.07343>`_
+        .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
+        """
+        engine = self.scene.render.engine.upper()
+        if (engine == "BLENDER_EEVEE" or engine == "BLENDER_EEVEE_NEXT") and bpy.app.version < (4, 2, 0):
+            self.log.warning(f"Position pass is not supported for engine {engine} in Blender version {bpy.app.version}")
+            return
+
+        self.view_layer.use_pass_position = True
+
+        if preview:
+            group = self.tree.nodes.new("CompositorNodeGroup")
+            group.node_tree = point_preview_node_group()
+
+            self.tree.links.new(self.render_layers.outputs["Position"], group.inputs["Vector"])
+
+            self._include_output(
+                "previews/points",
+                group.outputs[0],
+                label="Preview Points Output",
+                preview=True,
+                color_mode="RGB",
+                c=3,
+            )
+
+        self._include_output(
+            "points",
+            self.render_layers.outputs["Position"],
+            label="Points Output",
+            file_format="OPEN_EXR",
+            color_mode="RGB",
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
+            c=3,
+        )
 
     @require_initialized_service
     def exposed_load_addons(self, *addons: str) -> None:
