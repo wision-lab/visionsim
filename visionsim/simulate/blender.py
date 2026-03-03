@@ -54,9 +54,10 @@ except ImportError:
 try:
     from visionsim.simulate.compat import file_output_node
     from visionsim.simulate.nodes import (  # type: ignore
+        colorize_indices_node_group,
         flow_preview_node_group,
         normal_preview_node_group,
-        segmentation_preview_node_group,
+        point_preview_node_group,
         vec2rgba_node_group,
     )
 except ImportError:
@@ -75,7 +76,7 @@ import numpy as np
 import rpyc  # type: ignore
 import rpyc.utils.registry  # type: ignore
 import rpyc.utils.server  # type: ignore
-from playhouse.sqlite_ext import SqliteExtDatabase
+from peewee import SqliteDatabase
 
 from visionsim.simulate.schema import _DEFAULT_PRAGMAS, _MODELS, _Camera, _Data, _Frame
 
@@ -454,6 +455,7 @@ class BlenderService(rpyc.Service):
         self._keyframe_scale: float = 1.0
         self._warned_no_outputs: bool = False
         self._outputs: dict[str, Any] = {}
+        self._camera: bpy.types.Camera | None = None
 
     def _clear_cached_properties(self) -> None:
         # Based on: https://stackoverflow.com/a/71579485
@@ -495,6 +497,7 @@ class BlenderService(rpyc.Service):
         self._keyframe_scale = 1.0
         self._warned_no_outputs = False
         self._outputs = {}
+        self._camera = None
 
     def register_output_type(
         self,
@@ -531,8 +534,57 @@ class BlenderService(rpyc.Service):
             self.log.info(f"Database at {db_path} already exists, overwriting...")
             db_path.unlink()
 
-        db = SqliteExtDatabase(db_path, pragmas=_DEFAULT_PRAGMAS)
+        db = SqliteDatabase(db_path, pragmas=_DEFAULT_PRAGMAS)
         self._outputs[subpath] = (node, slot, db, camera_defaults)
+
+    def _include_output(
+        self,
+        subpath: str,
+        source_socket: bpy.types.NodeSocket,
+        label: str | None = None,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: int = 32,
+        preview: bool = False,
+        c: int | None = None,
+    ) -> None:
+        """Helper function to create a file output node, link it, and register the output type.
+
+        Args:
+            subpath (str): Subpath to save output in.
+            source_socket (bpy.types.NodeSocket): Socket to link to output node.
+            label (str, optional): Label for output node. Defaults to None.
+            file_format (str, optional): Format to save output as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Color mode to save output as. Defaults to "RGB".
+            exr_codec (str, optional): EXR codec to use. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth to use. Defaults to 32.
+            preview (bool, optional): If true, output node will be configured for preview. Defaults to False.
+            c (int, optional): Number of channels for registration. Defaults to None (inferred from color_mode).
+        """
+        node, (socket,), (slot,) = file_output_node(
+            self.tree,
+            self.root_path / subpath / "0000",
+            label=label or f"{subpath.replace('/', ' ').title()} Output",
+            preview=preview,
+            color_mode=color_mode,
+        )
+
+        if not preview:
+            node.format.color_management = "OVERRIDE"
+            node.format.linear_colorspace_settings.name = "Non-Color"
+            node.format.file_format = file_format
+            node.format.color_mode = color_mode
+            node.format.exr_codec = exr_codec
+            node.format.color_depth = str(bit_depth)
+            slot.name = str(Path(slot.name).with_suffix(FORMATS[file_format.upper()]))
+
+        self.tree.links.new(source_socket, socket)
+
+        if c is None:
+            c = COLOR_MODE_CHANNELS.get(color_mode.upper())
+
+        self.register_output_type(subpath, node, slot, c=c)
 
     def _save_metadata(
         self,
@@ -594,20 +646,34 @@ class BlenderService(rpyc.Service):
             raise ValueError("Expected at least one view layer, cannot render without it. Please add one manually.")
         return bpy.context.view_layer
 
-    @functools.cached_property
+    @property
     @require_initialized_service
     def camera(self) -> bpy.types.Camera:
-        """Get and cache active camera"""
-        # Make sure there's a camera
-        cameras = [ob for ob in self.scene.objects if ob.type == "CAMERA"]
-        if not cameras:
-            raise RuntimeError("No camera found, please add one manually.")
-        elif len(cameras) > 1 and self.scene.camera:
-            self.log.warning(f"Multiple cameras found. Using active camera named: '{self.scene.camera.name}'.")
-            return self.scene.camera
-        else:
-            self.log.warning(f"No active camera was found. Using camera named: '{cameras[0].name}'.")
-            return cameras[0]
+        """Get active camera, detect when it changes."""
+        if self._camera is None:
+            cameras = [ob for ob in self.scene.objects if ob.type == "CAMERA"]
+            if not cameras:
+                raise RuntimeError("No camera found, please add one manually.")
+
+            if len(cameras) > 1 and self.scene.camera:
+                current_active = self.scene.camera
+            else:
+                current_active = cameras[0]
+
+            if len(cameras) > 1:
+                if self.scene.camera:
+                    self.log.warning(f"Multiple cameras found. Using active camera named: '{self.scene.camera.name}'.")
+                else:
+                    self.log.warning(f"No active camera was found. Using camera named: '{cameras[0].name}'.")
+            self._camera = current_active
+        elif self._camera != self.scene.camera:
+            self.log.warning(
+                f"Active camera changed from '{self._camera.name}' to '{self.scene.camera.name}' "
+                f"at frame {self.scene.frame_current}."
+            )
+            self._camera = self.scene.camera
+
+        return self._camera
 
     @require_initialized_service
     def get_parents(self, obj: bpy.types.Object) -> list[bpy.types.Object]:
@@ -834,25 +900,14 @@ class BlenderService(rpyc.Service):
                 f"File format not understood, got `{file_format}` and expected one of `{', '.join(FORMATS)}`"
             )
 
-        frame_output_node, (frame_socket,), (frame_slot,) = file_output_node(
-            self.tree, self.root_path / "frames" / "0000", label="Frame Output"
-        )
-
-        if bpy.app.version >= (3, 2, 0):
-            frame_output_node.format.color_management = "OVERRIDE"
-            frame_output_node.format.linear_colorspace_settings.name = "Non-Color"
-        frame_output_node.format.file_format = file_format
-        frame_output_node.format.color_mode = color_mode
-        frame_output_node.format.exr_codec = exr_codec
-        frame_output_node.format.color_depth = str(bit_depth)
-        frame_slot.name = str(Path(frame_slot.name).with_suffix(FORMATS[file_format.upper()]))
-
-        self.tree.links.new(self.render_layers.outputs["Image"], frame_socket)
-        self.register_output_type(
+        self._include_output(
             "frames",
-            frame_output_node,
-            frame_slot,
-            c=COLOR_MODE_CHANNELS.get(color_mode.upper()),
+            self.render_layers.outputs["Image"],
+            label="Frame Output",
+            file_format=file_format,
+            color_mode=color_mode,
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
         )
 
     @require_initialized_service
@@ -889,44 +944,28 @@ class BlenderService(rpyc.Service):
             raise ValueError(f"Expected one of OPEN_EXR/HDR for file_format, got {file_format}.")
 
         if preview:
-            preview_depth_output_node, (preview_depth_socket,), (preview_depth_slot,) = file_output_node(
-                self.tree,
-                self.root_path / "previews" / "depths" / "0000",
+            normalize = self.tree.nodes.new("CompositorNodeNormalize")
+            self.tree.links.new(self.render_layers.outputs["Depth"], normalize.inputs[0])
+            self._include_output(
+                "previews/depths",
+                normalize.outputs[0],
                 label="Preview Depth Output",
                 preview=True,
                 color_mode="BW",
+                c=1,
             )
 
-            normalize = self.tree.nodes.new("CompositorNodeNormalize")
-            self.tree.links.new(self.render_layers.outputs["Depth"], normalize.inputs[0])
-            self.tree.links.new(normalize.outputs[0], preview_depth_socket)
-            self.register_output_type("previews/depths", preview_depth_output_node, preview_depth_slot, c=1)
-
-        depth_output_node, (depth_socket,), (depth_slot,) = file_output_node(
-            self.tree, self.root_path / "depths" / "0000", label="Depth Output"
+        color_mode = "BW" if (file_format.upper() == "OPEN_EXR" and bpy.app.version >= (4, 3, 0)) else "RGB"
+        self._include_output(
+            "depths",
+            self.render_layers.outputs["Depth"],
+            label="Depth Output",
+            file_format=file_format,
+            color_mode=color_mode,
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
+            c=1,
         )
-
-        if bpy.app.version >= (3, 2, 0):
-            depth_output_node.format.color_management = "OVERRIDE"
-            depth_output_node.format.linear_colorspace_settings.name = "Non-Color"
-        depth_output_node.format.file_format = file_format
-        depth_output_node.format.color_depth = str(bit_depth)
-
-        if file_format.upper() == "OPEN_EXR":
-            depth_output_node.format.exr_codec = exr_codec
-
-            if bpy.app.version < (4, 3, 0):
-                depth_output_node.format.color_mode = "RGB"
-            else:
-                depth_output_node.format.color_mode = "BW"
-
-            depth_slot.name = str(Path(depth_slot.name).with_suffix(".exr"))
-        else:
-            depth_output_node.format.color_mode = "RGB"
-            depth_slot.name = str(Path(depth_slot.name).with_suffix(".hdr"))
-
-        self.tree.links.new(self.render_layers.outputs["Depth"], depth_socket)
-        self.register_output_type("depths", depth_output_node, depth_slot, c=1)
 
     @require_initialized_service
     def exposed_include_normals(
@@ -953,37 +992,30 @@ class BlenderService(rpyc.Service):
         self.tree.links.new(self.render_layers.outputs["Normal"], normal_group.inputs[0])
 
         if preview:
-            preview_normal_output_node, (preview_normal_socket,), (preview_normal_slot,) = file_output_node(
-                self.tree,
-                self.root_path / "previews" / "normals" / "0000",
+            self._include_output(
+                "previews/normals",
+                normal_group.outputs["RGBA"],
                 label="Normals Preview Output",
                 preview=True,
                 color_mode="RGB",
+                c=3,
             )
-
-            self.tree.links.new(normal_group.outputs["RGBA"], preview_normal_socket)
-            self.register_output_type("previews/normals", preview_normal_output_node, preview_normal_slot, c=3)
-
-        normal_output_node, (normal_socket,), (normal_slot,) = file_output_node(
-            self.tree, self.root_path / "normals" / "0000", label="Normals Output"
-        )
-
-        if bpy.app.version >= (3, 2, 0):
-            normal_output_node.format.color_management = "OVERRIDE"
-            normal_output_node.format.linear_colorspace_settings.name = "Non-Color"
-        normal_output_node.format.file_format = "OPEN_EXR"
-        normal_output_node.format.exr_codec = exr_codec
-        normal_output_node.format.color_mode = "RGB"
-        normal_output_node.format.color_depth = str(bit_depth)
-        normal_slot.name = str(Path(normal_slot.name).with_suffix(".exr"))
 
         vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
         vec2rgba.label = "Vector2RGBA"
         vec2rgba.node_tree = vec2rgba_node_group()
 
         self.tree.links.new(normal_group.outputs["Vector"], vec2rgba.inputs["Image"])
-        self.tree.links.new(vec2rgba.outputs["Image"], normal_socket)
-        self.register_output_type("normals", normal_output_node, normal_slot, c=3)
+        self._include_output(
+            "normals",
+            vec2rgba.outputs["Image"],
+            label="Normals Output",
+            file_format="OPEN_EXR",
+            color_mode="RGB",
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
+            c=3,
+        )
 
     @require_initialized_service
     def exposed_include_flows(
@@ -1023,28 +1055,9 @@ class BlenderService(rpyc.Service):
 
         if preview:
             # Separate forward and backward flows (with a separate color not vector node)
-            if bpy.app.version >= (3, 3, 0):
-                split_flow = self.tree.nodes.new(type="CompositorNodeSeparateColor")
-                split_flow.mode = "RGB"
-            else:
-                split_flow = self.tree.nodes.new(type="CompositorNodeSepRGBA")
+            split_flow = self.tree.nodes.new(type="CompositorNodeSeparateColor")
+            split_flow.mode = "RGB"
             self.tree.links.new(self.render_layers.outputs["Vector"], split_flow.inputs["Image"])
-
-            # Create output nodes
-            preview_fwd_flow_output_node, (preview_fwd_flow_socket,), (preview_fwd_flow_slot,) = file_output_node(
-                self.tree,
-                self.root_path / "previews" / "flows" / "forward" / "0000",
-                label="Forward Flow Preview Output",
-                preview=True,
-                color_mode="RGB",
-            )
-            preview_bwd_flow_output_node, (preview_bwd_flow_socket,), (preview_bwd_flow_slot,) = file_output_node(
-                self.tree,
-                self.root_path / "previews" / "flows" / "backward" / "0000",
-                label="Backward Flow Preview Output",
-                preview=True,
-                color_mode="RGB",
-            )
 
             # Instantiate flow preview node group(s) and connect them
             if direction.lower() in ("forward", "both"):
@@ -1054,9 +1067,13 @@ class BlenderService(rpyc.Service):
 
                 self.tree.links.new(split_flow.outputs[0], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs[1], flow_group.inputs["y"])
-                self.tree.links.new(flow_group.outputs["Image"], preview_fwd_flow_socket)
-                self.register_output_type(
-                    "previews/flows/forward", preview_fwd_flow_output_node, preview_fwd_flow_slot, c=3
+                self._include_output(
+                    "previews/flows/forward",
+                    flow_group.outputs["Image"],
+                    label="Forward Flow Preview Output",
+                    preview=True,
+                    color_mode="RGB",
+                    c=3,
                 )
             if direction.lower() in ("backward", "both"):
                 flow_group = self.tree.nodes.new("CompositorNodeGroup")
@@ -1065,35 +1082,101 @@ class BlenderService(rpyc.Service):
 
                 self.tree.links.new(split_flow.outputs[2], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs[3], flow_group.inputs["y"])
-                self.tree.links.new(flow_group.outputs["Image"], preview_bwd_flow_socket)
-                self.register_output_type(
-                    "previews/flows/backward", preview_bwd_flow_output_node, preview_bwd_flow_slot, c=3
+                self._include_output(
+                    "previews/flows/backward",
+                    flow_group.outputs["Image"],
+                    label="Backward Flow Preview Output",
+                    preview=True,
+                    color_mode="RGB",
+                    c=3,
                 )
 
         # Save flows as EXRs, flows are a 4-vec of forward flows x/y then backwards flows x/y
         # before blender 4.3, saving a vector as an image saved only 3 channels even if `color_mode`
         # is set to RGBA. So we add a dummy vec2rgba node to trick blender into treating the
         # vector as an image with 4 channels. This dummy node just splits and recombines channels.
-        flow_output_node, (flow_socket,), (flow_slot,) = file_output_node(
-            self.tree, self.root_path / "flows" / "0000", label="Flow Output"
-        )
-
-        if bpy.app.version >= (3, 2, 0):
-            flow_output_node.format.color_management = "OVERRIDE"
-            flow_output_node.format.linear_colorspace_settings.name = "Non-Color"
-        flow_output_node.format.file_format = "OPEN_EXR"
-        flow_output_node.format.exr_codec = exr_codec
-        flow_output_node.format.color_mode = "RGBA"
-        flow_output_node.format.color_depth = str(bit_depth)
-        flow_slot.name = str(Path(flow_slot.name).with_suffix(".exr"))
-
         vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
         vec2rgba.label = "Vector2RGBA"
         vec2rgba.node_tree = vec2rgba_node_group()
 
         self.tree.links.new(self.render_layers.outputs["Vector"], vec2rgba.inputs["Image"])
-        self.tree.links.new(vec2rgba.outputs["Image"], flow_socket)
-        self.register_output_type("flows", flow_output_node, flow_slot, c=4)
+        self._include_output(
+            "flows",
+            vec2rgba.outputs["Image"],
+            label="Flow Output",
+            file_format="OPEN_EXR",
+            color_mode="RGBA",
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
+            c=4,
+        )
+
+    @require_initialized_service
+    def _include_ids(
+        self,
+        id_type: Literal["segmentations", "materials"],
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Shared logic for including segmentation or material ID maps."""
+        # TODO: Enable assignment of custom IDs for certain objects via a dictionary.
+
+        if self.scene.render.engine.upper() != "CYCLES":
+            self.log.warning(f"Cannot produce {id_type} map when not using CYCLES.")
+            return
+
+        if id_type == "segmentations":
+            self.view_layer.use_pass_object_index = True
+            pass_idx_name = "Object Index" if bpy.app.version >= (5, 0, 0) else "IndexOB"
+            data = bpy.data.objects
+            label = "Segmentation"
+        elif id_type == "materials":
+            self.view_layer.use_pass_material_index = True
+            pass_idx_name = "Material Index" if bpy.app.version >= (5, 0, 0) else "IndexMA"
+            data = bpy.data.materials
+            label = "Material"
+        else:
+            raise ValueError(f"Unknown id_type: {id_type}")
+
+        # Assign IDs to every object/material (background will be 0)
+        indices = np.arange(len(data))
+
+        if shuffle:
+            np.random.seed(seed=seed)
+            np.random.shuffle(indices)
+
+        for i, item in zip(indices, data):
+            item.pass_index = i + 1
+
+        if preview:
+            group = self.tree.nodes.new("CompositorNodeGroup")
+            group.label = f"{label} Preview"
+            group.node_tree = colorize_indices_node_group()
+            group.node_tree.nodes["NormalizeIdx"].inputs["From Max"].default_value = len(data)
+
+            self.tree.links.new(self.render_layers.outputs[pass_idx_name], group.inputs["Value"])
+            self._include_output(
+                f"previews/{id_type}",
+                group.outputs["Image"],
+                label=f"{label}s Preview Output",
+                preview=True,
+                color_mode="RGB",
+                c=3,
+            )
+
+        color_mode = "RGB" if bpy.app.version < (4, 3, 0) else "BW"
+        self._include_output(
+            id_type,
+            self.render_layers.outputs[pass_idx_name],
+            label=f"{label}s Output",
+            file_format="OPEN_EXR",
+            color_mode=color_mode,
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
+        )
 
     @require_initialized_service
     def exposed_include_segmentations(
@@ -1123,69 +1206,212 @@ class BlenderService(rpyc.Service):
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
         """
-        # TODO: Enable assignment of custom IDs for certain objects via a dictionary.
-
-        if self.scene.render.engine.upper() != "CYCLES":
-            raise RuntimeError("Cannot produce segmentation maps when not using CYCLES.")
-
-        self.view_layer.use_pass_object_index = True
-        object_index_name = "Object Index" if bpy.app.version >= (5, 0, 0) else "IndexOB"
-
-        # Assign IDs to every object (background will be 0)
-        indices = np.arange(len(bpy.data.objects))
-
-        if shuffle:
-            np.random.seed(seed=seed)
-            np.random.shuffle(indices)
-
-        for i, obj in zip(indices, bpy.data.objects):
-            obj.pass_index = i + 1
-
-        if preview:
-            seg_group = self.tree.nodes.new("CompositorNodeGroup")
-            seg_group.label = "Segmentation Preview"
-            seg_group.node_tree = segmentation_preview_node_group()
-            seg_group.node_tree.nodes["NormalizeIdx"].inputs["From Max"].default_value = len(bpy.data.objects)
-
-            preview_segmentation_output_node, (preview_segmentation_socket,), (preview_segmentation_slot,) = (
-                file_output_node(
-                    self.tree,
-                    self.root_path / "previews" / "segmentations" / "0000",
-                    label="Segmentations Preview Output",
-                    preview=True,
-                    color_mode="RGB",
-                )
-            )
-
-            self.tree.links.new(self.render_layers.outputs[object_index_name], seg_group.inputs["Value"])
-            self.tree.links.new(seg_group.outputs["Image"], preview_segmentation_socket)
-            self.register_output_type(
-                "previews/segmentations", preview_segmentation_output_node, preview_segmentation_slot, c=3
-            )
-
-        segmentation_output_node, (segmentation_socket,), (segmentation_slot,) = file_output_node(
-            self.tree, self.root_path / "segmentations" / "0000", label="Segmentations Output"
+        self._include_ids(
+            "segmentations",
+            preview=preview,
+            shuffle=shuffle,
+            seed=seed,
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
         )
 
-        if bpy.app.version >= (3, 2, 0):
-            segmentation_output_node.format.color_management = "OVERRIDE"
-            segmentation_output_node.format.linear_colorspace_settings.name = "Non-Color"
-        segmentation_output_node.format.file_format = "OPEN_EXR"
-        segmentation_output_node.format.exr_codec = exr_codec
-        segmentation_output_node.format.color_depth = str(bit_depth)
-        segmentation_slot.name = str(Path(segmentation_slot.name).with_suffix(".exr"))
+    @require_initialized_service
+    def exposed_include_materials(
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include material ID maps for rendered images.
 
-        if bpy.app.version < (4, 3, 0):
-            segmentation_output_node.format.color_mode = "RGB"
+        The preview visualization simply assigns a color to each material ID by mapping the
+        materials ID value to a hue using a HSV node with saturation=1 and value=1 (except
+        for the background which will have a value of 0 to ensure it is black).
+
+        Args:
+            preview (bool, optional): If true, also save preview visualizations of material IDs. Defaults to True.
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate material instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
+                with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
+
+        Raises:
+            RuntimeError: raised when not using CYCLES, as other renderers do not support a material ID pass.
+        """
+        self._include_ids(
+            "materials",
+            preview=preview,
+            shuffle=shuffle,
+            seed=seed,
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
+        )
+
+    @require_initialized_service
+    def exposed_include_diffuse_pass(
+        self,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include diffuse light passes for rendered images.
+
+        For CYCLES, this includes: Diffuse Direct, Diffuse Indirect and Diffuse Color.
+        For EEVEE, this includes: Diffuse Light and Diffuse Color.
+
+        Args:
+            file_format (str, optional): Format to save diffuse passes as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+        """
+        engine = self.scene.render.engine.upper()
+        if engine == "CYCLES":
+            passes = [
+                ("Diffuse Direct" if bpy.app.version >= (5, 0, 0) else "DiffDir", "diffuse/direct"),
+                ("Diffuse Indirect" if bpy.app.version >= (5, 0, 0) else "DiffInd", "diffuse/indirect"),
+                ("Diffuse Color" if bpy.app.version >= (5, 0, 0) else "DiffCol", "diffuse/color"),
+            ]
+            self.view_layer.use_pass_diffuse_direct = True
+            self.view_layer.use_pass_diffuse_indirect = True
+            self.view_layer.use_pass_diffuse_color = True
+        elif engine == "BLENDER_EEVEE" or engine == "BLENDER_EEVEE_NEXT":
+            passes = [
+                ("DiffDir", "diffuse/light"),
+                ("DiffCol", "diffuse/color"),
+            ]
+            self.view_layer.use_pass_diffuse_light = True
+            self.view_layer.use_pass_diffuse_color = True
         else:
-            segmentation_output_node.format.color_mode = "BW"
+            self.log.warning(f"Diffuse passes are not supported for engine {engine}")
+            return
 
-        self.tree.links.new(self.render_layers.outputs[object_index_name], segmentation_socket)
-        self.register_output_type(
-            "segmentations",
-            segmentation_output_node,
-            segmentation_slot,
-            c=COLOR_MODE_CHANNELS.get(segmentation_output_node.format.color_mode),
+        for pass_name, subpath in passes:
+            self._include_output(
+                subpath,
+                self.render_layers.outputs[pass_name],
+                label=f"{pass_name} Output",
+                file_format=file_format,
+                color_mode=color_mode,
+                exr_codec=exr_codec,
+                bit_depth=bit_depth,
+            )
+
+    @require_initialized_service
+    def exposed_include_specular_pass(
+        self,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include specular light passes for rendered images.
+
+        For CYCLES, this includes: Glossy Direct, Glossy Indirect and Glossy Color.
+        For EEVEE, this includes: Specular Light and Specular Color.
+
+        Args:
+            file_format (str, optional): Format to save specular passes as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+        """
+        engine = self.scene.render.engine.upper()
+        if engine == "CYCLES":
+            passes = [
+                ("Glossy Direct" if bpy.app.version >= (5, 0, 0) else "GlossDir", "specular/direct"),
+                ("Glossy Indirect" if bpy.app.version >= (5, 0, 0) else "GlossInd", "specular/indirect"),
+                ("Glossy Color" if bpy.app.version >= (5, 0, 0) else "GlossCol", "specular/color"),
+            ]
+            self.view_layer.use_pass_glossy_direct = True
+            self.view_layer.use_pass_glossy_indirect = True
+            self.view_layer.use_pass_glossy_color = True
+        elif engine == "BLENDER_EEVEE" or engine == "BLENDER_EEVEE_NEXT":
+            passes = [
+                ("GlossDir", "specular/light"),
+                ("GlossCol", "specular/color"),
+            ]
+            self.view_layer.use_pass_specular_light = True
+            self.view_layer.use_pass_specular_color = True
+        else:
+            self.log.warning(f"Specular passes are not supported for engine {engine}")
+            return
+
+        for pass_name, subpath in passes:
+            self._include_output(
+                subpath,
+                self.render_layers.outputs[pass_name],
+                label=f"{pass_name} Output",
+                file_format=file_format,
+                color_mode=color_mode,
+                exr_codec=exr_codec,
+                bit_depth=bit_depth,
+            )
+
+    @require_initialized_service
+    def exposed_include_points(
+        self,
+        preview: bool = True,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include a world-space point map for each frame.
+
+        Note:
+            The point map corresponds to world-space positions, like those used in VGGT [1]_,
+            and not the camera-centric positions used in DUSt3R [2]_.
+
+        Args:
+            preview (bool, optional): If true, colorized point maps will also be generated, where colors are
+                assigned based on the absolute fractional world coordinates. Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Either 16 or 32 bits. Defaults to 32 bits.
+
+        .. [1] `VGGT: Visual Geometry Grounded Transformer <https://arxiv.org/abs/2503.11651>`_
+        .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
+        """
+        engine = self.scene.render.engine.upper()
+        if (engine == "BLENDER_EEVEE" or engine == "BLENDER_EEVEE_NEXT") and bpy.app.version < (4, 2, 0):
+            self.log.warning(f"Position pass is not supported for engine {engine} in Blender version {bpy.app.version}")
+            return
+
+        self.view_layer.use_pass_position = True
+
+        if preview:
+            group = self.tree.nodes.new("CompositorNodeGroup")
+            group.node_tree = point_preview_node_group()
+
+            self.tree.links.new(self.render_layers.outputs["Position"], group.inputs["Vector"])
+
+            self._include_output(
+                "previews/points",
+                group.outputs[0],
+                label="Preview Points Output",
+                preview=True,
+                color_mode="RGB",
+                c=3,
+            )
+
+        vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
+        vec2rgba.label = "Vector2RGBA"
+        vec2rgba.node_tree = vec2rgba_node_group()
+
+        self.tree.links.new(self.render_layers.outputs["Position"], vec2rgba.inputs["Image"])
+        self._include_output(
+            "points",
+            vec2rgba.outputs["Image"],
+            label="Points Output",
+            file_format="OPEN_EXR",
+            color_mode="RGB",
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
+            c=3,
         )
 
     @require_initialized_service
@@ -2356,6 +2582,9 @@ if __name__ == "__main__":
 
     if bpy is None:
         sys.exit()
+
+    if bpy.app.version < (3, 6, 0):
+        raise RuntimeError("Please use newer blender version, at least 3.6.")
 
     # Get script specific arguments
     try:

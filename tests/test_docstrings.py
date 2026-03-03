@@ -1,6 +1,7 @@
 import inspect
 import re
 import warnings
+from dataclasses import fields
 
 import peewee
 import pytest
@@ -9,7 +10,7 @@ from docstring_parser import parse_from_object
 from visionsim.cli import _cli_modules
 from visionsim.dataset import dataset, models
 from visionsim.interpolate import pose
-from visionsim.simulate import blender, install, job, schema
+from visionsim.simulate import blender, config, install, job, schema
 
 
 def get_public_members(obj, module=None):
@@ -27,6 +28,29 @@ def get_public_members(obj, module=None):
             yield from get_public_members(child_obj, module)
         elif inspect.isfunction(child_obj) or inspect.ismethod(child_obj):
             yield child_obj
+
+
+@pytest.mark.parametrize(
+    "func, conf",
+    [
+        (blender.BlenderService.exposed_include_composites, config.CompositesConfig),
+        (blender.BlenderService.exposed_include_frames, config.FramesConfig),
+        (blender.BlenderService.exposed_include_depths, config.DepthsConfig),
+        (blender.BlenderService.exposed_include_normals, config.NormalsConfig),
+        (blender.BlenderService.exposed_include_flows, config.FlowsConfig),
+        (blender.BlenderService.exposed_include_segmentations, config.SegmentationsConfig),
+        (blender.BlenderService.exposed_include_materials, config.MaterialsConfig),
+        (blender.BlenderService.exposed_include_diffuse_pass, config.DiffusePassConfig),
+        (blender.BlenderService.exposed_include_specular_pass, config.SpecularPassConfig),
+        (blender.BlenderService.exposed_include_points, config.PointsConfig),
+    ],
+)
+def test_output_configs(func, conf):
+    conf_params = {f.name: f.default for f in fields(conf)}
+    sig_params = {name: val.default for name, val in inspect.signature(func).parameters.items()}
+    sig_params.pop("self")
+
+    assert sig_params == conf_params
 
 
 @pytest.mark.parametrize(

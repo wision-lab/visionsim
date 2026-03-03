@@ -69,6 +69,14 @@ def render_job(
         client.include_flows(**asdict(config.flows))
     if config.include_segmentations:
         client.include_segmentations(**asdict(config.segmentations))
+    if config.include_materials:
+        client.include_materials(**asdict(config.materials))
+    if config.include_diffuse_pass:
+        client.include_diffuse_pass(**asdict(config.diffuse_pass))
+    if config.include_specular_pass:
+        client.include_specular_pass(**asdict(config.specular_pass))
+    if config.include_points:
+        client.include_points(**asdict(config.points))
 
     if config.unbind_camera:
         client.unbind_camera()

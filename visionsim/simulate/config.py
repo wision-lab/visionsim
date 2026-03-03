@@ -94,6 +94,62 @@ class SegmentationsConfig:
 
 
 @dataclass
+class MaterialsConfig:
+    """For more information see :meth:`include_materials <visionsim.simulate.blender.BlenderService.exposed_include_materials>`."""
+
+    preview: bool = True
+    """Also save colorized material passes as PNGs"""
+    shuffle: bool = True
+    """Shuffle preview colors, helps differentiate material instances"""
+    seed: int = 1234
+    """Random seed used when shuffling colors"""
+    exr_codec: EXR_CODECS = "DWAA"
+    """Encoding used to compress EXRs"""
+    bit_depth: Literal[16, 32] = 32
+    """Bit depth used for saving material maps"""
+
+
+@dataclass
+class DiffusePassConfig:
+    """For more information see :meth:`include_diffuse_pass <visionsim.simulate.blender.BlenderService.exposed_include_diffuse_pass>`."""
+
+    file_format: FILE_FORMATS = "OPEN_EXR"
+    """File format used to save diffuse passes"""
+    color_mode: Literal["BW", "RGB", "RGBA"] = "RGB"
+    """Mode to save diffuse passes in: grayscale, color or color+alpha"""
+    exr_codec: EXR_CODECS = "DWAA"
+    """Encoding used to compress EXRs"""
+    bit_depth: Literal[8, 16, 32] = 32
+    """Bit depth used for saving diffuse passes"""
+
+
+@dataclass
+class SpecularPassConfig:
+    """For more information see :meth:`include_specular_pass <visionsim.simulate.blender.BlenderService.exposed_include_specular_pass>`."""
+
+    file_format: FILE_FORMATS = "OPEN_EXR"
+    """File format used to save specular passes"""
+    color_mode: Literal["BW", "RGB", "RGBA"] = "RGB"
+    """Mode to save specular passes in: grayscale, color or color+alpha"""
+    exr_codec: EXR_CODECS = "DWAA"
+    """Encoding used to compress EXRs"""
+    bit_depth: Literal[8, 16, 32] = 32
+    """Bit depth used for saving specular passes"""
+
+
+@dataclass
+class PointsConfig:
+    """For more information see :meth:`include_points <visionsim.simulate.blender.BlenderService.exposed_include_points>`."""
+
+    preview: bool = True
+    """Also save colorized point maps as PNGs"""
+    exr_codec: EXR_CODECS = "DWAA"
+    """Encoding used to compress EXRs"""
+    bit_depth: Literal[16, 32] = 32
+    """Bit depth used for saving point maps"""
+
+
+@dataclass
 class RenderConfig:
     executable: Path | None = None
     """Path to blender executable"""
@@ -125,6 +181,24 @@ class RenderConfig:
     """If true, enable segmentation map outputs"""
     segmentations: SegmentationsConfig = field(default_factory=SegmentationsConfig)
     """Segmentation maps configuration options"""
+    include_materials: bool = False
+    """If true, enable material map outputs"""
+    materials: MaterialsConfig = field(default_factory=MaterialsConfig)
+    """Material maps configuration options"""
+    include_diffuse_pass: bool = False
+    """If true, enable diffuse light pass outputs"""
+    diffuse_pass: DiffusePassConfig = field(default_factory=DiffusePassConfig)
+    """Diffuse light passes configuration options"""
+    include_specular_pass: bool = False
+    """If true, enable specular light pass outputs"""
+    specular_pass: SpecularPassConfig = field(default_factory=SpecularPassConfig)
+    """Specular light passes configuration options"""
+    include_points: bool = False
+    """If true, enable world-space point map outputs"""
+    points: PointsConfig = field(default_factory=PointsConfig)
+    """Point maps configuration options"""
+    include_all: bool = False
+    """If true, enable all ground truth outputs"""
     previews: bool = True
     """If false, disable all preview visualizations of auxiliary outputs"""
     keyframe_multiplier: float = 1.0
@@ -166,7 +240,21 @@ class RenderConfig:
         # Note: Using post init with tyro is not best practice, as it will be called multiple
         #   times. However here we are just propagating values of aliases, so it should be ok.
         # See: https://brentyi.github.io/tyro/examples/overriding_configs/#dataclasses-defaults
+        if self.include_all:
+            self.include_composites = True
+            self.include_frames = True
+            self.include_depths = True
+            self.include_normals = True
+            self.include_flows = True
+            self.include_segmentations = True
+            self.include_materials = True
+            self.include_diffuse_pass = True
+            self.include_specular_pass = True
+            self.include_points = True
+
         self.depths.preview &= self.previews
         self.normals.preview &= self.previews
         self.flows.preview &= self.previews
         self.segmentations.preview &= self.previews
+        self.materials.preview &= self.previews
+        self.points.preview &= self.previews

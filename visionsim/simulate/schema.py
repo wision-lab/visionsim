@@ -11,10 +11,11 @@ from peewee import (
     ForeignKeyField,
     IntegerField,
     Model,
+    SqliteDatabase,
     TextField,
 )
 from playhouse.shortcuts import ThreadSafeDatabaseMetadata
-from playhouse.sqlite_ext import JSONField, SqliteExtDatabase
+from playhouse.sqlite_ext import JSONField
 from typing_extensions import Self
 
 # https://docs.peewee-orm.com/en/latest/peewee/database.html#recommended-settings
@@ -110,7 +111,7 @@ class _Metadata:
 
         # from playhouse.migrate import SqliteMigrator, migrate
 
-        # db = SqliteExtDatabase(self.path, pragmas=_DEFAULT_PRAGMAS)
+        # db = SqliteDatabase(self.path, pragmas=_DEFAULT_PRAGMAS)
         # with db.connection_context():
         #     columns = db.get_columns(_Camera._meta.table_name)
         #     column_names = [c.name for c in columns]
@@ -142,7 +143,7 @@ class _Metadata:
         if Path(path).exists():
             Path(path).unlink()
 
-        db = SqliteExtDatabase(path, pragmas=_DEFAULT_PRAGMAS)
+        db = SqliteDatabase(path, pragmas=_DEFAULT_PRAGMAS)
 
         with db.connection_context():
             with db.atomic():
@@ -172,7 +173,7 @@ class _Metadata:
         Yields:
             Iterator[dict[str, Any]]: Dictionaries containing all relevant frame data
         """
-        db = SqliteExtDatabase(self.path, pragmas=_DEFAULT_PRAGMAS)
+        db = SqliteDatabase(self.path, pragmas=_DEFAULT_PRAGMAS)
         with db.connection_context():
             with db.bind_ctx(_MODELS):
                 for transform in _Frame.select(*_MODELS).join(_Camera).switch(_Frame).join(_Data).dicts():
@@ -196,7 +197,7 @@ class _Metadata:
     @cached_property
     def cameras(self) -> list[dict[str, Any]]:
         """List of defined cameras."""
-        db = SqliteExtDatabase(self.path, pragmas=_DEFAULT_PRAGMAS)
+        db = SqliteDatabase(self.path, pragmas=_DEFAULT_PRAGMAS)
         with db.connection_context():
             with db.bind_ctx(_MODELS):
                 return list(_Camera.select().dicts())

@@ -6,7 +6,7 @@ Installation & Dependencies
 
 First, you'll need:
 
-* `Blender <https://www.blender.org/download/>`_ >= 3.3.1, to render new views. 
+* `Blender <https://www.blender.org/download/>`_ >= 3.6, to render new views. 
 * `FFmpeg <https://ffmpeg.org/download.html>`_, for visualizations. 
 
 

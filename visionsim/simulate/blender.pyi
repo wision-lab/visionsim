@@ -218,8 +218,10 @@ class BlenderService(rpyc.Service):
     _conn: rpyc.Connection | None
     log: logging.Logger
     _initialized: bool
+    _keyframe_scale: float
     _warned_no_outputs: bool
     _outputs: dict[str, Any]
+    _camera: bpy.types.Camera | None
 
     def __init__(self) -> None:
         """Initialize render service.
@@ -281,6 +283,32 @@ class BlenderService(rpyc.Service):
             RuntimeError: raised if output type has already been registered.
         """
 
+    def _include_output(
+        self,
+        subpath: str,
+        source_socket: bpy.types.NodeSocket,
+        label: str | None = None,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: int = 32,
+        preview: bool = False,
+        c: int | None = None,
+    ) -> None:
+        """Helper function to create a file output node, link it, and register the output type.
+
+        Args:
+            subpath (str): Subpath to save output in.
+            source_socket (bpy.types.NodeSocket): Socket to link to output node.
+            label (str, optional): Label for output node. Defaults to None.
+            file_format (str, optional): Format to save output as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Color mode to save output as. Defaults to "RGB".
+            exr_codec (str, optional): EXR codec to use. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth to use. Defaults to 32.
+            preview (bool, optional): If true, output node will be configured for preview. Defaults to False.
+            c (int, optional): Number of channels for registration. Defaults to None (inferred from color_mode).
+        """
+
     def _save_metadata(
         self,
         paths: dict[str, Path],
@@ -318,10 +346,10 @@ class BlenderService(rpyc.Service):
     def view_layer(self) -> bpy.types.ViewLayer:
         """Get current view layer"""
 
-    @functools.cached_property
+    @property
     @require_initialized_service
     def camera(self) -> bpy.types.Camera:
-        """Get and cache active camera"""
+        """Get active camera, detect when it changes."""
 
     @require_initialized_service
     def get_parents(self, obj: bpy.types.Object) -> list[bpy.types.Object]:
@@ -371,11 +399,11 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
-    def exposed_get_original_fps(self) -> int:
+    def exposed_get_original_fps(self) -> float:
         """Get effective framerate (fps/fps_base).
 
         Returns:
-            int: Frame rate of scene.
+            float: Frame rate of scene.
         """
 
     @require_initialized_service
@@ -521,6 +549,18 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
+    def _include_ids(
+        self,
+        id_type: Literal["segmentations", "materials"],
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Shared logic for including segmentation or material ID maps."""
+
+    @require_initialized_service
     def exposed_include_segmentations(
         self,
         preview: bool = True,
@@ -547,6 +587,95 @@ class BlenderService(rpyc.Service):
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
+        """
+
+    @require_initialized_service
+    def exposed_include_materials(
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include material ID maps for rendered images.
+
+        The preview visualization simply assigns a color to each material ID by mapping the
+        materials ID value to a hue using a HSV node with saturation=1 and value=1 (except
+        for the background which will have a value of 0 to ensure it is black).
+
+        Args:
+            preview (bool, optional): If true, also save preview visualizations of material IDs. Defaults to True.
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate material instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
+                with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
+
+        Raises:
+            RuntimeError: raised when not using CYCLES, as other renderers do not support a material ID pass.
+        """
+
+    @require_initialized_service
+    def exposed_include_diffuse_pass(
+        self,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include diffuse light passes for rendered images.
+
+        For CYCLES, this includes: Diffuse Direct, Diffuse Indirect and Diffuse Color.
+        For EEVEE, this includes: Diffuse Light and Diffuse Color.
+
+        Args:
+            file_format (str, optional): Format to save diffuse passes as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+        """
+
+    @require_initialized_service
+    def exposed_include_specular_pass(
+        self,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include specular light passes for rendered images.
+
+        For CYCLES, this includes: Glossy Direct, Glossy Indirect and Glossy Color.
+        For EEVEE, this includes: Specular Light and Specular Color.
+
+        Args:
+            file_format (str, optional): Format to save specular passes as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+        """
+
+    @require_initialized_service
+    def exposed_include_points(
+        self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
+    ) -> None:
+        """Sets up Blender compositor to include a world-space point map for each frame.
+
+        Note:
+            The point map corresponds to world-space positions, like those used in VGGT [1]_,
+            and not the camera-centric positions used in DUSt3R [2]_.
+
+        Args:
+            preview (bool, optional): If true, colorized point maps will also be generated, where colors are
+                assigned based on the absolute fractional world coordinates. Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Either 16 or 32 bits. Defaults to 32 bits.
+
+        .. [1] `VGGT: Visual Geometry Grounded Transformer <https://arxiv.org/abs/2503.11651>`_
+        .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
         """
 
     @require_initialized_service
@@ -1014,11 +1143,11 @@ class BlenderClient:
         """
 
     @type_check_only
-    def get_original_fps(self) -> int:
+    def get_original_fps(self) -> float:
         """Get effective framerate (fps/fps_base).
 
         Returns:
-            int: Frame rate of scene.
+            float: Frame rate of scene.
         """
 
     @type_check_only
@@ -1190,6 +1319,95 @@ class BlenderClient:
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
+        """
+
+    @type_check_only
+    def include_materials(
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include material ID maps for rendered images.
+
+        The preview visualization simply assigns a color to each material ID by mapping the
+        materials ID value to a hue using a HSV node with saturation=1 and value=1 (except
+        for the background which will have a value of 0 to ensure it is black).
+
+        Args:
+            preview (bool, optional): If true, also save preview visualizations of material IDs. Defaults to True.
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate material instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
+                with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
+
+        Raises:
+            RuntimeError: raised when not using CYCLES, as other renderers do not support a material ID pass.
+        """
+
+    @type_check_only
+    def include_diffuse_pass(
+        self,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include diffuse light passes for rendered images.
+
+        For CYCLES, this includes: Diffuse Direct, Diffuse Indirect and Diffuse Color.
+        For EEVEE, this includes: Diffuse Light and Diffuse Color.
+
+        Args:
+            file_format (str, optional): Format to save diffuse passes as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+        """
+
+    @type_check_only
+    def include_specular_pass(
+        self,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include specular light passes for rendered images.
+
+        For CYCLES, this includes: Glossy Direct, Glossy Indirect and Glossy Color.
+        For EEVEE, this includes: Specular Light and Specular Color.
+
+        Args:
+            file_format (str, optional): Format to save specular passes as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+        """
+
+    @type_check_only
+    def include_points(
+        self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
+    ) -> None:
+        """Sets up Blender compositor to include a world-space point map for each frame.
+
+        Note:
+            The point map corresponds to world-space positions, like those used in VGGT [1]_,
+            and not the camera-centric positions used in DUSt3R [2]_.
+
+        Args:
+            preview (bool, optional): If true, colorized point maps will also be generated, where colors are
+                assigned based on the absolute fractional world coordinates. Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Either 16 or 32 bits. Defaults to 32 bits.
+
+        .. [1] `VGGT: Visual Geometry Grounded Transformer <https://arxiv.org/abs/2503.11651>`_
+        .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
         """
 
     @type_check_only
@@ -1729,11 +1947,11 @@ class BlenderClients(tuple):
         """
 
     @type_check_only
-    def get_original_fps(self) -> tuple[int,]:
+    def get_original_fps(self) -> tuple[float,]:
         """Get effective framerate (fps/fps_base).
 
         Returns:
-            int: Frame rate of scene.
+            float: Frame rate of scene.
         """
 
     @type_check_only
@@ -1905,6 +2123,95 @@ class BlenderClients(tuple):
 
         Raises:
             RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
+        """
+
+    @type_check_only
+    def include_materials(
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include material ID maps for rendered images.
+
+        The preview visualization simply assigns a color to each material ID by mapping the
+        materials ID value to a hue using a HSV node with saturation=1 and value=1 (except
+        for the background which will have a value of 0 to ensure it is black).
+
+        Args:
+            preview (bool, optional): If true, also save preview visualizations of material IDs. Defaults to True.
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate material instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
+                with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
+
+        Raises:
+            RuntimeError: raised when not using CYCLES, as other renderers do not support a material ID pass.
+        """
+
+    @type_check_only
+    def include_diffuse_pass(
+        self,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include diffuse light passes for rendered images.
+
+        For CYCLES, this includes: Diffuse Direct, Diffuse Indirect and Diffuse Color.
+        For EEVEE, this includes: Diffuse Light and Diffuse Color.
+
+        Args:
+            file_format (str, optional): Format to save diffuse passes as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+        """
+
+    @type_check_only
+    def include_specular_pass(
+        self,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include specular light passes for rendered images.
+
+        For CYCLES, this includes: Glossy Direct, Glossy Indirect and Glossy Color.
+        For EEVEE, this includes: Specular Light and Specular Color.
+
+        Args:
+            file_format (str, optional): Format to save specular passes as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+        """
+
+    @type_check_only
+    def include_points(
+        self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
+    ) -> None:
+        """Sets up Blender compositor to include a world-space point map for each frame.
+
+        Note:
+            The point map corresponds to world-space positions, like those used in VGGT [1]_,
+            and not the camera-centric positions used in DUSt3R [2]_.
+
+        Args:
+            preview (bool, optional): If true, colorized point maps will also be generated, where colors are
+                assigned based on the absolute fractional world coordinates. Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Either 16 or 32 bits. Defaults to 32 bits.
+
+        .. [1] `VGGT: Visual Geometry Grounded Transformer <https://arxiv.org/abs/2503.11651>`_
+        .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
         """
 
     @type_check_only
