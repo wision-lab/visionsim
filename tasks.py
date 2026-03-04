@@ -146,7 +146,7 @@ def build_docs(c, preview=False, full=False):
             for i, n in enumerate((25, 50, 100, 200)):
                 for cmd in (
                     f"visionsim blender.render-animation lego.blend interpolation/lego-{n:04}/ --keyframe-multiplier={n / 100} --width=320 --height=320",
-                    f"visionsim interpolate.frames interpolation/lego-{n:04}/ -o interpolation/lego{n:04}-interp/ -n={int(64 / 2**i)}",
+                    f"visionsim interpolate.dataset interpolation/lego-{n:04}/ -o interpolation/lego{n:04}-interp/ -n={int(64 / 2**i)}",
                     f"gifski $(ls -1a interpolation/lego{n:04}-interp/frames/*.png | sed -n '1~8p') --fps 25 -o {DOCS_STATIC}/lego{n:04}-interp.gif",
                 ):
                     _run(c, cmd, echo=True, warn=True)

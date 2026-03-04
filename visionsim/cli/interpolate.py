@@ -87,7 +87,7 @@ def dataset(
 
         if method.lower() == "rife":
             rife(
-                input_dir,
+                dataset.root,
                 output_dir,
                 input_files=dataset.paths,
                 exp=np.log2(n).astype(int),
