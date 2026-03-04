@@ -25,9 +25,9 @@ def emulate_rgb_from_sequence(
     sharpen_weight: float = 0.0,
     rng: np.random.Generator | None = None,
 ) -> npt.NDArray:
-    """Emulates a conventional RGB camera from a sequence of intensity frames.
+    """Emulates a conventional RGB camera [1]_ from a sequence of intensity frames.
 
-    For camera model see [1]. For demosaicing details see :func:`raw_to_rgb_bayer <visionsim.utils.color.raw_to_rgb_bayer>`.
+    For demosaicing details see :func:`raw_to_rgb_bayer <visionsim.utils.color.raw_to_rgb_bayer>`.
 
     Note:
         Motion-blur is approximated by averaging consecutive ground truth frames,

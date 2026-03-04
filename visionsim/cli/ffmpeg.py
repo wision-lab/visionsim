@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 
 def animate(
     input_dir: Path,
     pattern: str | None = None,
     outfile: Path = Path("out.mp4"),
-    fps: int = 25,
+    fps: float | None = None,
     crf: int = 22,
     vcodec: str = "libx264",
     step: int = 1,
@@ -20,13 +20,15 @@ def animate(
     """Combine generated frames into an MP4 using ffmpeg wizardry.
 
     This is roughly equivalent to running the "image2" demuxer in ffmpeg, with the added benefit of being able to
-    skip frames using a step size, strip alpha channels from PNGs, and automatically handling the case where the input frames are numpy arrays.
+    skip frames using a step size, strip alpha channels from PNGs, and automatically handling the case where the
+    input frames are numpy arrays. If using a dataset as input, the ``bitplanes`` attribute will be used to normalize
+    the data to uint8 for visualization.
 
     Args:
         input_dir: directory in which to look for frames,
         pattern: If provided search for files matching this pattern. Otherwise, look for a valid dataset in the input directory.
         outfile: where to save generated mp4
-        fps: frames per second in video
+        fps: frames per second in video, if None, will be inferred from dataset
         crf: constant rate factor for video encoding (0-51), lower is better quality but more memory
         vcodec: video codec to use (either libx264 or libx265)
         step: drop some frames when making video, use frames 0+step*n
@@ -41,7 +43,7 @@ def animate(
     import numpy as np
     from rich.progress import track
 
-    from visionsim.cli import _run
+    from visionsim.cli import _log, _log_once, _run
     from visionsim.dataset import Dataset
 
     if _run("ffmpeg -version", hide=True).returncode != 0:
@@ -57,6 +59,28 @@ def animate(
     else:
         dataset = Dataset.from_path(input_dir)
 
+    # Infer fps from dataset if not provided
+    if fps is None:
+        if dataset.cameras:
+            framerates = set(c.fps for c in dataset.cameras)
+            if len(framerates) != 1:
+                raise ValueError(f"All cameras must have the same fps. Found: {framerates}")
+            fps = next(iter(framerates))
+
+            if fps:
+                if fps > 240.0:
+                    _log.warning(
+                        f"Inferred frame rate of {fps} fps may cause issues with some codecs. "
+                        "Consider manually setting a lower fps and using a step size to reduce the number of frames."
+                    )
+            else:
+                _log.warning("No fps found in dataset, using default frame rate of 25 fps.")
+                fps = 25.0
+        else:
+            _log.info("No cameras found in dataset, using default frame rate of 25 fps.")
+            fps = 25.0
+
+    # Ensure all files are of the same type
     exts = {p.suffix for p in dataset.paths}
 
     if len(exts) != 1:
@@ -86,15 +110,17 @@ def animate(
         # Iterate over dataset with step and extract frame from npy if neccesary
         if ext.lower() == ".npy":
             for i, idx in enumerate(track(range(0, len(dataset), step), description="Extracting frames")):
-                data, transform = dataset[idx]
+                data, transform = cast(tuple[np.ndarray, dict[str, Any]], dataset[idx])
 
-                if cast(dict, transform).get("bitpack_dim"):
-                    data = np.array(data * 255).astype(np.uint8)
+                if transform.get("bitplanes"):
+                    _log_once(transform.get("bitplanes"), "Bitplanes detected, normalizing to uint8.", "info")
+                    data = np.array(data / transform["bitplanes"] * 255).astype(np.uint8)
 
+                # Handle grayscale images by repeating the channel
                 if data.ndim == 3 and data.shape[-1] != 3:  # type: ignore
                     data = np.repeat(data, 3, axis=-1)
 
-                # TODO: Normalize by sum (if bitdepth != 1) and maybe tonemap/invert_response
+                # TODO: Maybe tonemap/invert_response
                 iio.imwrite(tmpdirname / f"{i:09}.png", data)
         else:
             for i, p in enumerate(dataset.paths[::step]):

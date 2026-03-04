@@ -23,7 +23,8 @@ def spad(
     input_dir: Path,
     output_dir: Path,
     flux_gain: float = 1.0,
-    bitdepth: int = 1,
+    bitplanes: int = 1,
+    bitdepth: int | None = None,
     force_gray: bool = False,
     seed: int = 2147483647,
     pattern: str | None = None,
@@ -32,8 +33,8 @@ def spad(
 ) -> None:
     """Perform binomial sampling on linearized RGB frames to yield (summed) single photon frames
 
-    This will save numpy files which may be bitpacked (when bitdepth == 1) and may have different dtypes
-    depending on the bitdepth. The shape of the output arrays will be (max_size, h, w, c) or (remainder, h, w, c)
+    This will save numpy files which may be bitpacked (when bitplanes == 1) and may have different dtypes
+    depending on the number of summed bitplanes. The shape of the output arrays will be (max_size, h, w, c) or (remainder, h, w, c)
     where remainder = len(dataset) % max_size, where the width dimension is ceil(width / 8) when bitpacked.
 
     If the input contains alpha channel (determined by the last dimension of the input images), it will be stripped.
@@ -44,7 +45,8 @@ def spad(
         pattern: used to find source image files to convert to single photon frames,
             not needed when ``input_dir`` points to a valid dataset.
         flux_gain: multiplicative factor controlling dynamic range of output
-        bitdepth: representing number of underlying binary measurements aggregated (2**bitdepth - 1)
+        bitplanes: number of summed binary measurements
+        bitdepth: if set, ``bitplanes`` will be overridden to ``2**bitdepth - 1``
         force_gray: to disable RGB sensing even if the input images are color
         seed: random seed to use while sampling, ensures reproducibility
         max_size: maximum number of frames per output array before rolling over to new file
@@ -52,6 +54,7 @@ def spad(
     """
     from numpy.lib.format import open_memmap
 
+    from visionsim.cli import _log, _log_once
     from visionsim.dataset import Dataset, Metadata
     from visionsim.emulate.spc import emulate_spc
     from visionsim.utils.color import rgb_to_grayscale, srgb_to_linearrgb
@@ -69,12 +72,15 @@ def spad(
     else:
         dataset = Dataset.from_path(input_dir)
 
-    if bitdepth > 64:
-        raise ValueError("Bitdepth must be <= 64")
+    if bitdepth is not None:
+        _log.info(f"Overriding bitplanes to {2**bitdepth - 1} since bitdepth is set to {bitdepth}.")
+        bitplanes = 2**bitdepth - 1
 
-    # Map bitdepth to the smallest uint type that can hold it (minimum 8 bits)
+    # Map bitplanes to the smallest uint type that can hold it (minimum 8 bits)
     out_dtype = next(
-        dtype for limit, dtype in [(8, np.uint8), (16, np.uint16), (32, np.uint32), (64, np.uint64)] if bitdepth <= limit
+        dtype
+        for limit, dtype in [(8, np.uint8), (16, np.uint16), (32, np.uint32), (64, np.uint64)]
+        if bitplanes <= 2**limit - 1
     )
 
     rng = np.random.default_rng(int(seed))
@@ -93,21 +99,23 @@ def spad(
             else:
                 data = data.astype(float) / 255.0
 
-            if _strip_alpha(data.shape):
+            if len(data.shape) == 3 and data.shape[-1] in (2, 4):  # LA/RGBA
+                _log_once(data.shape, "Alpha channel detected, ignoring it.", "info")
                 data = data[..., :-1]
 
             if force_gray:
                 data = rgb_to_grayscale(data)
 
-            imgs = emulate_spc(data, flux_gain=flux_gain, bitdepth=bitdepth, rng=rng)
+            imgs = emulate_spc(data, flux_gain=flux_gain, bitplanes=bitplanes, rng=rng)
 
             offset = i % max_size
             file_path = output_dir / f"{i // max_size:04}.npy"
             transform["file_path"] = file_path.name
+            transform["bitplanes"] = bitplanes
             transform["offset"] = offset
             h, w, c = data.shape
 
-            if bitdepth == 1:
+            if bitplanes == 1:
                 # Default to bitpacking width
                 imgs = imgs >= 0.5
                 imgs = np.packbits(imgs, axis=1)

@@ -68,6 +68,8 @@ class Data(BaseModel):
     """path to data, usually an image or ndarray file"""
     bitpack_dim: int | None = None
     """dimension that has been bitpacked"""
+    bitplanes: int | None = None
+    """number of summed bitplanes in image"""
 
 
 class Frame(Camera, Data):
@@ -83,8 +85,8 @@ class Frame(Camera, Data):
 
 class Metadata(Camera):
     """A superset of the `Nerfstudio <https://docs.nerf.studio/quickstart/data_conventions.html#dataset-format>`_
-    ``transforms.json`` format with a few additional fields such as additional data paths (eg: flow/segmentation)
-    and a channels dimension."""
+    ``transforms.json`` format which enables use of numpy arrays for single photon data, and allows for additional
+    data paths (eg: flow/segmentation) and metadata attributes such as a channels dimension."""
 
     _REQUIRED_FIELDS: ClassVar[tuple[str, ...]] = ("fl_x", "fl_y", "cx", "cy", "h", "w")
     _data_types: set[str]
