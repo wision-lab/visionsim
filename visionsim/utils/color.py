@@ -69,9 +69,10 @@ def rgb_to_grayscale(img: npt.NDArray[np.floating]) -> npt.NDArray[np.floating]:
 
 
 def rgb_to_raw_bayer(rgb: npt.NDArray, cfa_pattern: Literal["rggb"] = "rggb") -> npt.NDArray:
-    """Mosaicing
+    """Bayer Mosaicing
 
     Realizes a mosaiced CFA image as would be sampled by a real Bayer-patterned sensor
+    by simply subsampling the RGB image.
 
     Args:
         rgb (npt.NDArray): hypothetical true RGB signal
@@ -90,7 +91,7 @@ def rgb_to_raw_bayer(rgb: npt.NDArray, cfa_pattern: Literal["rggb"] = "rggb") ->
     return raw
 
 
-def raw_to_rgb_bayer(
+def raw_bayer_to_rgb(
     raw: npt.NDArray,
     cfa_pattern: Literal["rggb"] = "rggb",
     method: Literal["off", "bilinear", "MHC04"] = "bilinear",

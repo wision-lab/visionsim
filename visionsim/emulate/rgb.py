@@ -7,7 +7,7 @@ import numpy.typing as npt
 from scipy.ndimage import gaussian_filter
 from typing_extensions import Literal
 
-from visionsim.utils.color import raw_to_rgb_bayer, rgb_to_raw_bayer
+from visionsim.utils.color import raw_bayer_to_rgb, rgb_to_raw_bayer
 from visionsim.utils.imgproc import unsharp_mask
 
 
@@ -27,7 +27,7 @@ def emulate_rgb_from_sequence(
 ) -> npt.NDArray:
     """Emulates a conventional RGB camera [1]_ from a sequence of intensity frames.
 
-    For demosaicing details see :func:`raw_to_rgb_bayer <visionsim.utils.color.raw_to_rgb_bayer>`.
+    For demosaicing details see :func:`raw_bayer_to_rgb <visionsim.utils.color.raw_bayer_to_rgb>`.
 
     Note:
         Motion-blur is approximated by averaging consecutive ground truth frames,
@@ -87,7 +87,7 @@ def emulate_rgb_from_sequence(
     # ("off" is not a no-op, it still creates a full 3-channel image from 1,
     # albeit a bad one)
     if has_color and mosaic:
-        patch = raw_to_rgb_bayer(patch, method=demosaic)
+        patch = raw_bayer_to_rgb(patch, method=demosaic)
 
     # de-noising and sharpening
     if denoise_sigma != 0.0:
