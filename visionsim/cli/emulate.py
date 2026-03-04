@@ -1,22 +1,11 @@
 from __future__ import annotations
 
-import functools
 import math
 import shutil
 from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
-
-
-@functools.lru_cache
-def _strip_alpha(shape: tuple[int, ...]) -> bool:
-    from visionsim.cli import _log
-
-    if len(shape) == 3 and shape[-1] in (2, 4):  # LA/RGBA
-        _log.info("Alpha channel detected, ignoring it.")
-        return True
-    return False
 
 
 def spad(
