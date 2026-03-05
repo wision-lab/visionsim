@@ -121,6 +121,8 @@ class DiffusePassConfig:
     """Encoding used to compress EXRs"""
     bit_depth: Literal[8, 16, 32] = 32
     """Bit depth used for saving diffuse passes"""
+    denoise: bool = True
+    """If true, apply denoising to the direct and indirect diffuse passes (Cycles only)"""
 
 
 @dataclass
@@ -135,6 +137,8 @@ class SpecularPassConfig:
     """Encoding used to compress EXRs"""
     bit_depth: Literal[8, 16, 32] = 32
     """Bit depth used for saving specular passes"""
+    denoise: bool = True
+    """If true, apply denoising to the direct and indirect specular passes (Cycles only)"""
 
 
 @dataclass
