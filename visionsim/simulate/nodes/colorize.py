@@ -82,8 +82,8 @@ def colorize_indices_node_group(shade: bool = False):
     mix.name = "Mix"
     mix.blend_type = "MULTIPLY"
     mix.inputs[0].default_value = 1.0
-    mix_A = mix.inputs[6] if len(mix.inputs) > 3 else mix.inputs[1]
-    mix_B = mix.inputs[7] if len(mix.inputs) > 3 else mix.inputs[2]
+    mix_A = mix.inputs[1] if "A" not in mix.inputs else mix.inputs["A"]
+    mix_B = mix.inputs[2] if "B" not in mix.inputs else mix.inputs["B"]
 
     # Node Math.001
     math_001 = colorize_indices.nodes.new(MATH_NODE)
