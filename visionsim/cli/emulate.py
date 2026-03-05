@@ -229,9 +229,9 @@ def rgb(
     output_dir: Path,
     chunk_size: int = 10,
     shutter_frac: float = 1.0,
-    readout_std: float = 0.0,
+    readout_std: float = 16.0,
     fwc: float | None = None,
-    flux_gain: float = 1.0,
+    flux_gain: float = 2.0**12,
     iso_gain: float = 1.0,
     adc_bitdepth: int = 12,
     mosaic: bool = False,
@@ -264,11 +264,12 @@ def rgb(
     import imageio.v3 as iio
     import more_itertools as mitertools
 
+    from visionsim.cli import _log_once
     from visionsim.dataset import Dataset, Metadata
     from visionsim.emulate.rgb import emulate_rgb_from_sequence
     from visionsim.interpolate.pose import pose_interp
     from visionsim.simulate.blender import INDEX_PADDING, ITEMS_PER_SUBFOLDER
-    from visionsim.utils.color import srgb_to_linearrgb
+    from visionsim.utils.color import linearrgb_to_srgb, srgb_to_linearrgb
     from visionsim.utils.progress import ElapsedProgress
 
     if input_dir.resolve() == output_dir.resolve():
@@ -301,6 +302,10 @@ def rgb(
             # Assume images have been tonemapped and undo mapping
             imgs = srgb_to_linearrgb(imgs)
 
+            if len(imgs.shape) == 4 and imgs.shape[-1] in (2, 4):  # LA/RGBA
+                _log_once(imgs.shape, "Alpha channel detected, ignoring it.", "info")
+                imgs = imgs[..., :-1]
+
             rgb_img = emulate_rgb_from_sequence(
                 imgs,
                 readout_std=readout_std,
@@ -319,16 +324,17 @@ def rgb(
                 # We checked that there's only a single camera, just re-use any transforms dict
                 (transform, *_), transforms_iter = mitertools.spy(transforms_iter)
                 poses = np.array([t["transform_matrix"] for t in transforms_iter])
-                transform["transform_matrix"] = pose_interp(poses, k=np.clip(len(poses) - 1, 2, 3))(0.5)
+
+                if len(poses) > 1:
+                    transform["transform_matrix"] = pose_interp(poses, k=min(len(poses) - 1, 3))(0.5)
+                else:
+                    transform["transform_matrix"] = poses[0]
+
                 transform["file_path"] = outpath.relative_to(output_dir)
                 transforms.append(transform)
 
-            # TODO: Alpha and grayscale?
-            # if rgb_img.shape[-1] == 1:
-            #     rgb_img = np.repeat(rgb_img, 3, axis=-1)
-
             outpath.parent.mkdir(exist_ok=True, parents=True)
-            iio.imwrite(outpath, (rgb_img * 255).astype(np.uint8))
+            iio.imwrite(outpath, (linearrgb_to_srgb(rgb_img) * 255).astype(np.uint8))
             progress.update(task, advance=chunk_size)
 
     if not pattern:

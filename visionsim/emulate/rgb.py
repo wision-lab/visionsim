@@ -17,7 +17,7 @@ def emulate_rgb_from_sequence(
     readout_std: float = 0.0,
     fwc: float = 10000.0,
     adc_bitdepth: int = 12,
-    flux_gain: float = 1.0,
+    flux_gain: float = 2**12,
     iso_gain: float = 1.0,
     mosaic: bool = False,
     demosaic: Literal["off", "bilinear", "MHC04"] = "off",
@@ -57,50 +57,43 @@ def emulate_rgb_from_sequence(
             “Noise-optimal capture for high dynamic range photography,”
             CVPR 2010.
     """
-    # Get sum of linear-intensity frames.
+    # Get mean of linear-intensity frames.
     burst_size = int(max(1, np.ceil(len(sequence) * shutter_frac)))
     sequence = np.array(sequence[:burst_size])
-    patch = np.sum(sequence, axis=0) * flux_gain
+    patch = np.mean(sequence, axis=0)
 
-    has_alpha = (patch.ndim > 2) and (patch.shape[2] in [2, 4])  # LA/RGBA
-    patch_alpha = patch[..., -1:] if has_alpha else None
-    has_color = (patch.ndim > 2) and (patch.shape[2] in [3, 4])  # RGB/RGBA
-    patch = patch[..., :-1] if has_alpha else patch
-    if has_color and mosaic:
+    # Convert to raw bayer if mosaic, this just samples the color channels
+    if mosaic:
         patch = rgb_to_raw_bayer(patch)
+
+    # So far patch is GT motion blurred frame, without any noise or gain applied
+    # we need to scale it by flux gain and shutter fraction to get the correct amount of light
+    patch *= flux_gain * shutter_frac
 
     # Roughly translating the model in Eqs. (1,2) and Fig. 1 of Hasinoff et al.
     # Perform poisson sampling
     rng = np.random.default_rng() if rng is None else rng
     patch = cast(np.ndarray, rng.poisson(patch)).astype(float)
-    # full-well capacity
+
+    # Clip to full-well capacity, add readout noise, apply ISO gain
     patch = np.clip(patch, 0, fwc)
-    # readout noise
     patch += rng.normal(0, readout_std, size=patch.shape)
-    # apply ISO gain
     patch *= iso_gain
-    # assume perfect quantization in ADC
+    # Assume perfect quantization in ADC
     patch = np.round(np.clip(patch, 0, (2**adc_bitdepth - 1)))
     patch = patch / (2**adc_bitdepth - 1)
 
-    # de-mosaicing: necessary if data is mosaiced, so can't be `None`.
+    # De-mosaicing: necessary if data is mosaiced, so can't be `None`.
     # ("off" is not a no-op, it still creates a full 3-channel image from 1,
     # albeit a bad one)
-    if has_color and mosaic:
+    if mosaic:
         patch = raw_bayer_to_rgb(patch, method=demosaic)
 
-    # de-noising and sharpening
+    # De-noising and sharpening
     if denoise_sigma != 0.0:
         patch = gaussian_filter(patch, denoise_sigma)
     if sharpen_weight != 0.0:
         patch = unsharp_mask(patch, sigma=max(1, denoise_sigma), amount=sharpen_weight)
-
-    if not has_color:  # fake it anyway, because this is emulate____rgb____
-        if len(patch.shape) < 3:
-            patch = np.atleast_3d(patch)
-        patch = np.repeat(patch, 3, axis=-1)
-    if has_alpha:
-        patch = np.concatenate((patch, patch_alpha), axis=-1)
     return patch
 
 
