@@ -1146,6 +1146,7 @@ class BlenderService(rpyc.Service):
         seed: int = 1234,
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: Literal[16, 32] = 32,
+        shade: bool = False,
     ) -> None:
         """Shared logic for including segmentation or material ID maps."""
         # TODO: Enable assignment of custom IDs for certain objects via a dictionary.
@@ -1180,10 +1181,15 @@ class BlenderService(rpyc.Service):
         if preview:
             group = self.tree.nodes.new("CompositorNodeGroup")
             group.label = f"{label} Preview"
-            group.node_tree = colorize_indices_node_group()
+            group.node_tree = colorize_indices_node_group(shade=shade)
             group.node_tree.nodes["NormalizeIdx"].inputs["From Max"].default_value = len(data)
 
-            self.tree.links.new(self.render_layers.outputs[pass_idx_name], group.inputs["Value"])
+            self.tree.links.new(self.render_layers.outputs[pass_idx_name], group.inputs["Index"])
+
+            if shade:
+                self.view_layer.use_pass_normal = True
+                self.tree.links.new(self.render_layers.outputs["Normal"], group.inputs["Normal"])
+
             self._include_output(
                 f"previews/{id_type}",
                 group.outputs["Image"],
@@ -1276,6 +1282,7 @@ class BlenderService(rpyc.Service):
             seed=seed,
             exr_codec=exr_codec,
             bit_depth=bit_depth,
+            shade=True,
         )
 
     @require_initialized_service
@@ -1293,7 +1300,7 @@ class BlenderService(rpyc.Service):
         For EEVEE, this includes: Diffuse Light and Diffuse Color.
 
         Note:
-            When using CYCLES, these extra light passes might be very noisy, especially the indirect ones, 
+            When using CYCLES, these extra light passes might be very noisy, especially the indirect ones,
             as they rely on raytracing. To mitigate this, you can either increase the number of samples, or the threshold in the :meth:`cycles_settings <exposed_cycles_settings>`, or/and use the denoise option.
 
         Args:
@@ -1354,7 +1361,7 @@ class BlenderService(rpyc.Service):
         For EEVEE, this includes: Specular Light and Specular Color.
 
         Note:
-            When using CYCLES, these extra light passes might be very noisy, especially the indirect ones, 
+            When using CYCLES, these extra light passes might be very noisy, especially the indirect ones,
             as they rely on raytracing. To mitigate this, you can either increase the number of samples, or the threshold in the :meth:`cycles_settings <exposed_cycles_settings>`, or/and use the denoise option.
 
         Args:
