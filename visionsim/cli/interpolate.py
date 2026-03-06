@@ -105,7 +105,7 @@ def dataset(
         camera = next(iter(dataset.cameras))
 
         if camera.fps:
-            camera.fps *= n
+            camera = camera.model_copy(update={"fps": camera.fps * n})
 
         Metadata.from_frames(
             frames=[
