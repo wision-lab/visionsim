@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Tuple, Union
+from typing import List, Union
 
 import torch
 import torch.nn.functional as F
@@ -147,12 +147,6 @@ class HistogrammerBase:
                 - torch.Tensor: A tensor containing the calculated transients.
                 - list: List of ambient offsets.
         """
-        # check max depth
-        if self.max_depth.magnitude > max_depth:
-            raise ValueError(
-                f"Max depth in config {self.max_depth.magnitude} is more than maximum resolvable depth {max_depth}"
-            )
-
         # Ensure all tensors are on the same device
         device = irradiance_frames.device
         if fov_masks.device != device:
@@ -234,6 +228,9 @@ class HistogrammerBase:
         for i in tqdm(range(transients.shape[0]), desc="Convolving transients", disable=True):
             # Reshape for conv1d: (batch_size, in_channels, signal_length)
             convolved_signal = F.conv1d(transients[i].view(1, 1, -1), irf.view(1, 1, -1), padding="same").view(-1)
+            # pad = irf.numel() // 2
+            # padded_signal = F.pad(transients[i].view(1, 1, -1), (pad, pad), mode="constant", value=0.0)
+            # convolved_signal = F.conv1d(padded_signal, irf.view(1, 1, -1)).view(-1)
             # Add signal and background components
             # Handle offset as list, tensor, or scalar
             if isinstance(offset, (list, tuple)):
@@ -266,8 +263,6 @@ class HistogrammerBase:
 
         for idx in current_arrivals_indices:
             # Check for previous photon detection within the dead time window
-            # print("idx dtype", idx.dtype)
-            # print("dead_time_bins dtype", dead_time_bins.dtype)
             start_check = int(max(idx - dead_time_bins, 0))
             end_check = idx  # Up to (but not including) the current photon
 
@@ -283,9 +278,6 @@ class HistConfig:
     max_depth: Quantity = 20 * ureg.meter
     n_bins: int = 1000
     n_hist_bins: Union[int, None] = None
-    shape: Union[int, Tuple[int, int]] = (300, 400)
-    strict_units: bool = True
-    strict_range: bool = False
     bin_width: Quantity = 0.03 * ureg.meter
     pixel_fov_list: List[List[float]] = field(
         default_factory=lambda: [
@@ -308,8 +300,6 @@ class HistConfig:
             raise ValueError("n_bins must be > 0")
         if self.n_hist_bins is not None and self.n_hist_bins <= 0:
             raise ValueError("n_hist_bins must be > 0")
-        if self.shape[0] <= 0 or self.shape[1] <= 0:
-            raise ValueError("shape must be > 0")
         if self.bin_width <= 0:
             raise ValueError("bin_width must be > 0")
         if self.n_pulses <= 0:
@@ -353,9 +343,12 @@ class Histogrammer(HistogrammerBase):
         # First half for previous pulse arrivals, second half for current pulse arrivals
         buffer = torch.zeros((n_tbins * 2), dtype=torch.bool, device=phi_bar.device)
 
-        # Pre-calculate probability once (outside the loop) as we are assuming phi_bar is static per pulse
-        # p(detection) = 1 - e^(-rate)
+        # Pre-calculate probability once (outside the loop) as we are assuming phi_bar is static per pulse.
+        # Clamp negative arrival rates that can occur from convolution/offset math.
+        # p(detection) = 1 - e^(-rate), with p in [0, 1]
+        phi_bar = torch.clamp(phi_bar, min=0.0)
         prob_detection = 1.0 - torch.exp(-phi_bar)
+        prob_detection = torch.clamp(prob_detection, 0.0, 1.0)
 
         for n_ in range(n_pulses):
             detections = torch.bernoulli(prob_detection)

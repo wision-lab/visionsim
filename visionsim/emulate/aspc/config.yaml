@@ -2,15 +2,13 @@
 histogrammer:
   min_depth: !Quantity 0.0 meters
   max_depth: !Quantity 10.0 meters
-  n_bins: 100
-  shape: [300, 400]  # [height, width] to match sensor size
-  strict_units: true
-  strict_range: false
+  n_bins: 400
   bin_width: !Quantity 0.03 meters  # meters per bin
   # pixel_fov_list: [[0, 0.4, 0.3, 0.6], [0.7, 0.95, 0.6, 0.9],[0,0.999,0,0.999]] # [row1, row2, col1, col2]
   pixel_fov_list: !file "visionsim/emulate/aspc/pixel_fov_list.txt"
   n_pulses: 100   # number of laser pulses
   dead_time_s: !Quantity 10e-9 seconds # Dead time in seconds
+  # dead_time_s: !Quantity 0 seconds # Dead time in seconds
   free_running: False # Free-running mode (True) or gated mode (False) 
 
 # Active Light Source 

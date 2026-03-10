@@ -3,12 +3,9 @@ histogrammer:
   min_depth: !Quantity 0.0 meters
   max_depth: !Quantity 10.0 meters
   n_bins: 100
-  shape: [300, 400]  # [height, width] to match sensor size
-  strict_units: true
-  strict_range: false
   bin_width: !Quantity 0.03 meters  # meters per bin
   pixel_fov_list: [[0, 0.4, 0.3, 0.6], [0.2, 0.45, 0.6, 0.8]]
-  n_pulses: 10000   # number of laser pulses
+  n_pulses: 100   # number of laser pulses
   dead_time_s: !Quantity 0 seconds # Dead time in seconds
   free_running: False # Free-running mode (True) or gated mode (False) 
 
@@ -16,13 +13,14 @@ histogrammer:
 active_source:
   pulsed_laser:
     enabled: true
-    wavelength: !Quantity 550.0 nanometers            # nanometers
+    wavelength: !Quantity 550.0 nanometer            # nanometers
     frequency: !Quantity 10.0 megahertz               # hertz
-    pulse_width: !Quantity 2.5 nanoseconds            # seconds
-    avg_watts: !Quantity 1.0 watts                    # watts
+    pulse_width: !Quantity 10 nanosecond            # seconds
+    avg_watts: !Quantity 2.0 milliwatts                    # watts
     pulse_shape: "gaussian"         # "gaussian", "square", or "custom" 
-    # pulse_shape_custom: "lambda x: np.sinc(x / 3)"
-    pulse_shape_custom: "np.array([0,0,0.0,0.0,0.1,0.3,1,0.9,0.8,0.4,0.1,0,0])"
+    # pulse_shape_custom: !expr "lambda x: np.sinc(x / 3)"
+    pulse_shape_custom: !expr "lambda x: np.exp(-0.5 * (x-3) ** 2) + np.exp(-0.5 * (x+3) ** 2)"
+    # pulse_shape_custom: [0,0,0.0,0.0,0.1,0.3,1,0.9,0.8,0.4,0.1,0,0]
     
 # Ambient Light Sources 
 ambient_source:

@@ -385,16 +385,6 @@ class Sun(ConstantSource, BlackBodySource):
             watts2photons(watts_eff_per_area, 1 / frequency, self.lambda_pass) / ureg.meter**2
         )
         radiance = photons_eff_per_area_per_cycle.to(ureg.count / ureg.meter**2) * (omega * rho_hat) / np.pi
-        print(f"self.c_eff: {self.c_eff}")
-        print(f"self.lux.to(ureg.lux).magnitude: {self.lux.to(ureg.lux).magnitude}")
-        print(f"watts_eff_per_area: {watts_eff_per_area}")
-        print(f"frequency: {frequency}")
-        print(f"self.lambda_pass: {self.lambda_pass}")
-        print(f"photons_eff_per_area_per_cycle: {photons_eff_per_area_per_cycle}")
-        print(f"radiance: {radiance}")
-        print(f"omega: {omega}")
-        print(f"rho_hat: {rho_hat}")
-        print(f"np.pi: {np.pi}")
 
         return radiance.to(radiance_photons)
 

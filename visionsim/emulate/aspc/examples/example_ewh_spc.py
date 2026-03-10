@@ -6,7 +6,6 @@ from visionsim.emulate.aspc.camera import Camera
 from visionsim.emulate.aspc.examples.ascp_plot_utils import plot_ewh_per_pixel
 
 if __name__ == "__main__":
-
     data_dir = Path("examples/renders/scene1/")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     config_path = "visionsim/emulate/aspc/examples/config_ewh.yaml"

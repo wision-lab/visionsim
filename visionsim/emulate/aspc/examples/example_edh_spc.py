@@ -2,9 +2,10 @@ from pathlib import Path
 
 import torch
 
+from visionsim.emulate.aspc.camera import Camera
+
 # Import from local modules
 from visionsim.emulate.aspc.examples.ascp_plot_utils import plot_edh_per_pixel
-from visionsim.emulate.aspc.camera import Camera
 
 if __name__ == "__main__":
     ## Setting simulation parameters
@@ -31,12 +32,12 @@ if __name__ == "__main__":
     )
 
     plot_edh_per_pixel(
-        camera.histogrammer, 
-        camera.get_fov_masks(), 
-        camera.albedo_frames[0], 
-        camera.depth_frames[0], 
-        transients, 
-        arrival_rates, 
-        photon_hist_list, 
-        edh_list
+        camera.histogrammer,
+        camera.get_fov_masks(),
+        camera.albedo_frames[0],
+        camera.depth_frames[0],
+        transients,
+        arrival_rates,
+        photon_hist_list,
+        edh_list,
     )

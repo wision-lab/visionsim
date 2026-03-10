@@ -3,6 +3,7 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from pint import Quantity
 from ruamel.yaml import YAML
 
 from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer, HistogrammerEDH
@@ -49,6 +50,8 @@ class Camera:
         # Sensor
         self.sensor = SPADSensor(**self.config["sensor"])
 
+        self.validate_config(self.config)
+
     def _load_config(self, config_path):
         """Load configuration from YAML file"""
         yaml = YAML()
@@ -61,8 +64,28 @@ class Camera:
     def _load_data(self, data_path, requires_grad=False):
         """Load data from directory"""
         return preproc_albedo_intensity_depth_frames(
-            root=data_path, device=self.device, config=self.config, start_idx=0, num_frames=1, requires_grad=requires_grad
+            root=data_path,
+            device=self.device,
+            config=self.config,
+            start_idx=0,
+            num_frames=1,
+            requires_grad=requires_grad,
         )
+
+    def validate_config(self, config):
+        """Validate configuration"""
+        # check max depth
+        if self.histogrammer.max_depth.magnitude > self.active_source.max_resolvable_depth.magnitude:
+            raise ValueError(
+                f"Max depth in config {self.histogrammer.max_depth.magnitude} is more than maximum resolvable depth {self.active_source.max_resolvable_depth.magnitude}"
+            )
+        if (
+            self.histogrammer.n_bins * self.histogrammer.bin_width.magnitude
+            > self.active_source.max_resolvable_depth.magnitude
+        ):
+            raise ValueError(
+                f"Bin width {self.histogrammer.bin_width.magnitude} x number of bins {self.histogrammer.n_bins} is greater than max resolvable depth {self.active_source.max_resolvable_depth.magnitude}"
+            )
 
     def _get_light_conditions_from_string(self, condition_str):
         """Convert string to LightConditions enum value."""
@@ -76,6 +99,50 @@ class Camera:
             empty_mask, self.histogrammer.pixel_fov_list, device=self.device
         )
         return fov_masks
+
+    def build_pixel_fov_list(
+        self,
+        per_pixel_fov: Quantity | tuple[Quantity, Quantity],
+        output_path: str | None = None,
+    ) -> list:
+        """
+        Build a pixel_fov_list for every pixel location given a per-pixel FOV size.
+
+        Args:
+            per_pixel_fov (float | tuple[float, float]): Per-pixel FOV in degrees.
+                If a single value is provided, a square FOV is assumed.
+            output_path (str | None): Optional file path to save the list
+                (space-delimited text via `numpy.savetxt`).
+
+        Returns:
+            list: List of normalized rectangles in [row_min, row_max, col_min, col_max] order.
+        """
+        if isinstance(per_pixel_fov, (Quantity)):
+            fov_h = per_pixel_fov
+            fov_w = per_pixel_fov
+        else:
+            fov_h, fov_w = per_pixel_fov[0], per_pixel_fov[1]
+
+        fov_w_in_pixels = (fov_w / self.sensor.fov_x).to(ureg.dimensionless).magnitude
+        fov_h_in_pixels = (fov_h / self.sensor.fov_y).to(ureg.dimensionless).magnitude
+
+        pixel_fov_list = []
+        for row in range(self.sensor.h):
+            cy = row / self.sensor.h
+            for col in range(self.sensor.w):
+                cx = col / self.sensor.w
+                r1 = max(0.0, cy - fov_h_in_pixels / 2.0)
+                r2 = min(1.0, cy + fov_h_in_pixels / 2.0)
+                c1 = max(0.0, cx - fov_w_in_pixels / 2.0)
+                c2 = min(1.0, cx + fov_w_in_pixels / 2.0)
+                pixel_fov_list.append([r1, r2, c1, c2])
+
+        if output_path:
+            # Save the pixel FOV list in a space-delimited plain text file, one FOV per line as [r1 r2 c1 c2]
+            np.savetxt(output_path, np.array(pixel_fov_list, dtype=np.float32), fmt="%.6f", delimiter=" ")
+            print(f"Saved pixel_fov_list to: {output_path}")
+
+        return pixel_fov_list
 
     def _get_signal(self):
         """Get signal from active source"""
@@ -174,7 +241,10 @@ class Camera:
         fig.suptitle("Depth Values (First Frame)", fontsize=16)
         for i in range(num_fovs):
             ax[i].imshow(
-                self.depth_frames[0].cpu().numpy() * (fov_masks[i].detach().cpu().numpy() > 0), cmap="viridis", vmin=0, vmax=10
+                self.depth_frames[0].cpu().numpy() * (fov_masks[i].detach().cpu().numpy() > 0),
+                cmap="viridis",
+                vmin=0,
+                vmax=10,
             )
             ax[i].set_title(f"FOV {i + 1}")
             ax[i].axis("off")
@@ -208,10 +278,11 @@ class Camera:
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
         plt.show()
 
-    def _plot_ewh(self, num_fovs, ewh_list):
+    def plot_ewh(self, num_fovs, ewh_list):
         """Plot EWH"""
         fig, ax = plt.subplots(num_fovs, 1, figsize=(8, 2.5 * num_fovs))
         fig.suptitle("Simulated Time Stamp Histograms (EWH)", fontsize=16)
+        ax = np.atleast_1d(ax)
         for i in range(num_fovs):
             ax[i].plot(ewh_list[i].cpu().numpy())
             ax[i].set_ylim(bottom=0)
@@ -234,4 +305,4 @@ class Camera:
         self._plot_depth_frames(num_fovs, fov_masks)
         self._plot_transients(num_fovs, transients)
         self._plot_arrival_rates(num_fovs, arrival_rates)
-        self._plot_ewh(num_fovs, ewh_list)
+        self.plot_ewh(num_fovs, ewh_list)
