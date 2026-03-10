@@ -1,5 +1,5 @@
-from pathlib import Path
 import random
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import torch
@@ -94,8 +94,8 @@ if __name__ == "__main__":
     # camera.plot_ewh(1, ewh_list_measurement.detach())
     print("Part 1: Forward pass complete")
     ########################################################################
-    # irf_init = [random.uniform(0, 1)*0.5 for _ in range(51)] 
-    irf_init = [0.5]*51
+    # irf_init = [random.uniform(0, 1)*0.5 for _ in range(51)]
+    irf_init = [0.5] * 51
     # irf_init = [0.1]*20 + [0.1, 0.1, 0.1, 0.4, 0.8, 0.9, 0.9, 0.9, 0.8, 0.4, 0.1, 0.1, 0.1] + [0.1]*20
     # irf_init = [0.001]*25 + [0.5] + [0.001]*25
 
@@ -133,18 +133,17 @@ if __name__ == "__main__":
             ambient_offsets_pred,
             irf_smooth,
         )
-        
 
         rmse_loss = compute_rmse(ewh_list_pred, ewh_list_measurement)
         mse_loss = F.mse_loss(ewh_list_pred, ewh_list_measurement)
         kl_loss = KL_divergence_loss(ewh_list_pred, ewh_list_measurement)
         w_loss = wasserstein_loss(ewh_list_pred, ewh_list_measurement)
-        boundary_penalty = (irf_smooth[:10].mean() + irf_smooth[-10:].mean())
+        boundary_penalty = irf_smooth[:10].mean() + irf_smooth[-10:].mean()
         tv_penalty = torch.mean(torch.abs(irf_smooth[1:] - irf_smooth[:-1]))
         smoothness_loss = torch.mean(torch.diff(irf_smooth, n=2) ** 2)  # penalize curvature
         norm_loss = (irf_smooth.sum() - 1.0) ** 2
         # total_loss = w_loss + 0.1*norm_loss + 0.05*smoothness_loss    # with delta
-        total_loss = rmse_loss + 0.5*norm_loss
+        total_loss = rmse_loss + 0.5 * norm_loss
         # total_loss = w_loss + 0.05*norm_loss + 0.05*boundary_penalty    # with const
         loss_history.append(total_loss.detach().cpu().item())
         total_loss.backward(retain_graph=True)
@@ -154,10 +153,10 @@ if __name__ == "__main__":
         # print("Gradient:", irf_tensor_estim.grad.abs().mean(), irf_tensor_estim.grad.abs().max())
         # if epoch % 500 == 0:
         # #     camera.plot_ewh(1, ewh_list_pred.detach())
-            # print("w_loss: ", w_loss.detach().cpu().item(), "kl_loss: ", kl_loss.detach().cpu().item(), "rmse_loss: ", rmse_loss.detach().cpu().item())
+        # print("w_loss: ", w_loss.detach().cpu().item(), "kl_loss: ", kl_loss.detach().cpu().item(), "rmse_loss: ", rmse_loss.detach().cpu().item())
         #     print("w_loss: ", w_loss.detach().cpu().item(), "norm_loss: ", norm_loss.detach().cpu().item(), "smoothness_loss: ", smoothness_loss.detach().cpu().item())
-            # plt.plot(irf_tensor_estim.detach().cpu().numpy())
-            # plt.show()
+        # plt.plot(irf_tensor_estim.detach().cpu().numpy())
+        # plt.show()
 
     pad = len(irf_tensor_estim) - len(irf_tensor_gt)
     pad_left = pad // 2

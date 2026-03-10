@@ -228,6 +228,7 @@ class HistogrammerBase:
         for i in tqdm(range(transients.shape[0]), desc="Convolving transients", disable=True):
             # Reshape for conv1d: (batch_size, in_channels, signal_length)
             convolved_signal = F.conv1d(transients[i].view(1, 1, -1), irf.view(1, 1, -1), padding="same").view(-1)
+            # convolved_signal = F.conv1d(transients[i], irf, padding="same")
             # pad = irf.numel() // 2
             # padded_signal = F.pad(transients[i].view(1, 1, -1), (pad, pad), mode="constant", value=0.0)
             # convolved_signal = F.conv1d(padded_signal, irf.view(1, 1, -1)).view(-1)
