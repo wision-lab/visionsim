@@ -70,7 +70,7 @@ if __name__ == "__main__":
 
     camera = Camera(data_dir, config_path, device, requires_grad)
 
-    bin_width = 2 * tof2depth(1 / camera.active_source.frequency) / camera.histogrammer.n_bins
+    bin_width = 2 * 2 * tof2depth(1 / camera.active_source.frequency) / camera.histogrammer.n_bins
     _, irf = camera.active_source.get_kernel(bin_width)
     irf_tensor_gt = torch.tensor(irf, dtype=torch.float32, device=device)
     # print("irf tensor length: ", len(irf_tensor_gt))
@@ -84,7 +84,14 @@ if __name__ == "__main__":
     #     irf_tensor_gt,
     # )
     # camera.plot_ewh(1, ewh_list_gt.detach())
-    ewh_list_gt = camera.get_ewh()
+    # ewh_list_gt = camera.get_ewh()
+    transients_gt, ambient_offsets_gt = camera.get_transients()
+    ewh_list_gt = forward_pass_ewh_diff(
+        camera.histogrammer,
+        transients_gt,
+        ambient_offsets_gt,
+        irf_tensor_gt,
+    )
     # camera.plot_ewh(1, ewh_list_gt)
 
     if isinstance(ewh_list_gt, torch.Tensor):
@@ -95,19 +102,20 @@ if __name__ == "__main__":
     print("Part 1: Forward pass complete")
     ########################################################################
     # irf_init = [random.uniform(0, 1)*0.5 for _ in range(51)]
-    irf_init = [0.5] * 51
+    # irf_init = [0.5] * 51
     # irf_init = [0.1]*20 + [0.1, 0.1, 0.1, 0.4, 0.8, 0.9, 0.9, 0.9, 0.8, 0.4, 0.1, 0.1, 0.1] + [0.1]*20
     # irf_init = [0.001]*25 + [0.5] + [0.001]*25
 
-    irf_tensor_estim = nn.Parameter(
-        torch.tensor(irf_init, device=irf_tensor_gt.device, dtype=irf_tensor_gt.dtype), requires_grad=True
-    )
+    # irf_tensor_estim = nn.Parameter(
+    #     torch.tensor(irf_init, device=irf_tensor_gt.device, dtype=irf_tensor_gt.dtype), requires_grad=True
+    # )
+    irf_tensor_estim = nn.Parameter(torch.ones_like(irf_tensor_gt))
 
     # optimizer = optim.Adam([irf_tensor_estim], lr=0.01)
-    optimizer = optim.Adam([irf_tensor_estim], lr=0.0001)
+    optimizer = optim.Adam([irf_tensor_estim], lr=0.05)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.9)
     # optimizer = optim.AdamW([irf_tensor_estim], lr=0.1, weight_decay=1e-4)
-    total_epochs = 7000
+    total_epochs = 500
     # warmup_epochs = 10
     # warmup_scheduler = optim.lr_scheduler.LinearLR(optimizer, start_factor=0.1, total_iters=warmup_epochs)
     # cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(
@@ -143,10 +151,10 @@ if __name__ == "__main__":
         smoothness_loss = torch.mean(torch.diff(irf_smooth, n=2) ** 2)  # penalize curvature
         norm_loss = (irf_smooth.sum() - 1.0) ** 2
         # total_loss = w_loss + 0.1*norm_loss + 0.05*smoothness_loss    # with delta
-        total_loss = rmse_loss + 0.5 * norm_loss
+        total_loss = rmse_loss
         # total_loss = w_loss + 0.05*norm_loss + 0.05*boundary_penalty    # with const
         loss_history.append(total_loss.detach().cpu().item())
-        total_loss.backward(retain_graph=True)
+        total_loss.backward()
         optimizer.step()
         # scheduler.step()
         # print("Error :", err1)
@@ -158,17 +166,17 @@ if __name__ == "__main__":
         # plt.plot(irf_tensor_estim.detach().cpu().numpy())
         # plt.show()
 
-    pad = len(irf_tensor_estim) - len(irf_tensor_gt)
-    pad_left = pad // 2
-    pad_right = pad - pad_left
-    irf_gt_centered = F.pad(
-        irf_tensor_gt.view(1, 1, -1),
-        (pad_left, pad_right),
-        mode="replicate",
-    ).view(-1)
+    # pad = len(irf_tensor_estim) - len(irf_tensor_gt)
+    # pad_left = pad // 2
+    # pad_right = pad - pad_left
+    # irf_gt_centered = F.pad(
+    #     irf_tensor_gt.view(1, 1, -1),
+    #     (pad_left, pad_right),
+    #     mode="replicate",
+    # ).view(-1)
     plt.plot(irf_tensor_estim.detach().cpu().numpy())
     # plt.plot(irf_smooth.detach().cpu().numpy())
-    plt.plot(irf_gt_centered.detach().cpu().numpy())
+    plt.plot(irf_tensor_gt.detach().cpu().numpy())
     plt.show()
     plt.plot(loss_history)
     plt.title("Loss Curve")

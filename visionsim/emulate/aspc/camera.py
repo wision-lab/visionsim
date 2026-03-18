@@ -1,4 +1,5 @@
 import math
+from copy import deepcopy
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,32 +26,10 @@ class Camera:
         """Initialize Camera"""
         self.device = device
         self.config = self._load_config(config_path)
+        self.validate_config(self.config)
         self.requires_grad = requires_grad
         self.albedo_frames, self.intensity_frames, self.depth_frames = self._load_data(data_path, requires_grad)
-
-        # Active source
-        active_config = self.config["active_source"]["pulsed_laser"]
-        active_enable = active_config.pop("enabled")
-        if active_enable:
-            self.active_source = PulsedLaser(**active_config)
-
-        # Ambient source
-        ambient_config = self.config["ambient_source"]["sun"]
-        ambient_config["light_conditions"] = self._get_light_conditions_from_string(ambient_config["light_conditions"])
-        ambient_enable = ambient_config.pop("enabled")
-        if ambient_enable:
-            self.ambient_source = Sun(**ambient_config)
-
-        # Histogrammer
-        if "type" in self.config["histogrammer"] and self.config["histogrammer"]["type"] == "edh":
-            self.histogrammer = HistogrammerEDH(HistConfig(**self.config["histogrammer"]))
-        else:
-            self.histogrammer = Histogrammer(HistConfig(**self.config["histogrammer"]))
-
-        # Sensor
-        self.sensor = SPADSensor(**self.config["sensor"])
-
-        self.validate_config(self.config)
+        self._init_components_from_config(self.config)
 
     def _load_config(self, config_path):
         """Load configuration from YAML file"""
@@ -60,6 +39,51 @@ class Camera:
         yaml.Constructor.add_constructor(tag="!expr", constructor=yaml_constructor(eval, safe_builtins))
         yaml.Constructor.add_constructor(tag="!file", constructor=yaml_constructor(config_path))
         return yaml.load(open(config_path))
+
+    def _merge_config(self, base_config: dict, overrides: dict | None) -> dict:
+        """Deep-merge overrides into base_config without mutating either input."""
+        if not overrides:
+            return base_config
+
+        def _deep_merge(dst, src):
+            for k, v in src.items():
+                if k in dst and isinstance(dst[k], dict) and isinstance(v, dict):
+                    dst[k] = _deep_merge(deepcopy(dst[k]), v)
+                else:
+                    dst[k] = deepcopy(v)
+            return dst
+
+        return _deep_merge(deepcopy(base_config), overrides)
+
+    def _init_components_from_config(self, config: dict):
+        """Initialize sources, histogrammer, and sensor from the provided config."""
+        # Active source
+        active_config = config["active_source"]["pulsed_laser"]
+        active_enable = active_config.pop("enabled")
+        if active_enable:
+            self.active_source = PulsedLaser(**active_config)
+
+        # Ambient source
+        ambient_config = config["ambient_source"]["sun"]
+        ambient_config["light_conditions"] = self._get_light_conditions_from_string(ambient_config["light_conditions"])
+        ambient_enable = ambient_config.pop("enabled")
+        if ambient_enable:
+            self.ambient_source = Sun(**ambient_config)
+
+        # Histogrammer
+        if "type" in config["histogrammer"] and config["histogrammer"]["type"] == "edh":
+            self.histogrammer = HistogrammerEDH(HistConfig(**config["histogrammer"]))
+        else:
+            self.histogrammer = Histogrammer(HistConfig(**config["histogrammer"]))
+
+        # Sensor
+        self.sensor = SPADSensor(**config["sensor"])
+
+    def reconfigure(self, config_overrides: dict):
+        """Update camera configuration (deep merge) and rebuild sources/sensor/histogrammer."""
+        self.config = self._merge_config(self.config, config_overrides)
+        self._init_components_from_config(self.config)
+        return self
 
     def _load_data(self, data_path, requires_grad=False):
         """Load data from directory"""
@@ -74,29 +98,31 @@ class Camera:
 
     def validate_config(self, config):
         """Validate configuration"""
+        max_resolvable_depth = tof2depth(1 / config["active_source"]["pulsed_laser"]["frequency"])
         # check max depth
-        if self.histogrammer.max_depth.magnitude > self.active_source.max_resolvable_depth.magnitude:
+        # Compare as Pint Quantities so units are handled correctly
+        if config["histogrammer"]["max_depth"] > max_resolvable_depth:
             raise ValueError(
-                f"Max depth in config {self.histogrammer.max_depth.magnitude} is more than maximum resolvable depth {self.active_source.max_resolvable_depth.magnitude}"
+                f"Max depth in config {config['histogrammer']['max_depth']} is more than maximum resolvable depth {max_resolvable_depth}"
             )
-        if (
-            self.histogrammer.n_bins * self.histogrammer.bin_width.magnitude
-            > self.active_source.max_resolvable_depth.magnitude
-        ):
+        if config["histogrammer"]["n_bins"] * config["histogrammer"]["bin_width"] > max_resolvable_depth:
             raise ValueError(
-                f"Bin width {self.histogrammer.bin_width.magnitude} x number of bins {self.histogrammer.n_bins} is greater than max resolvable depth {self.active_source.max_resolvable_depth.magnitude}"
+                f"Bin width {config['histogrammer']['bin_width']} x number of bins {config['histogrammer']['n_bins']} is "
+                f"{config['histogrammer']['bin_width'] * config['histogrammer']['n_bins']}, which is greater than max resolvable depth {max_resolvable_depth}"
             )
 
     def _get_light_conditions_from_string(self, condition_str):
         """Convert string to LightConditions enum value."""
         return getattr(LightConditions, condition_str)
 
-    def get_fov_masks(self):
+    def get_fov_masks(self, pixel_fov_list: list = None):
         """Get FOV masks"""
         _, img_rows, img_cols = self.depth_frames.shape
         empty_mask = torch.zeros((img_rows, img_cols), dtype=torch.float32, device=self.device)
+        if pixel_fov_list is None:
+            pixel_fov_list = self.histogrammer.pixel_fov_list
         fov_masks = self.histogrammer.get_perpixel_fov_masks(
-            empty_mask, self.histogrammer.pixel_fov_list, device=self.device
+            empty_mask, pixel_fov_list, device=self.device, vignette=self.histogrammer.vignette
         )
         return fov_masks
 
@@ -123,18 +149,18 @@ class Camera:
         else:
             fov_h, fov_w = per_pixel_fov[0], per_pixel_fov[1]
 
-        fov_w_in_pixels = (fov_w / self.sensor.fov_x).to(ureg.dimensionless).magnitude
-        fov_h_in_pixels = (fov_h / self.sensor.fov_y).to(ureg.dimensionless).magnitude
+        fov_w_ratio = (fov_w / self.sensor.fov_x).to(ureg.dimensionless).magnitude
+        fov_h_ratio = (fov_h / self.sensor.fov_y).to(ureg.dimensionless).magnitude
 
         pixel_fov_list = []
         for row in range(self.sensor.h):
             cy = row / self.sensor.h
             for col in range(self.sensor.w):
                 cx = col / self.sensor.w
-                r1 = max(0.0, cy - fov_h_in_pixels / 2.0)
-                r2 = min(1.0, cy + fov_h_in_pixels / 2.0)
-                c1 = max(0.0, cx - fov_w_in_pixels / 2.0)
-                c2 = min(1.0, cx + fov_w_in_pixels / 2.0)
+                r1 = max(0.0, cy - fov_h_ratio / 2.0)
+                r2 = min(1.0, cy + fov_h_ratio / 2.0)
+                c1 = max(0.0, cx - fov_w_ratio / 2.0)
+                c2 = min(1.0, cx + fov_w_ratio / 2.0)
                 pixel_fov_list.append([r1, r2, c1, c2])
 
         if output_path:

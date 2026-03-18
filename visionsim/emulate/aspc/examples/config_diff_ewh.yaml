@@ -3,7 +3,7 @@ histogrammer:
   min_depth: !Quantity 0.0 meters
   max_depth: !Quantity 10.0 meters
   n_bins: 100
-  bin_width: !Quantity 0.03 meters  # meters per bin
+  bin_width: !Quantity 0.149 meters  # meters per bin
   pixel_fov_list: [[0, 0.4, 0.3, 0.6], [0.2, 0.45, 0.6, 0.8]]
   n_pulses: 100   # number of laser pulses
   dead_time_s: !Quantity 0 seconds # Dead time in seconds
@@ -15,7 +15,7 @@ active_source:
     enabled: true
     wavelength: !Quantity 550.0 nanometer            # nanometers
     frequency: !Quantity 10.0 megahertz               # hertz
-    pulse_width: !Quantity 10 nanosecond            # seconds
+    pulse_width: !Quantity 3 nanosecond            # seconds
     avg_watts: !Quantity 2.0 milliwatts                    # watts
     pulse_shape: "gaussian"         # "gaussian", "square", or "custom" 
     # pulse_shape_custom: !expr "lambda x: np.sinc(x / 3)"
