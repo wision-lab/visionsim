@@ -70,6 +70,7 @@ def dataset(
         n: interpolation factor, must be a multiple of 2, default: 2
     """
     import copy
+
     from natsort import natsorted
 
     from visionsim.cli import _log
@@ -106,10 +107,10 @@ def dataset(
         camera = next(iter(dataset.cameras))
         camera = copy.copy(camera)
 
-        camera.model_config['frozen'] = False
+        camera.model_config["frozen"] = False
         if camera.fps:
             camera.fps *= n
-        camera.model_config['frozen'] = True
+        camera.model_config["frozen"] = True
 
         Metadata.from_frames(
             frames=[
