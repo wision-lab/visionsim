@@ -89,7 +89,7 @@ def dataset(
             rife(
                 input_dir,
                 output_dir,
-                input_files=dataset.paths,
+                input_files=dataset.paths.copy(),
                 exp=np.log2(n).astype(int),
                 update_fn=partial(progress.update, task),
             )
