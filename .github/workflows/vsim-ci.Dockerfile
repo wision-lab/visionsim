@@ -19,16 +19,14 @@ ENV PATH="$PATH:/usr/local/blender/"
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 ENV PATH="/root/.local/bin:${PATH}"
 
-# Copy the actual Visionsim codebase into the container
-COPY . /app
-
 # Create venv and "activate" it by placing it in PATH
-RUN uv venv
-ENV PATH="/app/.venv/bin:$PATH"
+RUN uv venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 # Install python dependencies
 # Here we install pytorch manually to ensure it's cpu-only
-# Using --no-cache prevents uv from caching massive wheels (like PyTorch) in the container
+# Using --no-cache prevents uv from caching wheels in the container
 RUN uv pip install --no-cache torch torchvision --index-url https://download.pytorch.org/whl/cpu
-RUN uv pip install --no-cache .
-RUN visionsim post-install
+RUN --mount=type=bind,source=.,target=/src \
+    uv pip install --no-cache /src && \
+    visionsim post-install

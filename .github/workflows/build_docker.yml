@@ -21,6 +21,9 @@ permissions:
 jobs:
   docker-build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        blender-version: ["4.5", "latest"]
     steps:
       - name: Checkout Codebase
         uses: actions/checkout@v4
@@ -28,13 +31,10 @@ jobs:
       - name: Install Blender using setup-blender
         uses: bradyajohnston/setup-blender@v5
         with:
-          version: "5.0.1"
+          version: ${{ matrix.blender-version }}
 
       - name: Prepare Blender Context
         run: |
-          # setup-blender adds blender to the PATH in the Linux runner.
-          # We resolve its directory and copy it to our local Docker context
-          # so we do not have to download it again inside the Docker build.
           BLENDER_REAL_BIN=$(readlink -f $(which blender))
           BLENDER_DIR=$(dirname $BLENDER_REAL_BIN)
           cp -rL "$BLENDER_DIR" ./blender_dist
@@ -54,7 +54,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: type=raw,value=latest
+          tags: |
+            type=raw,value=blender-${{ matrix.blender-version }}
+            type=raw,value=latest,enable=${{ matrix.blender-version == 'latest' }}
 
       - name: Build and Push Docker Image
         id: push
