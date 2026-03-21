@@ -1,0 +1,152 @@
+[
+  {
+    "frame": 1,
+    "neg_events": 39230,
+    "pos_events": 46708,
+    "total_events": 85938
+  },
+  {
+    "frame": 2,
+    "neg_events": 109651,
+    "pos_events": 125923,
+    "total_events": 235574
+  },
+  {
+    "frame": 3,
+    "neg_events": 134850,
+    "pos_events": 157516,
+    "total_events": 292366
+  },
+  {
+    "frame": 4,
+    "neg_events": 154787,
+    "pos_events": 165032,
+    "total_events": 319819
+  },
+  {
+    "frame": 5,
+    "neg_events": 153453,
+    "pos_events": 163872,
+    "total_events": 317325
+  },
+  {
+    "frame": 6,
+    "neg_events": 142001,
+    "pos_events": 158194,
+    "total_events": 300195
+  },
+  {
+    "frame": 7,
+    "neg_events": 129805,
+    "pos_events": 144663,
+    "total_events": 274468
+  },
+  {
+    "frame": 8,
+    "neg_events": 114813,
+    "pos_events": 136832,
+    "total_events": 251645
+  },
+  {
+    "frame": 9,
+    "neg_events": 109923,
+    "pos_events": 131902,
+    "total_events": 241825
+  },
+  {
+    "frame": 10,
+    "neg_events": 118064,
+    "pos_events": 124104,
+    "total_events": 242168
+  },
+  {
+    "frame": 11,
+    "neg_events": 124914,
+    "pos_events": 118628,
+    "total_events": 243542
+  },
+  {
+    "frame": 12,
+    "neg_events": 125994,
+    "pos_events": 122523,
+    "total_events": 248517
+  },
+  {
+    "frame": 13,
+    "neg_events": 118178,
+    "pos_events": 131501,
+    "total_events": 249679
+  },
+  {
+    "frame": 14,
+    "neg_events": 117195,
+    "pos_events": 133119,
+    "total_events": 250314
+  },
+  {
+    "frame": 15,
+    "neg_events": 116246,
+    "pos_events": 128077,
+    "total_events": 244323
+  },
+  {
+    "frame": 16,
+    "neg_events": 114572,
+    "pos_events": 126872,
+    "total_events": 241444
+  },
+  {
+    "frame": 17,
+    "neg_events": 108667,
+    "pos_events": 124908,
+    "total_events": 233575
+  },
+  {
+    "frame": 18,
+    "neg_events": 112126,
+    "pos_events": 118609,
+    "total_events": 230735
+  },
+  {
+    "frame": 19,
+    "neg_events": 112025,
+    "pos_events": 118671,
+    "total_events": 230696
+  },
+  {
+    "frame": 20,
+    "neg_events": 106327,
+    "pos_events": 117704,
+    "total_events": 224031
+  },
+  {
+    "frame": 21,
+    "neg_events": 104455,
+    "pos_events": 120508,
+    "total_events": 224963
+  },
+  {
+    "frame": 22,
+    "neg_events": 103211,
+    "pos_events": 123181,
+    "total_events": 226392
+  },
+  {
+    "frame": 23,
+    "neg_events": 99525,
+    "pos_events": 123373,
+    "total_events": 222898
+  },
+  {
+    "frame": 24,
+    "neg_events": 99386,
+    "pos_events": 120343,
+    "total_events": 219729
+  },
+  {
+    "frame": 25,
+    "neg_events": 200688,
+    "pos_events": 2633858,
+    "total_events": 2834546
+  }
+]
