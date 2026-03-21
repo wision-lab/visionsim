@@ -17,6 +17,7 @@ def test_emulate_events(snapshot, tmp_path):
         cutoff_hz=0.0,
         leak_rate_hz=0.0,
         shot_noise_rate_hz=0.0,
+        seed=42087,
     )
 
     lego_gt_path = Path(__file__).parent / "test_files" / "lego-gt"
@@ -44,27 +45,32 @@ def test_emulate_events(snapshot, tmp_path):
             )
 
     assert len(all_events) > 0, "No events were generated from the frames."
+
+    for i, events in enumerate(all_events):
+        if i % 5 == 0:
+            viz = np.ones((*img.shape, 3), dtype=np.uint8) * 255
+            pos_mask = events[:, -1] == 1
+            neg_mask = events[:, -1] == -1
+            _, px, py, _ = events[pos_mask].T.astype(int)
+            _, nx, ny, _ = events[neg_mask].T.astype(int)
+            viz[ny, nx] = [255, 0, 0]
+            viz[py, px] = [0, 0, 255]
+
+            # Syrupy only compares byte strings, so we dump the image to disk and read it back
+            # This helps debug too as we can visually inspect the generated preview
+            temp_preview_path = tmp_path / f"events_preview_{i:04d}.png"
+            iio.imwrite(temp_preview_path, viz)
+
+    # Compare event statistics
     assert summary_stats == snapshot(extension_class=JSONSnapshotExtension)
 
-    viz = np.ones((*img.shape, 3), dtype=np.uint8) * 255
-    first_batch = all_events[0]
-    pos_mask = first_batch[:, -1] == 1
-    neg_mask = first_batch[:, -1] == -1
-    _, px, py, _ = first_batch[pos_mask].T.astype(int)
-    _, nx, ny, _ = first_batch[neg_mask].T.astype(int)
-    viz[ny, nx] = [255, 0, 0]
-    viz[py, px] = [0, 0, 255]
-
-    # Syrupy only campares byte strings, so we dump the image to disk and read it back
-    # This helps debug too as we can visually inspect the generated preview
-    temp_preview_path = tmp_path / "events_preview.png"
-    iio.imwrite(temp_preview_path, viz)
-
-    with open(temp_preview_path, "rb") as f:
-        viz_bytes = f.read()
-        assert viz_bytes == snapshot(extension_class=PNGImageSnapshotExtension), (
-            "Generated preview does not match the reference snapshot"
-        )
+    # Compare event preview
+    for path in sorted(tmp_path.glob("events_preview_*.png")):
+        with open(path, "rb") as f:
+            viz_bytes = f.read()
+            assert viz_bytes == snapshot(extension_class=PNGImageSnapshotExtension), (
+                "Generated preview does not match the reference snapshot"
+            )
 
     # Test reset functionality
     emulator.reset()

@@ -59,7 +59,6 @@ exclude = ["visionsim/interpolate/rife/*"]
 [tool.mypy]
 exclude = [
     "visionsim/interpolate/rife/*",
-    "visionsim/emulate/dvs/*"
 ]
 follow_imports="skip"
 
