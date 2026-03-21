@@ -69,6 +69,7 @@ def dataset(
         method: interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife'
         n: interpolation factor, must be a multiple of 2, default: 2
     """
+    import copy
     from natsort import natsorted
 
     from visionsim.cli import _log
@@ -103,9 +104,12 @@ def dataset(
         interp_poses = interpolate_poses(dataset.poses, n=n)
         interp_paths = natsorted(output_dir.glob("**/*.png"))
         camera = next(iter(dataset.cameras))
+        camera = copy.copy(camera)
 
+        camera.model_config['frozen'] = False
         if camera.fps:
             camera.fps *= n
+        camera.model_config['frozen'] = True
 
         Metadata.from_frames(
             frames=[
