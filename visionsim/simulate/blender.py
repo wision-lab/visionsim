@@ -548,6 +548,7 @@ class BlenderService(rpyc.Service):
         bit_depth: int = 32,
         preview: bool = False,
         c: int | None = None,
+        denoise: bool = False,
     ) -> None:
         """Helper function to create a file output node, link it, and register the output type.
 
@@ -561,6 +562,10 @@ class BlenderService(rpyc.Service):
             bit_depth (int, optional): Bit depth to use. Defaults to 32.
             preview (bool, optional): If true, output node will be configured for preview. Defaults to False.
             c (int, optional): Number of channels for registration. Defaults to None (inferred from color_mode).
+            denoise (bool, optional): If true, insert a denoise compositor node before the file output.
+                This enables the Cycles denoising data view layer passes (albedo and normal) and connects
+                them to the denoise node for higher-quality denoising. Only available for Cycles render engine.
+                Defaults to False.
         """
         node, (socket,), (slot,) = file_output_node(
             self.tree,
@@ -579,7 +584,28 @@ class BlenderService(rpyc.Service):
             node.format.color_depth = str(bit_depth)
             slot.name = str(Path(slot.name).with_suffix(FORMATS[file_format.upper()]))
 
-        self.tree.links.new(source_socket, socket)
+        if denoise and self.scene.render.engine.upper() == "CYCLES":
+            # Enable denoising data passes on the view layer so Cycles emits
+            # "Denoising Albedo" and "Denoising Normal" outputs from the
+            # render layers node. These guide the denoiser and produce
+            # significantly cleaner results than denoising the image alone.
+            self.view_layer.cycles.denoising_store_passes = True
+            denoise_node = self.tree.nodes.new("CompositorNodeDenoise")
+            self.tree.links.new(source_socket, denoise_node.inputs["Image"])
+            self.tree.links.new(
+                self.render_layers.outputs["Denoising Albedo"],
+                denoise_node.inputs["Albedo"],
+            )
+            self.tree.links.new(
+                self.render_layers.outputs["Denoising Normal"],
+                denoise_node.inputs["Normal"],
+            )
+            self.tree.links.new(denoise_node.outputs["Image"], socket)
+        elif denoise and self.scene.render.engine.upper() != "CYCLES":
+            self.log.warning("Cannot produce denoised output when not using CYCLES.")
+            self.tree.links.new(source_socket, socket)
+        else:
+            self.tree.links.new(source_socket, socket)
 
         if c is None:
             c = COLOR_MODE_CHANNELS.get(color_mode.upper())
@@ -1120,6 +1146,7 @@ class BlenderService(rpyc.Service):
         seed: int = 1234,
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: Literal[16, 32] = 32,
+        shade: bool = False,
     ) -> None:
         """Shared logic for including segmentation or material ID maps."""
         # TODO: Enable assignment of custom IDs for certain objects via a dictionary.
@@ -1154,10 +1181,15 @@ class BlenderService(rpyc.Service):
         if preview:
             group = self.tree.nodes.new("CompositorNodeGroup")
             group.label = f"{label} Preview"
-            group.node_tree = colorize_indices_node_group()
+            group.node_tree = colorize_indices_node_group(shade=shade)
             group.node_tree.nodes["NormalizeIdx"].inputs["From Max"].default_value = len(data)
 
-            self.tree.links.new(self.render_layers.outputs[pass_idx_name], group.inputs["Value"])
+            self.tree.links.new(self.render_layers.outputs[pass_idx_name], group.inputs["Index"])
+
+            if shade:
+                self.view_layer.use_pass_normal = True
+                self.tree.links.new(self.render_layers.outputs["Normal"], group.inputs["Normal"])
+
             self._include_output(
                 f"previews/{id_type}",
                 group.outputs["Image"],
@@ -1250,6 +1282,7 @@ class BlenderService(rpyc.Service):
             seed=seed,
             exr_codec=exr_codec,
             bit_depth=bit_depth,
+            shade=True,
         )
 
     @require_initialized_service
@@ -1259,32 +1292,41 @@ class BlenderService(rpyc.Service):
         color_mode: COLOR_MODES = "RGB",
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: Literal[8, 16, 32] = 32,
+        denoise: bool = True,
     ) -> None:
         """Sets up Blender compositor to include diffuse light passes for rendered images.
 
         For CYCLES, this includes: Diffuse Direct, Diffuse Indirect and Diffuse Color.
         For EEVEE, this includes: Diffuse Light and Diffuse Color.
 
+        Note:
+            When using CYCLES, these extra light passes might be very noisy, especially the indirect ones,
+            as they rely on raytracing. To mitigate this, you can either increase the number of samples, or the threshold in the :meth:`cycles_settings <exposed_cycles_settings>`, or/and use the denoise option.
+
         Args:
             file_format (str, optional): Format to save diffuse passes as. Defaults to "OPEN_EXR".
             color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
             exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+            denoise (bool, optional): If true, apply Cycles denoising to the direct and indirect passes
+                before saving. The colour pass is left undenoised as it is noise-free by nature.
+                Has no effect when not using Cycles. Defaults to True.
         """
         engine = self.scene.render.engine.upper()
         if engine == "CYCLES":
+            # (pass_name, subpath, apply_denoise)
             passes = [
-                ("Diffuse Direct" if bpy.app.version >= (5, 0, 0) else "DiffDir", "diffuse/direct"),
-                ("Diffuse Indirect" if bpy.app.version >= (5, 0, 0) else "DiffInd", "diffuse/indirect"),
-                ("Diffuse Color" if bpy.app.version >= (5, 0, 0) else "DiffCol", "diffuse/color"),
+                ("Diffuse Direct" if bpy.app.version >= (5, 0, 0) else "DiffDir", "diffuse/direct", denoise),
+                ("Diffuse Indirect" if bpy.app.version >= (5, 0, 0) else "DiffInd", "diffuse/indirect", denoise),
+                ("Diffuse Color" if bpy.app.version >= (5, 0, 0) else "DiffCol", "diffuse/color", False),
             ]
             self.view_layer.use_pass_diffuse_direct = True
             self.view_layer.use_pass_diffuse_indirect = True
             self.view_layer.use_pass_diffuse_color = True
         elif engine == "BLENDER_EEVEE" or engine == "BLENDER_EEVEE_NEXT":
             passes = [
-                ("DiffDir", "diffuse/light"),
-                ("DiffCol", "diffuse/color"),
+                ("DiffDir", "diffuse/light", False),
+                ("DiffCol", "diffuse/color", False),
             ]
             self.view_layer.use_pass_diffuse_light = True
             self.view_layer.use_pass_diffuse_color = True
@@ -1292,7 +1334,7 @@ class BlenderService(rpyc.Service):
             self.log.warning(f"Diffuse passes are not supported for engine {engine}")
             return
 
-        for pass_name, subpath in passes:
+        for pass_name, subpath, apply_denoise in passes:
             self._include_output(
                 subpath,
                 self.render_layers.outputs[pass_name],
@@ -1301,6 +1343,7 @@ class BlenderService(rpyc.Service):
                 color_mode=color_mode,
                 exr_codec=exr_codec,
                 bit_depth=bit_depth,
+                denoise=apply_denoise,
             )
 
     @require_initialized_service
@@ -1310,32 +1353,41 @@ class BlenderService(rpyc.Service):
         color_mode: COLOR_MODES = "RGB",
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: Literal[8, 16, 32] = 32,
+        denoise: bool = True,
     ) -> None:
         """Sets up Blender compositor to include specular light passes for rendered images.
 
         For CYCLES, this includes: Glossy Direct, Glossy Indirect and Glossy Color.
         For EEVEE, this includes: Specular Light and Specular Color.
 
+        Note:
+            When using CYCLES, these extra light passes might be very noisy, especially the indirect ones,
+            as they rely on raytracing. To mitigate this, you can either increase the number of samples, or the threshold in the :meth:`cycles_settings <exposed_cycles_settings>`, or/and use the denoise option.
+
         Args:
             file_format (str, optional): Format to save specular passes as. Defaults to "OPEN_EXR".
             color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
             exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+            denoise (bool, optional): If true, apply Cycles denoising to the direct and indirect passes
+                before saving. The colour pass is left undenoised as it is noise-free by nature.
+                Has no effect when not using Cycles. Defaults to True.
         """
         engine = self.scene.render.engine.upper()
         if engine == "CYCLES":
+            # (pass_name, subpath, apply_denoise)
             passes = [
-                ("Glossy Direct" if bpy.app.version >= (5, 0, 0) else "GlossDir", "specular/direct"),
-                ("Glossy Indirect" if bpy.app.version >= (5, 0, 0) else "GlossInd", "specular/indirect"),
-                ("Glossy Color" if bpy.app.version >= (5, 0, 0) else "GlossCol", "specular/color"),
+                ("Glossy Direct" if bpy.app.version >= (5, 0, 0) else "GlossDir", "specular/direct", denoise),
+                ("Glossy Indirect" if bpy.app.version >= (5, 0, 0) else "GlossInd", "specular/indirect", denoise),
+                ("Glossy Color" if bpy.app.version >= (5, 0, 0) else "GlossCol", "specular/color", False),
             ]
             self.view_layer.use_pass_glossy_direct = True
             self.view_layer.use_pass_glossy_indirect = True
             self.view_layer.use_pass_glossy_color = True
         elif engine == "BLENDER_EEVEE" or engine == "BLENDER_EEVEE_NEXT":
             passes = [
-                ("GlossDir", "specular/light"),
-                ("GlossCol", "specular/color"),
+                ("GlossDir", "specular/light", False),
+                ("GlossCol", "specular/color", False),
             ]
             self.view_layer.use_pass_specular_light = True
             self.view_layer.use_pass_specular_color = True
@@ -1343,7 +1395,7 @@ class BlenderService(rpyc.Service):
             self.log.warning(f"Specular passes are not supported for engine {engine}")
             return
 
-        for pass_name, subpath in passes:
+        for pass_name, subpath, apply_denoise in passes:
             self._include_output(
                 subpath,
                 self.render_layers.outputs[pass_name],
@@ -1352,6 +1404,7 @@ class BlenderService(rpyc.Service):
                 color_mode=color_mode,
                 exr_codec=exr_codec,
                 bit_depth=bit_depth,
+                denoise=apply_denoise,
             )
 
     @require_initialized_service

@@ -294,6 +294,7 @@ class BlenderService(rpyc.Service):
         bit_depth: int = 32,
         preview: bool = False,
         c: int | None = None,
+        denoise: bool = False,
     ) -> None:
         """Helper function to create a file output node, link it, and register the output type.
 
@@ -307,6 +308,10 @@ class BlenderService(rpyc.Service):
             bit_depth (int, optional): Bit depth to use. Defaults to 32.
             preview (bool, optional): If true, output node will be configured for preview. Defaults to False.
             c (int, optional): Number of channels for registration. Defaults to None (inferred from color_mode).
+            denoise (bool, optional): If true, insert a denoise compositor node before the file output.
+                This enables the Cycles denoising data view layer passes (albedo and normal) and connects
+                them to the denoise node for higher-quality denoising. Only available for Cycles render engine.
+                Defaults to False.
         """
 
     def _save_metadata(
@@ -557,6 +562,7 @@ class BlenderService(rpyc.Service):
         seed: int = 1234,
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: Literal[16, 32] = 32,
+        shade: bool = False,
     ) -> None:
         """Shared logic for including segmentation or material ID maps."""
 
@@ -625,17 +631,25 @@ class BlenderService(rpyc.Service):
         color_mode: COLOR_MODES = "RGB",
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: Literal[8, 16, 32] = 32,
+        denoise: bool = True,
     ) -> None:
         """Sets up Blender compositor to include diffuse light passes for rendered images.
 
         For CYCLES, this includes: Diffuse Direct, Diffuse Indirect and Diffuse Color.
         For EEVEE, this includes: Diffuse Light and Diffuse Color.
 
+        Note:
+            When using CYCLES, these extra light passes might be very noisy, especially the indirect ones,
+            as they rely on raytracing. To mitigate this, you can either increase the number of samples, or the threshold in the :meth:`cycles_settings <exposed_cycles_settings>`, or/and use the denoise option.
+
         Args:
             file_format (str, optional): Format to save diffuse passes as. Defaults to "OPEN_EXR".
             color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
             exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+            denoise (bool, optional): If true, apply Cycles denoising to the direct and indirect passes
+                before saving. The colour pass is left undenoised as it is noise-free by nature.
+                Has no effect when not using Cycles. Defaults to True.
         """
 
     @require_initialized_service
@@ -645,17 +659,25 @@ class BlenderService(rpyc.Service):
         color_mode: COLOR_MODES = "RGB",
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: Literal[8, 16, 32] = 32,
+        denoise: bool = True,
     ) -> None:
         """Sets up Blender compositor to include specular light passes for rendered images.
 
         For CYCLES, this includes: Glossy Direct, Glossy Indirect and Glossy Color.
         For EEVEE, this includes: Specular Light and Specular Color.
 
+        Note:
+            When using CYCLES, these extra light passes might be very noisy, especially the indirect ones,
+            as they rely on raytracing. To mitigate this, you can either increase the number of samples, or the threshold in the :meth:`cycles_settings <exposed_cycles_settings>`, or/and use the denoise option.
+
         Args:
             file_format (str, optional): Format to save specular passes as. Defaults to "OPEN_EXR".
             color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
             exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+            denoise (bool, optional): If true, apply Cycles denoising to the direct and indirect passes
+                before saving. The colour pass is left undenoised as it is noise-free by nature.
+                Has no effect when not using Cycles. Defaults to True.
         """
 
     @require_initialized_service
@@ -1357,17 +1379,25 @@ class BlenderClient:
         color_mode: COLOR_MODES = "RGB",
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: Literal[8, 16, 32] = 32,
+        denoise: bool = True,
     ) -> None:
         """Sets up Blender compositor to include diffuse light passes for rendered images.
 
         For CYCLES, this includes: Diffuse Direct, Diffuse Indirect and Diffuse Color.
         For EEVEE, this includes: Diffuse Light and Diffuse Color.
 
+        Note:
+            When using CYCLES, these extra light passes might be very noisy, especially the indirect ones,
+            as they rely on raytracing. To mitigate this, you can either increase the number of samples, or the threshold in the :meth:`cycles_settings <exposed_cycles_settings>`, or/and use the denoise option.
+
         Args:
             file_format (str, optional): Format to save diffuse passes as. Defaults to "OPEN_EXR".
             color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
             exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+            denoise (bool, optional): If true, apply Cycles denoising to the direct and indirect passes
+                before saving. The colour pass is left undenoised as it is noise-free by nature.
+                Has no effect when not using Cycles. Defaults to True.
         """
 
     @type_check_only
@@ -1377,17 +1407,25 @@ class BlenderClient:
         color_mode: COLOR_MODES = "RGB",
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: Literal[8, 16, 32] = 32,
+        denoise: bool = True,
     ) -> None:
         """Sets up Blender compositor to include specular light passes for rendered images.
 
         For CYCLES, this includes: Glossy Direct, Glossy Indirect and Glossy Color.
         For EEVEE, this includes: Specular Light and Specular Color.
 
+        Note:
+            When using CYCLES, these extra light passes might be very noisy, especially the indirect ones,
+            as they rely on raytracing. To mitigate this, you can either increase the number of samples, or the threshold in the :meth:`cycles_settings <exposed_cycles_settings>`, or/and use the denoise option.
+
         Args:
             file_format (str, optional): Format to save specular passes as. Defaults to "OPEN_EXR".
             color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
             exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+            denoise (bool, optional): If true, apply Cycles denoising to the direct and indirect passes
+                before saving. The colour pass is left undenoised as it is noise-free by nature.
+                Has no effect when not using Cycles. Defaults to True.
         """
 
     @type_check_only
@@ -2161,17 +2199,25 @@ class BlenderClients(tuple):
         color_mode: COLOR_MODES = "RGB",
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: Literal[8, 16, 32] = 32,
+        denoise: bool = True,
     ) -> None:
         """Sets up Blender compositor to include diffuse light passes for rendered images.
 
         For CYCLES, this includes: Diffuse Direct, Diffuse Indirect and Diffuse Color.
         For EEVEE, this includes: Diffuse Light and Diffuse Color.
 
+        Note:
+            When using CYCLES, these extra light passes might be very noisy, especially the indirect ones,
+            as they rely on raytracing. To mitigate this, you can either increase the number of samples, or the threshold in the :meth:`cycles_settings <exposed_cycles_settings>`, or/and use the denoise option.
+
         Args:
             file_format (str, optional): Format to save diffuse passes as. Defaults to "OPEN_EXR".
             color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
             exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+            denoise (bool, optional): If true, apply Cycles denoising to the direct and indirect passes
+                before saving. The colour pass is left undenoised as it is noise-free by nature.
+                Has no effect when not using Cycles. Defaults to True.
         """
 
     @type_check_only
@@ -2181,17 +2227,25 @@ class BlenderClients(tuple):
         color_mode: COLOR_MODES = "RGB",
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: Literal[8, 16, 32] = 32,
+        denoise: bool = True,
     ) -> None:
         """Sets up Blender compositor to include specular light passes for rendered images.
 
         For CYCLES, this includes: Glossy Direct, Glossy Indirect and Glossy Color.
         For EEVEE, this includes: Specular Light and Specular Color.
 
+        Note:
+            When using CYCLES, these extra light passes might be very noisy, especially the indirect ones,
+            as they rely on raytracing. To mitigate this, you can either increase the number of samples, or the threshold in the :meth:`cycles_settings <exposed_cycles_settings>`, or/and use the denoise option.
+
         Args:
             file_format (str, optional): Format to save specular passes as. Defaults to "OPEN_EXR".
             color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
             exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+            denoise (bool, optional): If true, apply Cycles denoising to the direct and indirect passes
+                before saving. The colour pass is left undenoised as it is noise-free by nature.
+                Has no effect when not using Cycles. Defaults to True.
         """
 
     @type_check_only

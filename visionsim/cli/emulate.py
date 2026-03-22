@@ -134,7 +134,7 @@ def spad(
 def events(
     input_dir: Path,
     output_dir: Path,
-    fps: int,
+    fps: float | None = None,
     pattern: str | None = None,
     pos_thres: float = 0.2,
     neg_thres: float = 0.2,
@@ -143,6 +143,7 @@ def events(
     leak_rate_hz: float = 1.0,
     shot_noise_rate_hz: float = 10.0,
     seed: int = 2147483647,
+    preview_step: int | None = None,
     force: bool = False,
 ) -> None:
     """Emulate an event camera using v2e and high speed input frames
@@ -150,16 +151,18 @@ def events(
     Args:
         input_dir: directory in which to look for frames
         output_dir: directory in which to save events
-        fps: frame rate of input sequence
-        pattern: used to find source image files to convert to events,
-            not needed when ``input_dir`` points to a valid dataset.
+        fps: frame rate of input sequence, will try to infer from dataset if possible
+        pattern: used to find source image files to convert to events, not needed when ``input_dir`` points to a valid dataset
         pos_thres: nominal threshold of triggering positive event in log intensity
         neg_thres: nominal threshold of triggering negative event in log intensity
         sigma_thres: std deviation of threshold in log intensity
-        cutoff_hz: 3dB cutoff frequency in Hz of DVS photoreceptor, default: 200,
+        cutoff_hz: 3dB cutoff frequency in Hz of DVS photoreceptor
         leak_rate_hz: leak event rate per pixel in Hz, from junction leakage in reset switch
         shot_noise_rate_hz: shot noise rate in Hz
         seed: random seed to use while sampling, ensures reproducibility
+        preview_step: accumulate events over this many frames before saving a visualization preview. If the
+            number of input frames is not a multiple of the preview step, the last few frames will be dropped.
+            If None, preview is disabled.
         force: if true, overwrite output file(s) if present, else throw error
     """
     import json
@@ -168,6 +171,7 @@ def events(
 
     from visionsim.dataset import Dataset
     from visionsim.emulate.dvs import EventEmulator
+    from visionsim.simulate.blender import INDEX_PADDING, ITEMS_PER_SUBFOLDER
     from visionsim.utils.color import rgb_to_grayscale
     from visionsim.utils.progress import ElapsedProgress
 
@@ -186,6 +190,15 @@ def events(
     else:
         dataset = Dataset.from_path(input_dir)
 
+    if fps is None:
+        if dataset.cameras:
+            framerates = set(cam.fps for cam in dataset.cameras)
+            if len(framerates) > 1:
+                raise ValueError("Multiple cameras with different frame rates found.")
+            fps = framerates.pop()
+    if fps is None:
+        raise ValueError("FPS not provided and could not be inferred from dataset, please specify.")
+
     emulator_kwargs = dict(
         pos_thres=pos_thres,
         neg_thres=neg_thres,
@@ -202,6 +215,7 @@ def events(
 
     with open(events_path, "a+") as out, ElapsedProgress() as progress:
         task = progress.add_task("Writing DVS data...", total=len(dataset))
+        viz = None
 
         for idx, (frame, _) in enumerate(dataset):  # type: ignore
             luma = rgb_to_grayscale(frame)
@@ -212,12 +226,22 @@ def events(
                 np.savetxt(out, events.astype(int), fmt="%d", delimiter=",")
                 rate = len(events) * int(fps) / 1e3
 
-                viz = np.ones_like(frame) * 255
-                _, px, py, _ = events[events[:, -1] == 1].T.astype(int)
-                _, nx, ny, _ = events[events[:, -1] == -1].T.astype(int)
-                viz[ny, nx, :3] = [255, 0, 0]
-                viz[py, px, :3] = [0, 0, 255]
-                iio.imwrite(output_dir / "frames" / f"event_{idx:06}.png", viz)
+                if preview_step is not None and preview_step > 0:
+                    if viz is None:
+                        viz = np.ones_like(frame) * 255
+
+                    _, px, py, _ = events[events[:, -1] == 1].T.astype(int)
+                    _, nx, ny, _ = events[events[:, -1] == -1].T.astype(int)
+                    viz[ny, nx, :3] = [255, 0, 0]
+                    viz[py, px, :3] = [0, 0, 255]
+
+                    if (idx + 1) % preview_step == 0:
+                        folder_index = f"{idx // ITEMS_PER_SUBFOLDER:04}"
+                        frame_index = f"{idx % ITEMS_PER_SUBFOLDER:0{INDEX_PADDING}}.png"
+                        outpath = output_dir / "preview" / folder_index / frame_index
+                        outpath.parent.mkdir(parents=True, exist_ok=True)
+                        iio.imwrite(outpath, viz)
+                        viz = None
             else:
                 rate = 0
 

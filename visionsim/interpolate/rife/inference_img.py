@@ -1,5 +1,6 @@
 """Modified from https://github.com/megvii-research/ECCV2022-RIFE/ to run on a sequence of images"""
 
+import copy
 from pathlib import Path
 
 import imageio.v3 as iio
@@ -30,7 +31,7 @@ def interpolate_img(
         device = torch.device("cpu")
 
     if input_files:
-        img_paths = input_files
+        img_paths = copy.deepcopy(input_files)
     else:
         img_paths = natsorted(input_dir.glob(pattern))
 

@@ -4,6 +4,7 @@ import bpy  # type: ignore
 
 MATH_NODE = "ShaderNodeMath" if bpy.app.version >= (5, 0, 0) else "CompositorNodeMath"
 MAPRANGE_NODE = "ShaderNodeMapRange" if bpy.app.version >= (5, 0, 0) else "CompositorNodeMapRange"
+MIX_NODE = "ShaderNodeMix" if bpy.app.version >= (5, 0, 0) else "CompositorNodeMixRGB"
 
 if bpy.app.version >= (5, 0, 0):
     SEPXYZ_NODE = "ShaderNodeSeparateXYZ"
@@ -20,7 +21,7 @@ def set_clamp(node, enable):
     # Can't just test for v5+ because some nodes still use `use_clamp`!!
     if hasattr(node, "clamp"):
         node.clamp = enable
-    else:
+    elif hasattr(node, "use_clamp"):
         node.use_clamp = enable
 
 
