@@ -154,15 +154,13 @@ class Dataset(torch.utils.data.Dataset):
             **kwargs (dict[str, Any]): Optional keyword arguments passed to :class:`PathTransforms`
 
         Raises:
-            ValueError: raised if provided paths do not exist or if they are not subpaths of root (when provided).
+            ValueError: raised if provided paths do not exist.
 
         Returns:
             Self: instantiated Dataset object
         """
-        if (root is None and any(not p.exists() for p in paths)) or (
-            root is not None and any(not p.is_relative_to(root) for p in paths)
-        ):
-            raise ValueError("Some paths do not exist or are not relative to `root`.")
+        if any(not (Path(root or "") / p).exists() for p in paths):
+            raise ValueError("Some paths do not exist!")
 
         transforms = PathTransforms(paths=paths, iter_npys=iter_npys, **kwargs)
         return cls(transforms=cast(Sequence, transforms), root=root, cameras=cameras)
@@ -179,7 +177,7 @@ class Dataset(torch.utils.data.Dataset):
     ) -> Self:
         """Same as :meth:`from_paths` but will search for all paths that match the provided pattern
         (as found by `pathlib's glob <https://docs.python.org/3/library/pathlib.html#pathlib.Path.glob>`_)"""
-        paths = sorted(Path(root).glob(pattern), key=key)
+        paths = [p.relative_to(root) for p in sorted(Path(root).glob(pattern), key=key)]
         return cls.from_paths(paths=paths, iter_npys=iter_npys, root=root, cameras=cameras, **kwargs)
 
     @cached_property
