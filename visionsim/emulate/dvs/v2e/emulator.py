@@ -180,6 +180,7 @@ class EventEmulator:
         # ------------------------------------------------------------------ #
         self._low_pass_filter = LowPassFilter()
         self._noise_vrms_computer = PhotoreceptorNoiseVoltageComputer()
+
         # ------------------------------------------------------------------ #
         # Runtime state – reset by reset(), lazily populated by _init()      #
         # ------------------------------------------------------------------ #
