@@ -9,6 +9,13 @@ from syrupy.extensions.json import JSONSnapshotExtension
 from visionsim.emulate.dvs.v2e.emulator import EventEmulator
 
 
+class ImageSnapshotExtension(PNGImageSnapshotExtension):
+    def matches(self, *, serialized_data, snapshot_data) -> bool:
+        serialized_im = iio.imread(serialized_data)
+        snapshot_im = iio.imread(snapshot_data)
+        return np.allclose(serialized_im, snapshot_im)
+
+
 def test_emulate_events(snapshot, tmp_path):
     emulator = EventEmulator(
         pos_thres=0.1,
@@ -68,7 +75,7 @@ def test_emulate_events(snapshot, tmp_path):
     for path in sorted(tmp_path.glob("events_preview_*.png")):
         with open(path, "rb") as f:
             viz_bytes = f.read()
-            assert viz_bytes == snapshot(extension_class=PNGImageSnapshotExtension), (
+            assert viz_bytes == snapshot(extension_class=ImageSnapshotExtension), (
                 "Generated preview does not match the reference snapshot"
             )
 
