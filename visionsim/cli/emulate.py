@@ -112,6 +112,7 @@ def events(
     shot_noise_rate_hz: float = 10.0,
     seed: int = 2147483647,
     preview_step: int | None = None,
+    only_preview: bool = False,
     force: bool = False,
 ) -> None:
     """Emulate an event camera using v2e and high speed input frames
@@ -131,6 +132,7 @@ def events(
         preview_step: accumulate events over this many frames before saving a visualization preview. If the
             number of input frames is not a multiple of the preview step, the last few frames will be dropped.
             If None, preview is disabled.
+        only_preview: if true, only generate the preview and do not generate the full event file, if `preview_step` is not set, assume 1.
         force: if true, overwrite output file(s) if present, else throw error
     """
     import json
@@ -166,6 +168,9 @@ def events(
     if fps is None:
         raise ValueError("FPS not provided and could not be inferred from dataset, please specify.")
 
+    if only_preview and preview_step is None:
+        preview_step = 1
+
     emulator_kwargs = dict(
         pos_thres=pos_thres,
         neg_thres=neg_thres,
@@ -193,8 +198,10 @@ def events(
 
             if events is not None:
                 events[:, 0] *= 1e6
-                np.savetxt(out, events.astype(int), fmt="%d", delimiter=",")
                 rate = len(events) * int(fps) / 1e3
+
+                if not only_preview:
+                    np.savetxt(out, events.astype(int), fmt="%d", delimiter=",")
 
                 if preview_step is not None and preview_step > 0:
                     if viz is None:
@@ -216,6 +223,9 @@ def events(
                 rate = 0
 
             progress.update(task, description=f"Writing DVS data ({rate:.1f} KEV/s)", advance=1)
+
+    if only_preview:
+        events_path.unlink()
 
 
 def rgb(
