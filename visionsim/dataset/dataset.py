@@ -162,7 +162,7 @@ class Dataset(torch.utils.data.Dataset):
         if any(not (Path(root or "") / p).exists() for p in paths):
             raise ValueError("Some paths do not exist!")
 
-        transforms = PathTransforms(paths=paths, iter_npys=iter_npys, **kwargs)
+        transforms = PathTransforms(paths=[Path(p) for p in paths], iter_npys=iter_npys, **kwargs)
         return cls(transforms=cast(Sequence, transforms), root=root, cameras=cameras)
 
     @classmethod
