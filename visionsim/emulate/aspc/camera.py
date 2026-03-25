@@ -179,7 +179,7 @@ class Camera:
         irradiance = (radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(irradiance_photons) * (
             self.sensor.pixel_pitch.to(ureg.meter)
         ) ** 2
-        irradiance = torch.tensor(irradiance.magnitude, dtype=torch.float32, device=self.device)
+        irradiance = torch.as_tensor(irradiance.magnitude, dtype=torch.float32, device=self.device)
         return irradiance
 
     def _get_ambient_offset(self):
@@ -190,7 +190,7 @@ class Camera:
         ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(
             irradiance_photons
         ) * (self.sensor.pixel_pitch.to(ureg.meter)) ** 2
-        offsets = torch.tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=self.device)
+        offsets = torch.as_tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=self.device)
         return offsets
 
     def get_transients(self):

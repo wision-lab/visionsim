@@ -351,7 +351,7 @@ class Histogrammer(HistogrammerBase):
         prob_detection = 1.0 - torch.exp(-phi_bar)
         prob_detection = torch.clamp(prob_detection, 0.0, 1.0)
 
-        for n_ in range(n_pulses):
+        for n_ in tqdm(range(n_pulses), desc="Simulating Pixel EWH"):
             detections = torch.bernoulli(prob_detection)
 
             # Update buffer

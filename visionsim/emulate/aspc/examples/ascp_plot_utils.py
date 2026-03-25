@@ -21,14 +21,17 @@ def plot_spad_sensor_grid(
     def ensure_numpy(x):
         if isinstance(x, np.ndarray):
             return x
+        # Handle Pint quantities (including those wrapping CUDA tensors)
+        if hasattr(x, "magnitude"):
+            return ensure_numpy(x.magnitude)
         if torch.is_tensor(x):
             return x.detach().cpu().numpy()
-        if isinstance(x, list):
+        if isinstance(x, (list, tuple)):
             if len(x) > 0 and torch.is_tensor(x[0]):
                 return torch.stack(x).detach().cpu().numpy()
             else:
-                return np.array(x)
-        return np.array(x)
+                return np.array([ensure_numpy(v) for v in x])
+        return np.asarray(x)
 
     # Convert inputs
     albedo_img = ensure_numpy(albedo_frame)

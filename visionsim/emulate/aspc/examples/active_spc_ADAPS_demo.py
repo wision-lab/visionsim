@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from visionsim.emulate.aspc.camera import Camera
@@ -48,6 +49,29 @@ def generate_sliding_window_fovs(image_shape, kernel_size, stride):
     return fov_list
 
 
+def load_data(albedo_path, depth_path, device):
+    # albedo_frames = torch.zeros((1, 10, 10), dtype=torch.float64, device=device)
+    # depth_frames = torch.zeros((1, 10, 10), dtype=torch.float64, device=device)
+    # mid_x, mid_y = 256 // 2, 192 // 2
+    numpy_albedo = np.flipud(np.load(albedo_path)["arr"].sum(axis=-1))
+    numpy_albedo = np.maximum((numpy_albedo / numpy_albedo.max() - 0.075), 0)
+    numpy_depth = np.load(depth_path)["arr"]
+
+    # Ensure both inputs are [frames, H, W].
+    if numpy_albedo.ndim == 2:
+        numpy_albedo = numpy_albedo[None, ...]
+    if numpy_depth.ndim == 2:
+        numpy_depth = numpy_depth[None, ...]
+
+    albedo_frames = torch.from_numpy(numpy_albedo.copy()).to(device=device, dtype=torch.float64)
+    depth_frames = torch.from_numpy(numpy_depth.copy()).to(device=device, dtype=torch.float64)
+    # albedo_frames[0, ...] = torch.from_numpy(numpy_albedo.copy())[mid_y - 5 : mid_y + 5, mid_x - 5 : mid_x + 5]
+    # depth_frames[0, ...] = torch.from_numpy(np.load(depth_path)["arr"])[mid_y - 5 : mid_y + 5, mid_x - 5 : mid_x + 5]
+    depth_frames = ureg.Quantity(depth_frames, "meter")
+    albedo_frames = ureg.Quantity(albedo_frames, "dimensionless")
+    return albedo_frames, depth_frames
+
+
 def run_simulation_scenario(camera, new_config, scenario_name, output_dir, spad_grid_shape):
     """Runs the simulation with the specific config object and saves results."""
     print(f"\n--- Running Scenario: {scenario_name} ---")
@@ -59,10 +83,11 @@ def run_simulation_scenario(camera, new_config, scenario_name, output_dir, spad_
     albedo_frames, depth_frames = camera.albedo_frames, camera.depth_frames
     transients, _ = camera.get_transients()
     arrival_rates = camera.get_arrival_rates()
+    print("Starting EWH simulation")
     ewh_list = camera.get_ewh()
-
-    # Save Plot
-    output_path = os.path.join(output_dir, f"{scenario_name}_reconstruction.png")
+    print("EWH simulation completed")
+    # 5. Save Plot
+    output_path = os.path.join(output_dir, f"{scenario_name}_ADAPS_normalized_sub.png")
     plot_spad_sensor_grid(
         camera.histogrammer,
         camera.get_fov_masks(),
@@ -78,18 +103,23 @@ def run_simulation_scenario(camera, new_config, scenario_name, output_dir, spad_
 
 if __name__ == "__main__":
     data_dir = Path("examples/renders/scene1/")
-    # config_path = "visionsim/emulate/aspc/examples/active_spc_demo.yaml"
     config_path = "visionsim/emulate/aspc/examples/config_ADAPS_spc.yaml"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     camera = Camera(data_dir, config_path, device)
 
-    output_dir = "results_comparison_1_ADAPS"
+    output_dir = "results_comparison_ADAPS"
     os.makedirs(output_dir, exist_ok=True)
+
+    # Load npz data
+    albedo_path = Path("examples/raw_data/sum_raw_histogram.npz")
+    depth_path = Path("examples/raw_data/depth_frame.npz")
+    albedo_frames, depth_frames = load_data(albedo_path, depth_path, device)
+    camera.albedo_frames, camera.depth_frames = albedo_frames, depth_frames
 
     # --- AUTOMATIC FOV GENERATION ---
     sensor_h, sensor_w = camera.sensor.h, camera.sensor.w
-    k_h, k_w = 4, 4
-    s_h, s_w = 2, 2
+    k_h, k_w = 1, 1
+    s_h, s_w = 1, 1
     generated_fovs = generate_sliding_window_fovs((sensor_h, sensor_w), (k_h, k_w), (s_h, s_w))
     grid_rows = len(range(0, sensor_h - k_h + 1, s_h))
     grid_cols = len(range(0, sensor_w - k_w + 1, s_w))
@@ -101,45 +131,11 @@ if __name__ == "__main__":
     BASE_SUN = {"enabled": True}
     BASE_LIGHT_CONDITIONS = {"light_conditions": "AVERAGE_SUNLIGHT"}
     BASE_HIST = {"pixel_fov_list": generated_fovs}
-
-    # Scenario 1: High Fidelity (Your current "nice" settings)
-    # Good laser power, average sun
-    cfg1 = {
-        "active_source": {"pulsed_laser": {**BASE_PULSED, "avg_watts": 0.05 * ureg.watt}},
-        "histogrammer": {**BASE_HIST, "n_pulses": 10000},
-        "ambient_source": {"sun": {**BASE_SUN, **BASE_LIGHT_CONDITIONS}},
-    }
-    run_simulation_scenario(camera, cfg1, "1_High_Fidelity", output_dir, spad_grid_shape)
-
-    # Scenario 2: Photon Starved (Low SNR)
-    # Reduced laser power significantly. Depth estimation should become noisy/patchy.
-    # Traditional simulators would still show perfect depth here!
-    cfg2 = {
-        "active_source": {"pulsed_laser": {**BASE_PULSED, "avg_watts": 0.0005 * ureg.watt}},
-        "histogrammer": {**BASE_HIST, "n_pulses": 2000},
-        "ambient_source": {"sun": {**BASE_SUN, **BASE_LIGHT_CONDITIONS}},
-    }
-    run_simulation_scenario(camera, cfg2, "2_Photon_Starved", output_dir, spad_grid_shape)
-
-    # Scenario 3: High Ambient Interference
-    # Standard laser power, but very intense background light.
-    # This floods the histogram with noise, burying the signal peak.
-    cfg3 = {
-        "active_source": {"pulsed_laser": {**BASE_PULSED, "avg_watts": 0.01 * ureg.watt}},
-        "histogrammer": {**BASE_HIST},
-        "ambient_source": {
-            "sun": {**BASE_SUN, **BASE_LIGHT_CONDITIONS, "intensity": 1.0e28 * ureg.watt / ureg.meter**2}
-        },
-    }
-    # Alternatively, keep intensity same but increase aperture or exposure if sun scaling is weird physically
-    run_simulation_scenario(camera, cfg3, "3_High_Ambient", output_dir, spad_grid_shape)
-
-    # Scenario 4: ADAPS Demo
-    cfg4 = {
+    cfg = {
         "active_source": {"pulsed_laser": {**BASE_PULSED}},
         "histogrammer": {**BASE_HIST},
         "ambient_source": {"sun": {**BASE_SUN, **BASE_LIGHT_CONDITIONS}},
     }
-    run_simulation_scenario(camera, cfg4, "ADAPS_demo", output_dir, spad_grid_shape)
+    run_simulation_scenario(camera, cfg, "ADAPS_demo", output_dir, spad_grid_shape)
 
     print("All scenarios completed. Check the 'results_comparison' folder.")
