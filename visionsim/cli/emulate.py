@@ -358,8 +358,11 @@ def imu(
     from visionsim.dataset import Metadata
     from visionsim.emulate.imu import emulate_imu
 
-    if output_file and not force:
+    if output_file and output_file.exists() and not force:
         raise FileExistsError("Output file already exists.")
+
+    if output_file:
+        output_file.parent.mkdir(parents=True, exist_ok=True)
 
     rng = np.random.default_rng(int(seed))
     gravity_ = np.array(ast.literal_eval(gravity))
