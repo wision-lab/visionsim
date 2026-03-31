@@ -266,7 +266,7 @@ def rgb(
     readout_std: float = 16.0,
     fwc: float | None = None,
     flux_gain: float = 2.0**12,
-    iso_gain: float = 1.0,
+    sensor_gain: float = 1.0,
     adc_bitdepth: int = 12,
     mosaic: bool = False,
     demosaic: Literal["off", "bilinear", "MHC04"] = "MHC04",
@@ -285,7 +285,7 @@ def rgb(
         readout_std: standard deviation of gaussian read noise in photoelectrons
         fwc: full well capacity of sensor in photoelectrons
         flux_gain: factor to scale the input images before Poisson simulation
-        iso_gain: gain for photo-electron reading after Poisson rng
+        sensor_gain: gain for photo-electron reading after Poisson rng
         adc_bitdepth: ADC bitdepth
         mosaic: implement mosaiced R-/G-/B- pixels or an innately 3-channel sensor
         demosaic: demosaicing method (default Malvar et al.'s method)
@@ -346,7 +346,7 @@ def rgb(
                 fwc=fwc or np.inf,
                 shutter_frac=shutter_frac,
                 flux_gain=flux_gain,
-                iso_gain=iso_gain,
+                sensor_gain=sensor_gain,
                 adc_bitdepth=adc_bitdepth,
                 mosaic=mosaic,
                 demosaic=demosaic,

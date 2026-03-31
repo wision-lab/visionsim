@@ -10,10 +10,9 @@ def unsharp_mask(
     sigma: float = 1.0,
     amount: float = 1.0,
 ) -> npt.NDArray:
-    """Unsharp-masking to sharpen an image
+    """Unsharp-masking to sharpen an image [#UnsharpMasking]_.
 
-    Borrows interface from scikit-image's version:
-    <https://scikit-image.org/docs/stable/api/skimage.filters.html#skimage.filters.unsharp_mask>
+    Borrows interface from `scikit-image's version <https://scikit-image.org/docs/stable/api/skimage.filters.html#skimage.filters.unsharp_mask>`_.
 
     Args:
         img (npt.ArrayLike, required): input image, can be 2-, 3-, or 4-channel
@@ -25,7 +24,7 @@ def unsharp_mask(
                                 same shape and dtype as img
 
     References:
-        .. [1] Wikipedia. Unsharp masking. <https://en.wikipedia.org/wiki/Unsharp_masking>
+        .. [#UnsharpMasking] `Wikipedia. Unsharp masking <https://en.wikipedia.org/wiki/Unsharp_masking>`_
     """
 
     def _unsharp_mask1(img):

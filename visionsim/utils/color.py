@@ -98,27 +98,32 @@ def raw_bayer_to_rgb(
 ) -> npt.NDArray:
     """Bayer Demosaicing
 
-    Convolution-based implementation as suggested by Malvar et al. [1].
+    Convolution-based implementation as suggested by Malvar et al. [#Malvar2004]_.
 
     Bilinear is simpler but visually not as nice as Malvar et al.'s method.
 
-    Alternative implementations are also available from OpenCV:
-        rgb = cv2.cvtColor(<uint16_array>, cv2.COLOR_BAYER_BG2BGR)[:,:,::-1],
-    and the colour-demosaicing library (https://pypi.org/project/colour-demosaicing):
+    Alternative implementations are also available from OpenCV::
+
+        rgb = cv2.cvtColor(<uint16_array>, cv2.COLOR_BAYER_BG2BGR)[:,:,::-1]
+    
+    and the `colour-demosaicing library <https://pypi.org/project/colour-demosaicing>`_::
+
         rgb = demosaicing_CFA_Bayer_bilinear(raw, pattern="RGGB")
-        rgb = demosaicing_CFA_Bayer_Malvar2004(raw, pattern="RGGB"),
+        rgb = demosaicing_CFA_Bayer_Malvar2004(raw, pattern="RGGB")
+    
     which appear to give similar results but could run faster (not benchmarked).
 
     Args:
         raw (npt.NDArray): input array (has to be exactly 2D)
         cfa_pattern (Literal["rggb"]): Bayer pattern (only RGGB implemented for now)
+        method (Literal["off", "bilinear", "MHC04"]): Demosaicing method
 
     Returns:
         npt.NDArray: demosaiced RGB image
 
     References:
-        .. [1] Malvar et al. (2004), "High-quality linear interpolation for demosaicing of Bayer-patterned color images",
-            ICASSP 2004. <https://home.cis.rit.edu/~cnspci/references/dip/demosaicking/malvar2004.pdf>
+        ..  [#Malvar2004] `Malvar et al. (2004), "High-quality linear interpolation for demosaicing of Bayer-patterned color images",
+            ICASSP 2004. <https://home.cis.rit.edu/~cnspci/references/dip/demosaicking/malvar2004.pdf>`_
     """
 
     if cfa_pattern == "rggb":

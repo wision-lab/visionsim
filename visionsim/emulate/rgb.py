@@ -18,14 +18,14 @@ def emulate_rgb_from_sequence(
     fwc: float = 10000.0,
     adc_bitdepth: int = 12,
     flux_gain: float = 2**12,
-    iso_gain: float = 1.0,
+    sensor_gain: float = 1.0,
     mosaic: bool = False,
     demosaic: Literal["off", "bilinear", "MHC04"] = "off",
     denoise_sigma: float = 0.0,
     sharpen_weight: float = 0.0,
     rng: np.random.Generator | None = None,
 ) -> npt.NDArray:
-    """Emulates a conventional RGB camera [1]_ from a sequence of intensity frames.
+    """Emulates a conventional RGB camera [#Hasinoff2010]_ from a sequence of intensity frames.
 
     For demosaicing details see :func:`raw_bayer_to_rgb <visionsim.utils.color.raw_bayer_to_rgb>`.
 
@@ -42,7 +42,9 @@ def emulate_rgb_from_sequence(
         fwc (float, optional): Full well capacity, used for normalization. Defaults to 10000.0.
         adc_bitdepth (int, optional): Resolution of ADC in bits. Defaults to 12.
         flux_gain (float, optional): factor to scale the input [0, 1] image _before_ Poisson sampling
-        iso_gain (float, optional): factor to scale the photo-electron reading _after_ Poisson sampling
+        sensor_gain (float, optional): factor to scale the photo-electron reading _after_ Poisson sampling.
+            This setting is inversely proportional to ISO gain, with a camera-dependent proportionality constant.
+            Specifically, ISO = U / sensor_gain where U is a camera-dependent constant [#Hasinoff2010]_.
         mosaic (bool, optional): implement one array with mosaiced R-/G-/B-sensitive pixels or an innately 3-channel sensor
         demosaic (string, optional): demosaicing method to use if "mosaic" is set (default "off")
         denoise_sigma (float, optional): Gaussian blur kernel sigma (disabled if 0.0)
@@ -53,7 +55,7 @@ def emulate_rgb_from_sequence(
         npt.NDArray: Quantized linear-intensity RGB patch as floating point array (range [0, 1])
 
     References:
-        ..  [1] S. W. Hasinoff, F. Durand, and W. T. Freeman,
+        ..  [#Hasinoff2010] S. W. Hasinoff, F. Durand, and W. T. Freeman,
             “Noise-optimal capture for high dynamic range photography,”
             CVPR 2010.
     """
@@ -78,7 +80,8 @@ def emulate_rgb_from_sequence(
     # Clip to full-well capacity, add readout noise, apply ISO gain
     patch = np.clip(patch, 0, fwc)
     patch += rng.normal(0, readout_std, size=patch.shape)
-    patch *= iso_gain
+    patch *= sensor_gain
+
     # Assume perfect quantization in ADC
     patch = np.round(np.clip(patch, 0, (2**adc_bitdepth - 1)))
     patch = patch / (2**adc_bitdepth - 1)
