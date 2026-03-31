@@ -94,6 +94,8 @@ def colorize_flows(
     ext: str = ".png",
     vmax: float | None = None,
     quantile: float = 0.01,
+    gamma: float | None = None,
+    local: bool = False,
     step: int = 1,
 ) -> None:
     """Convert .exr optical flow maps into color-coded images for visualization
@@ -105,7 +107,10 @@ def colorize_flows(
         pattern: filenames of frames should match this
         ext: which format to save colorized frames as
         vmax: maximum expected flow magnitude
-        quantile: if vmax is None, use this quantile to estimate it
+        quantile: if vmax is None, use this quantile to estimate it from the data
+        gamma: gamma correction to apply to the normalized flow magnitude, this is
+            helpful for visualizing flows that are small. Typically set to 2.2
+        local: if True, normalize each frame independently, ignores `vmax` and `quantile`
         step: drop some frames when colorizing, use frames 0+step*n
     """
 
@@ -131,7 +136,7 @@ def colorize_flows(
         mag = np.sqrt(x**2 + y**2)
         return mag.flatten()
 
-    if vmax is None:
+    if vmax is None and not local:
         digest = _estimate_distribution(in_files, transform=magnitude)
         vmax = digest.quantile(1 - quantile)
         _log.info(f"Using a maximum magnitude of {vmax:0.2f}\n")
@@ -140,7 +145,16 @@ def colorize_flows(
         fx, fy, bx, by = cast(npt.NDArray, Dataset.load_data(in_file)).transpose(2, 0, 1)
         x, y = (fx, fy) if direction.lower() == "forward" else (bx, by)
         h = np.arctan2(y, x) / (2 * np.pi) + 0.5
-        v = np.minimum(np.sqrt(x**2 + y**2) / vmax, 1.0)
+        mag = np.sqrt(x**2 + y**2)
+
+        if local:
+            v = np.clip(mag / mag.max(), 0.0, 1.0)
+        else:
+            v = np.clip(mag / vmax, 0.0, 1.0)
+
+        if gamma is not None:
+            v = v ** (1 / gamma)
+
         img = np.stack(convert(h, np.ones_like(h), v), axis=-1)
         img = (img * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
@@ -174,7 +188,7 @@ def colorize_normals(
     in_files = in_files[::step]
 
     for in_file in track(in_files):
-        img = cast(npt.NDArray, Dataset.load_data(in_file)).transpose(1, 2, 0) / 2 + 0.5
+        img = cast(npt.NDArray, Dataset.load_data(in_file)) / 2 + 0.5
         img = (img * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
         iio.imwrite(str(path.with_suffix(ext)), img)

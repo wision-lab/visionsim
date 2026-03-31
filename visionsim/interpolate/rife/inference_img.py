@@ -36,7 +36,7 @@ def interpolate_img(
         img_paths = natsorted(input_dir.glob(pattern))
 
     Path(output_dir).mkdir(exist_ok=True, parents=True)
-    outpath = lambda p, i: Path(output_dir) / p.relative_to(input_dir).parent / f"{p.stem}_{i % 2**exp:02}{p.suffix}"
+    outpath = lambda p, i: Path(output_dir) / p.resolve().relative_to(input_dir.resolve()).parent / f"{p.stem}_{i % 2**exp:02}{p.suffix}"
 
     if model_dir is None:
         # First check if it's in cwd or torch hub cache, else download

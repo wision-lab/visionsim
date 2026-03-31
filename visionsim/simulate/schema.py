@@ -181,6 +181,11 @@ class _Metadata:
                     transform.pop("camera")
                     transform.pop("data")
 
+                    # peewee aliases duplicate "id" columns from joined models as
+                    # "id_2", "id_3", … (version-dependent), so strip them too.
+                    for k in [k for k in transform if k.startswith("id_")]:
+                        transform.pop(k)
+
                     if exclude_none:
                         none_keys = [k for k, v in transform.items() if v is None]
                         for k in none_keys:
