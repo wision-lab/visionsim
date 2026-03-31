@@ -14,10 +14,12 @@ jobs:
     steps:
       - name: Checkout Codebase
         uses: actions/checkout@v4
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
       - name: Install ACT dependencies
         if: ${{ env.ACT }}
         run: |
@@ -32,24 +34,43 @@ jobs:
 
           # Install ffmpeg directly as the setup-ffmpeg needs to interact with the gh cli and have access to gh tokens
           sudo apt-get install -y ffmpeg
+
       - name: Install ffmpeg
         if: ${{ !env.ACT }}
         uses: AnimMouse/setup-ffmpeg@v1
+
       - name: Install Blender
         uses: bradyajohnston/setup-blender@v5
         with:
           version: ${{ matrix.blender-version }}
+
+      - name: Cache RIFE weights
+        id: cache-rife
+        uses: actions/cache@v4
+        with:
+          path: .cache/torch/hub/flownet.pkl
+          key: flownet-weights
+
+      - name: Fetch RIFE weights
+        if: steps.cache-rife.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          mkdir -p .cache/torch/hub
+          curl -L -o .cache/torch/hub/flownet.pkl https://github.com/WISION-Lab/visionsim/releases/download/v0.1.0-alpha/flownet.pkl
+
       - name: Install VisionSim and dependencies
         run: |
           # Force torch to use CPU
           pip install torch --index-url https://download.pytorch.org/whl/cpu 
           pip install -e . --group dev 
           vsim post-install --editable
+
       - name: Check Dependencies 
         run: | 
           blender --version
           blender --background --python-use-system-env --python-expr "import visionsim"
           ffmpeg -version 
+
       - name: Run Tests
         run: |
           pytest --durations=0 -s
