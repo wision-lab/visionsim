@@ -44,26 +44,26 @@ jobs:
         with:
           version: ${{ matrix.blender-version }}
 
-      - name: Cache RIFE weights
-        id: cache-rife
-        uses: actions/cache@v4
-        with:
-          path: .cache/torch/hub/flownet.pkl
-          key: flownet-weights
-
-      - name: Fetch RIFE weights
-        if: steps.cache-rife.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          mkdir -p .cache/torch/hub
-          curl -L -o .cache/torch/hub/flownet.pkl https://github.com/WISION-Lab/visionsim/releases/download/v0.1.0-alpha/flownet.pkl
-
       - name: Install VisionSim and dependencies
         run: |
           # Force torch to use CPU
           pip install torch --index-url https://download.pytorch.org/whl/cpu 
           pip install -e . --group dev 
           vsim post-install --editable
+
+      - name: Cache RIFE weights
+        id: cache-rife
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/torch/hub/flownet.pkl
+          key: flownet-weights
+
+      - name: Fetch RIFE weights
+        if: steps.cache-rife.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          mkdir -p ~/.cache/torch/hub
+          curl -L -o ~/.cache/torch/hub/flownet.pkl https://github.com/WISION-Lab/visionsim/releases/download/v0.1.0-alpha/flownet.pkl
 
       - name: Check Dependencies 
         run: | 
