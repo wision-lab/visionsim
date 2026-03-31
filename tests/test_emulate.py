@@ -10,6 +10,12 @@ from visionsim.emulate.dvs.v2e.emulator import EventEmulator
 
 
 class ImageSnapshotExtension(PNGImageSnapshotExtension):
+    def serialize(self, data, **kwargs):
+        if isinstance(data, (str, Path)):
+            with open(data, "rb") as f:
+                data = f.read()
+        return super().serialize(data, **kwargs)
+
     def matches(self, *, serialized_data, snapshot_data) -> bool:
         serialized_im = iio.imread(serialized_data)
         snapshot_im = iio.imread(snapshot_data)
@@ -73,11 +79,9 @@ def test_emulate_events(snapshot, tmp_path):
 
     # Compare event preview
     for path in sorted(tmp_path.glob("events_preview_*.png")):
-        with open(path, "rb") as f:
-            viz_bytes = f.read()
-            assert viz_bytes == snapshot(extension_class=ImageSnapshotExtension), (
-                "Generated preview does not match the reference snapshot"
-            )
+        assert path == snapshot(extension_class=ImageSnapshotExtension), (
+            "Generated preview does not match the reference snapshot"
+        )
 
     # Test reset functionality
     emulator.reset()
