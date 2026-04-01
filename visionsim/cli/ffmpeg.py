@@ -337,7 +337,7 @@ def count_frames(input_file: Path, /) -> int:
         f"ffprobe -v error -select_streams v:0 -count_packets -show_entries "
         f"stream=nb_read_packets -of csv=p=0 {input_file}"
     )
-    result = int(_run(cmd).stdout.strip())
+    result = int(_run(cmd, hide=True).stdout.strip())
     _log.info(f"Video contains {result} frames.")
     return result
 
@@ -361,7 +361,7 @@ def duration(input_file: Path, /) -> float:
         f"ffprobe -v error -select_streams v:0 -show_entries stream=duration "
         f"-of default=noprint_wrappers=1:nokey=1 {input_file}"
     )
-    result = float(_run(cmd).stdout.strip())
+    result = float(_run(cmd, hide=True).stdout.strip())
     _log.info(f"Video lasts {result} seconds.")
     return result
 
@@ -382,7 +382,7 @@ def dimensions(input_file: Path) -> tuple[int, int]:
         raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = f"ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 {input_file}"
-    result = _run(cmd).stdout.strip()
+    result = _run(cmd, hide=True).stdout.strip()
     _log.info(f"Video has size {result}.")
     return cast(tuple[int, int], tuple(int(dim) for dim in result.split("x")))
 
