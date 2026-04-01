@@ -42,7 +42,13 @@ def video(input_file: Path, output_file: Path, method: str = "rife", n: int = 2)
         with ElapsedProgress() as progress:
             task = progress.add_task("Interpolating with rife...")
             img_paths = [str(p) for p in natsorted(Path(src_dir).glob("frames_*.png"))]
-            rife(img_paths, dst_dir, exp=np.log2(n).astype(int), update_fn=partial(progress.update, task))
+            rife(
+                input_dir=Path(src_dir),
+                input_files=img_paths,
+                output_dir=dst_dir,
+                exp=np.log2(n).astype(int),
+                update_fn=partial(progress.update, task),
+            )
 
         # Assemble final video at correct frame-rate
         animate(Path(dst_dir), pattern="frames_*.png", outfile=output_file, fps=int(avg_fps))
