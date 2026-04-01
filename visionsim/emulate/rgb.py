@@ -14,11 +14,11 @@ from visionsim.utils.imgproc import unsharp_mask
 def emulate_rgb_from_sequence(
     sequence: npt.ArrayLike,
     shutter_frac: float = 1.0,
-    readout_std: float = 0.0,
-    fwc: float = 10000.0,
+    readout_std: float = 3.0,
+    fwc: float = 50000.0,
     adc_bitdepth: int = 12,
-    flux_gain: float = 2**12,
-    sensor_gain: float = 1.0,
+    flux_gain: float = 50000.0,
+    sensor_gain: float = 12.3,
     mosaic: bool = False,
     demosaic: Literal["off", "bilinear", "MHC04"] = "off",
     denoise_sigma: float = 0.0,
@@ -28,6 +28,10 @@ def emulate_rgb_from_sequence(
     """Emulates a conventional RGB camera [#Hasinoff2010]_ from a sequence of intensity frames.
 
     For demosaicing details see :func:`raw_bayer_to_rgb <visionsim.utils.color.raw_bayer_to_rgb>`.
+
+    Assumptions:
+        - The ``black-point``, usually denoted as :math:`I_0`, is 0. 
+        - The quantum efficiency, :math:`\\eta`, is assumed to be ideal (1.0).
 
     Note:
         Motion-blur is approximated by averaging consecutive ground truth frames,
@@ -42,9 +46,11 @@ def emulate_rgb_from_sequence(
         fwc (float, optional): Full well capacity, used for normalization. Defaults to 10000.0.
         adc_bitdepth (int, optional): Resolution of ADC in bits. Defaults to 12.
         flux_gain (float, optional): factor to scale the input [0, 1] image _before_ Poisson sampling
-        sensor_gain (float, optional): factor to scale the photo-electron reading _after_ Poisson sampling.
-            This setting is inversely proportional to ISO gain, with a camera-dependent proportionality constant.
-            Specifically, ISO = U / sensor_gain where U is a camera-dependent constant [#Hasinoff2010]_.
+        sensor_gain (float, optional): factor to scale the photo-electron reading _after_ Poisson sampling, in 
+            units of electrons per digital level [#clarkvision]_. This setting is inversely proportional to ISO gain, 
+            with a camera-dependent proportionality constant. Specifically, ``ISO = U / sensor_gain`` where U is a 
+            camera-dependent constant [#Hasinoff2010]_. Counterintuitively, this means that a *smaller* 
+            ``sensor_gain`` corresponds to a *higher* ISO.
         mosaic (bool, optional): implement one array with mosaiced R-/G-/B-sensitive pixels or an innately 3-channel sensor
         demosaic (string, optional): demosaicing method to use if "mosaic" is set (default "off")
         denoise_sigma (float, optional): Gaussian blur kernel sigma (disabled if 0.0)
@@ -55,9 +61,11 @@ def emulate_rgb_from_sequence(
         npt.NDArray: Quantized linear-intensity RGB patch as floating point array (range [0, 1])
 
     References:
-        ..  [#Hasinoff2010] S. W. Hasinoff, F. Durand, and W. T. Freeman,
+        ..  [#Hasinoff2010] `S. W. Hasinoff, F. Durand, and W. T. Freeman,
             “Noise-optimal capture for high dynamic range photography,”
-            CVPR 2010.
+            CVPR 2010. <https://people.csail.mit.edu/billf/publications/Noise-Optimal_Capture.pdf>`_
+        ..  [#clarkvision] `Roger N. Clark, “Digital Camera Reviews and Sensor Performance Summary”
+            <https://clarkvision.com/imagedetail/digital.sensor.performance.summary/>`_
     """
     # Get mean of linear-intensity frames.
     burst_size = int(max(1, np.ceil(len(sequence) * shutter_frac)))
@@ -80,7 +88,7 @@ def emulate_rgb_from_sequence(
     # Clip to full-well capacity, add readout noise, apply ISO gain
     patch = np.clip(patch, 0, fwc)
     patch += rng.normal(0, readout_std, size=patch.shape)
-    patch *= sensor_gain
+    patch /= sensor_gain
 
     # Assume perfect quantization in ADC
     patch = np.round(np.clip(patch, 0, (2**adc_bitdepth - 1)))

@@ -277,6 +277,9 @@ def rgb(
 ) -> None:
     """Simulate real camera, adding read/poisson noise and tonemapping
 
+    For more information on the camera model, see :func:`emulate_rgb_from_sequence 
+    <visionsim.emulate.rgb.emulate_rgb_from_sequence>`.
+
     Args:
         input_dir: directory in which to look for frames
         output_dir: directory in which to save binary frames
@@ -285,8 +288,8 @@ def rgb(
         readout_std: standard deviation of gaussian read noise in photoelectrons
         fwc: full well capacity of sensor in photoelectrons
         flux_gain: factor to scale the input images before Poisson simulation
-        sensor_gain: gain for photo-electron reading after Poisson rng
-        adc_bitdepth: ADC bitdepth
+        sensor_gain: gain for photo-electron reading after Poisson rng (in units of electrons per digital level)
+        adc_bitdepth: ADC bitdepth, typically 12 or 14
         mosaic: implement mosaiced R-/G-/B- pixels or an innately 3-channel sensor
         demosaic: demosaicing method (default Malvar et al.'s method)
         denoise_sigma: Gaussian blur with this sigma will be used (default 0.0 disables this)
