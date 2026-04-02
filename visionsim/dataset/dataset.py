@@ -161,10 +161,16 @@ class Dataset(torch.utils.data.Dataset):
             else:
                 raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
 
+        # for klass in (NpyDataset, ImgDataset):
+        #     try:
+        #         return klass(root)
+        #     except (FileNotFoundError, ValueError, RuntimeError, ValidationError):
+        #         pass
         for klass in (NpyDataset, ImgDataset):
             try:
                 return klass(root)
-            except (FileNotFoundError, ValueError, RuntimeError, ValidationError):
+            except (FileNotFoundError, ValueError, RuntimeError, ValidationError) as e:
+                print(f"DEBUG - {klass.__name__} failed because: {e}")
                 pass
 
         raise RuntimeError(

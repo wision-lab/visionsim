@@ -77,7 +77,7 @@ def run_simulation_scenario(camera, new_config, scenario_name, output_dir, spad_
 
 
 if __name__ == "__main__":
-    data_dir = Path("visionsim/examples/renders/scene1/")
+    data_dir = Path("examples/renders/scene1/")
     # config_path = "visionsim/emulate/aspc/examples/active_spc_demo.yaml"
     config_path = "visionsim/emulate/aspc/examples/config_ADAPS_spc.yaml"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
