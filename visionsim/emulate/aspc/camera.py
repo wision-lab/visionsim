@@ -83,6 +83,7 @@ class Camera:
         """Update camera configuration (deep merge) and rebuild sources/sensor/histogrammer."""
         self.config = self._merge_config(self.config, config_overrides)
         self._init_components_from_config(self.config)
+        self.validate_config(self.config)
         return self
 
     def _load_data(self, data_path, requires_grad=False):
@@ -227,7 +228,8 @@ class Camera:
     def get_ewh(self):
         """Get EWH from histogrammer"""
         arrival_rates = self.get_arrival_rates()
-        dead_time_bins = int(self.histogrammer.dead_time_s * self.histogrammer.n_bins * self.active_source.frequency)
+        dead_time_bins = int(self.histogrammer.dead_time_s * self.histogrammer.n_bins*self.active_source.frequency)
+        
         ewh_list = self.histogrammer.simulate_ewh(
             arrival_rates,
             self.histogrammer.n_pulses,

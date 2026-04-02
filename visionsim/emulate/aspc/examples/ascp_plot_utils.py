@@ -38,6 +38,7 @@ def plot_spad_sensor_grid(
     depth_img = ensure_numpy(depth_frame)
     ewh_data = ensure_numpy(ewh_list)
     transient_data = ensure_numpy(transients)
+    arrival_rates_data = ensure_numpy(arrival_rates)
 
     # ---------------------------------------------------------
     # PRE-CALCULATE METRICS
@@ -102,7 +103,7 @@ def plot_spad_sensor_grid(
     ax2.set_title("Simulator Estimate (Physics-based)")
     plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
 
-    plt.tight_layout()
+    # plt.tight_layout()
 
     # =========================================================
     # PLOT 2: OVERLAY
@@ -131,7 +132,7 @@ def plot_spad_sensor_grid(
                         (x_min, y_min), w, h, linewidth=1, edgecolor="r", facecolor="none", alpha=0.5
                     )
                     ax.add_patch(rect)
-    plt.tight_layout()
+    # plt.tight_layout()
 
     # =========================================================
     # PLOT 3: WAVEFORM GRID (Transient vs EWH)
@@ -164,9 +165,15 @@ def plot_spad_sensor_grid(
                 e_data = ewh_data[idx]
                 ax2_w.plot(e_data, color="tab:orange", alpha=0.8, linewidth=1.5, label="EWH")
 
+                ax3_w = ax.twinx()
+                a_data = arrival_rates_data[idx]
+                ax3_w.plot(a_data, color="tab:red", alpha=0.8, linewidth=1.5, label="EWH")
+
+
                 ax.set_title(f"{name} (Row {r}, Col {c})")
                 ax.set_yticks([])
                 ax2_w.set_yticks([])
+                ax3_w.set_yticks([])
                 if i == 0:  # Legend only on first
                     lines_1, labels_1 = ax.get_legend_handles_labels()
                     lines_2, labels_2 = ax2_w.get_legend_handles_labels()
@@ -188,13 +195,19 @@ def plot_spad_sensor_grid(
                     e_data = ewh_data[idx]
                     ax2_w.plot(e_data, color="tab:orange", alpha=0.8, linewidth=1)
 
+                    ax3_w = ax.twinx()
+                    a_data = arrival_rates_data[idx]
+                    ax3_w.plot(a_data, color="tab:red", alpha=0.8, linewidth=1.5, label="EWH")
+
+
                     ax.set_xticks([])
                     ax.set_yticks([])
                     ax2_w.set_yticks([])
+                    ax3_w.set_yticks([])
                 else:
                     ax.axis("off")
 
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
     # =========================================================
     # SAVE OR SHOW
@@ -232,7 +245,7 @@ def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, trans
         current_ax.imshow(fov_masks[i].detach().cpu().numpy(), cmap="gray")
         current_ax.set_title(f"FOV {i + 1}")
         current_ax.axis("off")
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust layout to prevent suptitle overlap
+    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust layout to prevent suptitle overlap
     # plt.show()
 
     # Albedo values for the first frame
@@ -245,7 +258,7 @@ def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, trans
         )
         current_ax.set_title(f"FOV {i + 1}")
         current_ax.axis("off")
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     # plt.show()
 
     # Depth values for the first frame
@@ -262,7 +275,7 @@ def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, trans
         )  # Assuming max depth of 10m based on 10.0/255.0 scaling
         current_ax.set_title(f"FOV {i + 1}")
         current_ax.axis("off")
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     # plt.show()
 
     # Transients
@@ -275,7 +288,7 @@ def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, trans
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Normalized Amplitude")
         current_ax.grid(True)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     # plt.show()
 
     # Arrival Rates
@@ -289,7 +302,7 @@ def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, trans
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Rate (photons/bin)")
         current_ax.grid(True)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     # plt.show()
 
     # Time Stamp Histograms (EWH)
@@ -303,7 +316,7 @@ def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, trans
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Photon Counts")
         current_ax.grid(True)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
 
@@ -326,7 +339,7 @@ def plot_edh_per_pixel(
         current_ax.imshow(fov_masks[i].detach().cpu().numpy(), cmap="gray")
         current_ax.set_title(f"FOV {i + 1}")
         current_ax.axis("off")
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust layout to prevent suptitle overlap
+    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust layout to prevent suptitle overlap
     plt.show()
 
     # Albedo values for the first frame
@@ -339,7 +352,7 @@ def plot_edh_per_pixel(
         )
         current_ax.set_title(f"FOV {i + 1}")
         current_ax.axis("off")
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
     # Depth values for the first frame
@@ -352,7 +365,7 @@ def plot_edh_per_pixel(
         )  # Assuming max depth of 10m based on 10.0/255.0 scaling
         current_ax.set_title(f"FOV {i + 1}")
         current_ax.axis("off")
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
     # Transients
@@ -365,7 +378,7 @@ def plot_edh_per_pixel(
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Normalized Amplitude")
         # current_ax.grid(True)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
     # Arrival Rates
@@ -379,7 +392,7 @@ def plot_edh_per_pixel(
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Rate (photons/bin)")
         # current_ax.grid(True)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
     # Time Stamp Histograms
@@ -407,5 +420,5 @@ def plot_edh_per_pixel(
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Normalized Photon Counts")
         # current_ax.grid(True)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()

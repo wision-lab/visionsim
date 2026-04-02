@@ -72,18 +72,18 @@ def run_simulation_scenario(camera, new_config, scenario_name, output_dir, spad_
         transients,
         arrival_rates,
         ewh_list,
-        save_path=output_path,  # Save instead of show
+        # save_path=output_path,  # Save instead of show
     )
 
 
 if __name__ == "__main__":
     data_dir = Path("examples/renders/scene1/")
     # config_path = "visionsim/emulate/aspc/examples/active_spc_demo.yaml"
-    config_path = "visionsim/emulate/aspc/examples/config_ADAPS_spc.yaml"
+    config_path = "visionsim/emulate/aspc/examples/active_spc_demo.yaml"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     camera = Camera(data_dir, config_path, device)
 
-    output_dir = "results_comparison_1_ADAPS"
+    output_dir = "results_active_spc_demo"
     os.makedirs(output_dir, exist_ok=True)
 
     # --- AUTOMATIC FOV GENERATION ---
@@ -111,35 +111,35 @@ if __name__ == "__main__":
     }
     run_simulation_scenario(camera, cfg1, "1_High_Fidelity", output_dir, spad_grid_shape)
 
-    # Scenario 2: Photon Starved (Low SNR)
-    # Reduced laser power significantly. Depth estimation should become noisy/patchy.
-    # Traditional simulators would still show perfect depth here!
-    cfg2 = {
-        "active_source": {"pulsed_laser": {**BASE_PULSED, "avg_watts": 0.0005 * ureg.watt}},
-        "histogrammer": {**BASE_HIST, "n_pulses": 2000},
-        "ambient_source": {"sun": {**BASE_SUN, **BASE_LIGHT_CONDITIONS}},
-    }
-    run_simulation_scenario(camera, cfg2, "2_Photon_Starved", output_dir, spad_grid_shape)
+    # # Scenario 2: Photon Starved (Low SNR)
+    # # Reduced laser power significantly. Depth estimation should become noisy/patchy.
+    # # Traditional simulators would still show perfect depth here!
+    # cfg2 = {
+    #     "active_source": {"pulsed_laser": {**BASE_PULSED, "avg_watts": 0.0005 * ureg.watt}},
+    #     "histogrammer": {**BASE_HIST, "n_pulses": 2000},
+    #     "ambient_source": {"sun": {**BASE_SUN, **BASE_LIGHT_CONDITIONS}},
+    # }
+    # run_simulation_scenario(camera, cfg2, "2_Photon_Starved", output_dir, spad_grid_shape)
 
-    # Scenario 3: High Ambient Interference
-    # Standard laser power, but very intense background light.
-    # This floods the histogram with noise, burying the signal peak.
-    cfg3 = {
-        "active_source": {"pulsed_laser": {**BASE_PULSED, "avg_watts": 0.01 * ureg.watt}},
-        "histogrammer": {**BASE_HIST},
-        "ambient_source": {
-            "sun": {**BASE_SUN, **BASE_LIGHT_CONDITIONS, "intensity": 1.0e28 * ureg.watt / ureg.meter**2}
-        },
-    }
-    # Alternatively, keep intensity same but increase aperture or exposure if sun scaling is weird physically
-    run_simulation_scenario(camera, cfg3, "3_High_Ambient", output_dir, spad_grid_shape)
+    # # Scenario 3: High Ambient Interference
+    # # Standard laser power, but very intense background light.
+    # # This floods the histogram with noise, burying the signal peak.
+    # cfg3 = {
+    #     "active_source": {"pulsed_laser": {**BASE_PULSED, "avg_watts": 0.01 * ureg.watt}},
+    #     "histogrammer": {**BASE_HIST},
+    #     "ambient_source": {
+    #         "sun": {**BASE_SUN, **BASE_LIGHT_CONDITIONS, "intensity": 1.0e28 * ureg.watt / ureg.meter**2}
+    #     },
+    # }
+    # # Alternatively, keep intensity same but increase aperture or exposure if sun scaling is weird physically
+    # run_simulation_scenario(camera, cfg3, "3_High_Ambient", output_dir, spad_grid_shape)
 
-    # Scenario 4: ADAPS Demo
-    cfg4 = {
-        "active_source": {"pulsed_laser": {**BASE_PULSED}},
-        "histogrammer": {**BASE_HIST},
-        "ambient_source": {"sun": {**BASE_SUN, **BASE_LIGHT_CONDITIONS}},
-    }
-    run_simulation_scenario(camera, cfg4, "ADAPS_demo", output_dir, spad_grid_shape)
+    # # Scenario 4: ADAPS Demo
+    # cfg4 = {
+    #     "active_source": {"pulsed_laser": {**BASE_PULSED}},
+    #     "histogrammer": {**BASE_HIST},
+    #     "ambient_source": {"sun": {**BASE_SUN, **BASE_LIGHT_CONDITIONS}},
+    # }
+    # run_simulation_scenario(camera, cfg4, "ADAPS_demo", output_dir, spad_grid_shape)
 
-    print("All scenarios completed. Check the 'results_comparison' folder.")
+    # print("All scenarios completed. Check the 'results_comparison' folder.")

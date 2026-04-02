@@ -262,6 +262,8 @@ class HistogrammerBase:
         # Identify indices where current arrivals occurred
         current_arrivals_indices = torch.nonzero(buffer[n_tbins:], as_tuple=True)[0] + n_tbins
 
+        # print("current_arrivals_indices: ", current_arrivals_indices.shape)
+
         for idx in current_arrivals_indices:
             # Check for previous photon detection within the dead time window
             start_check = int(max(idx - dead_time_bins, 0))
@@ -350,6 +352,8 @@ class Histogrammer(HistogrammerBase):
         phi_bar = torch.clamp(phi_bar, min=0.0)
         prob_detection = 1.0 - torch.exp(-phi_bar)
         prob_detection = torch.clamp(prob_detection, 0.0, 1.0)
+
+        # print("prob_detection", prob_detection.min(), prob_detection.max(), prob_detection.mean())
 
         for n_ in tqdm(range(n_pulses), desc="Simulating Pixel EWH"):
             detections = torch.bernoulli(prob_detection)

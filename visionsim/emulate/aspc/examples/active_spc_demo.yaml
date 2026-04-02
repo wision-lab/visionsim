@@ -6,8 +6,8 @@ histogrammer:
   bin_width: !Quantity 0.014 meters
   pixel_fov_list: [[0, 0.1, 0, 0.1], [0, 0.1, 0.1, 0.2], [0, 0.1, 0.2, 0.3], [0, 0.1, 0.3, 0.4]]
   vignette: false 
-  n_pulses: 10000
-  dead_time_s: !Quantity 0 seconds
+  n_pulses: 1000
+  dead_time_s: !Quantity 0 nanoseconds
   free_running: False
 
 # Active Light Source 
@@ -17,10 +17,10 @@ active_source:
     wavelength: !Quantity 940.0 nanometers            # nanometers
     frequency: !Quantity 10.0 megahertz               # hertz
     pulse_width: !Quantity 1.5 nanoseconds            # seconds
-    avg_watts: !Quantity 0.01 watts                    # watts
+    avg_watts: !Quantity 0.001 watts                    # watts
     pulse_shape: "gaussian"         # "gaussian", "square", or "custom" 
     # pulse_shape_custom: "lambda x: np.sinc(x / 3)"
-    pulse_shape_custom: "np.array([0,1,2,3,4,5,6,5,4,3,2,1,0])"
+    pulse_shape_custom: [0,1,2,3,4,5,6,5,4,3,2,1,0]
 
 # Ambient Light Sources 
 ambient_source:
@@ -33,7 +33,7 @@ ambient_source:
     intensity: !Quantity 3.828e26 watt / meter**2      # watts per square meter
 # Sensor
 sensor:
-  size: [100, 100]          # [height, width]
+  size: [5, 5]          # [height, width]
   pixel_pitch: !Quantity 10.0 micrometer           # meters
   f_number: !Quantity 1.4         # dimensionless
-  fov: !Quantity [66 degree, 44 degree]
+  fov: !Quantity [90.5 degree, 90.5 degree]
