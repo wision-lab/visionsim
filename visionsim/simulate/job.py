@@ -82,6 +82,8 @@ def render_job(
         client.unbind_camera()
     if config.use_motion_blur is not None:
         client.use_motion_blur(config.use_motion_blur)
+    if config.camera_offset is not None:
+        client.offset_camera(config.camera_offset)
 
     client.move_keyframes(scale=config.keyframe_multiplier)
 

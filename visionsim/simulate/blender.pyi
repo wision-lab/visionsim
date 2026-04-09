@@ -856,6 +856,15 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
+    @validate_camera_moved
+    def exposed_offset_camera(self, offset: npt.ArrayLike) -> None:
+        """Move camera by a given vector in its local coordinate frame.
+
+        Args:
+            offset (npt.ArrayLike): Amount to offset by (x, y, z) in local coordinates.
+        """
+
+    @require_initialized_service
     def exposed_set_camera_keyframe(self, frame_num: int, matrix: npt.ArrayLike | None = None) -> None:
         """Set camera keyframe at given frame number.
         If camera matrix is not supplied, currently set camera position/rotation/scale will be used,
@@ -1597,6 +1606,14 @@ class BlenderClient:
 
         Args:
             angle: Relative amount to rotate by (clockwise, in radians).
+        """
+
+    @type_check_only
+    def offset_camera(self, offset: npt.ArrayLike) -> None:
+        """Move camera by a given vector in its local coordinate frame.
+
+        Args:
+            offset (npt.ArrayLike): Amount to offset by (x, y, z) in local coordinates.
         """
 
     @type_check_only
@@ -2417,6 +2434,14 @@ class BlenderClients(tuple):
 
         Args:
             angle: Relative amount to rotate by (clockwise, in radians).
+        """
+
+    @type_check_only
+    def offset_camera(self, offset: npt.ArrayLike) -> None:
+        """Move camera by a given vector in its local coordinate frame.
+
+        Args:
+            offset (npt.ArrayLike): Amount to offset by (x, y, z) in local coordinates.
         """
 
     @type_check_only
