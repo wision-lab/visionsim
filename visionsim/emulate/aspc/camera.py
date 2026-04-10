@@ -111,6 +111,8 @@ class Camera:
                 f"Bin width {config['histogrammer']['bin_width']} x number of bins {config['histogrammer']['n_bins']} is "
                 f"{config['histogrammer']['bin_width'] * config['histogrammer']['n_bins']}, which is greater than max resolvable depth {max_resolvable_depth}"
             )
+        # if config["histogrammer"]["fast_sim"] and not (config["histogrammer"]["free_running"]):
+        #     raise ValueError("histogrammer.fast_sim = True is only supported for histogrammer.free_running = True mode")
 
     def _get_light_conditions_from_string(self, condition_str):
         """Convert string to LightConditions enum value."""
@@ -236,6 +238,7 @@ class Camera:
             self.histogrammer.n_bins,
             self.histogrammer.free_running,
             dead_time_bins,
+            self.histogrammer.fast_sim
         )
         return ewh_list
 

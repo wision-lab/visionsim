@@ -88,24 +88,25 @@ if __name__ == "__main__":
 
     # --- AUTOMATIC FOV GENERATION ---
     sensor_h, sensor_w = camera.sensor.h, camera.sensor.w
-    k_h, k_w = 4, 4
-    s_h, s_w = 2, 2
+    k_h, k_w = 1, 1
+    s_h, s_w = 1, 1
     generated_fovs = generate_sliding_window_fovs((sensor_h, sensor_w), (k_h, k_w), (s_h, s_w))
     grid_rows = len(range(0, sensor_h - k_h + 1, s_h))
     grid_cols = len(range(0, sensor_w - k_w + 1, s_w))
     spad_grid_shape = (grid_rows, grid_cols)
+    
     # -------------------------------------------------
 
     # --- DEFINE SCENARIOS ---
     BASE_PULSED = {"enabled": True}
     BASE_SUN = {"enabled": True}
-    BASE_LIGHT_CONDITIONS = {"light_conditions": "AVERAGE_SUNLIGHT"}
+    BASE_LIGHT_CONDITIONS = {"light_conditions": "BRIGHT_SUNLIGHT"}
     BASE_HIST = {"pixel_fov_list": generated_fovs}
 
     # Scenario 1: High Fidelity (Your current "nice" settings)
     # Good laser power, average sun
     cfg1 = {
-        "active_source": {"pulsed_laser": {**BASE_PULSED, "avg_watts": 0.05 * ureg.watt}},
+        "active_source": {"pulsed_laser": {**BASE_PULSED, "avg_watts": 0.001 * ureg.watt}},
         "histogrammer": {**BASE_HIST, "n_pulses": 10000},
         "ambient_source": {"sun": {**BASE_SUN, **BASE_LIGHT_CONDITIONS}},
     }

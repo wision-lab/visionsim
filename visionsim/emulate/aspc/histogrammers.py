@@ -11,6 +11,243 @@ from visionsim.emulate.aspc.units import validate_units
 from visionsim.emulate.aspc.utils import get_irradiance_with_fov, ureg
 
 
+def calculate_distorted_transient(phi_bar, dead_time_bins, n_hist_bins):
+  r""" PyTorch function translated from MATLAB/NumPy code from https://github.com/Goyal-STIR-Group/HighFluxSPL.
+  Function generates the distorted transient given input as the true transient and deadtime.
+
+  Citation reference:
+  J. Rapp, Y. Ma, R. M. A. Dawson and V. K. Goyal, "Dead Time Compensation for High-Flux Ranging," 
+  in IEEE Transactions on Signal Processing, vol. 67, no. 13, pp. 3471-3486, 1 July1, 2019, doi: 10.1109/TSP.2019.2914891.
+  """
+  num_bins = phi_bar.shape[-1]
+  
+  # FIX: Wrap the dead time to ensure it doesn't exceed the histogram bounds
+  # We use int() to ensure we don't get tensor-type mismatch issues with the modulo
+  dt_bins_wrapped = int(dead_time_bins) % int(n_hist_bins)
+
+  cumulative_transient = torch.cumsum(phi_bar, dim=-1)
+  total_photons = torch.sum(phi_bar, dim=-1, keepdim=True)
+
+  transition_matrix = torch.zeros((num_bins, num_bins), dtype=phi_bar.dtype, device=phi_bar.device)
+
+  for bin_idx in range(num_bins):
+    if bin_idx + dt_bins_wrapped < n_hist_bins:
+      # Use .clone() to prevent autograd issues with in-place modifications if training a model
+      survival_exponent = (cumulative_transient + total_photons - cumulative_transient[bin_idx + dt_bins_wrapped : bin_idx + dt_bins_wrapped + 1]).clone()
+      survival_exponent[bin_idx + dt_bins_wrapped + 1 :] = survival_exponent[bin_idx + dt_bins_wrapped + 1 :] - total_photons
+      
+      transition_matrix[bin_idx, :] = phi_bar * torch.exp(-survival_exponent) / (1 - torch.exp(-total_photons)) / (torch.sum(phi_bar * torch.exp(-survival_exponent) / (1 - torch.exp(-total_photons))) + 0.0000000000001)
+    else:
+      survival_exponent = (cumulative_transient + total_photons - cumulative_transient[bin_idx + dt_bins_wrapped - n_hist_bins : bin_idx + dt_bins_wrapped - n_hist_bins + 1]).clone()
+      survival_exponent[bin_idx + dt_bins_wrapped - n_hist_bins + 1 :] = survival_exponent[bin_idx + dt_bins_wrapped - n_hist_bins + 1 :] - total_photons
+      
+      transition_matrix[bin_idx, :] = phi_bar * torch.exp(-survival_exponent) / (1 - torch.exp(-total_photons)) / (torch.sum(phi_bar * torch.exp(-survival_exponent) / (1 - torch.exp(-total_photons))) + 0.0000000000001)
+
+  if not total_photons.item():
+     return phi_bar
+
+  eigenvalues, eigenvectors = torch.linalg.eig(transition_matrix.T)
+
+  principal_eigen_idx = torch.argmax(torch.abs(eigenvalues))
+  # No need to extract val, just the vectors
+  principal_eigen_vec = eigenvectors[:, principal_eigen_idx].real
+
+  if principal_eigen_vec[0] < 0:
+    principal_eigen_vec = -1 * principal_eigen_vec
+
+  distorted_transient = principal_eigen_vec * 1.0
+  distorted_transient = distorted_transient / (torch.sum(distorted_transient))
+
+  return distorted_transient
+
+
+
+def calculate_distorted_transient_sync(
+    phi_bar: torch.Tensor,
+    dead_time_bins: int,
+    n_hist_bins: int,
+) -> torch.Tensor:
+    """
+    Synchronous forward model for pile-up distortion (single-hit and multi-hit).
+ 
+    Models the detection probability distribution for a synchronous (gated) SPAD
+    where the detector resets at each cycle boundary. Dead time never wraps across
+    cycles.
+ 
+    - Single-hit mode: set dead_time_bins >= n_hist_bins
+    - Multi-hit mode:  set dead_time_bins to the actual detector dead time
+ 
+    Based on the classical Coates pile-up model generalized to multi-hit operation.
+ 
+    Args:
+        phi_bar:         Arrival rates per bin (shape: [n_hist_bins]).
+        dead_time_bins:  Dead time in number of bins. For single-hit (first-photon-wins),
+                         pass dead_time_bins >= n_hist_bins.
+        n_hist_bins:     Number of histogram bins per cycle.
+ 
+    Returns:
+        Normalized distorted transient (probability distribution, sums to 1).
+    """
+    device = phi_bar.device
+    dtype = phi_bar.dtype
+ 
+    # Per-bin detection probability: p_i = 1 - exp(-r_i)
+    p_detect = 1.0 - torch.exp(-torch.clamp(phi_bar[:n_hist_bins], min=0.0))
+ 
+    # prob_live[i]   = probability the detector is not in dead time at bin i
+    # prob_detect[i] = probability of actually registering a photon at bin i
+    prob_detect = torch.zeros(n_hist_bins, device=device, dtype=dtype)
+ 
+    # Cycle start: detector is always live (synchronous reset)
+    prob_detect[0] = p_detect[0]
+ 
+    for i in range(1, n_hist_bins):
+        # Detector is live at bin i iff no detection occurred in
+        # bins [max(0, i - dead_time_bins) .. i-1]
+        start = max(0, i - dead_time_bins)
+        prob_live_i = torch.prod(1.0 - prob_detect[start:i])
+        prob_detect[i] = prob_live_i * p_detect[i]
+ 
+    # Normalize to a proper distribution
+    total = prob_detect.sum()
+    if total > 0:
+        distorted = prob_detect / total
+    else:
+        distorted = prob_detect
+ 
+    return distorted
+ 
+def batch_distorted_transient_sync(
+    phi_bar: torch.Tensor,
+    dead_time_bins: int,  # kept for API compatibility, ignored
+    n_hist_bins: int,
+) -> torch.Tensor:
+    """
+    Batched single-hit synchronous forward model (Coates).
+    First photon wins — rest of cycle is dead.
+    """
+    p_detect = 1.0 - torch.exp(-torch.clamp(phi_bar[:, :n_hist_bins], min=0.0))
+
+    survival = torch.ones_like(p_detect)
+    survival[:, 1:] = torch.cumprod(1.0 - p_detect[:, :-1], dim=-1)
+
+    prob_detect = p_detect * survival
+
+    total = prob_detect.sum(dim=-1, keepdim=True)
+    distorted = prob_detect / (total + 1e-12)
+
+    return distorted
+
+def batch_distorted_transient_async(
+    phi_bar: torch.Tensor,
+    dead_time_bins: int,
+    n_hist_bins: int,
+    n_iterations: int = 100,
+) -> torch.Tensor:
+    """
+    Batched asynchronous (free-running) forward model using power iteration.
+
+    Replaces the per-pixel eigendecomposition with batched power iteration
+    to find the stationary distribution of the Markov chain.
+
+    Args:
+        phi_bar: shape (N, n_hist_bins) — arrival rates for N pixels.
+        dead_time_bins: dead time in bins (wraps around cycle boundary).
+        n_hist_bins: number of bins per cycle.
+        n_iterations: number of power iteration steps.
+
+    Returns:
+        shape (N, n_hist_bins) — normalized distorted transients.
+    """
+    N = phi_bar.shape[0]
+    device = phi_bar.device
+    dtype = phi_bar.dtype
+
+    dt = int(dead_time_bins) % int(n_hist_bins)
+
+    # (N, B)
+    phi = torch.clamp(phi_bar[:, :n_hist_bins], min=0.0)
+    cum_phi = torch.cumsum(phi, dim=-1)                # (N, B)
+    total = phi.sum(dim=-1, keepdim=True)               # (N, 1)
+
+    # Handle zero-flux pixels
+    zero_mask = (total.squeeze(-1) == 0)
+    if zero_mask.all():
+        return phi
+
+    # Build transition matrices: T[n, i, j] for all pixels
+    # T[i, j] = phi[j] * exp(-survival_exponent[i,j]) / (1 - exp(-total))
+    # survival_exponent depends on whether i + dt wraps around
+
+    # Precompute denominator: 1 - exp(-total), shape (N, 1, 1)
+    denom = (1.0 - torch.exp(-total)).unsqueeze(-1)     # (N, 1, 1)
+
+    # Build survival exponents for all (i, j) pairs
+    # indices: i = row (detection bin), j = column (next detection bin)
+    i_idx = torch.arange(n_hist_bins, device=device)     # (B,)
+    j_idx = torch.arange(n_hist_bins, device=device)     # (B,)
+
+    # Wrap point for each row: (i + dt) mod B
+    wrap_point = (i_idx + dt) % n_hist_bins               # (B,)
+
+    # For each row i, the survival exponent at column j is:
+    #   cum_phi[j] + total - cum_phi[wrap_point[i]]    (base)
+    #   then subtract total for bins after wrap_point[i] (if no wrap)
+    #   or before wrap_point[i] (if wrap)
+
+    # cum_phi at wrap points: (N, B) -> gather -> (N, B, 1)
+    cum_at_wrap = cum_phi[:, wrap_point].unsqueeze(-1)    # (N, B, 1)
+
+    # cum_phi broadcast: (N, 1, B)
+    cum_j = cum_phi.unsqueeze(1)                          # (N, 1, B)
+
+    # Base survival exponent: (N, B, B)
+    surv_exp = cum_j + total.unsqueeze(-1) - cum_at_wrap
+
+    # Correction: subtract total for bins past the wrap point
+    # For row i, bins j where j > wrap_point[i] (no-wrap case: i+dt < B)
+    # or j > wrap_point[i] (wrap case: i+dt >= B, subtract for j > wrap)
+    wrap_expanded = wrap_point.unsqueeze(-1)               # (B, 1)
+    j_expanded = j_idx.unsqueeze(0)                        # (1, B)
+
+    if dt > 0:
+        # Mask where we need to subtract total
+        # When i + dt < n_hist_bins: subtract for j in (wrap_point[i], ...]
+        # When i + dt >= n_hist_bins: wrap_point < i, subtract for j > wrap AND j <= i
+        no_wrap_mask = (i_idx + dt) < n_hist_bins          # (B,)
+
+        # For no-wrap rows: subtract total where j > wrap_point[i]
+        subtract_mask_no_wrap = (j_expanded > wrap_expanded) & no_wrap_mask.unsqueeze(-1)
+
+        # For wrap rows: subtract total where j > wrap_point[i] AND we haven't wrapped past
+        subtract_mask_wrap = (j_expanded > wrap_expanded) & (~no_wrap_mask.unsqueeze(-1))
+
+        subtract_mask = subtract_mask_no_wrap | subtract_mask_wrap  # (B, B)
+        surv_exp = surv_exp - total.unsqueeze(-1) * subtract_mask.unsqueeze(0).float()
+
+    # Transition probs: phi[j] * exp(-surv_exp) / denom
+    # phi broadcast: (N, 1, B)
+    phi_j = phi.unsqueeze(1)                               # (N, 1, B)
+    T = phi_j * torch.exp(-surv_exp) / (denom + 1e-15)    # (N, B, B)
+
+    # Normalize rows to sum to 1 (proper stochastic matrix)
+    T = T / (T.sum(dim=-1, keepdim=True) + 1e-15)
+
+    # Power iteration to find stationary distribution
+    # v = v @ T repeatedly; start with uniform
+    v = torch.ones(N, 1, n_hist_bins, device=device, dtype=dtype) / n_hist_bins
+
+    for _ in range(n_iterations):
+        v = torch.bmm(v, T)                               # (N, 1, B)
+        v = v / (v.sum(dim=-1, keepdim=True) + 1e-15)
+
+    distorted = v.squeeze(1)                               # (N, B)
+
+    # Zero-flux pixels get uniform or zero
+    distorted[zero_mask] = 0.0
+
+    return distorted
+
 class HistogrammerBase:
     """
     Base class for histogramming operations in SPAD sensors.
@@ -292,7 +529,8 @@ class HistConfig:
     vignette: bool = True
     n_pulses: int = 100
     dead_time_s: Quantity = 10e-9 * ureg.second
-    free_running: bool = False
+    free_running: bool = True
+    fast_sim: bool = True
 
     def validate(self):
         if self.min_depth < 0 * ureg.meter:
@@ -324,7 +562,7 @@ class Histogrammer(HistogrammerBase):
             setattr(self, k, v)
 
     def simulate_pixel_ewh(
-        self, phi_bar: torch.Tensor, n_pulses: int, n_hist_bins: int, free_running: bool, dead_time_bins: int
+        self, phi_bar: torch.Tensor, n_pulses: int, n_hist_bins: int, free_running: bool, dead_time_bins: int, fast_sim: bool = True,
     ) -> torch.Tensor:
         """
         Simulates the Equi-Width Histogram (EWH) for a single pixel.
@@ -341,6 +579,17 @@ class Histogrammer(HistogrammerBase):
         """
         photon_hist = torch.zeros(n_hist_bins, dtype=torch.float32, device=phi_bar.device)
         n_tbins = phi_bar.shape[-1]
+
+        # if fast_sim:
+
+        #     if free_running:
+        #         photon_hist_prob = calculate_distorted_transient(phi_bar, dead_time_bins, n_hist_bins)
+        #     else:
+        #         photon_hist_prob = calculate_distorted_transient_sync(phi_bar, dead_time_bins, n_hist_bins)
+
+        #     photon_hist = photon_hist_prob * n_pulses
+
+        #     return photon_hist
 
         # Buffer to store arrivals for dead-time checking
         # First half for previous pulse arrivals, second half for current pulse arrivals
@@ -380,8 +629,9 @@ class Histogrammer(HistogrammerBase):
         arrival_rates: torch.Tensor,
         n_pulses: int,
         n_hist_bins: int,
-        free_running: bool = False,
+        free_running: bool = True,
         dead_time_bins: int = 0,
+        fast_sim: bool = True,
     ) -> list[torch.Tensor]:
         """
         Simulates the Equi-Width Histogram (EWH) for all pixels/FOVs.
@@ -396,10 +646,23 @@ class Histogrammer(HistogrammerBase):
         Returns:
             list[torch.Tensor]: A list of tensors, where each tensor is the EWH for a pixel.
         """
+
+        if fast_sim:
+            if free_running:
+                photon_hist_probs = batch_distorted_transient_async(
+                    arrival_rates, dead_time_bins, n_hist_bins
+                )
+            else:
+                photon_hist_probs = batch_distorted_transient_sync(
+                    arrival_rates, dead_time_bins, n_hist_bins
+                )
+            photon_hists = photon_hist_probs * n_pulses
+            return [photon_hists[i] for i in range(photon_hists.shape[0])]
+
         ewh_pixel_list = []
         for p_idx in tqdm(range(arrival_rates.shape[0]), desc="Simulating EWH"):
             ewh_pixel_list.append(
-                self.simulate_pixel_ewh(arrival_rates[p_idx], n_pulses, n_hist_bins, free_running, dead_time_bins)
+                self.simulate_pixel_ewh(arrival_rates[p_idx], n_pulses, n_hist_bins, free_running, dead_time_bins, fast_sim=fast_sim)
             )
         return ewh_pixel_list
 
@@ -438,7 +701,7 @@ class Histogrammer(HistogrammerBase):
         arrival_rates: torch.Tensor,
         n_pulses: int,
         n_hist_bins: int,
-        free_running: bool = False,
+        free_running: bool = True,
         dead_time_bins: int = 0,
     ) -> torch.Tensor:
         """
@@ -564,7 +827,7 @@ class HistogrammerEDH(HistogrammerBase):
         arrival_rates: torch.Tensor,
         n_pulses: int,
         n_hist_bins: int,
-        free_running: bool = False,
+        free_running: bool = True,
         dead_time_bins: int = 0,
     ) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
         """

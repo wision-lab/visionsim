@@ -6,11 +6,12 @@ histogrammer:
   bin_width: !Quantity 0.014 meters
   pixel_fov_list: [[0, 0.1, 0, 0.1], [0, 0.1, 0.1, 0.2], [0, 0.1, 0.2, 0.3], [0, 0.1, 0.3, 0.4]]
   vignette: false 
-  n_pulses: 1000
-  dead_time_s: !Quantity 0 nanoseconds
+  n_pulses: 10000
+  dead_time_s: !Quantity 75 nanoseconds
   free_running: False
+  fast_sim: True
 
-# Active Light Source 
+# Active Light Source
 active_source:
   pulsed_laser:
     enabled: true
@@ -27,13 +28,14 @@ ambient_source:
   sun:
     enabled: true
     temperature: !Quantity 5778.0 kelvin            # kelvin
-    light_conditions: "AVERAGE_SUNLIGHT"  # from LightConditions enum
+    light_conditions: "BRIGHT_SUNLIGHT"  # from LightConditions enum
     lambda_pass: !Quantity 550.0 nanometers             # nanometers
     delta_lambda: !Quantity 10.0 nanometers             # nanometers
     intensity: !Quantity 3.828e26 watt / meter**2      # watts per square meter
+
 # Sensor
 sensor:
-  size: [5, 5]          # [height, width]
+  size: [10, 10]          # [height, width]
   pixel_pitch: !Quantity 10.0 micrometer           # meters
   f_number: !Quantity 1.4         # dimensionless
   fov: !Quantity [90.5 degree, 90.5 degree]
