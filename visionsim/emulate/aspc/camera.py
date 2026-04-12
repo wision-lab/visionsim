@@ -30,7 +30,9 @@ class Camera:
         self.requires_grad = requires_grad
         self.albedo_frames, self.intensity_frames, self.depth_frames = self._load_data(data_path, requires_grad)
         self._init_components_from_config(self.config)
-
+        self.transients = None
+        self.arrival_rates = None
+        self.ambient_offsets = None
     def _load_config(self, config_path):
         """Load configuration from YAML file"""
         yaml = YAML()
@@ -201,7 +203,7 @@ class Camera:
         irradiance = self._get_signal()
         offsets = self._get_ambient_offset()
         fov_masks = self.get_fov_masks()
-        return self.histogrammer.calculate_transients(
+        transients, ambient_offsets = self.histogrammer.calculate_transients(
             irradiance,
             self.depth_frames,
             offsets,
@@ -214,26 +216,30 @@ class Camera:
             self.sensor.h,
             self.sensor.omega,
         )
+        self.transients = transients
+        self.ambient_offsets = ambient_offsets
+        return transients, ambient_offsets
 
     def get_arrival_rates(self):
         """Get arrival rates from histogrammer"""
-        transients, ambient_offsets = self.get_transients()
+    
         bin_width = 2 * tof2depth(1 / self.active_source.frequency) / self.histogrammer.n_bins
         _, irf = self.active_source.get_kernel(bin_width, None)
         irf_tensor = torch.tensor(irf, dtype=torch.float32, device=self.device)
         arrival_rates = self.histogrammer.calculate_arrival_rates(
-            irf_tensor, transients, ambient_offsets, self.histogrammer.n_bins
+            irf_tensor, self.transients, self.ambient_offsets, self.histogrammer.n_bins
         )
         # self.active_source.plot_kernel(bin_width)
+        self.arrival_rates = arrival_rates
         return arrival_rates
 
     def get_ewh(self):
         """Get EWH from histogrammer"""
-        arrival_rates = self.get_arrival_rates()
+       
         dead_time_bins = int(self.histogrammer.dead_time_s * self.histogrammer.n_bins*self.active_source.frequency)
         
         ewh_list = self.histogrammer.simulate_ewh(
-            arrival_rates,
+            self.arrival_rates,
             self.histogrammer.n_pulses,
             self.histogrammer.n_bins,
             self.histogrammer.free_running,
