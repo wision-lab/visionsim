@@ -83,8 +83,13 @@ def render_job(
     if config.use_motion_blur is not None:
         client.use_motion_blur(config.use_motion_blur)
     if config.camera_offset is not None:
-        client.offset_camera(config.camera_offset)
-
+        for frame_number in client.common_animation_range():
+            client.set_current_frame(frame_number)
+            client.set_camera_keyframe(frame_number)
+        for frame_number in client.common_animation_range():
+            client.set_current_frame(frame_number)
+            client.offset_camera(config.camera_offset)
+            client.set_camera_keyframe(frame_number)
     client.move_keyframes(scale=config.keyframe_multiplier)
 
     if output_blend_file is not None:
