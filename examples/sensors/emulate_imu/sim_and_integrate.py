@@ -51,11 +51,11 @@ def sim_and_integrate(
     _, interp_velocities_w = pose_interp(poses_w, times)(interp_times, order=1)
 
     # Get initial velocity in camera frame
-    init_vel_c = interp_poses_w[0][:3, :3].T @ interp_velocities_w[0]
+    init_vel_w = interp_velocities_w[0]
     print(
         f"Found {num_poses} poses, which were interpolated by a factor of {interp_factor} (dt: {dt:.4f} -> {interp_dt:.4f})"
     )
-    print(f"Initial velocity in camera frame: {init_vel_c}")
+    print(f"Initial velocity in world frame: {init_vel_w}")
 
     # IMU noise parameters, scaled by noise_mult from defaults for simplicity
     std_acc = 8e-3 * noise_mult
@@ -85,7 +85,7 @@ def sim_and_integrate(
                         acc_pos=np.array([d["acc_reading"] for d in imu_data]),
                         vel_ang=np.array([d["gyro_reading"] for d in imu_data]),
                         pose_init=interp_poses_w[0],  #  <------- Pose in world frame!!
-                        vel_init=init_vel_c,  #  <------- Velocity in camera frame!!
+                        vel_init=init_vel_w,  #  <------- Velocity in world frame!!
                         gravity=GRAVITY,
                         dt=interp_dt,
                     )

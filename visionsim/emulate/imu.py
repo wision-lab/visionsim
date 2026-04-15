@@ -38,7 +38,8 @@ def imu_integration(
                 Maximum-a-Posteriori Estimation". <https://www.roboticsproceedings.org/rss11/p06.pdf>`_
     """
     pose = np.eye(4) if pose_init is None else np.array(pose_init)
-    vel_pos = np.zeros((3,)) if vel_init is None else np.array(vel_init)
+    vel_pos_w = np.zeros((3,)) if vel_init is None else np.array(vel_init)
+    vel_pos = pose[:3,:3].T @ vel_pos_w   # convert to camera frame
     gravity = np.array([0, 0, -9.8]) if gravity is None else np.array(gravity)
 
     for ap, va in zip(acc_pos, vel_ang):
