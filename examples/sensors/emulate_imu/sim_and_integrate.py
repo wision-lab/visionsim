@@ -36,21 +36,20 @@ def sim_and_integrate(
     # Load dataset and get poses
     dataset = Metadata.from_path(db_path)
     dt = 1.0 / (dataset.fps * dataset.keyframe_scale)
-    poses_c = np.array(dataset.poses)[start:end]
-    num_poses = len(poses_c)
+    poses = np.array(dataset.poses)[start:end]
+    num_poses = len(poses)
 
-    # Convert to world coordinate system
-    poses_w = np.array([tform_camcoord_gl2bl(T) for T in poses_c])
+    # Convert to Blender's coordinate convention (+Z up) for both world and camera frames
+    poses = np.array([tform_camcoord_gl2bl(T) for T in poses])
 
     # Interpolate poses to increase temporal resolution, the render might be 100fps, but an IMU can be 1000Hz
     interp_dt = dt / interp_factor
     times = np.arange(num_poses) * dt
     interp_times = np.arange(num_poses * interp_factor) * interp_dt
-    interp_poses_c = pose_interp(poses_c, times)(interp_times)
-    interp_poses_w = pose_interp(poses_w, times)(interp_times)
-    _, interp_velocities_w = pose_interp(poses_w, times)(interp_times, order=1)
+    interp_poses = pose_interp(poses, times)(interp_times)
+    _, interp_velocities_w = pose_interp(poses, times)(interp_times, order=1)
 
-    # Get initial velocity in camera frame
+    # Get initial velocity in world frame
     init_vel_w = interp_velocities_w[0]
     print(
         f"Found {num_poses} poses, which were interpolated by a factor of {interp_factor} (dt: {dt:.4f} -> {interp_dt:.4f})"
@@ -68,7 +67,7 @@ def sim_and_integrate(
     for _ in range(num_samples):
         imu_data = list(
             emulate_imu(
-                interp_poses_c,  #  <------- Poses in camera frame!!
+                interp_poses,
                 dt=interp_dt,
                 gravity=GRAVITY,
                 std_acc=std_acc,
@@ -84,7 +83,7 @@ def sim_and_integrate(
                     imu_integration(
                         acc_pos=np.array([d["acc_reading"] for d in imu_data]),
                         vel_ang=np.array([d["gyro_reading"] for d in imu_data]),
-                        pose_init=interp_poses_w[0],  #  <------- Pose in world frame!!
+                        pose_init=interp_poses[0],
                         vel_init=init_vel_w,  #  <------- Velocity in world frame!!
                         gravity=GRAVITY,
                         dt=interp_dt,
@@ -106,7 +105,7 @@ def sim_and_integrate(
     if plot_path is not None:
         i, j = tuple(AXIS_IDX[i] for i in plane.lower())
         xlabel, ylabel = AXIS_LABELS[i], AXIS_LABELS[j]
-        gt_positions = poses_w[:, :3, -1]  # use original (down-sampled) ground truth
+        gt_positions = poses[:, :3, -1]  # use original (down-sampled) ground truth
         fig, ax = plt.subplots(1, 1)
         ax.plot(gt_positions[:, i], gt_positions[:, j], color="k", label="Ground Truth")
         for tr in trajectories:

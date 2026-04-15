@@ -7,7 +7,6 @@ import numpy.typing as npt
 from scipy.spatial.transform import Rotation as R
 
 from visionsim.interpolate.pose import pose_interp
-from visionsim.utils.pose import tform_camcoord_gl2bl
 
 
 def imu_integration(
@@ -152,9 +151,6 @@ def emulate_imu(
     std_gyro_discrete = std_gyro / (dt**0.5)
     std_bias_acc_discrete = std_bias_acc * (dt**0.5)
     std_bias_gyro_discrete = std_bias_gyro * (dt**0.5)
-
-    # fix coordinate convention in the pose matrices
-    poses = [tform_camcoord_gl2bl(p) for p in poses]
 
     # get angular velocity (in world coords) and positional acceleration (in camera space)
     times = np.arange(len(poses)) * dt

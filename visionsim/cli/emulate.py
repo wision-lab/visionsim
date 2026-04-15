@@ -357,6 +357,7 @@ def imu(
 
     from visionsim.dataset import Metadata
     from visionsim.emulate.imu import emulate_imu
+    from visionsim.utils.pose import tform_camcoord_gl2bl
 
     if output_file and output_file.exists() and not force:
         raise FileExistsError("Output file already exists.")
@@ -369,6 +370,8 @@ def imu(
     init_bias_acc_ = np.array(ast.literal_eval(init_bias_acc))
     init_bias_gyro_ = np.array(ast.literal_eval(init_bias_gyro))
     poses = Metadata.from_path(input_dir).poses
+    # fix coordinate convention in the pose matrices
+    poses = [tform_camcoord_gl2bl(p) for p in poses]
 
     data_gen = emulate_imu(
         poses,
