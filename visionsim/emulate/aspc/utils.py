@@ -8,9 +8,11 @@ import numpy as np
 import torch
 from pint import UnitRegistry, set_application_registry
 from ruamel.yaml.nodes import ScalarNode, SequenceNode
-from scipy.constants import c, h
+from scipy.constants import h
 
 from visionsim.dataset import Dataset
+
+c = 3*1e8
 
 ureg = UnitRegistry()
 ureg.setup_matplotlib(True)
@@ -145,6 +147,7 @@ def preproc_albedo_intensity_depth_frames(
         )
         print("depth_img min", depth_img.min())
         print("depth_img max", depth_img.max())
+        print("Original depth_img shape: ", depth_img.shape)
 
         # Resize and transform to tensor, scale RGB to [0-1] range
         rgb_img = cv2.resize(rgb_img, (Nc, Nr))

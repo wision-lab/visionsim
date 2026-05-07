@@ -72,7 +72,7 @@ def run_simulation_scenario(camera, new_config, scenario_name, output_dir, spad_
         transients,
         arrival_rates,
         ewh_list,
-        # save_path=output_path,  # Save instead of show
+        save_path=output_path,  # Save instead of show
     )
 
 
@@ -83,13 +83,70 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     camera = Camera(data_dir, config_path, device)
 
-    output_dir = "results_active_spc_demo"
+
+    # ######################################################################################
+
+    # ### High spatial resolution and low temporal resolution settings used for plots
+
+    # ######################################################################################
+
+    # output_dir = "results_active_spc_demo_new_temporalquantized"
+    # os.makedirs(output_dir, exist_ok=True)
+
+    # # --- AUTOMATIC FOV GENERATION ---
+    # sensor_h, sensor_w = camera.sensor.h, camera.sensor.w
+    # k_h, k_w = 4, 4
+    # s_h, s_w = 4, 4
+    # generated_fovs = generate_sliding_window_fovs((sensor_h, sensor_w), (k_h, k_w), (s_h, s_w))
+    # grid_rows = len(range(0, sensor_h - k_h + 1, s_h))
+    # grid_cols = len(range(0, sensor_w - k_w + 1, s_w))
+    # spad_grid_shape = (grid_rows, grid_cols)
+    
+    # # -------------------------------------------------
+
+    # # --- DEFINE SCENARIOS ---
+    # BASE_PULSED = {"enabled": True}
+    # BASE_SUN = {"enabled": True}
+    # BASE_LIGHT_CONDITIONS = {"light_conditions": "BRIGHT_SUNLIGHT"}
+    # BASE_HIST = {"pixel_fov_list": generated_fovs}
+
+    # cfg1 = {
+    #     "active_source": {"pulsed_laser": {**BASE_PULSED, "avg_watts": 0.0000003 * ureg.watt}},
+    #     "histogrammer": {**BASE_HIST, 
+    #                      "n_pulses": 10000, 
+    #                      "max_depth": 15.0*ureg.meters,
+    #                      "n_bins":25,
+    #                      "bin_width":0.6*ureg.meters,
+    #                      "vignette": True,
+    #                      "dead_time_s": 75*ureg.nanoseconds,
+    #                      "free_running": False,
+    #                      "fast_sim": True,
+    #                      },
+    #     "sensor": {
+    #         "size": [256, 256],
+    #         "pixel_pitch": 10.0*ureg.micrometers,
+    #         "f_number": 1.4,
+    #         "fov": [90.5*ureg.degree, 90.5*ureg.degree]
+    #     },
+    #     "ambient_source": {"sun": {**BASE_SUN, **BASE_LIGHT_CONDITIONS}},
+    # }
+    # run_simulation_scenario(camera, cfg1, "1_High_Fidelity", output_dir, spad_grid_shape)
+
+
+
+    ################################################################
+
+    ### High temporal and spatial resolution settings used for plots
+
+    ################################################################
+
+    output_dir = "results_active_spc_demo_new_high_spatiotemporal"
     os.makedirs(output_dir, exist_ok=True)
 
     # --- AUTOMATIC FOV GENERATION ---
     sensor_h, sensor_w = camera.sensor.h, camera.sensor.w
-    k_h, k_w = 1, 1
-    s_h, s_w = 1, 1
+    k_h, k_w = 4, 4
+    s_h, s_w = 4, 4
     generated_fovs = generate_sliding_window_fovs((sensor_h, sensor_w), (k_h, k_w), (s_h, s_w))
     grid_rows = len(range(0, sensor_h - k_h + 1, s_h))
     grid_cols = len(range(0, sensor_w - k_w + 1, s_w))
@@ -103,11 +160,25 @@ if __name__ == "__main__":
     BASE_LIGHT_CONDITIONS = {"light_conditions": "BRIGHT_SUNLIGHT"}
     BASE_HIST = {"pixel_fov_list": generated_fovs}
 
-    # Scenario 1: High Fidelity (Your current "nice" settings)
-    # Good laser power, average sun
     cfg1 = {
-        "active_source": {"pulsed_laser": {**BASE_PULSED, "avg_watts": 0.001 * ureg.watt}},
-        "histogrammer": {**BASE_HIST, "n_pulses": 10000},
+        "active_source": {"pulsed_laser": {**BASE_PULSED, "avg_watts": 0.000000007 * ureg.watt}},
+        # "active_source": {"pulsed_laser": {**BASE_PULSED, "avg_watts": 0.000007 * ureg.watt}}, #To avoid pileup increase the signal flux
+        "histogrammer": {**BASE_HIST, 
+                         "n_pulses": 10000, 
+                         "max_depth": 15.0*ureg.meters,
+                         "n_bins":500,
+                         "bin_width":0.03*ureg.meters,
+                         "vignette": True,
+                         "dead_time_s": 0*ureg.nanoseconds,
+                         "free_running": True,
+                         "fast_sim": True,
+                         },
+        "sensor": {
+            "size": [256, 256],
+            "pixel_pitch": 10.0*ureg.micrometers,
+            "f_number": 1.4,
+            "fov": [90.5*ureg.degree, 90.5*ureg.degree]
+        },
         "ambient_source": {"sun": {**BASE_SUN, **BASE_LIGHT_CONDITIONS}},
     }
     run_simulation_scenario(camera, cfg1, "1_High_Fidelity", output_dir, spad_grid_shape)

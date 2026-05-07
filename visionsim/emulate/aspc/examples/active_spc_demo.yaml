@@ -1,14 +1,14 @@
 # Histogrammer 
 histogrammer:
   min_depth: !Quantity 0.0 meters
-  max_depth: !Quantity 10.0 meters
-  n_bins: 1000
-  bin_width: !Quantity 0.014 meters
+  max_depth: !Quantity 15.0 meters #NOTE: predicted depth and the bin width is computed based on max_depth not from the time period
+  n_bins: 25
+  bin_width: !Quantity 0.6 meters
   pixel_fov_list: [[0, 0.1, 0, 0.1], [0, 0.1, 0.1, 0.2], [0, 0.1, 0.2, 0.3], [0, 0.1, 0.3, 0.4]]
-  vignette: false 
+  vignette: True 
   n_pulses: 10000
   dead_time_s: !Quantity 75 nanoseconds
-  free_running: False
+  free_running: True
   fast_sim: True
 
 # Active Light Source
@@ -35,7 +35,7 @@ ambient_source:
 
 # Sensor
 sensor:
-  size: [10, 10]          # [height, width]
-  pixel_pitch: !Quantity 10.0 micrometer           # meters
+  size: [256, 256]          # [height, width]
+  pixel_pitch: !Quantity 50.0 micrometer           # meters
   f_number: !Quantity 1.4         # dimensionless
   fov: !Quantity [90.5 degree, 90.5 degree]

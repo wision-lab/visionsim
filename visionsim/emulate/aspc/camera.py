@@ -219,6 +219,8 @@ class Camera:
         """Get arrival rates from histogrammer"""
         transients, ambient_offsets = self.get_transients()
         bin_width = 2 * tof2depth(1 / self.active_source.frequency) / self.histogrammer.n_bins
+        print("bin_width inside arrival rates:", bin_width)
+        
         _, irf = self.active_source.get_kernel(bin_width, None)
         irf_tensor = torch.tensor(irf, dtype=torch.float32, device=self.device)
         arrival_rates = self.histogrammer.calculate_arrival_rates(
