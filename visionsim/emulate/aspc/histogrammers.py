@@ -159,6 +159,16 @@ def batch_distorted_transient_async(
     Returns:
         shape (N, n_hist_bins) — normalized distorted transients.
     """
+    # dead_time=0 → every photon is detected; no pile-up distortion.
+    # Consistent with the slow-path simulate_pixel_ewh and simulate_ewh_diff.
+    if dead_time_bins == 0:
+        phi = torch.clamp(phi_bar[:, :n_hist_bins], min=0.0)
+        total = phi.sum(dim=-1, keepdim=True)
+        zero_mask = total.squeeze(-1) == 0
+        result = phi / (total + 1e-12)
+        result[zero_mask] = 0.0
+        return result
+
     N = phi_bar.shape[0]
     device = phi_bar.device
     dtype = phi_bar.dtype

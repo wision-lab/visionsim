@@ -1,0 +1,40 @@
+# Histogrammer
+histogrammer:
+  min_depth: !Quantity 0.0 meters
+  max_depth: !Quantity 600.0 meters
+  n_bins: 150
+  bin_width: !Quantity 4.0 meters
+  pixel_fov_list: [[0, 0.1, 0, 0.1]]  # placeholder; overridden at runtime
+  vignette: False
+  n_pulses: 10000
+  dead_time_s: !Quantity 0 nanoseconds
+  free_running: True
+  fast_sim: False
+
+# Active Light Source
+active_source:
+  pulsed_laser:
+    enabled: true
+    wavelength: !Quantity 940.0 nanometers
+    frequency: !Quantity 0.2 megahertz      # 200 kHz → ~750 m unambiguous range
+    pulse_width: !Quantity 100 nanoseconds
+    avg_watts: !Quantity 0.000000007 watts
+    pulse_shape: "gaussian"
+    pulse_shape_custom: [0,1,2,3,4,5,6,5,4,3,2,1,0]
+
+# Ambient Light Sources
+ambient_source:
+  sun:
+    enabled: true
+    temperature: !Quantity 5778.0 kelvin
+    light_conditions: "BRIGHT_SUNLIGHT"
+    lambda_pass: !Quantity 550.0 nanometers
+    delta_lambda: !Quantity 10.0 nanometers
+    intensity: !Quantity 3.828e26 watt / meter**2
+
+# Sensor
+sensor:
+  size: [1080, 1920]
+  pixel_pitch: !Quantity 10.0 micrometer
+  f_number: !Quantity 1.4
+  fov: !Quantity [90.5 degree, 90.5 degree]

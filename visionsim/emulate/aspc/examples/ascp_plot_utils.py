@@ -52,39 +52,40 @@ def plot_spad_sensor_grid(
     num_fovs = fov_masks.shape[0]
     master_grid = torch.max(fov_masks, dim=0)[0].detach().cpu().numpy()
 
+    # Derive figure width/height from the image shape so landscape images fill the frame.
+    img_h, img_w = master_grid.shape[:2]
+    fig_w = 12.0
+    fig_h = fig_w * img_h / img_w
+
     # 2. Plotting the single FOV grid
-    plt.figure(figsize=(8, 8))
-    plt.imshow(master_grid, cmap="gray")
+    plt.figure(figsize=(fig_w, fig_h))
+    plt.imshow(master_grid, cmap="gray", aspect="auto")
     np.save(parent / "fov_master_grid.npy", master_grid)
     plt.title("Active SPC Scan Grid (Composite FOVs)", fontsize=14)
     plt.axis("off")
     if save_path:
-        plt.savefig(save_combined_fov_img)
+        plt.savefig(save_combined_fov_img, bbox_inches="tight")
     else:
         plt.show()
 
     # 3. OPTIONAL: Overlay the grid on your RGB image for context
-    # (Assuming your rgb_img is a numpy array of shape [H, W, 3])
-    plt.figure(figsize=(10, 10))
-    plt.imshow(depth_frame.cpu().numpy()*master_grid, cmap = "turbo")
-    
-    # plt.imshow(master_grid, cmap="gray", alpha=0.9) # Overlay grid with transparency
-    # plt.title("Projected FOV Grid on Scene", fontsize=14)
+    plt.figure(figsize=(fig_w, fig_h))
+    plt.imshow(depth_frame.cpu().numpy() * master_grid, cmap="turbo", aspect="auto")
     plt.axis("off")
     if save_path:
-        plt.savefig(save_combined_fov_overlay_img)
+        plt.savefig(save_combined_fov_overlay_img, bbox_inches="tight")
     else:
         plt.show()
 
     vmax_depth = depth_frame.cpu().numpy().max()
 
-    plt.figure(figsize=(10, 10))
-    im = plt.imshow(depth_frame.cpu().numpy(), cmap="turbo", vmin = 0, vmax = vmax_depth)
+    plt.figure(figsize=(fig_w, fig_h))
+    im = plt.imshow(depth_frame.cpu().numpy(), cmap="turbo", vmin=0, vmax=vmax_depth, aspect="auto")
     np.save(parent / "Original_Depthmap.npy", depth_frame.cpu().numpy())
     plt.colorbar(im, fraction=0.046, pad=0.04)
     plt.axis("off")
     if save_path:
-        plt.savefig(save_fullres_depth)
+        plt.savefig(save_fullres_depth, bbox_inches="tight")
     else:
         plt.show()
 
@@ -187,16 +188,18 @@ def plot_spad_sensor_grid(
     # =========================================================
     # PLOT 2: OVERLAY
     # =========================================================
-    fig_ov, ax_ov = plt.subplots(1, 2, figsize=(12, 6))
+    # Each subplot shows a full-res landscape image; size two panels side-by-side at the correct aspect ratio.
+    ov_panel_w = fig_w
+    ov_panel_h = ov_panel_w * img_h / img_w
+    fig_ov, ax_ov = plt.subplots(1, 2, figsize=(ov_panel_w * 2, ov_panel_h))
     fig_ov.suptitle(f"Sensor FOV Overlay{scenario_name}", fontsize=16)
 
-    ax_ov[0].imshow(albedo_img, cmap="gray")
+    ax_ov[0].imshow(albedo_img, cmap="gray", aspect="auto")
     np.save(parent / "albedo.npy", albedo_img)
     ax_ov[0].set_title("RGB/Albedo + FOV Grid")
-
     ax_ov[0].axis("off")
 
-    im_ov = ax_ov[1].imshow(depth_img, cmap="turbo", vmin=vmin_depth, vmax=vmax_depth)
+    im_ov = ax_ov[1].imshow(depth_img, cmap="turbo", vmin=vmin_depth, vmax=vmax_depth, aspect="auto")
     ax_ov[1].set_title("High-Res Depth + FOV Grid")
     plt.colorbar(im_ov, ax=ax_ov[1], fraction=0.046, pad=0.04)
     ax_ov[1].axis("off")
@@ -313,10 +316,10 @@ def plot_spad_sensor_grid(
         plt.axis("off")
         print(f"Saving reconstruction to {save_path_recon}...")
         
-        fig_maps.savefig(save_path_recon, dpi=150)
+        fig_maps.savefig(save_path_recon, dpi=150, bbox_inches="tight")
 
         print(f"Saving overlay to {save_path_overlay}...")
-        fig_ov.savefig(save_path_overlay, dpi=150)
+        fig_ov.savefig(save_path_overlay, dpi=150, bbox_inches="tight")
 
         print(f"Saving waveforms to {save_path_waveforms}...")
         fig_wave.savefig(save_path_waveforms, dpi=150)
