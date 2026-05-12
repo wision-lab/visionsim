@@ -25,7 +25,6 @@ from rich.progress import track
 from rich.traceback import install
 
 from visionsim.cli import ffmpeg
-from visionsim.cli.blender import sequence_info
 from visionsim.simulate.blender import BlenderClients
 from visionsim.simulate.config import RenderConfig
 from visionsim.simulate.job import render_job
@@ -258,12 +257,6 @@ def create_datasets(
         progress.wait()
         pool.close()
         pool.join()
-
-    # Gather some metadata about every sequence and save it to a "info.json" file.
-    with multiprocess.Pool(render_config.jobs) as pool:
-        info_fn = partial(sequence_info, keyframe_multiplier=render_config.keyframe_multiplier)
-        sequence_dirs = [get_sequence_dir(blend_file.stem, frame_start) for blend_file, frame_start in sequences]
-        list(pool.imap(info_fn, track(sequence_dirs, description="Gathering Metadata...")))
 
 
 @app.command
