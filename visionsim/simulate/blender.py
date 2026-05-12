@@ -24,13 +24,13 @@ from visionsim.types import FILE
 # Import only when type checking as to not introduce
 # dependency for blender. Block module typechecking.
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Iterable, Iterator
+    from collections.abc import Callable, Collection, Generator, Iterable, Iterator
     from types import TracebackType
 
     import multiprocess  # type: ignore
     import multiprocess.pool  # type: ignore
     import numpy.typing as npt
-    from typing_extensions import Concatenate, ParamSpec, Self
+    from typing_extensions import ParamSpec, Self
 
     from visionsim.types import COLOR_MODES, EXR_CODECS, FILE_FORMATS, UpdateFn  # noqa
 
@@ -109,22 +109,22 @@ COLOR_MODE_CHANNELS = {"BW": 1, "RGB": 3, "RGBA": 4}
 
 
 def require_connected_client(
-    func: Callable[Concatenate[BlenderClient, _P], Any],
-) -> Callable[Concatenate[BlenderClient, _P], Any]:
+    func: Callable[..., Any],
+) -> Callable[..., Any]:
     """Decorator which ensures a client is connected.
 
     Args:
-        func (Callable[Concatenate[BlenderClient, _P], Any]): Function to decorate
+        func (Callable[..., Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if client is not connected.
 
     Returns:
-        Callable[Concatenate[BlenderClient, _P], Any]: Decorated function.
+        Callable[..., Any]: Decorated function.
     """
 
     @functools.wraps(func)
-    def _decorator(self: BlenderClient, *args: _P.args, **kwargs: _P.kwargs) -> Any:
+    def _decorator(self: BlenderClient, *args: Any, **kwargs: Any) -> Any:
         if self.conn is None:
             raise RuntimeError(
                 f"'BlenderClient' must be connected to a server instance before calling '{func.__name__}'"
@@ -135,22 +135,22 @@ def require_connected_client(
 
 
 def require_connected_clients(
-    func: Callable[Concatenate[BlenderClients, _P], Any],
-) -> Callable[Concatenate[BlenderClients, _P], Any]:
+    func: Callable[..., Any],
+) -> Callable[..., Any]:
     """Decorator which ensures all clients are connected.
 
     Args:
-        func (Callable[Concatenate[BlenderClients, _P], Any]): Function to decorate
+        func (Callable[..., Any]): Function to decorate
 
     Raises:
-        RuntimeError: raised if at least one client is not connected.
+        RuntimeError: if at least one client is not connected.
 
     Returns:
-        Callable[Concatenate[BlenderClients, _P], Any]: Decorated function.
+        Callable[..., Any]: Decorated function.
     """
 
     @functools.wraps(func)
-    def _decorator(self: BlenderClients, *args: _P.args, **kwargs: _P.kwargs) -> Any:
+    def _decorator(self: BlenderClients, *args: Any, **kwargs: Any) -> Any:
         if any(c.conn is None for c in self):
             raise RuntimeError(
                 f"All client instances in 'BlenderClients' must be connected before calling '{func.__name__}'"
@@ -161,22 +161,22 @@ def require_connected_clients(
 
 
 def require_initialized_service(
-    func: Callable[Concatenate[BlenderService, _P], Any],
-) -> Callable[Concatenate[BlenderService, _P], Any]:
+    func: Callable[..., Any],
+) -> Callable[..., Any]:
     """Decorator which ensures the render service was initialized.
 
     Args:
-        func (Callable[Concatenate[BlenderService, _P], Any]): Function to decorate
+        func (Callable[..., Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if :meth:`client.initialize <BlenderService.exposed_initialize>` has not been previously called.
 
     Returns:
-        Callable[Concatenate[BlenderService, _P], Any]: Decorated function.
+        Callable[..., Any]: Decorated function.
     """
 
     @functools.wraps(func)
-    def _decorator(self: BlenderService, *args: _P.args, **kwargs: _P.kwargs) -> Any:
+    def _decorator(self: BlenderService, *args: Any, **kwargs: Any) -> Any:
         if not self._initialized:
             raise RuntimeError(f"'BlenderService' must be initialized before calling '{func.__name__}'")
         return func(self, *args, **kwargs)
@@ -185,19 +185,19 @@ def require_initialized_service(
 
 
 def validate_camera_moved(
-    func: Callable[Concatenate[BlenderService, _P], Any],
-) -> Callable[Concatenate[BlenderService, _P], Any]:
+    func: Callable[..., Any],
+) -> Callable[..., Any]:
     """Decorator which emits a warning if the camera was not moved.
 
     Args:
-        func (Callable[Concatenate[BlenderService, _P], Any]): Function to decorate
+        func (Callable[..., Any]): Function to decorate
 
     Returns:
-        Callable[Concatenate[BlenderService, _P], Any]: Decorated function.
+        Callable[..., Any]: Decorated function.
     """
 
     @functools.wraps(func)
-    def _decorator(self: BlenderService, *args: _P.args, **kwargs: _P.kwargs) -> Any:
+    def _decorator(self: BlenderService, *args: Any, **kwargs: Any) -> Any:
         prev_matrix = np.array(self.camera.matrix_world.copy())
         retval = func(self, *args, **kwargs)
         post_matrix = np.array(self.camera.matrix_world.copy())
@@ -265,15 +265,15 @@ class BlenderServer(rpyc.utils.server.Server):
         )
         server_log.info(f"Started listening on {self.host}:{self.port}")
 
-    @staticmethod
     @contextmanager
+    @staticmethod
     def spawn(
         jobs: int = 1,
         timeout: float = -1.0,
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
-    ) -> Iterator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:
+    ) -> Generator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:
         """Spawn one or more blender instances and start a :class:`BlenderServer` in each.
 
         This is roughly equivalent to calling ``blender -b --python blender.py`` in many subprocesses,
@@ -310,7 +310,7 @@ class BlenderServer(rpyc.utils.server.Server):
             TimeoutError: raise if unable to discover spawned servers in ``timeout`` seconds and kill any spawned processes.
 
         Yields:
-            tuple[list[subprocess.Popen], list[tuple[str, int]]]:  A tuple containing:
+            Generator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:  A tuple containing:
                 - list[subprocess.Popen]: List of ``subprocess.Popen`` corresponding to all spawned servers.
                 - list[tuple[str, int]]: List of connection setting for each server, where each element is a (hostname, port) tuple.
         """
@@ -2127,7 +2127,7 @@ class BlenderClient:
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
-    ) -> Iterator[Self]:
+    ) -> Generator[Self]:
         """Spawn and connect to a blender server.
         The spawned process is accessible through the client's ``process`` attribute.
 
@@ -2148,7 +2148,7 @@ class BlenderClient:
                 might be required when using flatpaks. Defaults to None (system PATH).
 
         Yields:
-            Self: the connected client
+            Generator[Self]: the connected client
         """
         with BlenderServer.spawn(jobs=1, timeout=timeout, log=log, autoexec=autoexec, executable=executable) as (
             procs,
@@ -2358,7 +2358,7 @@ class BlenderClients(tuple):
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
-    ) -> Iterator[Self]:
+    ) -> Generator[Self]:
         """Spawn and connect to one or more blender servers.
         The spawned processes are accessible through the client's ``process`` attribute.
 
@@ -2380,7 +2380,7 @@ class BlenderClients(tuple):
                 might be required when using flatpaks. Defaults to None (system PATH).
 
         Yields:
-            Self: the connected clients
+            Generator[Self]: the connected clients
         """
         with BlenderServer.spawn(jobs=jobs, timeout=timeout, log=log, autoexec=autoexec, executable=executable) as (
             procs,
@@ -2395,8 +2395,8 @@ class BlenderClients(tuple):
                 for client in clients:
                     client.process = None
 
-    @staticmethod
     @contextmanager
+    @staticmethod
     def pool(
         jobs: int = 1,
         timeout: float = -1.0,
@@ -2404,7 +2404,7 @@ class BlenderClients(tuple):
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
         conns: list[tuple[str, int]] | None = None,
-    ) -> Iterator[multiprocess.Pool]:
+    ) -> Generator[multiprocess.Pool]:
         """Spawns a multiprocessing-like worker pool, each with their own :class:`BlenderClient` instance.
         The function supplied to pool.map/imap/starmap and their async variants will be automagically
         passed a client instance as their first argument that they can use for rendering.
@@ -2446,7 +2446,7 @@ class BlenderClients(tuple):
                 be ignored) instead of spawning new ones.
 
         Yields:
-            multiprocess.Pool: A ``multiprocess.Pool`` instance which has had it's applicator methods
+            Generator[multiprocess.Pool]: A ``multiprocess.Pool`` instance which has had it's applicator methods
                 (map/imap/starmap/etc) monkey-patched to inject a client instance as first argument.
         """
         # Note import here as this is a dependency only on the client-side
