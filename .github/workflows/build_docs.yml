@@ -22,6 +22,8 @@ jobs:
           # Force torch to use CPU
           pip install torch --index-url https://download.pytorch.org/whl/cpu 
           pip install . --group dev --group docs
+      - name: Show installed packages
+        run: pip freeze
       - name: Run Linter
         run: inv lint
       - name: Test Stubs
