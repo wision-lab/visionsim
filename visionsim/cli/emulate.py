@@ -107,10 +107,17 @@ def events(
     pos_thres: float = 0.2,
     neg_thres: float = 0.2,
     sigma_thres: float = 0.03,
-    cutoff_hz: int = 200,
+    cutoff_hz: float = 200.0,
     leak_rate_hz: float = 1.0,
     shot_noise_rate_hz: float = 10.0,
+    refractory_period_s: float = 0.0,
+    photoreceptor_noise: bool = False,
+    leak_jitter_fraction: float = 0.1,
+    noise_rate_cov_decades: float = 0.1,
     seed: int = 2147483647,
+    cs_lambda_pixels: float | None = None,
+    cs_tau_p_ms: float | None = None,
+    scidvs: bool = False,
     preview_step: int | None = None,
     only_preview: bool = False,
     force: bool = False,
@@ -128,7 +135,14 @@ def events(
         cutoff_hz: 3dB cutoff frequency in Hz of DVS photoreceptor
         leak_rate_hz: leak event rate per pixel in Hz, from junction leakage in reset switch
         shot_noise_rate_hz: shot noise rate in Hz
+        refractory_period_s: minimum inter-event interval per pixel in seconds
+        photoreceptor_noise: model shot noise as correlated Gaussian noise injected at the photoreceptor
+        leak_jitter_fraction: fractional random variation applied to the per-pixel leak rate
+        noise_rate_cov_decades: standard deviation (in decades) of the log-normal per-pixel noise-rate distribution
         seed: random seed to use while sampling, ensures reproducibility
+        cs_lambda_pixels: space constant of the centre-surround surround in pixels
+        cs_tau_p_ms: time constant of the surround low-pass filter in ms
+        scidvs: simulate the high-gain adaptive photoreceptor of the SCIDVS pixel
         preview_step: accumulate events over this many frames before saving a visualization preview. If the
             number of input frames is not a multiple of the preview step, the last few frames will be dropped.
             If None, preview is disabled.
@@ -178,7 +192,14 @@ def events(
         cutoff_hz=cutoff_hz,
         leak_rate_hz=leak_rate_hz,
         shot_noise_rate_hz=shot_noise_rate_hz,
+        refractory_period_s=refractory_period_s,
+        photoreceptor_noise=photoreceptor_noise,
+        leak_jitter_fraction=leak_jitter_fraction,
+        noise_rate_cov_decades=noise_rate_cov_decades,
         seed=seed,
+        cs_lambda_pixels=cs_lambda_pixels,
+        cs_tau_p_ms=cs_tau_p_ms,
+        scidvs=scidvs,
     )
     emulator = EventEmulator(**emulator_kwargs)  # type: ignore
 
