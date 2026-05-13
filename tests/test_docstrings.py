@@ -21,7 +21,7 @@ def get_public_members(obj, module=None):
     for _, child_obj in inspect.getmembers(obj, lambda c: getattr(c, "__module__", None) == module):
         name = getattr(child_obj, "__name__", getattr(child_obj, "attrname", None))
 
-        if name.startswith("_") and not name.startswith("__"):
+        if name is None or (name.startswith("_") and not name.startswith("__")):
             continue
         elif inspect.isclass(child_obj):
             yield child_obj
@@ -85,7 +85,7 @@ def test_docstrings(obj):
         return
 
     documented_params = set(param.arg_name.strip("*") for param in docs.params if param.description)
-    assert all("_description_" not in param.description for param in docs.params)
+    assert all("_description_" not in (param.description or "") for param in docs.params)
 
     sig = inspect.signature(obj)
     all_params = set(sig.parameters.keys())
