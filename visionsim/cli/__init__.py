@@ -126,21 +126,27 @@ def _run(
         )
 
 
-def post_install(executable: str | os.PathLike | None = None, editable: bool = False):
+def post_install(executable: str | os.PathLike | None = None, editable: bool = False, version: str | None = None):
     """Install additional dependencies
 
     Args:
         executable (str | os.PathLike | None, optional): Path to Blender executable. Defaults to one found on $PATH.
-        editable: (bool, optional): If set, install current visionsim as editable in blender. Only works if
+        editable (bool, optional): If set, install current visionsim as editable in blender. Only works if
             visionsim is already installed as editable locally.
+        version (str | None, optional): The version of visionsim to install. Setting this is akin to specifying the version
+            when pip installing. If set, a fresh copy from PyPI will be installed inside blender's runtime environment,
+            which might not match the currently installed version. Defaults to None (use currently installed version).
     """
     from visionsim.simulate import install_dependencies
+
+    if editable and version:
+        raise ValueError("Cannot specify both editable and version")
 
     if _run(f"{executable or 'blender'} --version", shell=True, hide=True).returncode != 0:
         raise RuntimeError(
             "No blender installation found on path! Please make sure it is discoverable, or specify executable."
         )
-    install_dependencies(executable, editable=editable)
+    install_dependencies(executable, editable=editable, version=version)
 
 
 def main():

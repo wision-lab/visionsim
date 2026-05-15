@@ -31,9 +31,16 @@ if __name__ == "__main__":
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--version", type=str)
     group.add_argument("--editable", type=str)
+    group.add_argument("--path", type=str)
     args, unknown = parser.parse_known_args(sys.argv[index:])
 
-    module_spec = f"visionsim=={args.version}" if args.version else f"--editable '{args.editable}'"
+    if args.version:
+        module_spec = f"visionsim=={args.version}"
+    elif args.editable:
+        module_spec = f"--editable '{args.editable}'"
+    else:
+        module_spec = args.path
+
     commands = [
         f"{Path(sys.executable).as_posix()} -m ensurepip",
         f"{Path(sys.executable).as_posix()} -m pip install -U pip",
