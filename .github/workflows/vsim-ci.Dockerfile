@@ -26,7 +26,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Install python dependencies
 # Here we install pytorch manually to ensure it's cpu-only
 # Using --no-cache prevents uv from caching wheels in the container
+# Installing in editable mode allows us to install the current commit
 RUN uv pip install --no-cache torch torchvision --index-url https://download.pytorch.org/whl/cpu
 RUN --mount=type=bind,source=.,target=/src \
     uv pip install --no-cache /src && \
-    visionsim post-install
+    visionsim post-install --editable
