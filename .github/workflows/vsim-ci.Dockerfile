@@ -1,5 +1,5 @@
 # Use a slim Debian image as our base
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 WORKDIR /app 
 
 # Install system dependencies needed for both Visionsim and Blender
