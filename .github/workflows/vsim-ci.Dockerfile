@@ -29,4 +29,4 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN uv pip install --no-cache torch torchvision --index-url https://download.pytorch.org/whl/cpu
 RUN --mount=type=bind,source=.,target=/src \
     uv pip install --no-cache /src && \
-    visionsim post-install
+    visionsim post-install --path /src
