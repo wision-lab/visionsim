@@ -158,9 +158,11 @@ class RenderConfig:
     executable: Path | None = None
     """Path to blender executable"""
     height: int | None = None
-    """Height of rendered frames"""
+    """Height of rendered frames in pixels"""
     width: int | None = None
-    """Width of rendered frames"""
+    """Width of rendered frames in pixels"""
+    resolution_percentage: int = 100
+    """Percentage of the original resolution to render at"""
     include_composites: bool = False
     """If true, enable composited outputs"""
     composites: CompositesConfig = field(default_factory=CompositesConfig)

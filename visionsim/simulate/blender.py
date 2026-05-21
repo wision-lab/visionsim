@@ -1481,7 +1481,10 @@ class BlenderService(rpyc.Service):
 
     @require_initialized_service
     def exposed_set_resolution(
-        self, height: tuple[int] | list[int] | int | None = None, width: int | None = None
+        self,
+        height: tuple[int] | list[int] | int | None = None,
+        width: int | None = None,
+        resolution_percentage: int = 100,
     ) -> None:
         """Set frame resolution (height, width) in pixels.
         If a single tuple is passed, instead of using keyword arguments, it will be parsed as (height, width).
@@ -1489,6 +1492,7 @@ class BlenderService(rpyc.Service):
         Args:
             height (tuple[int] | list[int] | int | None, optional): Height of render in pixels. Defaults to value from file.
             width (int | None, optional): Width of render in pixels. Defaults to value from file.
+            resolution_percentage (float, optional): Percentage of the original resolution to render at. Defaults to 100%.
 
         Raises:
             ValueError: raised if resolution is not understood.
@@ -1504,7 +1508,7 @@ class BlenderService(rpyc.Service):
             self.scene.render.resolution_y = int(height)
         if width:
             self.scene.render.resolution_x = int(width)
-        self.scene.render.resolution_percentage = 100
+        self.scene.render.resolution_percentage = int(resolution_percentage)
 
     @require_initialized_service
     def exposed_use_motion_blur(self, enable: bool) -> None:

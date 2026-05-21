@@ -45,7 +45,7 @@ def render_job(
             API <https://rich.readthedocs.io/en/stable/reference/progress.html#rich.progress.Progress.update>`_.
     """
     client.initialize(blend_file, root)
-    client.set_resolution(height=config.height, width=config.width)
+    client.set_resolution(height=config.height, width=config.width, resolution_percentage=config.resolution_percentage)
     client.use_animations(config.use_animations)
     client.load_addons(*(config.addons or []))
 
