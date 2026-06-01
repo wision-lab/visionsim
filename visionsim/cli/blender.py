@@ -108,7 +108,8 @@ def optimize_rate(
     init_k: float = 5.0,
     max_iterations: int = 15,
     max_scale_factor: float = 15.0,
-    stall_tolerance: float = 0.01,
+    scale_decay: float = 0.95,
+    stall_tolerance: float = 0.05,
     debug_path: Path | None = None,
 ) -> float:
     """Find the keyframe multiplier `k` such that the `percentile`-th percentile optical flow magnitude
@@ -137,6 +138,8 @@ def optimize_rate(
         max_iterations: Maximum number of iterations to run.
         max_scale_factor: Maximum factor by which to scale the keyframe
             multiplier in a single iteration.
+        scale_decay: Decay the scale factor multiplier by this much after each iteration,
+            helps prevent oscillations.
         stall_tolerance: If `p_flow`, the percentile-th percentile flow, changes by less than this
             fraction of `target` between consecutive iterations, the search is considered stalled and
             terminates early with a warning.
@@ -154,6 +157,13 @@ def optimize_rate(
 
     from visionsim.cli import _log
     from visionsim.dataset import Dataset
+
+    if scale_decay <= 0 or scale_decay > 1:
+        raise ValueError(f"Parameter `scale_decay` ({scale_decay}) must be in (0, 1]")
+    if max_scale_factor <= 1:
+        raise ValueError(f"Parameter `max_scale_factor` ({max_scale_factor}) must be >= 1")
+    if init_k <= 0:
+        raise ValueError(f"Parameter `init_k` ({init_k}) must be positive.")
 
     # Build a lightweight probe config: coarse resolution, flows only, single job, no previews, low samples.
     probe_config = copy.deepcopy(config)
@@ -181,39 +191,45 @@ def optimize_rate(
     scale_to_full = 100.0 / resolution_percentage
     prev_p_flow: float | None = None
     k = init_k
-
+    
     # Render animation into a tempdir, start at k=init_k and scale it by max_flow/threshold where max_flow is the
     # percentile-th percentile optical flow in previous step, scaled to full resolution.
     # K does not need to be doubled every time, we know how much to scale it by.
     for i in range(max_iterations):
         with tempfile.TemporaryDirectory() as tmpdir_str:
             tmpdir = Path(tmpdir_str)
-            digest = TDigest()
+            iter_digest = TDigest()
 
             probe_config.keyframe_multiplier = k
             _log.info(f"[#{i + 1}] Probing with keyframe_multiplier={k:.4f} ...")
 
-            render_animation(
-                blend_file,
-                tmpdir,
-                probe_config,
-                frame_start=frame_start,
-                frame_end=frame_end,
-                frame_step=frame_step,
-            )
+            try:
+                render_animation(
+                    blend_file,
+                    tmpdir,
+                    probe_config,
+                    frame_start=frame_start,
+                    frame_end=frame_end,
+                    frame_step=frame_step,
+                )
+            except Exception as e:
+                _log.error(f"Failed to render animation for keyframe_multiplier={k:.4f}: {e}")
+                return k
+            except KeyboardInterrupt:
+                _log.info("Optimization interrupted by user.")
+                return k
 
             # Gather all rendered flow EXRs (shape H x W x 4: fx, fy, bx, by).
             for j, (flow, _) in enumerate(Dataset.from_path(tmpdir / "flows")):
                 try:
                     fx, fy, bx, by = flow.transpose(2, 0, 1)
-                    digest.batch_update(np.sqrt(fx**2 + fy**2).ravel())
-                    digest.batch_update(np.sqrt(bx**2 + by**2).ravel())
+                    iter_digest.batch_update(np.sqrt(fx**2 + fy**2).ravel() * scale_to_full)
+                    iter_digest.batch_update(np.sqrt(bx**2 + by**2).ravel() * scale_to_full)
                 except ValueError:
                     _log.warning(f"Skipping corrupted flow for index {j}")
                     continue
 
-            # Scale pixel magnitudes up to what they would be at full resolution.
-            p_flow = digest.quantile(percentile / 100.0) * scale_to_full
+            p_flow = iter_digest.quantile(percentile / 100.0)
             _log.info(f"Estimated {percentile:.0f}th-percentile flow at full resolution: {p_flow:.4f} px")
 
             if debug_path is not None:
@@ -221,7 +237,7 @@ def optimize_rate(
                 debug_dir.mkdir(parents=True, exist_ok=True)
 
                 with open(debug_dir / f"iter_{i:02d}_k_{k:.4f}.json", "w") as f:
-                    json.dump(digest.to_dict(), f, indent=2)
+                    json.dump(iter_digest.to_dict(), f, indent=2)
 
             if abs(p_flow - target) <= tolerance:
                 _log.info(f"Found suitable keyframe_multiplier={k:.4f}")
@@ -247,7 +263,7 @@ def optimize_rate(
                     f"Flow is too low, limiting scale factor to {1.0 / max_scale_factor:.4f} to prevent undershooting (scale factor: {factor:.4f})"
                 )
                 factor = 1.0 / max_scale_factor
-            k *= factor
+            k += (k * (factor - 1)) * scale_decay**i
 
     _log.warning(
         f"Failed to find suitable keyframe_multiplier within {max_iterations} iterations. Returning last value."
