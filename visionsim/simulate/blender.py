@@ -321,7 +321,8 @@ class BlenderServer(rpyc.utils.server.Server):
         def terminate_jobs(procs):
             try:
                 yield
-
+            except KeyboardInterrupt:
+                server_log.warning("Shutting down gracefully...")
             finally:
                 for p in procs:
                     # We need to send two CTRL+C events to blender to kill it, but not on windows
