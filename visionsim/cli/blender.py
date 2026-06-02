@@ -110,6 +110,7 @@ def optimize_rate(
     max_scale_factor: float = 15.0,
     scale_decay: float = 0.95,
     stall_tolerance: float = 0.05,
+    max_depth: float | None = None,
     debug_path: Path | None = None,
 ) -> float:
     """Find the keyframe multiplier `k` such that the `percentile`-th percentile optical flow magnitude
@@ -143,6 +144,8 @@ def optimize_rate(
         stall_tolerance: If `p_flow`, the percentile-th percentile flow, changes by less than this
             fraction of `target` between consecutive iterations, the search is considered stalled and
             terminates early with a warning.
+        max_depth: If set, pixels with depth greater than this limit are ignored when computing the
+            percentile flow. Depth rendering will be enabled.
         debug_path: Optional path to write debug information to. If provided, flow digests for each iteration
             are written to `debug_path / f"iter_{i:02d}_k_{k:.4f}.json"`.
 
@@ -177,7 +180,7 @@ def optimize_rate(
     probe_config.include_composites = False
     probe_config.include_diffuse_pass = False
     probe_config.include_specular_pass = False
-    probe_config.include_depths = False
+    probe_config.include_depths = max_depth is not None
     probe_config.include_normals = False
     probe_config.include_segmentations = False
     probe_config.include_materials = False
@@ -191,12 +194,13 @@ def optimize_rate(
     scale_to_full = 100.0 / resolution_percentage
     prev_p_flow: float | None = None
     k = init_k
-    
+
     # Render animation into a tempdir, start at k=init_k and scale it by max_flow/threshold where max_flow is the
     # percentile-th percentile optical flow in previous step, scaled to full resolution.
     # K does not need to be doubled every time, we know how much to scale it by.
     for i in range(max_iterations):
         with tempfile.TemporaryDirectory() as tmpdir_str:
+            _log.debug(f"[#{i + 1}] Using temp directory: {tmpdir_str}")
             tmpdir = Path(tmpdir_str)
             iter_digest = TDigest()
 
@@ -220,24 +224,45 @@ def optimize_rate(
                 return k
 
             # Gather all rendered flow EXRs (shape H x W x 4: fx, fy, bx, by).
-            for j, (flow, _) in enumerate(Dataset.from_path(tmpdir / "flows")):
+            flow_dataset = Dataset.from_path(tmpdir / "flows")
+            depth_dataset = Dataset.from_path(tmpdir / "depths") if max_depth is not None else [None] * len(flow_dataset)
+
+            for j, ((flow, _), depth_item) in enumerate(zip(flow_dataset, depth_dataset)):
                 try:
                     fx, fy, bx, by = flow.transpose(2, 0, 1)
-                    iter_digest.batch_update(np.sqrt(fx**2 + fy**2).ravel() * scale_to_full)
-                    iter_digest.batch_update(np.sqrt(bx**2 + by**2).ravel() * scale_to_full)
+                    fw_mag = np.sqrt(fx**2 + fy**2).ravel() * scale_to_full
+                    bw_mag = np.sqrt(bx**2 + by**2).ravel() * scale_to_full
+
+                    # Skip flow values from frames beyond the `max_depth`
+                    if max_depth is not None:
+                        depth = depth_item[0]
+                        valid = (depth <= max_depth).ravel()
+                        fw_mag, bw_mag = fw_mag[valid], bw_mag[valid]
+
+                    # Skip the flow to/from a non-existent frame
+                    if j != 0:
+                        iter_digest.batch_update(fw_mag)
+                    if j != len(flow_dataset) - 1:
+                        iter_digest.batch_update(bw_mag)
                 except ValueError:
-                    _log.warning(f"Skipping corrupted flow for index {j}")
+                    _log.warning(f"Skipping corrupted flow/depth for index {j}")
                     continue
 
             p_flow = iter_digest.quantile(percentile / 100.0)
             _log.info(f"Estimated {percentile:.0f}th-percentile flow at full resolution: {p_flow:.4f} px")
+            _log.debug(
+                "Flow stats (min, max, mean, median, 95%, 99%): "
+                f"{iter_digest.min():.4f}, {iter_digest.max():.4f}, {iter_digest.mean():.4f}, "
+                f"{iter_digest.median():.4f}, {iter_digest.quantile(0.95):.4f}, {iter_digest.quantile(0.99):.4f}"
+            )
 
             if debug_path is not None:
                 debug_dir = Path(debug_path)
                 debug_dir.mkdir(parents=True, exist_ok=True)
 
-                with open(debug_dir / f"iter_{i:02d}_k_{k:.4f}.json", "w") as f:
+                with open(digest_path := debug_dir / f"iter_{i:02d}_k_{k:.4f}.json", "w") as f:
                     json.dump(iter_digest.to_dict(), f, indent=2)
+                    _log.debug(f"Wrote digest to {digest_path}")
 
             if abs(p_flow - target) <= tolerance:
                 _log.info(f"Found suitable keyframe_multiplier={k:.4f}")
