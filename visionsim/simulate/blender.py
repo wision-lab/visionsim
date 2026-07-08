@@ -335,7 +335,7 @@ class BlenderServer(rpyc.utils.server.Server):
                     p.terminate()
 
         BlenderServer.spawn_registry()
-        existing = BlenderServer.discover()
+        existing = BlenderServer.discover() if timeout > 0 else []
         procs, ports = [], []
 
         if isinstance(log, (str, os.PathLike)):
@@ -421,7 +421,11 @@ class BlenderServer(rpyc.utils.server.Server):
             list[tuple[str, int]]: List of connection setting for each server, where each element is a (hostname, port) tuple.
         """
         _, client = BlenderServer.spawn_registry()
-        return list(cast(tuple, client.discover("BLENDER")))
+        try:
+            return list(cast(tuple, client.discover("BLENDER")))
+        except Exception as e:
+            server_log.warning(f"Failed to discover Blender servers: {e}")
+            return []
 
     def _accept_method(self, sock: socket.socket) -> None:
         # Accept a single connection, and block here until it closes. Any other incoming
