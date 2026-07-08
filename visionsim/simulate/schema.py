@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from functools import cached_property
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from peewee import (
     FloatField,
@@ -176,7 +176,10 @@ class _Metadata:
         db = SqliteDatabase(self.path, pragmas=_DEFAULT_PRAGMAS)
         with db.connection_context():
             with db.bind_ctx(_MODELS):
-                for transform in _Frame.select(*_MODELS).join(_Camera).switch(_Frame).join(_Data).dicts():
+                query = cast(
+                    "Iterable[dict[str, Any]]", _Frame.select(*_MODELS).join(_Camera).switch(_Frame).join(_Data).dicts()
+                )
+                for transform in query:
                     # Remove database-specific IDs and Foreign Keys
                     transform.pop("id")
                     transform.pop("camera")
@@ -205,4 +208,5 @@ class _Metadata:
         db = SqliteDatabase(self.path, pragmas=_DEFAULT_PRAGMAS)
         with db.connection_context():
             with db.bind_ctx(_MODELS):
-                return list(_Camera.select().dicts())
+                query = cast("Iterable[dict[str, Any]]", _Camera.select().dicts())
+                return list(query)
