@@ -8,8 +8,9 @@ import re
 import shlex
 import subprocess
 import sys
+from functools import lru_cache
 from pathlib import Path
-from typing import overload
+from typing import Any, Literal, overload
 
 import tyro
 from natsort import natsorted
@@ -79,6 +80,13 @@ def _validate_directories(
         in_files = natsorted(in_files)
         return input_path, output_path, in_files
     return input_path, output_path
+
+
+@lru_cache
+def _log_once(value: Any, msg: str, level: Literal["debug", "info", "warning", "error", "critical"] = "warning") -> Any:
+    """Log a message once per unique value, returns the value."""
+    getattr(_log, level)(msg)
+    return value
 
 
 def _run(

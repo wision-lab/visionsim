@@ -53,7 +53,7 @@ def imu_integration(
     pose_init: npt.NDArray | None = None,
     vel_init: npt.NDArray | None = None,
 ) -> Iterator[npt.NDArray]:
-    """Integrate IMU measurements and estimate trajectory using forward Euler integration [1]_.
+    """Integrate IMU measurements and estimate trajectory using forward Euler integration [#Forster2015]_.
 
     Args:
         acc_pos (Iterable[npt.ArrayLike]): Positional acceleration as measured by the IMU. Expects an iterable
@@ -69,7 +69,7 @@ def imu_integration(
         Iterator[npt.NDArray]: Estimated pose
 
     References:
-        .. [1] `Forster et al. (2015), "IMU Preintegration on Manifold for Efficient Visual-Inertial
+        .. [#Forster2015] `Forster et al. (2015), "IMU Preintegration on Manifold for Efficient Visual-Inertial
                 Maximum-a-Posteriori Estimation". <https://www.roboticsproceedings.org/rss11/p06.pdf>`_
     """
     pose = np.eye(4) if pose_init is None else np.array(pose_init)
@@ -90,7 +90,7 @@ def imu_integration_step(
     acc_pos: npt.NDArray,
     dt: float,
 ) -> tuple[npt.NDArray, npt.NDArray]:
-    """Computes single Euler integration step [1]_.
+    """Computes single Euler integration step [#Forster2015]_.
 
     While the integration is performed in world coordinates, this helper
     operates on velocities and accelerations in camera coordinates and perform
@@ -150,10 +150,10 @@ def emulate_imu(
 ) -> Iterator[dict[str, npt.ArrayLike]]:
     """Emulate IMU measurements from a sequence of ground-truth poses.
 
-    Follows the Appendix in Crassidis (2006) [2]_, also see Sec. IV.B. in
-    Leutenegger et al. (2015) [3]_, and Sec. IV in Forster et al. (2015) [1]_.
+    Follows the Appendix in Crassidis (2006) [#Crassidis2006]_, also see Sec. IV.B. in
+    Leutenegger et al. (2015) [#Leutenegger2015]_, and Sec. IV in Forster et al. (2015) [#Forster2015]_.
 
-    The default parameter values are taken from Table I in Leutenegger et al [3]_.
+    The default parameter values are taken from Table I in Leutenegger et al [#Leutenegger2015]_.
 
     Args:
         poses (list[npt.NDArray] | npt.NDArray): Sequence of ground-truth poses to emulate IMU from.
@@ -171,9 +171,9 @@ def emulate_imu(
         Iterator[dict[str, npt.ArrayLike]]: Return "acc_reading", "gyro_reading", "acc_bias", "gyro_bias", and "t".
 
     References:
-        .. [2] `Crassidis (2006), "Sigma-Point Kalman Filtering for Integrated GPS and
+        .. [#Crassidis2006] `Crassidis (2006), "Sigma-Point Kalman Filtering for Integrated GPS and
                 Inertial Navigation". <https://www.acsu.buffalo.edu/~johnc/gpsins_gnc05.pdf>`_
-        .. [3] `Leutenegger et al. (2015), "Keyframe-based visual-inertial odometry using nonlinear
+        .. [#Leutenegger2015] `Leutenegger et al. (2015), "Keyframe-based visual-inertial odometry using nonlinear
                 optimization". <https://www.roboticsproceedings.org/rss09/p37.pdf>`_
     """
     gravity = np.array([0, 0, -9.8]) if gravity is None else np.array(gravity)

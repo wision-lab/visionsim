@@ -93,7 +93,7 @@ def dataset(
 
         if method.lower() == "rife":
             rife(
-                input_dir,
+                dataset.root,
                 output_dir,
                 input_files=dataset.paths,
                 exp=np.log2(n).astype(int),
@@ -108,9 +108,14 @@ def dataset(
         _log.info("Interpolating poses...")
         interp_poses = interpolate_poses(dataset.poses, n=n)
         interp_paths = natsorted(output_dir.glob("**/*.png"))
+        camera = next(iter(dataset.cameras))
+
+        if camera.fps:
+            camera = camera.model_copy(update={"fps": camera.fps * n})
+
         Metadata.from_frames(
             frames=[
                 dict(file_path=p.relative_to(output_dir), transform_matrix=m) for p, m in zip(interp_paths, interp_poses)
             ],
-            camera=next(iter(dataset.cameras)),
+            camera=camera,
         ).save(output_dir / "transforms.json")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Literal, cast
 
 import numpy as np
@@ -8,6 +9,8 @@ from scipy.interpolate import make_interp_spline
 from scipy.spatial.transform import Rotation, RotationSpline
 
 from visionsim.types import Matrix4x4
+
+logger = logging.getLogger(__name__)
 
 
 class pose_interp:
@@ -29,6 +32,10 @@ class pose_interp:
         self.transforms = np.array(transforms)
         self.ts = np.linspace(0, 1, len(self.transforms)) if ts is None else np.array(ts)
         self.determinants = np.linalg.det(self.transforms[:, :3, :3])
+
+        if k >= len(self.transforms):
+            logger.warning(f"spline degree {k} >= #poses ({len(self.transforms)}), therefore downgrading it")
+        k = min(len(self.transforms) - 1, k)  # for small chunk_sizes
         self.k = k
 
         if normalize:

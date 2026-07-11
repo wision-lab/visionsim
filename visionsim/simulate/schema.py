@@ -14,6 +14,7 @@ from peewee import (
     SqliteDatabase,
     TextField,
 )
+from playhouse.migrate import SqliteMigrator, migrate
 from playhouse.shortcuts import ThreadSafeDatabaseMetadata
 from playhouse.sqlite_ext import JSONField
 from typing_extensions import Self
@@ -73,6 +74,7 @@ class _Data(_BaseModel):
 
     path = TextField()
     bitpack_dim = IntegerField(null=True)
+    bitplanes = IntegerField(null=True)
 
 
 class _Frame(_BaseModel):
@@ -91,7 +93,7 @@ class _Metadata:
     """The ``.db`` equivalent of :class:`models.Metadata <visionsim.dataset.models.Metadata>`"""
 
     def __init__(self, path: str | os.PathLike) -> None:
-        """Initialize a metadata instance.
+        """Initialize a metadata instance. Unlike :meth:`load`, this method does not automatically apply any migrations.
 
         Args:
             path (str | os.PathLike): Metadata dataset path
@@ -100,26 +102,23 @@ class _Metadata:
 
     @classmethod
     def load(cls, path: str | os.PathLike) -> Self:
-        """Same as :meth:`__init__`, added to better mirror :class:`models.Metadata <visionsim.dataset.models.Metadata>`"""
+        """Initialize a metadata instance and apply any necessary migrations."""
         instance = cls(path)
         instance._migrate()
         return instance
 
     def _migrate(self) -> None:
         """Apply any necessary database migrations."""
-        # TODO: Implement database migrations if needed. Below is an example of how to do it for a new "date" field in _Camera model.
+        db = SqliteDatabase(self.path, pragmas=_DEFAULT_PRAGMAS)
+        with db.connection_context():
+            table_name = _Data._meta.table_name  # type: ignore
+            columns = db.get_columns(table_name)
+            column_names = [c.name for c in columns]
 
-        # from playhouse.migrate import SqliteMigrator, migrate
-
-        # db = SqliteDatabase(self.path, pragmas=_DEFAULT_PRAGMAS)
-        # with db.connection_context():
-        #     columns = db.get_columns(_Camera._meta.table_name)
-        #     column_names = [c.name for c in columns]
-
-        #     if "date" not in column_names:
-        #         migrator = SqliteMigrator(db)
-        #         with db.atomic():
-        #             migrate(migrator.add_column(_Camera._meta.table_name, "date", _Camera.date))
+            if "bitplanes" not in column_names:
+                migrator = SqliteMigrator(db)
+                with db.atomic():
+                    migrate(migrator.add_column(table_name, "bitplanes", _Data.bitplanes))
 
     @classmethod
     def from_dense_transforms(cls, path: str | os.PathLike, transforms: Iterator[dict[str, Any]]) -> Self:

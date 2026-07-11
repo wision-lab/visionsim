@@ -12,6 +12,14 @@ visionsim.utils.color module
    :show-inheritance:
    :undoc-members:
 
+visionsim.utils.imgproc module
+------------------------------
+
+.. automodule:: visionsim.utils.imgproc
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 visionsim.utils.progress module
 -------------------------------
 

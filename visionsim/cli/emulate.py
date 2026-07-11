@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -11,29 +11,42 @@ import numpy as np
 def spad(
     input_dir: Path,
     output_dir: Path,
-    pattern: str | None = None,
-    factor: float = 1.0,
+    flux_gain: float = 1.0,
+    bitplanes: int = 1,
+    bitdepth: int | None = None,
+    force_gray: bool = False,
     seed: int = 2147483647,
+    pattern: str | None = None,
     max_size: int = 1000,
     force: bool = False,
 ) -> None:
-    """Perform bernoulli sampling on linearized RGB frames to yield binary frames
+    """Perform binomial sampling on linearized RGB frames to yield (summed) single photon frames
+
+    This will save numpy files which may be bitpacked (when bitplanes == 1) and may have different dtypes
+    depending on the number of summed bitplanes. The shape of the output arrays will be (max_size, h, w, c) or (remainder, h, w, c)
+    where remainder = len(dataset) % max_size, where the width dimension is ceil(width / 8) when bitpacked.
+
+    If the input contains alpha channel (determined by the last dimension of the input images), it will be stripped.
 
     Args:
         input_dir: directory in which to look for frames
-        output_dir: directory in which to save binary frames
-        pattern: used to find source image files to convert to binary frames,
+        output_dir: directory in which to save single photon frames
+        pattern: used to find source image files to convert to single photon frames,
             not needed when ``input_dir`` points to a valid dataset.
-        factor: multiplicative factor controlling dynamic range of output
+        flux_gain: multiplicative factor controlling dynamic range of output
+        bitplanes: number of summed binary measurements
+        bitdepth: if set, ``bitplanes`` will be overridden to ``2**bitdepth - 1``
+        force_gray: to disable RGB sensing even if the input images are color
         seed: random seed to use while sampling, ensures reproducibility
         max_size: maximum number of frames per output array before rolling over to new file
         force: if true, overwrite output file(s) if present, else throw error
     """
     from numpy.lib.format import open_memmap
 
+    from visionsim.cli import _log, _log_once
     from visionsim.dataset import Dataset, Metadata
     from visionsim.emulate.spc import emulate_spc
-    from visionsim.utils.color import srgb_to_linearrgb
+    from visionsim.utils.color import rgb_to_grayscale, srgb_to_linearrgb
     from visionsim.utils.progress import ElapsedProgress
 
     if input_dir.resolve() == output_dir.resolve():
@@ -47,6 +60,17 @@ def spad(
         dataset = Dataset.from_pattern(input_dir, pattern)
     else:
         dataset = Dataset.from_path(input_dir)
+
+    if bitdepth is not None:
+        _log.info(f"Overriding bitplanes to {2**bitdepth - 1} since bitdepth is set to {bitdepth}.")
+        bitplanes = 2**bitdepth - 1
+
+    # Map bitplanes to the smallest uint type that can hold it (minimum 8 bits)
+    out_dtype = next(
+        dtype
+        for limit, dtype in [(8, np.uint8), (16, np.uint16), (32, np.uint32), (64, np.uint64)]
+        if bitplanes <= 2**limit - 1
+    )
 
     rng = np.random.default_rng(int(seed))
     output_dir.mkdir(exist_ok=True, parents=True)
@@ -64,33 +88,41 @@ def spad(
             else:
                 data = data.astype(float) / 255.0
 
-            # Default to bitpacking width
-            binary_img = emulate_spc(data, factor=factor, rng=rng) * 255
-            binary_img = binary_img.astype(np.uint8) >= 128
-            binary_img = np.packbits(binary_img, axis=1)
+            if len(data.shape) == 3 and data.shape[-1] in (2, 4):  # LA/RGBA
+                _log_once(data.shape, "Alpha channel detected, ignoring it.", "info")
+                data = data[..., :-1]
+
+            if force_gray:
+                data = rgb_to_grayscale(data)
+
+            imgs = emulate_spc(data, flux_gain=flux_gain, bitplanes=bitplanes, rng=rng)
 
             offset = i % max_size
             file_path = output_dir / f"{i // max_size:04}.npy"
             transform["file_path"] = file_path.name
-            transform["bitpack_dim"] = 2
+            transform["bitplanes"] = bitplanes
             transform["offset"] = offset
             h, w, c = data.shape
+
+            if bitplanes == 1:
+                # Default to bitpacking width
+                imgs = imgs >= 0.5
+                imgs = np.packbits(imgs, axis=1)
+                transform["bitpack_dim"] = 2
+                w = math.ceil(transform.get("w", w) / 8)
+            else:
+                w = transform.get("w", w)
 
             if not file_path.exists():
                 data = open_memmap(
                     file_path,
                     mode="w+",
-                    dtype=np.uint8,
-                    shape=(
-                        min(max_size, remainder),
-                        transform.get("h", h),
-                        math.ceil(transform.get("w", w) / 8),
-                        transform.get("c", c),
-                    ),
+                    dtype=out_dtype,
+                    shape=(min(max_size, remainder), transform.get("h", h), w, c),
                 )
-                data[offset] = binary_img
+                data[offset] = imgs
             else:
-                open_memmap(file_path)[offset] = binary_img
+                open_memmap(file_path)[offset] = imgs
 
             transforms.append(transform)
             progress.update(task, advance=1)
@@ -156,6 +188,7 @@ def events(
     from visionsim.dataset import Dataset
     from visionsim.emulate.dvs import EventEmulator
     from visionsim.simulate.blender import INDEX_PADDING, ITEMS_PER_SUBFOLDER
+    from visionsim.utils.color import rgb_to_grayscale
     from visionsim.utils.progress import ElapsedProgress
 
     if input_dir.resolve() == output_dir.resolve():
@@ -211,10 +244,7 @@ def events(
         viz = None
 
         for idx, (frame, _) in enumerate(dataset):  # type: ignore
-            # Manually grayscale as we've already converted to floating point pixel values
-            # Values from http://en.wikipedia.org/wiki/Grayscale
-            r, g, b, *_ = np.transpose(frame, (2, 0, 1))
-            luma = 0.0722 * b + 0.7152 * g + 0.2126 * r
+            luma = rgb_to_grayscale(frame)
             events = emulator.generate_events(luma, idx / int(fps))
 
             if events is not None:
@@ -253,24 +283,38 @@ def rgb(
     input_dir: Path,
     output_dir: Path,
     chunk_size: int = 10,
-    factor: float = 1.0,
-    readout_std: float = 20.0,
-    fwc: int | None = None,
-    duplicate: float = 1.0,
+    shutter_frac: float = 1.0,
+    readout_std: float = 16.0,
+    fwc: float | None = None,
+    flux_gain: float = 2.0**12,
+    sensor_gain: float = 1.0,
+    adc_bitdepth: int = 12,
+    mosaic: bool = False,
+    demosaic: Literal["off", "bilinear", "MHC04"] = "MHC04",
+    denoise_sigma: float = 0.0,
+    sharpen_weight: float = 0.0,
     pattern: str | None = None,
     force: bool = False,
 ) -> None:
     """Simulate real camera, adding read/poisson noise and tonemapping
 
+    For more information on the camera model, see :func:`emulate_rgb_from_sequence 
+    <visionsim.emulate.rgb.emulate_rgb_from_sequence>`.
+
     Args:
         input_dir: directory in which to look for frames
         output_dir: directory in which to save binary frames
         chunk_size: number of consecutive frames to average together
-        factor: multiply image's linear intensity by this weight
-        readout_std: standard deviation of gaussian read noise
-        fwc: full well capacity of sensor in arbitrary units (relative to factor & chunk_size)
-        duplicate: when chunk size is too small, this model is ill-suited and creates unrealistic noise.
-            This parameter artificially increases the chunk size by using each input image ``duplicate`` number of times
+        shutter_frac: fraction of inter-frame duration shutter is active (0 to 1)
+        readout_std: standard deviation of gaussian read noise in photoelectrons
+        fwc: full well capacity of sensor in photoelectrons
+        flux_gain: factor to scale the input images before Poisson simulation
+        sensor_gain: gain for photo-electron reading after Poisson rng (in units of electrons per digital level)
+        adc_bitdepth: ADC bitdepth, typically 12 or 14
+        mosaic: implement mosaiced R-/G-/B- pixels or an innately 3-channel sensor
+        demosaic: demosaicing method (default Malvar et al.'s method)
+        denoise_sigma: Gaussian blur with this sigma will be used (default 0.0 disables this)
+        sharpen_weight: weight used in sharpening (default 0.0 disables this)
         pattern: used to find source image files to convert to rgb frames,
             not needed when ``input_dir`` points to a valid dataset.
         force: if true, overwrite output file(s) if present
@@ -278,11 +322,12 @@ def rgb(
     import imageio.v3 as iio
     import more_itertools as mitertools
 
+    from visionsim.cli import _log_once
     from visionsim.dataset import Dataset, Metadata
     from visionsim.emulate.rgb import emulate_rgb_from_sequence
     from visionsim.interpolate.pose import pose_interp
     from visionsim.simulate.blender import INDEX_PADDING, ITEMS_PER_SUBFOLDER
-    from visionsim.utils.color import srgb_to_linearrgb
+    from visionsim.utils.color import linearrgb_to_srgb, srgb_to_linearrgb
     from visionsim.utils.progress import ElapsedProgress
 
     if input_dir.resolve() == output_dir.resolve():
@@ -315,27 +360,39 @@ def rgb(
             # Assume images have been tonemapped and undo mapping
             imgs = srgb_to_linearrgb(imgs)
 
+            if len(imgs.shape) == 4 and imgs.shape[-1] in (2, 4):  # LA/RGBA
+                _log_once(imgs.shape, "Alpha channel detected, ignoring it.", "info")
+                imgs = imgs[..., :-1]
+
             rgb_img = emulate_rgb_from_sequence(
-                imgs * duplicate,
+                imgs,
                 readout_std=readout_std,
-                fwc=fwc or (chunk_size * duplicate),
-                factor=factor,
+                fwc=fwc or np.inf,
+                shutter_frac=shutter_frac,
+                flux_gain=flux_gain,
+                sensor_gain=sensor_gain,
+                adc_bitdepth=adc_bitdepth,
+                mosaic=mosaic,
+                demosaic=demosaic,
+                denoise_sigma=denoise_sigma,
+                sharpen_weight=sharpen_weight,
             )
 
             if not pattern:
                 # We checked that there's only a single camera, just re-use any transforms dict
                 (transform, *_), transforms_iter = mitertools.spy(transforms_iter)
                 poses = np.array([t["transform_matrix"] for t in transforms_iter])
-                transform["transform_matrix"] = pose_interp(poses, k=np.clip(len(poses) - 1, 2, 3))(0.5)
+
+                if len(poses) > 1:
+                    transform["transform_matrix"] = pose_interp(poses, k=min(len(poses) - 1, 3))(0.5)
+                else:
+                    transform["transform_matrix"] = poses[0]
+
                 transform["file_path"] = outpath.relative_to(output_dir)
                 transforms.append(transform)
 
-            # TODO: Alpha and grayscale?
-            # if rgb_img.shape[-1] == 1:
-            #     rgb_img = np.repeat(rgb_img, 3, axis=-1)
-
             outpath.parent.mkdir(exist_ok=True, parents=True)
-            iio.imwrite(outpath, (rgb_img * 255).astype(np.uint8))
+            iio.imwrite(outpath, (linearrgb_to_srgb(rgb_img) * 255).astype(np.uint8))
             progress.update(task, advance=chunk_size)
 
     if not pattern:

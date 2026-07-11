@@ -8,21 +8,25 @@ import torch
 
 
 def emulate_spc(
-    img: npt.NDArray[np.floating], factor: float = 1.0, rng: np.random.Generator | None = None
+    img: npt.NDArray[np.floating],
+    flux_gain: float = 1.0,
+    bitplanes: int = 1,
+    rng: np.random.Generator | None = None,
 ) -> npt.NDArray[np.integer]:
     """Perform bernoulli sampling on linearized RGB frames to yield binary frames.
 
     Args:
-        img (npt.ArrayLike): Linear intensity image to sample binary frame from.
-        factor (float, optional): Arbitrary corrective brightness factor. Defaults to 1.0.
+        img (npt.NDArray[np.floating]): Linear intensity image to sample binary frame from.
+        flux_gain(float, optional): scale factor to convert img in [0, 1] range to other flux levels. Defaults to 1.0.
+        bitplanes (int, optional): when bitplanes > 1, this represents a binomial SPAD sensor that sums binary samples internally
+            for each measurement, operating at framerate ``1 / bitplanes`` of a binary SPAD sensor. Defaults to 1.
         rng (np.random.Generator, optional): Optional random number generator. Defaults to none.
 
     Returns:
-        Binary single photon frame
+        npt.NDArray[np.integer]: binomial-distributed single-photon frame
     """
-    # Perform bernoulli sampling (equivalent to binomial w/ n=1)
     rng = np.random.default_rng() if rng is None else rng
-    return rng.binomial(cast(npt.NDArray[np.integer], 1), 1.0 - np.exp(-img * factor))
+    return rng.binomial(cast(npt.NDArray[np.integer], bitplanes), 1.0 - np.exp(-img * flux_gain))
 
 
 def spc_avg_to_rgb(
@@ -49,7 +53,7 @@ def spc_avg_to_rgb(
             Defaults to None (no normalization/clipping).
 
     Returns:
-        Conventional intensity image
+        torch.Tensor | npt.NDArray: Conventional intensity image
     """
     module = torch if torch.is_tensor(mean_binary_patch) else np
     intensity = -module.log(module.clip(1 - mean_binary_patch, epsilon, 1)) / factor

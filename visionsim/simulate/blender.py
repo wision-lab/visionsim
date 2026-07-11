@@ -1422,8 +1422,8 @@ class BlenderService(rpyc.Service):
         """Sets up Blender compositor to include a world-space point map for each frame.
 
         Note:
-            The point map corresponds to world-space positions, like those used in VGGT [1]_,
-            and not the camera-centric positions used in DUSt3R [2]_.
+            The point map corresponds to world-space positions, like those used in VGGT [#VGGT]_,
+            and not the camera-centric positions used in DUSt3R [#DUSt3R]_.
 
         Args:
             preview (bool, optional): If true, colorized point maps will also be generated, where colors are
@@ -1431,8 +1431,8 @@ class BlenderService(rpyc.Service):
             exr_codec (str, optional): Codec used to compress exr file. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth per channel. Either 16 or 32 bits. Defaults to 32 bits.
 
-        .. [1] `VGGT: Visual Geometry Grounded Transformer <https://arxiv.org/abs/2503.11651>`_
-        .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
+        .. [#VGGT] `VGGT: Visual Geometry Grounded Transformer <https://arxiv.org/abs/2503.11651>`_
+        .. [#DUSt3R] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
         """
         engine = self.scene.render.engine.upper()
         if (engine == "BLENDER_EEVEE" or engine == "BLENDER_EEVEE_NEXT") and bpy.app.version < (4, 2, 0):
