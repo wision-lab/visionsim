@@ -4,24 +4,224 @@ import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from scipy.ndimage import shift
+from copy import deepcopy
+from scipy.ndimage import correlate1d
+def cropDepth(depth_map,crop_window):
+    depth_map = np.flipud(deepcopy(depth_map))
+    x_min = crop_window[0]
+    x_max = crop_window[1]
+    y_min = crop_window[2]
+    y_max = crop_window[3]
+    return np.flipud(depth_map[y_min:y_max,x_min:x_max])
+def get_depthMap_from_echos(statistics_frame):
+    c = 3e8  # m/s
+    bin_width = .758e-9
+    #statistics_frame[np.isinf(statistics_frame)] = -1
+    echo_max = np.argmax(statistics_frame[:,:,:,0],axis=-1)
+    #print("stats_frame_depth_map",statistics_frame[97,84])
+    peak_bin = np.take_along_axis(
+        statistics_frame[:,:,:,1],
+        echo_max[..., None],
+        axis=2
+    ).squeeze(-1)
 
-plt.style.use('seaborn-v0_8-paper')
 
-plt.rcParams.update({
-    'font.family': 'serif',          
-    'font.size': 18,                 
-    'axes.labelsize': 18,            
-    'axes.titlesize': 20,            
-    'xtick.labelsize': 18,
-    'ytick.labelsize': 18,
-    'legend.fontsize': 18,
-    'lines.linewidth': 4             
-})
+    # Step 2: Convert to time
+    time_delay = peak_bin * bin_width  # seconds
 
+    # Step 3: Convert to depth
+    depth_map = (c * time_delay) / 2  # meters
+    depth_map[depth_map < 0] = 0
+    return np.flipud(depth_map)
+def get_kernels(roi_mem_path):
+    with open(roi_mem_path,"r") as f:
+        roi_mem = f.readlines()
+        roi_mem = [x.strip() for x in roi_mem]
+    
+    number_of_registers_per_chunk = len(roi_mem)//32
+    
+    roi_chunked = []
+    for i in range(32):
+        
+        chunk = roi_mem[i*number_of_registers_per_chunk:(i+1)*number_of_registers_per_chunk]
+        roi_chunked.append(chunk)
+    kernels = [x[5:13] for x in roi_chunked]
+    full_kernels = []
+    for kernel in kernels:
+        full_kn = []
+        kernel=kernel[:4]
+        #print(kernel)
+        for kernel_part in kernel:
+            full_kn.append(int(kernel_part[2:4],16)) 
+            full_kn.append(int(kernel_part[0:2],16))
+        summed = sum(full_kn)
+ 
+        full_kernels.append([x/summed for x in full_kn])
+
+    return np.asarray(full_kernels)
+
+
+
+def matched_filter(raw_histogram,roi_mem_path):
+    fir_filter = get_kernels(roi_mem_path)
+    cube = deepcopy(raw_histogram)
+    cube = cube.reshape(32,1536,672)
+    
+    convolved_cube = np.empty((32,1536,672))
+    for i in range(32):
+        kernel = fir_filter[i]
+        histogram_block = cube[i,:,:].astype(np.float64)
+        for j in range(1536):
+            histogram = histogram_block[j,:]
+            convolved_cube[i,j,:] = correlate1d(histogram,kernel[::-1],mode="constant")
+    return convolved_cube.reshape(192,256,672)
+
+def get_depthMap(raw_hist,shape0,shape1):
+        
+        try:
+            raw_hist= raw_hist.reshape((192,256,672))
+        except:
+           raw_hist = raw_hist.reshape((shape0,shape1,672))
+        c = 3e8  # m/s
+        bin_width = .758e-9 #1ns
+        peak_bin = np.argmax(raw_hist, axis=2)  # shape (192, 256)
+
+        # Step 2: Convert to time
+        time_delay = peak_bin * bin_width  # seconds
+
+        # Step 3: Convert to depth
+        depth_map = (c * time_delay) / 2  # meters
+        return depth_map
+def fix_depth(raw_histo,zdd_fp,offset_fp):
+    
+    raw_histo = raw_histo.reshape((192,256,672))
+    with open(zdd_fp,"r") as f:
+        zdds = f.readlines()
+    zdd_timing = 0.0625
+    zdds = [float(x.strip().split(",")[1])*zdd_timing for x in zdds]
+    
+    bin_width_ns = .758
+    
+    zdds = [int(np.ceil(x/bin_width_ns)) for x in zdds]
+
+    #raw_histo = np.roll(raw_histo,-25,axis=2)
+    for i in range(32):
+        raw_histo[i*6:(i+1)*6,:,:] = shift(raw_histo[i*6:(i+1)*6,:,:], shift=(0, 0, -(zdds[i]+2)), order=0, mode='constant', cval=0)
+
+    with open(offset_fp, "r") as f:
+        offsets= f.readlines()
+        offsets = [float(x.strip()) for x in offsets]
+
+    offsets = np.array(offsets).reshape(192,256)
+    mask = offsets < 5000
+    rows, cols = np.where(mask)
+
+    # Flatten offsets for easy iteration
+    shifts = -np.ceil(offsets[mask] * 6.25 / bin_width_ns).astype(np.int32)
+
+    for r, c, s in zip(rows, cols, shifts):
+        raw_histo[r, c, :] = shift(raw_histo[r, c, :], shift=s, order=0, mode='constant', cval=0)#np.roll(raw_histo[r, c, :], s)
+    return raw_histo
+
+def get_peak(convolved_histo,fitting_window,zero_extent):
+
+    window = len(fitting_window)+zero_extent
+    max_args = convolved_histo.argmax(axis=-1)
+    max_vals = convolved_histo.max(axis=-1)
+
+    bins = np.arange(convolved_histo.shape[-1])[None,:]
+    max_idx = np.clip(max_args[...,None], 0, convolved_histo.shape[-1]-1)
+
+    ## what if max_idx 0 or the max, may need more clipping here.
+    mask = (bins >= max_idx - window) & (bins <= max_idx + window)
+   
+    convolved_histo[mask] = 0
+    
+    return max_args,convolved_histo
+
+def get_stats(peak_idx, fitting_window, raw_histo):
+    peak_idx_expanded = peak_idx[..., None]
+    offsets = fitting_window
+
+    idxs = peak_idx_expanded + offsets
+    
+    idxs = np.clip(idxs,0,raw_histo.shape[-1]-1).astype(int)
+    window_counts = np.take_along_axis(raw_histo,idxs,axis=-1)
+
+    total_energy = np.sum(window_counts,axis=-1).astype(np.float64)
+    denom = np.sum(window_counts, axis=-1, keepdims=True)
+    window_counts = np.divide(
+        window_counts,
+        denom,
+        out=np.zeros_like(window_counts, dtype=np.float64),
+        where=denom > 0
+    )
+    mean_bins = np.zeros_like(total_energy)
+
+    nonzero = total_energy > 0
+    mean_bins[nonzero] = np.sum(window_counts[nonzero] * idxs[nonzero], axis=-1).astype(np.float64) 
+    variance_final = np.zeros_like(total_energy)
+    denom = 1 - np.sum(window_counts[nonzero]**2,axis=-1)
+    variance_final[nonzero] = np.sum(window_counts[nonzero]*(idxs[nonzero] - mean_bins[nonzero,None])**2,axis=-1)/denom
+    
+
+    return total_energy, mean_bins, variance_final, idxs[:,0]
+
+def validate_peak():
+
+    return np.ones((192, 256), dtype=bool)
+
+def compute_statistics(raw_histo, zdd_fp,roi_mem_path, window_length,left_offset,right_offset, zero_extent, n):
+
+    ## Matched filter -> get valid echos and statistics
+    fitting_window = np.arange(-window_length+left_offset,window_length+right_offset)
+    filtered_histogram = matched_filter(raw_histo,roi_mem_path)
+    statistics_frame = np.zeros((192,256,n,4))
+
+
+    
+    
+    for peak_number in range(n):
+        found_valid = np.zeros((192, 256), dtype=bool)
+        max_arg = np.zeros((192,256))
+        energy_peak = np.zeros((192,256))
+        mean_peak = np.zeros((192,256))
+        var_peak = np.zeros((192,256))
+        start_idx = np.zeros((192,256))
+
+        while_counter = 0
+        while_max = n + 10
+        while (not np.all(found_valid)) and (while_counter < while_max):
+            ## get a peak for all pixels
+            
+            max_arg[~found_valid],filtered_histogram[~found_valid,:] = get_peak(filtered_histogram[~found_valid,:],fitting_window,zero_extent)
+
+            ## Compute Overlap
+
+            ## Compute the statistics
+            energy_peak[~found_valid],mean_peak[~found_valid],var_peak[~found_valid],start_idx[~found_valid] = get_stats(max_arg[~found_valid],fitting_window,raw_histo[~found_valid,:])
+
+            ## test which pixels have a valid first echo
+            is_legal = validate_peak()
+
+            ## save the ones that are valid
+            just_fixed = is_legal & (~found_valid)
+
+            # Save ONLY the newly valid ones to the frame
+            if np.any(just_fixed):
+                statistics_frame[just_fixed, peak_number, 0] = energy_peak[just_fixed]
+                statistics_frame[just_fixed, peak_number, 1] = mean_peak[just_fixed]
+                statistics_frame[just_fixed, peak_number, 2] = var_peak[just_fixed]
+                statistics_frame[just_fixed, peak_number, 3] = start_idx[just_fixed]
+            while_counter +=1
+            found_valid = found_valid | is_legal
+    #statistics_frame = offset_correction(statistics_frame,zdd_fp,n)
+    return statistics_frame
 
 
 def plot_spad_sensor_grid(
-    histogrammer, fov_masks, grid_shape, albedo_frame, depth_frame, transients, arrival_rates, ewh_list, save_path=None
+    histogrammer, fov_masks, grid_shape, albedo_frame, depth_frame, transients, arrival_rates, ewh_list, save_path=None,raw_histo=None
 ):
     """
     Visualizes SPAD data and saves three distinct plots:
@@ -30,64 +230,6 @@ def plot_spad_sensor_grid(
     3. Waveforms: Transient Response vs Generated Histogram (EWH)
     """
     rows, cols = grid_shape
-
-    # Handle Filenames
-    scenario_name = ""
-    if save_path:
-        path_obj = Path(save_path)
-        base_name = path_obj.stem.replace("_reconstruction", "")
-        parent = path_obj.parent
-        scenario_name = f": {base_name}"
-
-        save_path_recon = parent / f"{base_name}_reconstruction.svg"
-        save_path_overlay = parent / f"{base_name}_overlay.svg"
-        save_path_waveforms = parent / f"{base_name}_waveforms.svg"
-        save_fullres_depth = parent / f"fullres_true_depth.svg"
-        save_combined_fov_img = parent / f"{base_name}_combined_fov_vignette.svg"
-        save_combined_fov_overlay_img = parent / f"{base_name}_combined_fov_overlay_vignette.svg"
-        save_quantized_gt_depth = parent / f"quantized_true_depth.svg"
-
-
-
-    num_fovs = fov_masks.shape[0]
-    master_grid = torch.max(fov_masks, dim=0)[0].detach().cpu().numpy()
-
-    # Derive figure width/height from the image shape so landscape images fill the frame.
-    img_h, img_w = master_grid.shape[:2]
-    fig_w = 12.0
-    fig_h = fig_w * img_h / img_w
-
-    # 2. Plotting the single FOV grid
-    plt.figure(figsize=(fig_w, fig_h))
-    plt.imshow(master_grid, cmap="gray", aspect="auto")
-    np.save(parent / "fov_master_grid.npy", master_grid)
-    plt.title("Active SPC Scan Grid (Composite FOVs)", fontsize=14)
-    plt.axis("off")
-    if save_path:
-        plt.savefig(save_combined_fov_img, bbox_inches="tight")
-    else:
-        plt.show()
-
-    # 3. OPTIONAL: Overlay the grid on your RGB image for context
-    plt.figure(figsize=(fig_w, fig_h))
-    plt.imshow(depth_frame.cpu().numpy() * master_grid, cmap="turbo", aspect="auto")
-    plt.axis("off")
-    if save_path:
-        plt.savefig(save_combined_fov_overlay_img, bbox_inches="tight")
-    else:
-        plt.show()
-
-    vmax_depth = depth_frame.cpu().numpy().max()
-
-    plt.figure(figsize=(fig_w, fig_h))
-    im = plt.imshow(depth_frame.cpu().numpy(), cmap="turbo", vmin=0, vmax=vmax_depth, aspect="auto")
-    np.save(parent / "Original_Depthmap.npy", depth_frame.cpu().numpy())
-    plt.colorbar(im, fraction=0.046, pad=0.04)
-    plt.axis("off")
-    if save_path:
-        plt.savefig(save_fullres_depth, bbox_inches="tight")
-    else:
-        plt.show()
 
     # --- HELPER: ROBUST CONVERSION TO NUMPY ---
     def ensure_numpy(x):
@@ -110,50 +252,76 @@ def plot_spad_sensor_grid(
     depth_img = ensure_numpy(depth_frame)
     ewh_data = ensure_numpy(ewh_list)
     transient_data = ensure_numpy(transients)
-    arrival_rates_data = ensure_numpy(arrival_rates)
 
     # ---------------------------------------------------------
     # PRE-CALCULATE METRICS
     # ---------------------------------------------------------
-    depth_map_est = np.zeros((rows, cols))
-    depth_map_gt = np.zeros((rows, cols))
 
-    # Calculate bin width
-    max_depth_val = histogrammer.max_depth
-    if hasattr(max_depth_val, "magnitude"):
-        max_depth_val = max_depth_val.magnitude
-    bin_dist_m = max_depth_val / histogrammer.n_bins
-    
-    print("bin_dist_m: ", bin_dist_m)
-    print("max_depth_val m", max_depth_val)
+    # depth_map_est = np.zeros((rows, cols))
+    # depth_map_gt = np.zeros((rows, cols))
 
-    # Fill maps
-    for r in range(rows):
-        for c in range(cols):
-            idx = r * cols + c
+    # # Calculate bin width
+    # max_depth_val = histogrammer.max_depth
+    # if hasattr(max_depth_val, "magnitude"):
+    #     max_depth_val = max_depth_val.magnitude
+    # bin_dist_m = max_depth_val / histogrammer.n_bins
 
-            # Estimate
-            if idx < len(ewh_data):
-                peak_bin = np.argmax(ewh_data[idx])
-                # Filter: Only estimate depth if there are photons
-                if np.sum(ewh_data[idx]) > 0:
-                    depth_map_est[r, c] = (peak_bin) * bin_dist_m
+    # # Fill maps
+    # for r in range(rows):
+    #     for c in range(cols):
+    #         idx = r * cols + c
 
-            # Ground Truth
-            if idx < len(fov_masks):
-                mask = ensure_numpy(fov_masks[idx])
-                valid_depths = depth_img[mask > 0]
-                if len(valid_depths) > 0:
-                    depth_map_gt[r, c] = np.mean(valid_depths)
-    
-    print("depth_map_est min max", depth_map_est.min(), depth_map_est.max(), depth_map_est.max()-depth_map_est.min())
-    print("depth_map_gt min max", depth_map_gt.min(), depth_map_gt.max(), depth_map_gt.max() - depth_map_gt.min())
+    #         # Estimate
+    #         if idx < len(ewh_data):
+    #             peak_bin = np.argmax(ewh_data[r,c])
+    #             # Filter: Only estimate depth if there are photons
+    #             if np.sum(ewh_data[r,c]) > 0:
+    #                 depth_map_est[r, c] = peak_bin * bin_dist_m
+
+    #         # Ground Truth
+    #         if idx < len(fov_masks):
+    #             mask = ensure_numpy(fov_masks[idx])
+    #             valid_depths = depth_img[mask > 0]
+    #             if len(valid_depths) > 0:
+    #                 depth_map_gt[r, c] = np.mean(valid_depths)
 
     # --- GLOBAL SCALING ---
-    vmin_depth = 0
-    # vmax_depth = np.max(depth_map_gt)
-    if vmax_depth == 0:
-        vmax_depth = 1.0
+
+    zdd_fp = "/u/g/u/gump/vsim/zddIndex_19_358296692.txt" 
+    #raw_histo = fix_depth(np.flipud(raw_histo),zdd_fp,"/nobackup2/gump/gpuLaptopFiles/testing_new_glare_method/offset.txt")
+
+    roi_mem_path = "/u/g/u/gump/vsim/roi_mem_B34_1ms.txt"
+
+    n = 3
+    distance_thresh = 0
+    window = 4
+    left_offset = -1
+    right_offset = 2
+    
+    crop_window = (45,220,5,137)
+    gt_stats =compute_statistics(raw_histo,zdd_fp,roi_mem_path,window,left_offset,right_offset,distance_thresh,n)
+    depth_map_gt = cropDepth(np.flipud(get_depthMap_from_echos(gt_stats)),crop_window)
+
+    #ewh_data[:,:,:] = shift(ewh_data[:,:,:], shift=(0, 0, -10), order=0, mode='constant', cval=0)
+    est_stats =compute_statistics(np.flipud(ewh_data.copy()),zdd_fp,roi_mem_path,window,left_offset,right_offset,distance_thresh,n)
+    depth_map_est = cropDepth(get_depthMap_from_echos(est_stats),crop_window)
+  
+
+    ewh_data = ewh_data.reshape(transient_data.shape[0],transient_data.shape[1],672)
+    vmin_depth = .5
+    vmax_depth = 5.5
+
+    # Handle Filenames
+    scenario_name = ""
+    if save_path:
+        path_obj = Path(save_path)
+        base_name = path_obj.stem.replace("_reconstruction", "")
+        parent = path_obj.parent
+        scenario_name = f": {base_name}"
+
+        save_path_recon = parent / f"{base_name}_reconstruction.png"
+        save_path_overlay = parent / f"{base_name}_overlay.png"
+        save_path_waveforms = parent / f"{base_name}_waveforms.png"
 
     # =========================================================
     # PLOT 1: RECONSTRUCTION
@@ -161,48 +329,28 @@ def plot_spad_sensor_grid(
     fig_maps, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     fig_maps.suptitle(f"Reconstruction{scenario_name}", fontsize=16)
 
-
-    num_bins = transients.shape[-1]
-    depth_max = depth_map_gt.max()
-
-    # Calculate the physical size/depth width of a single temporal bin
-    bin_size = depth_max / num_bins 
-
-    # Divide by bin size, truncate to integer to group them, then multiply back
-    depth_image_quantized = (depth_map_gt / bin_size).astype(np.int32) * bin_size
-
-    im1 = ax1.imshow(depth_image_quantized, cmap="turbo", interpolation="nearest", vmin=vmin_depth, vmax=vmax_depth)
+    im1 = ax1.imshow(depth_map_gt, cmap="jet", vmin=vmin_depth, vmax=vmax_depth)
     ax1.set_title("Ground Truth (Ideal)")
-    np.save(parent / "truedepth_quantized_by_ntbins.npy", depth_image_quantized)
     plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
-    ax1.axis("off")
 
-    im2 = ax2.imshow(depth_map_est, cmap="turbo", interpolation="nearest", vmin=vmin_depth, vmax=vmax_depth)
-    np.save(parent / "estimated_depth_from_sensor.npy", depth_map_est)
+    im2 = ax2.imshow(depth_map_est, cmap="jet", vmin=vmin_depth, vmax=vmax_depth)
     ax2.set_title("Simulator Estimate (Physics-based)")
     plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
-    ax2.axis("off")
 
-    # plt.tight_layout()
+    plt.tight_layout()
 
     # =========================================================
     # PLOT 2: OVERLAY
     # =========================================================
-    # Each subplot shows a full-res landscape image; size two panels side-by-side at the correct aspect ratio.
-    ov_panel_w = fig_w
-    ov_panel_h = ov_panel_w * img_h / img_w
-    fig_ov, ax_ov = plt.subplots(1, 2, figsize=(ov_panel_w * 2, ov_panel_h))
+    fig_ov, ax_ov = plt.subplots(1, 2, figsize=(12, 6))
     fig_ov.suptitle(f"Sensor FOV Overlay{scenario_name}", fontsize=16)
 
-    ax_ov[0].imshow(albedo_img, cmap="gray", aspect="auto")
-    np.save(parent / "albedo.npy", albedo_img)
+    ax_ov[0].imshow(albedo_img, cmap="gray")
     ax_ov[0].set_title("RGB/Albedo + FOV Grid")
-    ax_ov[0].axis("off")
 
-    im_ov = ax_ov[1].imshow(depth_img, cmap="turbo", vmin=vmin_depth, vmax=vmax_depth, aspect="auto")
+    im_ov = ax_ov[1].imshow(depth_img, cmap="jet", vmin=vmin_depth, vmax=vmax_depth)
     ax_ov[1].set_title("High-Res Depth + FOV Grid")
     plt.colorbar(im_ov, ax=ax_ov[1], fraction=0.046, pad=0.04)
-    ax_ov[1].axis("off")
 
     # Draw Rectangles (Limit to 2000 to prevent crash)
     if len(fov_masks) < 2000:
@@ -218,108 +366,79 @@ def plot_spad_sensor_grid(
                         (x_min, y_min), w, h, linewidth=1, edgecolor="r", facecolor="none", alpha=0.5
                     )
                     ax.add_patch(rect)
-    # plt.tight_layout()
+    plt.tight_layout()
 
     # =========================================================
     # PLOT 3: WAVEFORM GRID (Transient vs EWH)
     # =========================================================
-    MAX_PLOTS = 0
+    MAX_PLOTS = 16
 
-    if rows * cols > MAX_PLOTS:
-        fig_wave, axes = plt.subplots(4, 1, figsize=(6, 10))
-        fig_wave.suptitle(
-            f"Corner Pixels - Waveforms{scenario_name}\nBlue: Transient (Ideal) | Black Bars: EWH (Noisy)", fontsize=14
-        )
-        corners = [
-            (0, 0, "Top-Left"),
-            (0, cols - 1, "Top-Right"),
-            (rows - 1, 0, "Bottom-Left"),
-            (rows - 1, cols - 1, "Bottom-Right"),
-        ]
-        
-        ax_flat = axes.flatten()
+    # If too many pixels, just plot the 4 corners
+    fig_wave, ax = plt.subplots(2, 2, figsize=(10, 8))
+    fig_wave.suptitle(
+        f"Corner Pixels - Waveforms{scenario_name}\nBlue: Transient (Ideal) | Orange: EWH (Noisy)", fontsize=14
+    )
+    ewh_mid_y, ewh_mid_x = 83,132
+    mid_y_raw, mid_x_raw =  96,126#np.unravel_index(np.argmax(raw_histo,axis=-1),(192,256))
+    corners = [
+        (0,-2,"Middle (x-2)"),
+        (0, 2,"Middle x+2"),
+        (-2,0,"Middle y-2"),
+        (2, 0,  "Middle y+2"),
 
-        for i, (r, c, name) in enumerate(corners):
-            idx = r * cols + c
-            ax = ax_flat[i]
-            if idx < len(transient_data):
+    ]
+    # mid_y_raw, mid_x_raw =  77,126
+    # corners = [
+    #     (0,0,"Middle (x-2)"),
+    #     (1, 0,"Middle x+2"),
+    #     (2,0,"Middle y-2"),
+    #     (-2, 0,  "Middle y+2"),
 
-                ax.set_title(f"{name} (Row {r}, Col {c})")
-                # 1. Transient (Line Plot)
-                t_data = transient_data[idx]
-                ax.plot(t_data, color="blue", alpha=1, linewidth=2, label="Transient")
-                np.save(parent / f"t_data_row_{r}_col_{c}.npy", t_data)
-                
-                # 2. Arrivals (Line Plot)
-                ax3_w = ax.twinx()
-                a_data = arrival_rates_data[idx]
-                ax3_w.plot(a_data, color="red", alpha=1, linewidth=2, label="Arrivals")
-                np.save(parent / f"a_data_row_{r}_col_{c}.npy", a_data)
+    # ]
+    axes = [(0,0),(0,1),(1,0),(1,1)]
+    raw_sum = (raw_histo.max(axis=-1)) + 1 
 
-                # 3. Detections (Bar Plot)
-                ax2_w = ax.twinx()
-                e_data = ewh_data[idx]
-                # Added range() for x-axis, width=1.0 for contiguous bins, and reduced alpha
-                # ax2_w.bar(range(len(e_data)), e_data/e_data.sum(), width=1.0, color="white", edgecolor="black", alpha=0.8, label="Detections")
-                ax2_w.plot(e_data, color="black", alpha=0.95, linewidth=2.0, label="Detections")
-                np.save(parent / f"e_data_row_{r}_col_{c}.npy", e_data)
+    raw_sum = raw_sum[...,None]
+    raw_histo = raw_histo / raw_sum
 
-                
-                # Hide y-ticks for cleaner look
-                ax.set_yticks([])
-                ax2_w.set_yticks([])
-                ax3_w.set_yticks([])
-                
-                if i == 0:  # Legend only on first subplot
-                    lines_1, labels_1 = ax.get_legend_handles_labels()
-                    lines_2, labels_2 = ax2_w.get_legend_handles_labels()
-                    lines_3, labels_3 = ax3_w.get_legend_handles_labels()
-                    ax.legend(lines_1 + lines_2 + lines_3, labels_1 + labels_2 + labels_3, loc="upper right", fontsize="small")
-                    # ax.legend(lines_1, labels_1, loc="upper right", fontsize="small")
+    ewh_maxs = ewh_data.max(axis=-1) + 1
+    ewh_maxs = ewh_maxs[...,None]
+    ewh_data = ewh_data/ewh_maxs
 
-        plt.tight_layout()
-    else:
-        # Plot every single pixel
-        fig_wave, axes = plt.subplots(rows, cols, figsize=(cols * 1, rows * 2), squeeze=False)
-        fig_wave.suptitle(f"Pixel-wise Waveforms{scenario_name}", fontsize=16)
+    transient_maxs = transient_data.max(axis=-1) + 1
+    transient_maxs = transient_maxs[...,None]
+    transient_data = transient_data/transient_maxs
 
-        for r in range(rows):
-            for c in range(cols):
-                idx = r * cols + c
-                ax = axes[r, c]
-                if idx < len(transient_data):
-                    t_data = transient_data[idx]
-                    # ax.plot(t_data, color="tab:blue", alpha=0.6, linewidth=1)
+    for i, (s_y,s_x, name) in enumerate(corners):
+        shape_y_diff, shape_x_diff = (raw_histo.shape[0]//transient_data.shape[0]),(raw_histo.shape[1]//transient_data.shape[1])
+        idx_y_transient, idx_x_transient = (ewh_mid_y + s_y),(ewh_mid_x+s_x)
+        idx_y_raw, idx_x_raw = (mid_y_raw + s_y),(mid_x_raw+s_x)
+        t_data = transient_data[idx_y_transient, idx_x_transient]
+        ax[axes[i]].plot(t_data[:100], color="tab:blue", alpha=1, linewidth=2.5, label="Transient")
+        ax[axes[i]].plot(raw_histo[idx_y_raw, idx_x_raw][:100],color="red",label="Raw Histogram")
 
-                    ax2_w = ax.twinx()
-                    e_data = ewh_data[idx]
-                    ax2_w.plot(e_data, color="tab:red", alpha=0.8, linewidth=1, label="detections")
+        e_data = ewh_data[idx_y_transient, idx_x_transient]
+        ax[axes[i]].plot(e_data[:100], color="tab:orange", alpha=0.8, linewidth=1.5, label="EWH")
 
-                    ax3_w = ax.twinx()
-                    a_data = arrival_rates_data[idx]
-                    ax3_w.plot(a_data, color="tab:blue", alpha=0.8, linewidth=1.5, label="arrivals")
+        ax[axes[i]].set_title(f"{name} (Row {s_y}, Col {s_x})")
+
+        if i == 0:  # Legend only on first
+            lines_1, labels_1 = ax[axes[i]].get_legend_handles_labels()
+            
+            ax[axes[i]].legend(lines_1, labels_1, loc="upper right", fontsize="small")
 
 
-                    ax.set_xticks([])
-                    ax.set_yticks([])
-                    ax2_w.set_yticks([])
-                    ax3_w.set_yticks([])
-                else:
-                    ax.axis("off")
-
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    
     # =========================================================
     # SAVE OR SHOW
     # =========================================================
     if save_path:
-        plt.axis("off")
         print(f"Saving reconstruction to {save_path_recon}...")
-        
-        fig_maps.savefig(save_path_recon, dpi=150, bbox_inches="tight")
+        fig_maps.savefig(save_path_recon, dpi=150)
 
         print(f"Saving overlay to {save_path_overlay}...")
-        fig_ov.savefig(save_path_overlay, dpi=150, bbox_inches="tight")
+        fig_ov.savefig(save_path_overlay, dpi=150)
 
         print(f"Saving waveforms to {save_path_waveforms}...")
         fig_wave.savefig(save_path_waveforms, dpi=150)
@@ -332,6 +451,9 @@ def plot_spad_sensor_grid(
 
 
 def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, transients, arrival_rates, ewh_list):
+    # print("Min max of depth_frame", depth_frame.min(), depth_frame.max())
+    # print("Ewh list", ewh_list)
+    # print("arrival_rates", arrival_rates)
 
     # Plots
     # Get number of FOVs from fov_masks
@@ -344,7 +466,7 @@ def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, trans
         current_ax.imshow(fov_masks[i].detach().cpu().numpy(), cmap="gray")
         current_ax.set_title(f"FOV {i + 1}")
         current_ax.axis("off")
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust layout to prevent suptitle overlap
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust layout to prevent suptitle overlap
     # plt.show()
 
     # Albedo values for the first frame
@@ -357,7 +479,7 @@ def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, trans
         )
         current_ax.set_title(f"FOV {i + 1}")
         current_ax.axis("off")
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     # plt.show()
 
     # Depth values for the first frame
@@ -369,12 +491,12 @@ def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, trans
             # The depth frame visualization should not be multiplied with a continuous FOV mask
             # The visualization only shows the region of the depth frame that contributes to the transient for a specific pixel
             depth_frame.detach().cpu().numpy() * (fov_masks[i].detach().cpu().numpy() > 0),
-            cmap="turbo",
-            # depth_frame.detach().cpu().numpy() * fov_masks[i].detach().cpu().numpy(), cmap="turbo"
+            cmap="jet",
+            # depth_frame.detach().cpu().numpy() * fov_masks[i].detach().cpu().numpy(), cmap="jet"
         )  # Assuming max depth of 10m based on 10.0/255.0 scaling
         current_ax.set_title(f"FOV {i + 1}")
         current_ax.axis("off")
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     # plt.show()
 
     # Transients
@@ -387,7 +509,7 @@ def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, trans
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Normalized Amplitude")
         current_ax.grid(True)
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     # plt.show()
 
     # Arrival Rates
@@ -401,7 +523,7 @@ def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, trans
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Rate (photons/bin)")
         current_ax.grid(True)
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     # plt.show()
 
     # Time Stamp Histograms (EWH)
@@ -415,7 +537,7 @@ def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, trans
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Photon Counts")
         current_ax.grid(True)
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
 
@@ -438,7 +560,7 @@ def plot_edh_per_pixel(
         current_ax.imshow(fov_masks[i].detach().cpu().numpy(), cmap="gray")
         current_ax.set_title(f"FOV {i + 1}")
         current_ax.axis("off")
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust layout to prevent suptitle overlap
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust layout to prevent suptitle overlap
     plt.show()
 
     # Albedo values for the first frame
@@ -451,7 +573,7 @@ def plot_edh_per_pixel(
         )
         current_ax.set_title(f"FOV {i + 1}")
         current_ax.axis("off")
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
     # Depth values for the first frame
@@ -464,7 +586,7 @@ def plot_edh_per_pixel(
         )  # Assuming max depth of 10m based on 10.0/255.0 scaling
         current_ax.set_title(f"FOV {i + 1}")
         current_ax.axis("off")
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
     # Transients
@@ -477,7 +599,7 @@ def plot_edh_per_pixel(
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Normalized Amplitude")
         # current_ax.grid(True)
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
     # Arrival Rates
@@ -491,7 +613,7 @@ def plot_edh_per_pixel(
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Rate (photons/bin)")
         # current_ax.grid(True)
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
     # Time Stamp Histograms
@@ -519,5 +641,5 @@ def plot_edh_per_pixel(
         current_ax.set_xlabel("Time Bins")
         current_ax.set_ylabel("Normalized Photon Counts")
         # current_ax.grid(True)
-    # plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()

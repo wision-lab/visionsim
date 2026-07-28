@@ -1,0 +1,46 @@
+# Histogrammer 
+histogrammer:
+  min_depth: !Quantity 0.0 meters
+  max_depth: !Quantity 76.4 meters #76.4 meters
+  n_bins: 672
+  bin_width: !Quantity .1136 meters #0.758 nanoseconds  # meters per bin --- .758 ns -> meters
+  pixel_fov_list: [[0, 0.4, 0.3, 0.6], [0.2, 0.6, 0.6, 0.9]] ## ?  ## Row start row end col start col end
+  n_pulses: 20000 #81047 #781047   # number of laser pulses -->> Will depend on settings
+  dead_time_s: !Quantity 11 nanoseconds # Dead time in seconds -->> CHECK THIS currently using 10ns but says ~7-20ns and then typ 10 min 7?
+  free_running: False
+  fast_sim: True
+  
+bloom:
+  bloom_sim: True
+  bloom_scale: 1e-6
+  bloom_falloff: .065
+  scan_mode: "horizontal" ## "vertical" "flash"
+  scan_width: 4 ## rows or columns  ## currently needs to evenly divide the dimension
+# Active Light Source 
+active_source:
+  pulsed_laser:
+    enabled: true
+    wavelength: !Quantity 940.0 nanometers            # nanometers
+    frequency: !Quantity 1.96 megahertz #823 kilohertz               # hertz NEED TO CHECK REGISTERS
+    pulse_width: !Quantity 3.0303 nanoseconds            # seconds NEED TO CHECK REGISTERS
+    avg_watts: !Quantity .0001 watts                    # watts UNSURE might be in regist (check colin email)
+    #pulse_shape: "gaussian"         # "gaussian", "square", or "custom" 
+    pulse_shape_custom: [0,0,0,207,255,113,52,34,25] ## can this be any number of taps? Does it need to be the same width as the sent pulse?
+
+# Ambient Light Sources 
+ambient_source:
+  sun:
+    enabled: true
+    temperature: !Quantity 5778.0 kelvin            # kelvin
+    light_conditions: "OVERCAST"  # from LightConditions enum
+    lambda_pass: !Quantity 550.0 nanometers             # nanometers
+    delta_lambda: !Quantity 10.0 nanometers             # nanometers
+    intensity: !Quantity 3.828e26 watts / meter**2      # watts per square meter
+
+# Sensor
+sensor:
+  size: [192, 256]          # [height, width]
+  pixel_pitch: !Quantity 10.08 micrometer           # meters
+  f_number: !Quantity 1.4         # dimensionless
+  fov: !Quantity [96 degree, 128 degree]
+#!Quantity [96 degree, 128 degree]

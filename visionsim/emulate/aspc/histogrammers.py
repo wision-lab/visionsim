@@ -6,6 +6,8 @@ import torch.nn.functional as F
 from pint import Quantity
 from torch import Tensor
 from tqdm import tqdm
+import numpy as np
+from itertools import product
 
 from visionsim.emulate.aspc.units import validate_units
 from visionsim.emulate.aspc.utils import get_irradiance_with_fov, ureg
@@ -444,19 +446,31 @@ class HistogrammerBase:
                 if hasattr(fov_irradiance_vals, "magnitude"):
                     fov_irradiance_vals = fov_irradiance_vals.magnitude
 
+     
                 # Convert depth values to time bin locations
                 transient_idx = torch.floor(current_depth_vals * gt_ntime_bins / max_depth).to(torch.long)
                 transient_idx = torch.clamp(transient_idx, 0, gt_ntime_bins - 1)  # Ensure indices are within bounds
-
+           
                 # Use torch.scatter_add for efficient accumulation into transients
                 t1 = transients[mask_idx].scatter_add(0, transient_idx, fov_irradiance_vals)
+
                 transient_list.append(t1.unsqueeze(0))
 
         final_transients = torch.concat(transient_list)
         return final_transients, ambient_offsets
 
     def calculate_arrival_rates(
-        self, irf: torch.Tensor, transients: torch.Tensor, offset, gt_ntime_bins: int
+        self, 
+        irf: torch.Tensor, 
+        transients: torch.Tensor, 
+        offset, 
+        gt_ntime_bins: int, 
+        glare_mask: torch.Tensor, 
+        bloom_scale: float, 
+        bloom_falloff: float, 
+        scan_mode: str,
+        scan_width: int,
+        bloom_sim: bool, 
     ) -> torch.Tensor:
         """
         Calculates the photon arrival rates by convolving transients with the IRF
@@ -472,15 +486,82 @@ class HistogrammerBase:
             torch.Tensor: A tensor of photon arrival rates.
         """
         arrival_rates = torch.zeros_like(transients, dtype=torch.float32, device=transients.device)
-        for i in tqdm(range(transients.shape[0]), desc="Convolving transients", disable=True):
+
+        irf = torch.tensor([25,34,52,113,255,207,0,0,0],dtype=torch.float32, device=transients.device)
+
+        for i in tqdm(range(transients.shape[0]), desc="Convolving transients", disable=False):
+
+
             # Reshape for conv1d: (batch_size, in_channels, signal_length)
             convolved_signal = F.conv1d(transients[i].view(1, 1, -1), irf.view(1, 1, -1), padding="same").view(-1)
-            # convolved_signal = F.conv1d(transients[i], irf, padding="same")
-            # pad = irf.numel() // 2
-            # padded_signal = F.pad(transients[i].view(1, 1, -1), (pad, pad), mode="constant", value=0.0)
-            # convolved_signal = F.conv1d(padded_signal, irf.view(1, 1, -1)).view(-1)
-            # Add signal and background components
-            # Handle offset as list, tensor, or scalar
+            
+            arrival_rates[i, :] = convolved_signal
+
+        if bloom_sim:
+            # # Create a new array to hold the results so we don't corrupt our read data
+            arrival_rates = arrival_rates.reshape((192, 256, 672))
+
+            # 1. Unpack raw PyTorch tensor and units
+            units = arrival_rates.units if hasattr(arrival_rates, 'units') else 1
+            raw_arrival = arrival_rates.magnitude if hasattr(arrival_rates, 'magnitude') else arrival_rates
+            raw_mask = glare_mask.magnitude if hasattr(glare_mask, 'magnitude') else glare_mask
+
+            raw_arrival = raw_arrival.reshape((192, 256, 672))
+            new_arrival_rates = torch.zeros_like(raw_arrival)
+
+            device = raw_arrival.device
+            dtype = raw_arrival.dtype
+
+            # 2. Run loop purely on raw PyTorch tensors
+            for i, j in tqdm(np.ndindex((192, 256)), total=192*256, desc="Adding Glare"):
+            # Restrict window strictly to the active 6-row LiDAR chunk
+                if scan_mode == "horizontal":
+                    start_idx = (j // scan_width) * scan_width  # e.g., 0, 6, 12, ...
+                    stop_idx = start_idx + scan_width            # e.g., 6, 12, 18, ...
+                    local_j = j - start_idx                     # Local row index inside the 6-row slice (0 to 5)
+                    
+                    glare_contributers = raw_arrival[:, start_idx:stop_idx, :] * raw_mask[0, :, start_idx:stop_idx, None]
+                    
+                    i_coords = torch.arange(192, device=device, dtype=dtype)
+                    j_coords = torch.arange(start_idx, stop_idx, device=device, dtype=dtype)
+                    
+                    distance = torch.sqrt((i_coords - i).unsqueeze(1)**2 + (j_coords - j).unsqueeze(0)**2)
+                    decay_mask = bloom_scale * torch.exp(-bloom_falloff * distance)
+                    decay_mask[i, local_j] = 0.0
+
+                    weighted_glare = glare_contributers * decay_mask.unsqueeze(-1)
+
+                    # Pure PyTorch addition (no Pint unit checking overhead inside loop)
+                    new_arrival_rates[i, j, :] = raw_arrival[i, j, :] + weighted_glare.sum(dim=(0, 1))
+                elif scan_mode == "vertical":
+                    start_idx = (i // scan_width) * scan_width  # e.g., 0, 6, 12, ...
+                    stop_idx = start_idx + scan_width            # e.g., 6, 12, 18, ...
+                    local_i = i - start_idx                     # Local row index inside the 6-row slice (0 to 5)
+                    
+                    glare_contributers = raw_arrival[start_idx:stop_idx, :, :] * raw_mask[0, start_idx:stop_idx, :, None]
+                    
+                    i_coords = torch.arange(start_idx, stop_idx, device=device, dtype=dtype)
+                    j_coords = torch.arange(256, device=device, dtype=dtype)
+                    
+                    distance = torch.sqrt((i_coords - i).unsqueeze(1)**2 + (j_coords - j).unsqueeze(0)**2)
+                    decay_mask = bloom_scale * torch.exp(-bloom_falloff * distance)
+                    decay_mask[local_i, j] = 0.0
+
+                    weighted_glare = glare_contributers * decay_mask.unsqueeze(-1)
+
+                    # Pure PyTorch addition (no Pint unit checking overhead inside loop)
+                    new_arrival_rates[i, j, :] = raw_arrival[i, j, :] + weighted_glare.sum(dim=(0, 1))
+                else:
+                    ## TODO FLASH SYSTEM
+                    pass
+
+
+            # 3. Flatten and re-wrap Pint units
+            arrival_rates = new_arrival_rates.flatten(start_dim=0, end_dim=1) * units
+
+        ## Background add
+        for i in tqdm(range(arrival_rates.shape[0]), desc="Adding Background", disable=False):
+
             if isinstance(offset, (list, tuple)):
                 background = offset[i] if i < len(offset) else offset[0] if len(offset) > 0 else 0.0
             elif isinstance(offset, torch.Tensor):
@@ -492,8 +573,8 @@ class HistogrammerBase:
             if not isinstance(background, torch.Tensor):
                 background = torch.tensor(background, dtype=torch.float32, device=transients.device)
 
-            background_extended = background.expand_as(convolved_signal) if background.dim() == 0 else background
-            arrival_rates[i, :] = convolved_signal + background_extended
+            background_extended = background.expand_as(arrival_rates[i,:]) if background.dim() == 0 else background
+            arrival_rates[i, :] = arrival_rates[i,:] + background_extended
         return arrival_rates
 
     def _apply_non_pr_deadtime(self, buffer: torch.Tensor, dead_time_bins: int, n_tbins: int):
@@ -614,7 +695,7 @@ class Histogrammer(HistogrammerBase):
 
         # print("prob_detection", prob_detection.min(), prob_detection.max(), prob_detection.mean())
 
-        for n_ in tqdm(range(n_pulses), desc="Simulating Pixel EWH"):
+        for n_ in tqdm(range(n_pulses), desc="Simulating Pixel EWH",disable=True):
             detections = torch.bernoulli(prob_detection)
 
             # Update buffer

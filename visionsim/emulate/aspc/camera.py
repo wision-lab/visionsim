@@ -201,6 +201,7 @@ class Camera:
     def get_transients(self):
         """Get transient data from histogrammer"""
         irradiance = self._get_signal()
+        
         offsets = self._get_ambient_offset()
         fov_masks = self.get_fov_masks()
         transients, ambient_offsets = self.histogrammer.calculate_transients(
@@ -220,18 +221,22 @@ class Camera:
         self.ambient_offsets = ambient_offsets
         return transients, ambient_offsets
 
-    def get_arrival_rates(self):
+    def get_arrival_rates(self,glare_mask):
         """Get arrival rates from histogrammer"""
-    
+        bloom_sim = self.config["bloom"]["bloom_sim"]
+        bloom_scale = self.config["bloom"]["bloom_scale"] 
+        bloom_falloff = self.config["bloom"]["bloom_falloff"] 
+        scan_mode = self.config["bloom"]["scan_mode"]
+        scan_width = self.config["bloom"]["scan_width"] 
         bin_width = 2 * tof2depth(1 / self.active_source.frequency) / self.histogrammer.n_bins
         print("bin_width inside arrival rates:", bin_width)
         
         _, irf = self.active_source.get_kernel(bin_width, None)
         irf_tensor = torch.tensor(irf, dtype=torch.float32, device=self.device)
         arrival_rates = self.histogrammer.calculate_arrival_rates(
-            irf_tensor, self.transients, self.ambient_offsets, self.histogrammer.n_bins
+            irf_tensor, self.transients, self.ambient_offsets, self.histogrammer.n_bins,glare_mask,bloom_scale,bloom_falloff,scan_mode,scan_width,bloom_sim 
         )
-        # self.active_source.plot_kernel(bin_width)
+
         self.arrival_rates = arrival_rates
         return arrival_rates
 
