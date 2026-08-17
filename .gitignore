@@ -122,3 +122,8 @@ examples/quickstart/
 docs/source/_build/
 examples/assets/
 uv.lock
+
+# Active-SPC example output (regenerate with examples/sensors/aspc_transients_synthetic.py
+# then examples/sensors/build_aspc_report.py)
+examples/sensors/aspc/figures/
+examples/sensors/aspc/aspc_report.html

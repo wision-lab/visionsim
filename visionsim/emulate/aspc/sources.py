@@ -225,6 +225,9 @@ class BlackBodySource(LightSource):
         """Calculate radiance at a specific wavelength for a black-body source.
         Plank's Law see: https://en.wikipedia.org/wiki/Planck%27s_law
         B(λ,T) = (2hc²/λ⁵) * 1/(e^(hc/λkT) - 1)"""
+        # h, c, k are SI floats, so wavelength must be in meters for the bare
+        # .magnitude below to be physically correct (see finding A6b).
+        wavelength = wavelength.to(ureg.meter)
         numerator = 2 * h * c**2 / (wavelength**5)
         # Extract magnitude for math.exp() which expects dimensionless values
         exp_argument = (h * c / (wavelength * k * self.temperature)).magnitude
@@ -259,7 +262,10 @@ class BlackBodySource(LightSource):
         Returns:
             Total radiance of source (watts per square metre per steradian)
         """
-        return sigma / np.pi * self.temperature**4
+        # Stefan-Boltzmann constant carries units W/(m^2 K^4); dividing the
+        # exitance by (pi sr) gives Lambertian radiance in W/(m^2 sr) (finding A6).
+        sigma_q = sigma * ureg.watt / ureg.meter**2 / ureg.kelvin**4
+        return sigma_q * self.temperature**4 / (np.pi * ureg.steradian)
 
     @property
     def params(self):
@@ -357,6 +363,8 @@ class Sun(ConstantSource, BlackBodySource):
 
         self.lambda_pass = lambda_pass
         self.delta_lambda = delta_lambda
+        self.stability_factor = stability_factor
+        self.light_conditions = light_conditions
         # Get percentage of power that passes through filter
         filter_lam = (
             np.array(
@@ -400,7 +408,7 @@ class Sun(ConstantSource, BlackBodySource):
         )
 
     def __repr__(self):
-        return f"Sun(intensity={self.intensity.to(ureg.watt)}, stability_factor={self.stability_factor.to(ureg.dimensionless)}, temperature={self.temperature.to(ureg.kelvin)}, lambda_pass={self.lambda_pass.to(ureg.nanometer)}, delta_lambda={self.delta_lambda.to(ureg.nanometer)}, light_conditions={self.light_conditions})"
+        return f"Sun(intensity={self.intensity.to(ureg.watt / ureg.meter**2)}, stability_factor={self.stability_factor.to(ureg.dimensionless)}, temperature={self.temperature.to(ureg.kelvin)}, lambda_pass={self.lambda_pass.to(ureg.nanometer)}, delta_lambda={self.delta_lambda.to(ureg.nanometer)}, light_conditions={self.light_conditions})"
 
 
 def get_light_conditions_from_string(condition_str: str) -> LightConditions:

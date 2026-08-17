@@ -1,3 +1,9 @@
+# PEP 604 unions (`dict | None`) are used in annotations below. Without this import
+# they are evaluated at class-definition time and raise TypeError on Python 3.9, which
+# pyproject.toml still declares as supported -- making this module unimportable there
+# (finding E2). Deferring annotation evaluation fixes it without dropping 3.9.
+from __future__ import annotations
+
 import math
 from copy import deepcopy
 
@@ -140,13 +146,17 @@ class Camera:
         Build a pixel_fov_list for every pixel location given a per-pixel FOV size.
 
         Args:
-            per_pixel_fov (float | tuple[float, float]): Per-pixel FOV in degrees.
-                If a single value is provided, a square FOV is assumed.
+            per_pixel_fov (Quantity | tuple[Quantity, Quantity]): Per-pixel angular FOV,
+                as a pint Quantity with angular units (e.g. ``0.1 * ureg.degree``). A
+                bare float is NOT accepted -- it would silently mis-unpack. If a single
+                value is provided, a square FOV is assumed.
             output_path (str | None): Optional file path to save the list
                 (space-delimited text via `numpy.savetxt`).
 
         Returns:
-            list: List of normalized rectangles in [row_min, row_max, col_min, col_max] order.
+            list: List of normalized rectangles in [row_min, row_max, col_min, col_max]
+            order. The list is also assigned to ``self.histogrammer.pixel_fov_list`` so
+            it takes effect immediately.
         """
         if isinstance(per_pixel_fov, (Quantity)):
             fov_h = per_pixel_fov
@@ -159,9 +169,11 @@ class Camera:
 
         pixel_fov_list = []
         for row in range(self.sensor.h):
-            cy = row / self.sensor.h
+            # Pixel *centre*, not its top/left edge -- using row/h biases every FOV by
+            # half a pixel.
+            cy = (row + 0.5) / self.sensor.h
             for col in range(self.sensor.w):
-                cx = col / self.sensor.w
+                cx = (col + 0.5) / self.sensor.w
                 r1 = max(0.0, cy - fov_h_ratio / 2.0)
                 r2 = min(1.0, cy + fov_h_ratio / 2.0)
                 c1 = max(0.0, cx - fov_w_ratio / 2.0)
@@ -171,7 +183,11 @@ class Camera:
         if output_path:
             # Save the pixel FOV list in a space-delimited plain text file, one FOV per line as [r1 r2 c1 c2]
             np.savetxt(output_path, np.array(pixel_fov_list, dtype=np.float32), fmt="%.6f", delimiter=" ")
-            print(f"Saved pixel_fov_list to: {output_path}")
+
+        # Actually take effect -- previously the result was returned/saved but never
+        # wired into the histogrammer, so building a FOV list had no impact on the
+        # pipeline unless it was round-tripped through the config file.
+        self.histogrammer.pixel_fov_list = pixel_fov_list
 
         return pixel_fov_list
 
@@ -222,11 +238,32 @@ class Camera:
 
     def get_arrival_rates(self):
         """Get arrival rates from histogrammer"""
-    
+
+        # Round-trip distance per bin. The factor of 2 here cancels against the factor
+        # of 2 inside get_kernel (which also works in round-trip distance), so a pulse
+        # of duration tau correctly spans tau * frequency * n_bins bins. Both halves of
+        # that cancellation are pinned by TestBinWidthConvention -- do not "fix" one
+        # without the other.
         bin_width = 2 * tof2depth(1 / self.active_source.frequency) / self.histogrammer.n_bins
-        print("bin_width inside arrival rates:", bin_width)
-        
-        _, irf = self.active_source.get_kernel(bin_width, None)
+
+        # The configured bin_width is derived, not free: it is fixed by the laser
+        # frequency and bin count. Validate rather than silently ignoring it.
+        configured = getattr(self.histogrammer, "bin_width", None)
+        if configured is not None:
+            ratio = (configured / bin_width).to(ureg.dimensionless).magnitude
+            # 1% tolerance: config files carry human-rounded values (0.03 vs the exact
+            # 0.029979), and the check is meant to catch gross disagreement, not rounding.
+            if not np.isclose(ratio, 1.0, rtol=1e-2):
+                raise ValueError(
+                    f"Configured histogrammer.bin_width ({configured}) disagrees with the bin width implied "
+                    f"by the laser frequency and n_bins ({bin_width}). Fix the config, or omit bin_width."
+                )
+
+        # normalize="sum" keeps the kernel's integral at 1 so the convolution conserves
+        # photons. Passing None leaves the gaussian as a density in 1/m (sum ~ 1/bin_width
+        # ~ 33) and the square as a plateau of height 1 (sum ~ pulse_bins), inflating
+        # every arrival rate by a configuration-dependent factor.
+        _, irf = self.active_source.get_kernel(bin_width, "sum")
         irf_tensor = torch.tensor(irf, dtype=torch.float32, device=self.device)
         arrival_rates = self.histogrammer.calculate_arrival_rates(
             irf_tensor, self.transients, self.ambient_offsets, self.histogrammer.n_bins

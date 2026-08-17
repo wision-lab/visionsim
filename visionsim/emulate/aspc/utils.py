@@ -8,11 +8,9 @@ import numpy as np
 import torch
 from pint import UnitRegistry, set_application_registry
 from ruamel.yaml.nodes import ScalarNode, SequenceNode
-from scipy.constants import h
+from scipy.constants import c, h
 
 from visionsim.dataset import Dataset
-
-c = 3*1e8
 
 ureg = UnitRegistry()
 ureg.setup_matplotlib(True)
@@ -122,10 +120,19 @@ def preproc_albedo_intensity_depth_frames(
     Nr, Nc = config["sensor"]["size"]
     tmax = (1.0 / config["active_source"]["pulsed_laser"]["frequency"]).to(ureg.second)
 
-    # Compute max depth
-    max_depth = (tmax * ((c) * ureg.meter / ureg.second) / 2) / ureg.meter
-
-    # tmax = 100  # Laser period in nano seconds
+    # Two distinct quantities that were previously conflated:
+    #   * max_resolvable_depth -- the unambiguous range set by the laser period. A
+    #     hardware limit; returns beyond it alias rather than disappearing.
+    #   * scale_depth -- the range the *renderer* used when quantising an 8-bit depth
+    #     map, and therefore the only correct rescaling factor.
+    max_resolvable_depth = (tmax * ((c) * ureg.meter / ureg.second) / 2).to(ureg.meter)
+    scale_depth = config["histogrammer"]["max_depth"].to(ureg.meter)
+    if scale_depth > max_resolvable_depth:
+        raise ValueError(
+            f"histogrammer.max_depth ({scale_depth}) exceeds the laser's maximum resolvable depth "
+            f"({max_resolvable_depth}); 8-bit depth maps would be rescaled past the unambiguous range."
+        )
+    max_depth = scale_depth.magnitude
 
     rgb_img_list = list(frames[start_idx : start_idx + num_frames][1])
     depth_img_list = list(depths[start_idx : start_idx + num_frames][1])
@@ -136,26 +143,41 @@ def preproc_albedo_intensity_depth_frames(
 
     for idx in range(len(rgb_img_list)):
         rgb_img = rgb_img_list[idx]
-        if depth_img_list[idx].ndim == 3:
-            depth_img = depth_img_list[idx][:, :, 0]
+        raw_depth = depth_img_list[idx]
+
+        # Two encodings are supported and they are NOT interchangeable, so the choice is
+        # made explicitly rather than being inferred from array shape alone:
+        #   * float depth already in metres (multi-channel maps store it in channel 0)
+        #   * 8-bit depth normalised to [0, 255], rescaled against max_depth
+        if raw_depth.ndim == 3:
+            raw_depth = raw_depth[:, :, 0]
+        if np.issubdtype(raw_depth.dtype, np.integer):
+            depth_img = raw_depth.astype(np.float32) / 255.0 * float(max_depth)
         else:
-            depth_img = depth_img_list[idx] / 255.0 * config["histogrammer"]["max_depth"]
+            depth_img = raw_depth.astype(np.float32)
 
-        # Filter out depths that might be out-of-range
-        depth_img = cv2.inpaint(
-            depth_img.astype(np.float32), (depth_img > max_depth).astype(np.uint8), 3, cv2.INPAINT_TELEA
-        )
-        print("depth_img min", depth_img.min())
-        print("depth_img max", depth_img.max())
-        print("Original depth_img shape: ", depth_img.shape)
+        # Depths beyond max_depth are NOT invalid: a late return simply arrives during a
+        # subsequent laser cycle and aliases back into the window, which
+        # calculate_transients models directly. Previously these pixels were passed to
+        # cv2.inpaint, which *fabricated* plausible-looking geometry by interpolating
+        # from neighbours. Only physically meaningless depths are rejected here, by
+        # marking them 0.0 ("no surface"); calculate_transients drops those.
+        depth_img = np.where(np.isfinite(depth_img) & (depth_img > 0), depth_img, 0.0)
 
-        # Resize and transform to tensor, scale RGB to [0-1] range
+        # Resize and transform to tensor, scale RGB to [0-1] range.
         rgb_img = cv2.resize(rgb_img, (Nc, Nr))
         rgb = torch.tensor(rgb_img.astype(float), device=device, requires_grad=requires_grad) / 255.0
-        depth_img = cv2.resize(depth_img, (Nc, Nr))
+        # INTER_NEAREST, not the default bilinear: interpolating across a depth
+        # discontinuity invents "flying pixel" surfaces at every object edge, which a
+        # ToF simulator then faithfully turns into returns from empty space.
+        depth_img = cv2.resize(depth_img, (Nc, Nr), interpolation=cv2.INTER_NEAREST)
         depth = torch.tensor(depth_img.astype(float), device=device, requires_grad=requires_grad).unsqueeze(0)
 
-        # Using the red channel as albedo and intensity
+        # ASSUMPTION: the red channel of the rendered RGB is used directly as albedo.
+        # That render is already shaded, so it is really radiance, not reflectance --
+        # renderer illumination is therefore double-counted when the laser term
+        # multiplies by it again. This is a deliberate, documented approximation; a
+        # dedicated albedo render pass would be the correct fix.
         albedo = intensity = rgb[..., 0].unsqueeze(0)
 
         albedo_frames_list.append(albedo)
