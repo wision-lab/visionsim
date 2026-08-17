@@ -38,6 +38,31 @@ FIGS = [
         ["L1", "T3", "T8"],
     ),
     (
+        "8_flux_control.png",
+        "Flux operating point via the reference condition",
+        "Two planes at 3 and 9&nbsp;m, with the operating point set by <em>defining the reference "
+        "condition</em>: <code>alpha_sig</code> and <code>alpha_bkg</code> are photons per pixel per "
+        "cycle for a flat Lambertian surface of albedo&nbsp;1.0, with <code>alpha_sig</code> additionally "
+        "referenced at 1&nbsp;metre. The scene&rsquo;s actual counts then follow from physics: "
+        "<code>signal = alpha_sig&middot;albedo/d&sup2;</code> and <code>ambient = alpha_bkg&middot;albedo</code>.",
+        "The default photon level is whatever the radiometry happens to yield &mdash; about 1e-5 "
+        "photons/pixel/cycle, i.e. very low flux. Every check on this page is scale-free so that is "
+        "harmless here, but it is the wrong regime downstream: pile-up and dead time only bite around "
+        "&phi;&nbsp;&asymp;&nbsp;0.1&ndash;10, and at 1e-5 the detector is idle essentially always &mdash; so "
+        "<em>every</em> dead-time model would agree with every other one, including the ones known to be "
+        "wrong. Note the two distance laws differ deliberately: signal falls as 1/d&sup2; while ambient does "
+        "not fall off at all, because the sun&rsquo;s irradiance on a surface is independent of camera range.",
+        "Panel (c) is the key result: <code>photons = K&middot;albedo/d&sup2;</code> holds to <strong>1.2e-07 "
+        "relative error</strong> across seven albedo/distance combinations, so the entire radiometry chain "
+        "&mdash; laser power, aperture, f-number, pixel pitch, solid angle &mdash; collapses into one constant "
+        "<strong>K&nbsp;=&nbsp;2.491e-03</strong>. That makes <code>alpha_sig</code> a single global calibration "
+        "rather than a renormalisation, so relative structure survives intact: inverse-square holds at "
+        "<strong>9.00</strong> across a 10,000&times; level change, and inter-FOV contrast for albedo 0.9 vs 0.1 "
+        "stays at <strong>9.00</strong> where a per-row rescale would have flattened it to 1.00. The identity "
+        "also doubles as an independent oracle for <code>get_scene_radiance</code>.",
+        [],
+    ),
+    (
         "4_depth_recovery.png",
         "End-to-end depth recovery",
         "40 flat walls at depths spanning 0.6&nbsp;m to 14.5&nbsp;m. Each is pushed through the "
@@ -198,12 +223,18 @@ CHECKS = [
     ("Contract: near-range sentinel creates a ghost", "25 m &rarr; bin 133 @ 2% of peak"),
     ("Contract: wrong depth units fail silently", "lands in [112], expected [66]"),
     ("Contract: pint Quantity == bare tensor in metres", "identical"),
+    ("Flux: photons = K&middot;albedo/d&sup2; exactly", "1.2e-07 rel. err over 7 combinations"),
+    ("Flux: inverse-square survives calibration", "near/far = 9.0003 across 10,000&times;"),
+    ("Flux: inter-FOV contrast survives calibration", "9.00 at every level"),
+    ("Flux: alpha_bkg scales with albedo, not distance", "identical at 2 / 8 / 14 m"),
+    ("Flux: alpha_sig=100 reaches the pile-up regime", "peak &phi; = 1.06 /bin/cycle"),
 ]
 
 NOT_COVERED = [
     ("<code>Camera</code> orchestration", "<code>get_transients</code> / <code>get_arrival_rates</code> glue needs a dataset to construct, so the example calls the underlying functions directly."),
     ("The data loader itself", "L1&ndash;L4 are verified by reading only. The example bypasses the loader by design and specifies the boundary as a written contract instead &mdash; see figure&nbsp;1. Any loader satisfying that contract inherits everything verified here; nothing enforces it at runtime, so conformance is the loader author&rsquo;s responsibility."),
-    ("Everything after &phi;", "Dead time, pile-up and the histogram forward models are untouched here. Four <code>xfail</code>s remain there: A1, H1&times;2 and dt=0."),
+    ("Everything after &phi;", "Dead time, pile-up and the histogram forward models are untouched here. Four <code>xfail</code>s remain there: A1, H1&times;2 and dt=0. Figure&nbsp;1 exists so that work can start at a realistic operating point rather than the default low-flux one."),
+    ("The ambient <em>source</em>", "Background level is set directly as a number. <code>Sun.get_scene_radiance</code> and <code>Camera._get_ambient_offset</code> are never called, so ambient magnitude is plumbed-and-checked but not physically derived. This is where A1 and T5 live &mdash; both still open."),
 ]
 
 BADGES = {
@@ -436,7 +467,7 @@ def build(figdir: pathlib.Path) -> str:
 </div></header>
 
 <div class="banner">
-  <span class="big">18/18</span>
+  <span class="big">23/23</span>
   <span class="txt">self-checks pass in the example, alongside <b>129 passed / 4 xfailed</b> in
   <code>tests/test_aspc_*.py</code>. All four remaining xfails sit in the forward-model layer
   downstream of &phi; and are deferred modeling decisions, not defects awaiting a patch.</span>

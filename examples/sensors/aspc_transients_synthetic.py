@@ -86,6 +86,7 @@ relative to this file, so the output lands in the same place from any working di
     5_invariances.png  independence from render resolution, FOV size; vignette
     6_guards.png       regression guards for the fixes in this layer
     7_loader_contract.png  what the loader contract buys, and how violations fail
+    8_flux_control.png     explicit signal / background flux operating point
 """
 
 from __future__ import annotations
@@ -156,15 +157,99 @@ def max_depth_of(laser: PulsedLaser) -> float:
     return float(laser.max_resolvable_depth.to(ureg.meter).magnitude)
 
 
-def run_pipeline(laser, hist, albedo, depth_m, masks, ambient=AMBIENT_PER_BIN, n_bins=N_BINS):
-    """scene -> transient -> φ, using the real library functions throughout."""
-    irr = scene_irradiance(laser, albedo, depth_m).unsqueeze(0)
+def reference_photons(laser: PulsedLaser, shape=(GRID, GRID)) -> float:
+    """The system's photon budget as a single number, ``K``.
+
+    Signal photons collected per pixel per cycle from the **reference condition**: a
+    flat Lambertian surface of albedo 1.0 (a perfect diffuser — Spectralon is ≈0.99)
+    at 1 metre, viewed head-on.
+
+    The whole active radiometry chain — laser power, pulse rate, aperture, f-number,
+    pixel pitch, per-pixel solid angle — collapses into this one constant, because
+
+        photons(albedo, d) = K · albedo / d²
+
+    holds *exactly*, not approximately. That identity is asserted in the checks below,
+    so it doubles as an oracle for ``get_scene_radiance``.
+    """
+    ones = torch.ones(*shape)
+    return float(scene_irradiance(laser, ones, ones).mean())
+
+
+def run_pipeline(
+    laser,
+    hist,
+    albedo,
+    depth_m,
+    masks,
+    ambient=AMBIENT_PER_BIN,
+    n_bins=N_BINS,
+    alpha_sig=None,
+    alpha_bkg=None,
+):
+    """scene -> transient -> φ, using the real library functions throughout.
+
+    Flux operating point
+    --------------------
+    By default (``alpha_sig=None``, ``alpha_bkg=None``) the absolute photon level is
+    whatever the radiometry yields for the configured laser power and geometry —
+    around 1e-5 photons/pixel/cycle here, i.e. very low flux.
+
+    ``alpha_sig`` and ``alpha_bkg`` set the operating point by **defining the
+    reference condition**, in the usual SPAD unit of photons per pixel per cycle.
+    Both are quoted for a flat Lambertian surface of **albedo 1.0**; ``alpha_sig``
+    additionally assumes **1 metre**. The scene's actual photon counts then follow
+    from physics rather than from any renormalisation:
+
+        signal(pixel)  = alpha_sig · albedo / d²     (d in metres)
+        ambient(pixel) = alpha_bkg · albedo          (no distance term)
+
+    The distance laws differ, and deliberately so. The laser's energy spreads over a
+    footprint growing as d², so surface irradiance falls as 1/d²; the return path adds
+    no further falloff because the pixel's own footprint grows as d² and cancels it —
+    hence one factor, not 1/d⁴. Ambient light, by contrast, does not fall off at all:
+    the sun's irradiance on a surface does not depend on how far away the camera is,
+    and radiance is conserved along the ray, so a surface filling the pixel delivers
+    the same ambient photons at 2 m or 20 m. `Sun.get_scene_radiance` correspondingly
+    takes no depth argument.
+
+    ``alpha_sig`` is applied as a **single global constant**, ``alpha_sig / K``, so
+    inverse-square falloff, albedo contrast, and brightness differences between FOVs
+    and between scenes all survive untouched. It is a calibration, not a
+    normalisation — nothing is rescaled per row.
+
+    Reading the numbers: albedo 1.0 at 1 m is a *bright* reference, so ``alpha_sig``
+    is a headroom figure rather than a typical one. A scene point at albedo 0.2 and
+    5 m receives ``alpha_sig · 0.2/25 = alpha_sig/125``, so sitting at φ ≈ 1 there
+    means setting ``alpha_sig ≈ 125``.
+
+    Why this matters downstream: pile-up and dead time only bite around
+    φ ≈ 0.1–10 photons/cycle. At the default ~1e-5 the detector is idle essentially
+    always, so *every* dead-time forward model agrees with every other one —
+    including the ones known to be wrong. Validating those at the default operating
+    point would produce a false pass.
+    """
+    irr = scene_irradiance(laser, albedo, depth_m)
+    if alpha_sig is not None:
+        # One scalar for the entire scene: re-references the photon budget without
+        # touching any relative structure.
+        irr = irr * (float(alpha_sig) / reference_photons(laser, tuple(albedo.shape)))
+    irr = irr.unsqueeze(0)
     dep = depth_m.unsqueeze(0)
-    off = torch.full_like(dep, float(ambient), dtype=torch.float32)
+
+    # Ambient scales with albedo (it is reflected light) but not with distance.
+    # calculate_transients averages over the FOV and divides by the bin count, so a
+    # per-pixel value of alpha_bkg·albedo lands as a per-bin floor of
+    # alpha_bkg·mean(albedo)/n_bins.
+    if alpha_bkg is not None:
+        off = (float(alpha_bkg) * albedo).unsqueeze(0).to(torch.float32)
+    else:
+        off = torch.full_like(dep, float(ambient), dtype=torch.float32)
 
     transients, ambient_offsets = hist.calculate_transients(
         irr, dep, off, masks, n_bins, max_depth_of(laser)
     )
+
     _, irf = laser.get_kernel(bin_width_of(laser, n_bins), "sum")
     irf_t = torch.as_tensor(np.asarray(irf, dtype=np.float32))
     phi = hist.calculate_arrival_rates(irf_t, transients, ambient_offsets, n_bins)
@@ -570,6 +655,109 @@ def fig_contract(outdir, laser, hist):
     plt.close(fig)
 
 
+def fig_flux(outdir, laser, hist):
+    """The flux operating point, set by defining the reference condition rather than
+    by renormalising anything."""
+    masks = torch.ones(1, GRID, GRID)
+    a, d = two_planes(3.0, 9.0)
+    near, far = depth_to_bin(3.0, laser), depth_to_bin(9.0, laser)
+    K = reference_photons(laser)
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.8))
+
+    # (a) signal sweep at fixed background
+    for alpha_s, colour in [(0.05, "#94d2bd"), (0.5, "#2a9d8f"), (5.0, "#005f5a")]:
+        _, _, phi, _ = run_pipeline(laser, hist, a, d, masks, alpha_sig=alpha_s, alpha_bkg=0.2)
+        axes[0].plot(phi[0].numpy(), lw=1.5, color=colour, label=f"alpha_sig={alpha_s}")
+    axes[0].set_yscale("log")
+    axes[0].set_title("(a) signal sweep, alpha_bkg = 0.2\nreference: albedo 1.0 @ 1 m", fontsize=10)
+    axes[0].legend(fontsize=8)
+
+    # (b) background sweep at fixed signal
+    for alpha_b, colour in [(0.0, "#264653"), (0.5, "#e9c46a"), (4.0, "#e76f51")]:
+        _, _, phi, _ = run_pipeline(laser, hist, a, d, masks, alpha_sig=1.0, alpha_bkg=alpha_b)
+        lbl = f"alpha_bkg={alpha_b} (SBR {1.0 / alpha_b:.2f})" if alpha_b else "alpha_bkg=0"
+        axes[1].plot(phi[0].numpy(), lw=1.5, color=colour, label=lbl)
+    axes[1].set_yscale("log")
+    axes[1].set_title("(b) background sweep, alpha_sig = 1.0\nfloor scales with albedo, not distance", fontsize=10)
+    axes[1].legend(fontsize=8)
+
+    # (c) the calibration identity, which is also an oracle for get_scene_radiance
+    cases = [(1.0, 1.0), (0.5, 1.0), (0.2, 1.0), (1.0, 2.0), (0.9, 4.0), (0.35, 7.0), (1.0, 10.0)]
+    actual, predicted = [], []
+    for alb, dist in cases:
+        actual.append(float(scene_irradiance(laser, torch.full((16, 16), alb), torch.full((16, 16), dist)).mean()))
+        predicted.append(K * alb / dist**2)
+    axes[2].loglog(predicted, actual, "o", color="#2a9d8f", ms=8, zorder=3, label="radiometry")
+    lim = [min(predicted) * 0.6, max(predicted) * 1.6]
+    axes[2].loglog(lim, lim, ls="--", color="#adb5bd", lw=1.2, label="K · albedo / d²")
+    axes[2].set_xlabel("K · albedo / d²  (photons/pixel/cycle)")
+    axes[2].set_ylabel("actual radiometry")
+    axes[2].set_title(f"(c) the identity is exact\nK = {K:.3e} photons/pixel/cycle", fontsize=10)
+    axes[2].legend(fontsize=8)
+
+    for ax in axes[:2]:
+        ax.set_xlabel("time bin")
+    axes[0].set_ylabel("arrival rate φ")
+
+    # The identity holding exactly is what licenses treating K as the whole radiometry.
+    err = max(abs(x / y - 1.0) for x, y in zip(actual, predicted))
+    check("Flux: photons = K·albedo/d² exactly (oracle for get_scene_radiance)",
+          err < 1e-5, f"max relative error {err:.2e} over {len(cases)} albedo/distance combinations")
+
+    # A global calibration must leave every relative structure alone.
+    t_ref, _, _, _ = run_pipeline(laser, hist, a, d, masks)
+    ratios = [float(t_ref[0, near] / t_ref[0, far])]
+    for alpha_s in [0.01, 1.0, 100.0]:
+        t, _, _, _ = run_pipeline(laser, hist, a, d, masks, alpha_sig=alpha_s)
+        ratios.append(float(t[0, near] / t[0, far]))
+    check("Flux: inverse-square survives calibration (near/far held)",
+          max(ratios) - min(ratios) < 1e-3 * ratios[0],
+          f"near/far = {ratios[0]:.4f} (= (9/3)²) across a 10,000x level change")
+
+    # The bug the previous per-row normalisation had: inter-FOV contrast must survive.
+    a2, d2 = flat_wall(6.0)
+    a2 = a2.clone()
+    a2[:, : GRID // 2], a2[:, GRID // 2 :] = 0.9, 0.1
+    two_fov = hist.get_perpixel_fov_masks(
+        torch.zeros(GRID, GRID), [[0, 1, 0, 0.5], [0, 1, 0.5, 1]], vignette=False
+    )
+    contrasts = []
+    for alpha_s in [None, 1.0, 50.0]:
+        t, _, _, _ = run_pipeline(laser, hist, a2, d2, two_fov, alpha_sig=alpha_s)
+        contrasts.append(float(t[0].sum() / t[1].sum()))
+    check("Flux: inter-FOV contrast survives calibration",
+          all(abs(c - 9.0) < 0.01 for c in contrasts),
+          f"albedo 0.9 vs 0.1 -> contrast {contrasts[0]:.2f} at every level (a per-row rescale would give 1.00)")
+
+    # Ambient is reflected light: scales with albedo, independent of distance.
+    floors = []
+    for dist in [2.0, 8.0, 14.0]:
+        aa, dd = flat_wall(dist, albedo=0.5)
+        _, _, _, amb = run_pipeline(laser, hist, aa, dd, masks, alpha_bkg=4.0)
+        floors.append(float(amb[0]))
+    check("Flux: alpha_bkg scales with albedo, not distance",
+          max(floors) - min(floors) < 1e-9 and abs(floors[0] - 4.0 * 0.5 / N_BINS) < 1e-9,
+          f"floor = {floors[0]:.4g} = 4.0·0.5/{N_BINS}, identical at 2/8/14 m")
+
+    # Reaching the pile-up regime takes a reference well above 1, because the reference
+    # condition (albedo 1.0 @ 1 m) is far brighter than any real scene point. Here the
+    # near plane sits at albedo 0.8 and 3 m, i.e. 0.8/9 = 1/11 of the reference — so
+    # alpha_sig ~ 100 is what puts this scene where dead time actually bites. That
+    # headroom is the price of a physically meaningful parameter; the previous per-row
+    # normalisation hid it by forcing the total regardless of the scene.
+    _, _, phi, _ = run_pipeline(laser, hist, a, d, masks, alpha_sig=100.0, alpha_bkg=4.0)
+    peak = float(phi.max())
+    check("Flux: alpha_sig=100 reaches the pile-up regime (phi ~ 0.1-10)",
+          0.1 < peak < 10.0,
+          f"peak φ = {peak:.3g} photons/bin/cycle (alpha_sig=1.0 gives only {peak / 100:.3g})")
+
+    fig.suptitle("Figure 8 — flux operating point via the reference condition", fontsize=13)
+    fig.tight_layout()
+    fig.savefig(outdir / "8_flux_control.png", dpi=130)
+    plt.close(fig)
+
+
 # --------------------------------------------------------------------------- #
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
@@ -602,6 +790,7 @@ def main():
     fig_invariances(args.outdir, laser, hist)
     fig_guards(args.outdir, laser, hist)
     fig_contract(args.outdir, laser, hist)
+    fig_flux(args.outdir, laser, hist)
 
     width = max(len(n) for n, _, _ in CHECKS)
     print("=" * (width + 30))
