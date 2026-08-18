@@ -429,7 +429,7 @@ class EventEmulator:
         # Timestamps start one step after t_previous and end at t_frame.
         num_ts_steps = max_events_per_pixel if max_events_per_pixel > 0 else 1
         ts_step = delta_time / num_ts_steps
-        timestamps = np.linspace(
+        timestamps: npt.NDArray[np.float32] = np.linspace(
             start=self.t_previous + ts_step,
             stop=t_frame,
             num=num_ts_steps,
@@ -479,7 +479,9 @@ class EventEmulator:
                 final_pos_evts_frame[curr_y_p, curr_x_p] += 1
                 final_neg_evts_frame[curr_y_n, curr_x_n] += 1
 
-                iter_ev = self._get_event_list_from_coords((curr_y_p, curr_x_p), (curr_y_n, curr_x_n), timestamps[i])
+                iter_ev = self._get_event_list_from_coords(
+                    (curr_y_p, curr_x_p), (curr_y_n, curr_x_n), float(timestamps[i])
+                )
                 if iter_ev is not None:
                     # Shuffle only the events occurring at the exact same timestamp
                     shuf = np.random.permutation(len(iter_ev))
@@ -510,7 +512,7 @@ class EventEmulator:
             shot_off_xy = np.nonzero(shot_off_cord)
 
             # Assign the last signal timestamp to all shot-noise events.
-            shot_noise_events = self._get_event_list_from_coords(shot_on_xy, shot_off_xy, timestamps[-1])
+            shot_noise_events = self._get_event_list_from_coords(shot_on_xy, shot_off_xy, float(timestamps[-1]))
 
             if shot_noise_events is not None:
                 events = np.concatenate((events, shot_noise_events))

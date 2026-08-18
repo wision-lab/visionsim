@@ -53,14 +53,14 @@ class PathTransforms:
             lengths = [len(paths)]
 
         self.iter_npys = iter_npys
-        self.cumulative_lengths = np.cumsum(lengths)
+        self.cumulative_lengths: npt.NDArray[np.intp] = np.cumsum(lengths)
         self.lengths = lengths
         self.paths = paths
         self.kwargs = kwargs
 
     def __len__(self) -> int:
         """Length of dataset"""
-        return self.cumulative_lengths[-1]
+        return int(self.cumulative_lengths[-1])
 
     def __getitem__(self, idx: int) -> dict[str, int | Path]:
         """Return dummy transform dict at provided index.
@@ -74,10 +74,10 @@ class PathTransforms:
         """
         if self.iter_npys:
             path_idx = int(np.searchsorted(self.cumulative_lengths, idx, side="right"))
-            transform = {"file_path": self.paths[path_idx]}
+            transform: dict[str, int | Path] = {"file_path": self.paths[path_idx]}
 
             if self.paths[path_idx].suffix.lower() == ".npy":
-                transform["offset"] = (idx - self.cumulative_lengths[path_idx]) % self.lengths[path_idx]
+                transform["offset"] = int((idx - self.cumulative_lengths[path_idx]) % self.lengths[path_idx])
         else:
             transform = {"file_path": self.paths[idx]}
         return transform | self.kwargs
