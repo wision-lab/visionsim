@@ -28,17 +28,27 @@ class PathTransforms:
     ``offset`` as well. For instance, if ``paths`` points to a png, a npy of shape (4, H, W, C), and another png, an
     index of 3 will return the path to the numpy file and an offset of 3."""
 
-    def __init__(self, paths: Sequence[Path], iter_npys: bool = True, **kwargs) -> None:
+    def __init__(
+        self, paths: Sequence[Path], iter_npys: bool = True, root: str | os.PathLike | None = None, **kwargs
+    ) -> None:
         """Initialize a sequence of "dummy" transform dictionaries from a set of paths.
 
         Args:
             paths (Sequence[Path]): Paths to yield from
             iter_npys (bool, optional): If true, yield from numpy arrays will before
                 moving on to next path. Defaults to True.
+            root (str | os.PathLike | None, optional): Root directory to resolve relative paths against.
+                Defaults to None.
             **kwargs (dict[str, Any]): Additional key/value pairs to include in each transform dict.
         """
+        self.root = Path(root).resolve() if root else None
         if iter_npys:
-            lengths = [len(np.load(str(path), mmap_mode="r")) if path.suffix.lower() == ".npy" else 1 for path in paths]
+            lengths = [
+                len(np.load(str(self.root / path if self.root else path), mmap_mode="r"))
+                if path.suffix.lower() == ".npy"
+                else 1
+                for path in paths
+            ]
         else:
             lengths = [len(paths)]
 
@@ -162,7 +172,7 @@ class Dataset(torch.utils.data.Dataset):
         if any(not (Path(root or "") / p).exists() for p in paths):
             raise ValueError("Some paths do not exist!")
 
-        transforms = PathTransforms(paths=[Path(p) for p in paths], iter_npys=iter_npys, **kwargs)
+        transforms = PathTransforms(paths=[Path(p) for p in paths], iter_npys=iter_npys, root=root, **kwargs)
         return cls(transforms=cast(Sequence, transforms), root=root, cameras=cameras)
 
     @classmethod

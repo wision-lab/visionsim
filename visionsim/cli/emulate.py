@@ -118,6 +118,7 @@ def events(
     cs_lambda_pixels: float | None = None,
     cs_tau_p_ms: float | None = None,
     scidvs: bool = False,
+    blur_sigma: float = 0.0,
     preview_step: int | None = None,
     only_preview: bool = False,
     force: bool = False,
@@ -143,6 +144,7 @@ def events(
         cs_lambda_pixels: space constant of the centre-surround surround in pixels
         cs_tau_p_ms: time constant of the surround low-pass filter in ms
         scidvs: simulate the high-gain adaptive photoreceptor of the SCIDVS pixel
+        blur_sigma: standard deviation of the Gaussian blur applied to input frames in pixels, 0 disables blurring
         preview_step: accumulate events over this many frames before saving a visualization preview. If the
             number of input frames is not a multiple of the preview step, the last few frames will be dropped.
             If None, preview is disabled.
@@ -152,6 +154,7 @@ def events(
     import json
 
     import imageio.v3 as iio
+    from scipy.ndimage import gaussian_filter
 
     from visionsim.dataset import Dataset
     from visionsim.emulate.dvs import EventEmulator
@@ -204,7 +207,7 @@ def events(
     emulator = EventEmulator(**emulator_kwargs)  # type: ignore
 
     with open(output_dir / "params.json", "w") as f:
-        json.dump(emulator_kwargs | dict(fps=fps), f, indent=2)
+        json.dump(emulator_kwargs | dict(fps=fps, blur_sigma=blur_sigma), f, indent=2)
 
     with open(events_path, "a+") as out, ElapsedProgress() as progress:
         task = progress.add_task("Writing DVS data...", total=len(dataset))
@@ -215,6 +218,8 @@ def events(
             # Values from http://en.wikipedia.org/wiki/Grayscale
             r, g, b, *_ = np.transpose(frame, (2, 0, 1))
             luma = 0.0722 * b + 0.7152 * g + 0.2126 * r
+            if blur_sigma > 0:
+                luma = gaussian_filter(luma, sigma=blur_sigma)
             events = emulator.generate_events(luma, idx / int(fps))
 
             if events is not None:

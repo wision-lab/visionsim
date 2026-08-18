@@ -13,26 +13,24 @@ from visionsim.dataset import Dataset, Metadata, PathTransforms
 def setup_dataset(tmp_path, mode="img", w=100, h=100, c=3, n=1, bitpack_dim=None):
     np.random.seed(123456789)
     transforms = dict(
-        **{
-            "fl_x": 123,
-            "fl_y": 456,
-            "cx": w / 2,
-            "cy": h / 2,
-            "h": h,
-            "w": w,
-            "c": c,
-            "frames": [
-                dict(
-                    transform_matrix=np.random.rand(4, 4).tolist(),
-                    **(
-                        {"file_path": f"frames/frame_{i:04}.png"}
-                        if mode.lower() == "img"
-                        else {"file_path": "frames.npy", "bitpack_dim": bitpack_dim, "offset": i}
-                    ),
-                )
-                for i in range(n)
-            ],
-        }
+        fl_x=123,
+        fl_y=456,
+        cx=w / 2,
+        cy=h / 2,
+        h=h,
+        w=w,
+        c=c,
+        frames=[
+            dict(
+                transform_matrix=np.random.rand(4, 4).tolist(),
+                **(
+                    {"file_path": f"frames/frame_{i:04}.png"}
+                    if mode.lower() == "img"
+                    else {"file_path": "frames.npy", "bitpack_dim": bitpack_dim, "offset": i}
+                ),
+            )
+            for i in range(n)
+        ],
     )
 
     with open(tmp_path / "transforms.json", "w") as f:
@@ -145,3 +143,21 @@ def test_path_transforms_numpy(tmp_path):
         np.array([f[0, 0] for f, _ in Dataset.from_paths(paths=paths, iter_npys=True)]),
         np.concatenate([[i] * i for i in range(10)]),
     )
+
+
+def test_dataset_from_pattern_png(tmp_path):
+    data, _ = setup_dataset(tmp_path, mode="img", w=10, h=10, n=5)
+    ds = Dataset.from_pattern(tmp_path, "frames/*.png")
+    assert len(ds) == 5
+
+    for i, (im, _) in enumerate(ds):
+        assert np.allclose(im, data[i])
+
+
+def test_dataset_from_pattern_npy(tmp_path):
+    data, _ = setup_dataset(tmp_path, mode="npy", w=10, h=10, n=5)
+    ds = Dataset.from_pattern(tmp_path, "*.npy")
+    assert len(ds) == 5
+
+    for i, (im, _) in enumerate(ds):
+        assert np.allclose(im, data[i])
