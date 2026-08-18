@@ -143,7 +143,7 @@ class _Metadata:
         if Path(path).exists():
             Path(path).unlink()
 
-        db = SqliteDatabase(path, pragmas=_DEFAULT_PRAGMAS)
+        db = SqliteDatabase(str(path), pragmas=_DEFAULT_PRAGMAS)
 
         with db.connection_context(), db.atomic(), db.bind_ctx(_MODELS):
             db.create_tables(_MODELS, safe=True)
@@ -171,7 +171,7 @@ class _Metadata:
         Yields:
             Iterator[dict[str, Any]]: Dictionaries containing all relevant frame data
         """
-        db = SqliteDatabase(self.path, pragmas=_DEFAULT_PRAGMAS)
+        db = SqliteDatabase(str(self.path), pragmas=_DEFAULT_PRAGMAS)
         with db.connection_context(), db.bind_ctx(_MODELS):
             query = cast(
                 "Iterable[dict[str, Any]]", _Frame.select(*_MODELS).join(_Camera).switch(_Frame).join(_Data).dicts()
@@ -202,7 +202,7 @@ class _Metadata:
     @cached_property
     def cameras(self) -> list[dict[str, Any]]:
         """List of defined cameras."""
-        db = SqliteDatabase(self.path, pragmas=_DEFAULT_PRAGMAS)
+        db = SqliteDatabase(str(self.path), pragmas=_DEFAULT_PRAGMAS)
         with db.connection_context(), db.bind_ctx(_MODELS):
             query = cast("Iterable[dict[str, Any]]", _Camera.select().dicts())
             return list(query)
