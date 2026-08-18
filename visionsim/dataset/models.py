@@ -4,9 +4,9 @@ import copy
 import functools
 import json
 import os
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
-from typing import Annotated, Any, ClassVar, Iterator, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
 import numpy as np
 from pydantic import AfterValidator, BaseModel, ConfigDict, model_validator
@@ -98,9 +98,7 @@ class Metadata(Camera):
 
     @model_validator(mode="after")
     def _validate_data_paths(self) -> Self:
-        per_frame_paths = set(
-            tuple(field for field in Data.model_fields.keys() if getattr(frame, field)) for frame in self.frames
-        )
+        per_frame_paths = {tuple(field for field in Data.model_fields if getattr(frame, field)) for frame in self.frames}
         if len(per_frame_paths) != 1:
             raise ValueError("Some data paths are defined per-frame for some frames but not all.")
 
@@ -110,9 +108,9 @@ class Metadata(Camera):
     @model_validator(mode="after")
     def _validate_intrinsics_usage(self) -> Self:
         # Check camera intrinsics are either per-frame or global, allow mixed usage such as global focal-length and per-frame distortion.
-        per_frame_intrinsics = set(
-            tuple(field for field in Camera.model_fields.keys() if getattr(frame, field)) for frame in self.frames
-        )
+        per_frame_intrinsics = {
+            tuple(field for field in Camera.model_fields if getattr(frame, field)) for frame in self.frames
+        }
         if len(per_frame_intrinsics) != 1:
             raise ValueError("Some intrinsic fields are defined per-frame for some frames but not all.")
 
@@ -134,13 +132,13 @@ class Metadata(Camera):
                 f"Intrinsics '{', '.join(missing_intrinsics)}' must be defined either globally or for all frames."
             )
 
-        self._cameras = set(
+        self._cameras = {
             Camera.model_validate(
                 self.model_dump(exclude="frames", exclude_unset=True)
                 | f.model_dump(include=set(Camera.model_fields.keys()), exclude_unset=True)
             )
             for f in self.frames
-        )
+        }
         return self
 
     @classmethod

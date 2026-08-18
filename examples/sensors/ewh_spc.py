@@ -1,10 +1,10 @@
 from pathlib import Path
 
 import cv2
-import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from matplotlib import gridspec
 from scipy.constants import c
 from SPCSim.data_loaders.transient_loaders import TransientGenerator
 from SPCSim.postproc.ewh_postproc import PostProcEWH

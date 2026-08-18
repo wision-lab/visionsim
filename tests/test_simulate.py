@@ -122,10 +122,9 @@ def test_transforms_schema(cube_dataset):
 def test_data_paths_exist(cube_dataset):
     for db_path in cube_dataset.glob("**/*.db"):
         db = SqliteDatabase(db_path)
-        with db.connection_context():
-            with db.bind_ctx(_MODELS):
-                for data in _Data.select():
-                    assert (db_path.parent / data.path).exists()
+        with db.connection_context(), db.bind_ctx(_MODELS):
+            for data in _Data.select():
+                assert (db_path.parent / data.path).exists()
 
 
 def test_database_threading(tmp_path_factory, executable):

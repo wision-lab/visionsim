@@ -41,8 +41,9 @@ def _ply_stream(path: Path, binary: bool = False):
                 data["color"] = colors[..., :3].astype(np.uint8)
                 f.write(data.tobytes())
             else:
-                for (px, py, pz), (r, g, b, *_) in zip(points, colors):
-                    f.write(f"{px} {py} {pz} {int(r)} {int(g)} {int(b)}\n")
+                f.writelines(
+                    f"{px} {py} {pz} {int(r)} {int(g)} {int(b)}\n" for (px, py, pz), (r, g, b, *_) in zip(points, colors)
+                )
             total_points += len(points)
 
         yield write_points
@@ -119,14 +120,14 @@ def merge(input_files: list[Path], names: list[str] | None = None, output_file: 
     metas = [Metadata.from_path(p) for p in input_files]
     data_types = [dt for m in metas for dt in m.data_types]
 
-    if set(len(m.cameras or []) for m in metas) != {1}:
+    if {len(m.cameras or []) for m in metas} != {1}:
         raise ValueError("Cannot merge datasets that have multiple cameras.")
 
-    if len(set(cam.model_copy(update=dict(c=None)) for m in metas for cam in (m.cameras or []))) != 1:
+    if len({cam.model_copy(update={"c": None}) for m in metas for cam in (m.cameras or [])}) != 1:
         # Allow merge if data types have different number of channels
         raise ValueError("Cannot merge datasets that have different cameras.")
 
-    if len(set(len(m) for m in metas)) != 1:
+    if len({len(m) for m in metas}) != 1:
         raise ValueError("Datasets cannot be merged as they are not the same size.")
 
     if names is None:
@@ -215,7 +216,7 @@ def to_pointcloud(
         raise ValueError("Colors and depths/points datasets must have the same number of frames.")
 
     canonical_cameras = [
-        [cam.model_copy(update=dict(c=None)) for cam in (m.cameras or [])]
+        [cam.model_copy(update={"c": None}) for cam in (m.cameras or [])]
         for m in [ds_colors, ds_points, ds_depths]
         if m is not None
     ]

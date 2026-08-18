@@ -207,7 +207,7 @@ class Dataset(torch.utils.data.Dataset):
     @staticmethod
     def _slice_bitpacked_array(
         data: npt.NDArray,
-        idx: tuple[int | slice, ...] = tuple(),
+        idx: tuple[int | slice, ...] = (),
         bitpack_dim: Literal[0, 1, 2] | None = None,
         unpacked_size: int | None = None,
     ) -> int | npt.NDArray:
@@ -266,7 +266,7 @@ class Dataset(torch.utils.data.Dataset):
     @staticmethod
     def load_data(
         path: str | os.PathLike,
-        idx: tuple[int | slice, ...] = tuple(),
+        idx: tuple[int | slice, ...] = (),
         auto_collapse: bool = True,
         bitpack_dim: Literal[0, 1, 2] | None = None,
         unpacked_size: int | None = None,
@@ -311,8 +311,8 @@ class Dataset(torch.utils.data.Dataset):
             return Dataset._slice_bitpacked_array(data, idx=idx, bitpack_dim=bitpack_dim, unpacked_size=unpacked_size)
         elif Path(path).suffix.lower() == ".exr":
             with OpenEXR.File(str(path)) as f:
-                if len(f.channels()) == 1 and list(f.channels().keys())[0] in ("RGBA", "RGB", "V"):
-                    data = list(f.channels().values())[0].pixels
+                if len(f.channels()) == 1 and next(iter(f.channels().keys())) in ("RGBA", "RGB", "V"):
+                    data = next(iter(f.channels().values())).pixels
 
                     if data.ndim == 2:
                         data = data[..., np.newaxis]
@@ -383,4 +383,4 @@ class Dataset(torch.utils.data.Dataset):
         elif frame_idx.size:
             data, transform = zip(*(self[tuple(np.atleast_1d(i).tolist() + sub_slice)] for i in frame_idx))
             return data, transform
-        return tuple(), tuple()
+        return (), ()

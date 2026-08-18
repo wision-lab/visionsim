@@ -14,8 +14,6 @@ except ImportError:
 if __name__ == "__main__":
     # This file should only execute from _within_ blender's runtime to install missing deps.
     # It is called via `install_dependencies` in `__init__.py``.
-    if sys.version_info < (3, 9, 0):
-        raise RuntimeError("Please use newer blender version with a python version of at least 3.9.")
 
     if bpy is None:
         sys.exit()

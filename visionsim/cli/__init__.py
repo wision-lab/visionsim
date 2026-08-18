@@ -102,16 +102,15 @@ def _run(
         log_out = Path(log_path).resolve() / "out.log"
         log_err = Path(log_path).resolve() / "err.log"
 
-        with open(str(log_out), "w") as f_out:
-            with open(str(log_err), "w") as f_err:
-                return subprocess.run(
-                    command,
-                    shell=shell,
-                    check=check,
-                    stdout=f_out,
-                    stderr=f_err,
-                    text=text,
-                )
+        with open(str(log_out), "w") as f_out, open(str(log_err), "w") as f_err:
+            return subprocess.run(
+                command,
+                shell=shell,
+                check=check,
+                stdout=f_out,
+                stderr=f_err,
+                text=text,
+            )
     else:
         stdout = subprocess.PIPE if hide else None
         stderr = subprocess.PIPE if hide else None

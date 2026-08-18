@@ -176,38 +176,37 @@ def events(
     else:
         dataset = Dataset.from_path(input_dir)
 
-    if fps is None:
-        if dataset.cameras:
-            framerates = set(cam.fps for cam in dataset.cameras)
-            if len(framerates) > 1:
-                raise ValueError("Multiple cameras with different frame rates found.")
-            fps = framerates.pop()
+    if fps is None and dataset.cameras:
+        framerates = {cam.fps for cam in dataset.cameras}
+        if len(framerates) > 1:
+            raise ValueError("Multiple cameras with different frame rates found.")
+        fps = framerates.pop()
     if fps is None:
         raise ValueError("FPS not provided and could not be inferred from dataset, please specify.")
 
     if only_preview and preview_step is None:
         preview_step = 1
 
-    emulator_kwargs = dict(
-        pos_thres=pos_thres,
-        neg_thres=neg_thres,
-        sigma_thres=sigma_thres,
-        cutoff_hz=cutoff_hz,
-        leak_rate_hz=leak_rate_hz,
-        shot_noise_rate_hz=shot_noise_rate_hz,
-        refractory_period_s=refractory_period_s,
-        photoreceptor_noise=photoreceptor_noise,
-        leak_jitter_fraction=leak_jitter_fraction,
-        noise_rate_cov_decades=noise_rate_cov_decades,
-        seed=seed,
-        cs_lambda_pixels=cs_lambda_pixels,
-        cs_tau_p_ms=cs_tau_p_ms,
-        scidvs=scidvs,
-    )
+    emulator_kwargs = {
+        "pos_thres": pos_thres,
+        "neg_thres": neg_thres,
+        "sigma_thres": sigma_thres,
+        "cutoff_hz": cutoff_hz,
+        "leak_rate_hz": leak_rate_hz,
+        "shot_noise_rate_hz": shot_noise_rate_hz,
+        "refractory_period_s": refractory_period_s,
+        "photoreceptor_noise": photoreceptor_noise,
+        "leak_jitter_fraction": leak_jitter_fraction,
+        "noise_rate_cov_decades": noise_rate_cov_decades,
+        "seed": seed,
+        "cs_lambda_pixels": cs_lambda_pixels,
+        "cs_tau_p_ms": cs_tau_p_ms,
+        "scidvs": scidvs,
+    }
     emulator = EventEmulator(**emulator_kwargs)  # type: ignore
 
     with open(output_dir / "params.json", "w") as f:
-        json.dump(emulator_kwargs | dict(fps=fps, blur_sigma=blur_sigma), f, indent=2)
+        json.dump(emulator_kwargs | {"fps": fps, "blur_sigma": blur_sigma}, f, indent=2)
 
     with open(events_path, "a+") as out, ElapsedProgress() as progress:
         task = progress.add_task("Writing DVS data...", total=len(dataset))

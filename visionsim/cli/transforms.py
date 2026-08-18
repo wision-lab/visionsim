@@ -50,7 +50,7 @@ def colorize_depths(
     # Lazy load imports to improve CLI responsiveness
     import imageio.v3 as iio
     import matplotlib as mpl
-    import matplotlib.cm as cm
+    from matplotlib import cm
 
     from visionsim.cli import _log, _validate_directories
     from visionsim.dataset import Dataset

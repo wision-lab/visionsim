@@ -12,15 +12,15 @@ from visionsim.dataset import Dataset, Metadata, PathTransforms
 
 def setup_dataset(tmp_path, mode="img", w=100, h=100, c=3, n=1, bitpack_dim=None):
     np.random.seed(123456789)
-    transforms = dict(
-        fl_x=123,
-        fl_y=456,
-        cx=w / 2,
-        cy=h / 2,
-        h=h,
-        w=w,
-        c=c,
-        frames=[
+    transforms = {
+        "fl_x": 123,
+        "fl_y": 456,
+        "cx": w / 2,
+        "cy": h / 2,
+        "h": h,
+        "w": w,
+        "c": c,
+        "frames": [
             dict(
                 transform_matrix=np.random.rand(4, 4).tolist(),
                 **(
@@ -31,7 +31,7 @@ def setup_dataset(tmp_path, mode="img", w=100, h=100, c=3, n=1, bitpack_dim=None
             )
             for i in range(n)
         ],
-    )
+    }
 
     with open(tmp_path / "transforms.json", "w") as f:
         json.dump(transforms, f, indent=2, sort_keys=True)

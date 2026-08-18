@@ -56,7 +56,7 @@ def test_output_configs(func, conf):
 @pytest.mark.parametrize(
     "obj",
     [
-        pytest.param(m, id=".".join([mod.__name__, m.__qualname__]))
+        pytest.param(m, id=f"{mod.__name__}.{m.__qualname__}")
         for mod in _cli_modules + [blender, install, job, schema, dataset, models, pose]
         for m in get_public_members(mod)
     ],
@@ -84,15 +84,14 @@ def test_docstrings(obj):
         # Skip further validation for short descriptions
         return
 
-    documented_params = set(param.arg_name.strip("*") for param in docs.params if param.description)
+    documented_params = {param.arg_name.strip("*") for param in docs.params if param.description}
     assert all("_description_" not in (param.description or "") for param in docs.params)
 
     sig = inspect.signature(obj)
     all_params = set(sig.parameters.keys())
 
     for item in ("self", "cls"):
-        if item in all_params:
-            all_params.remove(item)
+        all_params.discard(item)
 
     if sig.return_annotation:
         doc_returns = docs.returns or getattr(docs, "yields", None)

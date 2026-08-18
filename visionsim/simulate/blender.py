@@ -30,11 +30,10 @@ if TYPE_CHECKING:
     import multiprocess  # type: ignore
     import multiprocess.pool  # type: ignore
     import numpy.typing as npt
-    from typing_extensions import ParamSpec, Self
+    from typing_extensions import Self
 
-    from visionsim.types import COLOR_MODES, EXR_CODECS, FILE_FORMATS, UpdateFn  # noqa
+    from visionsim.types import COLOR_MODES, EXR_CODECS, FILE_FORMATS, UpdateFn
 
-    _P = ParamSpec("_P")
 
 # These are blender specific modules which aren't easily installed but
 # are loaded in when this script is ran from blender.
@@ -376,7 +375,7 @@ class BlenderServer(rpyc.utils.server.Server):
                         break
                     time.sleep(0.1)
             else:
-                conns = set(("localhost", p) for p in ports)
+                conns = {("localhost", p) for p in ports}
 
             yield (procs, list(conns))
 
@@ -423,7 +422,7 @@ class BlenderServer(rpyc.utils.server.Server):
         _, client = BlenderServer.spawn_registry()
         try:
             return list(cast(tuple, client.discover("BLENDER")))
-        except Exception as e:
+        except (OSError, ValueError, EOFError) as e:
             server_log.warning(f"Failed to discover Blender servers: {e}")
             return []
 
@@ -637,13 +636,11 @@ class BlenderService(rpyc.Service):
             self.log.warning(f"Metadata for outputs {missing} is missing!")
 
         for subpath, (_, _, db, defaults) in self._outputs.items():
-            with db.connection_context():
-                with db.atomic("IMMEDIATE"):
-                    with db.bind_ctx(_MODELS):
-                        db.create_tables(_MODELS, safe=True)
-                        camera, _ = _Camera.get_or_create(**(defaults | camera_info))
-                        data = _Data.create(path=paths[subpath])
-                        _Frame.create(id=index, camera=camera, transform_matrix=transform_matrix, data=data)
+            with db.connection_context(), db.atomic("IMMEDIATE"), db.bind_ctx(_MODELS):
+                db.create_tables(_MODELS, safe=True)
+                camera, _ = _Camera.get_or_create(**(defaults | camera_info))
+                data = _Data.create(path=paths[subpath])
+                _Frame.create(id=index, camera=camera, transform_matrix=transform_matrix, data=data)
 
     @property
     @require_initialized_service
@@ -770,9 +767,7 @@ class BlenderService(rpyc.Service):
                 self.log.warning(f"Found unexpected output node {n}")
 
         # Catalogue any animations that are already disabled, otherwise
-        self._disabled_fcurves: set[bpy.types.Action] = set(
-            fcurve for fcurve in self.exposed_iter_fcurves() if fcurve.mute
-        )
+        self._disabled_fcurves: set[bpy.types.Action] = {fcurve for fcurve in self.exposed_iter_fcurves() if fcurve.mute}
 
     @require_initialized_service
     def exposed_iter_fcurves(self, actions: list[bpy.types.Action] | None = None) -> Iterator[bpy.types.FCurve]:
@@ -1896,7 +1891,7 @@ class BlenderService(rpyc.Service):
         for path in paths.values():
             path.parent.mkdir(parents=True, exist_ok=True)
 
-        if not dry_run:
+        if not dry_run:  # noqa: SIM102
             # Render frame(s), skip the render iff all files exist and `allow_skips`
             if not allow_skips or any(not Path(self.root_path / p).exists() for p in paths.values()):
                 # If `write_still` is false, depth/normals/etc can be written but composites will be skipped
@@ -2159,14 +2154,16 @@ class BlenderClient:
         Yields:
             Generator[Self]: the connected client
         """
-        with BlenderServer.spawn(jobs=1, timeout=timeout, log=log, autoexec=autoexec, executable=executable) as (
-            procs,
-            conns,
+        with (
+            BlenderServer.spawn(jobs=1, timeout=timeout, log=log, autoexec=autoexec, executable=executable) as (
+                procs,
+                conns,
+            ),
+            cls(conns.pop()) as client,
         ):
-            with cls(conns.pop()) as client:
-                client.process = procs[0]
-                yield client
-                client.process = None
+            client.process = procs[0]
+            yield client
+            client.process = None
 
     @require_connected_client
     def render_animation_async(self, *args, **kwargs) -> rpyc.AsyncResult:
@@ -2391,7 +2388,7 @@ class BlenderClients(tuple):
         Yields:
             Generator[Self]: the connected clients
         """
-        with BlenderServer.spawn(jobs=jobs, timeout=timeout, log=log, autoexec=autoexec, executable=executable) as (
+        with BlenderServer.spawn(jobs=jobs, timeout=timeout, log=log, autoexec=autoexec, executable=executable) as (  # noqa: SIM117
             procs,
             conns,
         ):
@@ -2492,21 +2489,20 @@ class BlenderClients(tuple):
             else nullcontext(enter_result=(None, conns))
         )
 
-        with multiprocess.Manager() as manager:
-            with context_manager as (_, conns):
-                q = manager.Queue()
+        with multiprocess.Manager() as manager, context_manager as (_, connections):
+            q = manager.Queue()
 
-                for conn in conns:
-                    q.put(conn)
+            for conn in connections:
+                q.put(conn)
 
-                with multiprocess.Pool(len(conns)) as pool:
-                    for name, method in inspect.getmembers(pool, predicate=inspect.ismethod):
-                        params = list(inspect.signature(method).parameters.keys())
+            with multiprocess.Pool(len(connections)) as pool:
+                for name, method in inspect.getmembers(pool, predicate=inspect.ismethod):
+                    params = list(inspect.signature(method).parameters.keys())
 
-                        # Get all map/starmap/apply/etc variants
-                        if not name.startswith("_") and next(iter(params), None) == "func":
-                            setattr(pool, name, modify_applicator(method, q))
-                    yield pool
+                    # Get all map/starmap/apply/etc variants
+                    if not name.startswith("_") and next(iter(params), None) == "func":
+                        setattr(pool, name, modify_applicator(method, q))
+                yield pool
 
     @require_connected_clients
     def common_animation_range(self) -> range:
@@ -2646,13 +2642,10 @@ class BlenderClients(tuple):
                 # the underlying connection to poll and serve any incoming events.
                 # Roughly equivalent to the following (but does not rely on private API):
                 #     awaitable._conn.serve(awaitable._ttl, waiting=awaitable._waiting)
-                awaitable.ready
+                _ = awaitable.ready
 
 
 if __name__ == "__main__":
-    if sys.version_info < (3, 9, 0):
-        raise RuntimeError("Please use newer blender version with a python version of at least 3.9.")
-
     if bpy is None:
         sys.exit()
 

@@ -26,7 +26,7 @@ def test_help_is_full(module):
     for func_name, func in inspect.getmembers(module, inspect.isfunction):
         if func.__module__ == module.__name__ and not func_name.startswith("_"):
             docs = parse_from_object(func)
-            documented_params = set(param.arg_name for param in docs.params if param.description)
+            documented_params = {param.arg_name for param in docs.params if param.description}
             all_params = set(inspect.getfullargspec(func).args)
 
             assert documented_params == all_params

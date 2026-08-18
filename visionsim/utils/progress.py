@@ -95,12 +95,12 @@ class PoolProgress(Progress):
 
     @staticmethod
     def update_task(progress: multiprocessing.Queue[dict], task_id: TaskID, **kwargs) -> None:
-        progress.put(kwargs | dict(task_id=task_id))
+        progress.put(kwargs | {"task_id": task_id})
 
     def _update_task(self, task_update: dict):
         """Actually perform the queued task update"""
         if self.auto_visible:
-            task_update |= dict(visible=True)
+            task_update |= {"visible": True}
         self.update(**task_update)
 
     def task_percentage(self, task_id: TaskID) -> float:

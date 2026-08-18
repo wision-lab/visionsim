@@ -18,11 +18,10 @@ import rpyc  # type: ignore
 import rpyc.utils.registry  # type: ignore
 import rpyc.utils.server  # type: ignore
 from _typeshed import Incomplete
-from typing_extensions import ParamSpec, Self
+from typing_extensions import Self
 
 from visionsim.types import COLOR_MODES, EXR_CODECS, FILE, FILE_FORMATS, UpdateFn
 
-_P = ParamSpec("_P")
 handlers: Iterable[logging.Handler] | None
 server_log: logging.Logger
 EXPOSED_PREFIX: str

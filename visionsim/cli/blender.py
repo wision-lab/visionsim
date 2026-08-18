@@ -216,8 +216,8 @@ def optimize_rate(
                     frame_end=frame_end,
                     frame_step=frame_step,
                 )
-            except Exception as e:
-                _log.error(f"Failed to render animation for keyframe_multiplier={k:.4f}: {e}")
+            except (ConnectionError, TimeoutError, OSError, EOFError, ValueError, RuntimeError) as e:
+                _log.error(f"Failed to render animation for keyframe_multiplier={k:.4f}: {e}", exc_info=True)
                 return k
             except KeyboardInterrupt:
                 _log.info("Optimization interrupted by user.")

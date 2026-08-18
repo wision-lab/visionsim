@@ -244,13 +244,13 @@ def create_datasets(
                 pool.apply_async(
                     render_job,
                     args=(blend_file, sequence_dir),
-                    kwds=dict(
-                        frame_start=frame_start,
-                        frame_end=frame_start + num_frames,
-                        config=render_config,
-                        dry_run=dry_run,
-                        update_fn=tick,
-                    ),
+                    kwds={
+                        "frame_start": frame_start,
+                        "frame_end": frame_start + num_frames,
+                        "config": render_config,
+                        "dry_run": dry_run,
+                        "update_fn": tick,
+                    },
                 )
             else:
                 log.info(f"Skipping: {sequence_dir}")

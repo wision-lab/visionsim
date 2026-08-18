@@ -191,7 +191,7 @@ def combine(
                 _run(cmd)
 
         # If the matrix is not jagged, we can use ffmpeg's xstack instead
-        if len(num_cols := set(len(row) for row in matrix)) == 1:
+        if len(num_cols := {len(row) for row in matrix}) == 1:
             in_paths = [mapping.get(p, p) for row in matrix for p in row]
             in_paths_str = "".join(f"-i {p} " for p in in_paths)
             filter_inputs_str = "".join(

@@ -524,9 +524,8 @@ class EventEmulator:
             base_log_frame[shot_on_xy] = lp_log_frame[shot_on_xy]
             base_log_frame[shot_off_xy] = lp_log_frame[shot_off_xy]
 
-        if len(events) > 0:
-            if np.any(np.diff(events[:, 0]) < 0):
-                logger.warning("nonmonotonic timestamp(s) detected in events")
+        if len(events) > 0 and np.any(np.diff(events[:, 0]) < 0):
+            logger.warning("nonmonotonic timestamp(s) detected in events")
 
         self.t_previous = t_frame
         return events

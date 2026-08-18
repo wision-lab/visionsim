@@ -38,6 +38,4 @@ def install_dependencies(
         cmd += f"--version={version}"
     else:
         cmd += f"--editable {path}" if editable else f"{path}"
-    return subprocess.run(
-        shlex.split(cmd), stdout=sys.stdout, stderr=subprocess.STDOUT, universal_newlines=True, check=True
-    )
+    return subprocess.run(shlex.split(cmd), stdout=sys.stdout, stderr=subprocess.STDOUT, text=True, check=True)

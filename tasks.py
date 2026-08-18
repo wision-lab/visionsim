@@ -131,7 +131,7 @@ def build_docs(c, preview=False, full=False):
         with c.cd(ROOT_DIR / "cache"):
             # Create examples from the quick start guide
             with open(ROOT_DIR / "examples/quickstart.sh", "r") as f:
-                cmds = [line for line in f.readlines() if line.strip() and not line.startswith("#")]
+                cmds = [line for line in f if line.strip() and not line.startswith("#")]
 
             cmds += [
                 f"gifski $(ls -1a quickstart/lego-gt/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif --width=320 --height=320",
@@ -184,7 +184,7 @@ def generate_stubs(c):
                 with open(ignores_from) as f:
                     root = ast.parse(f.read(), ignores_from, type_comments=True)
 
-                self.type_ignored_mods = set(
+                self.type_ignored_mods = {
                     n.name.split(".")[0]
                     for node in ast.walk(root)
                     if isinstance(node, (ast.Import, ast.ImportFrom))
@@ -193,7 +193,7 @@ def generate_stubs(c):
                         ignore.lineno in range(node.lineno, (node.end_lineno or node.lineno) + 1)
                         for ignore in root.type_ignores
                     )
-                )
+                }
             else:
                 self.type_ignored_mods = set()
             self.type_ignores: set[int] = set()
@@ -228,7 +228,7 @@ def generate_stubs(c):
 
             # Note: Relies on BlenderService being defined before BlenderClient(s)
             if "BlenderClient" in node.name and "BlenderService" in self.classes:
-                methods = set(n.name for n in ast.walk(node) if isinstance(n, ast.FunctionDef))
+                methods = {n.name for n in ast.walk(node) if isinstance(n, ast.FunctionDef)}
 
                 for child in ast.walk(self.classes["BlenderService"]):
                     if isinstance(child, ast.FunctionDef) and child.name.startswith("exposed_"):
