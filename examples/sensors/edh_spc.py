@@ -107,7 +107,7 @@ ax3.axis("off")
 # Create a subplot that spans all three columns in the second row
 ax_line = fig.add_subplot(gs[1, :])
 transient = phi_bar[row, col] * N_pulses * (alpha_bkg + alpha_sig)
-ax3.set_title("Depth from %d-bin EDH" % N_bins)
+ax3.set_title(f"Depth from {N_bins}-bin EDH")
 ax_line.set_title("Equi-depth histogram (EDH)")
 plot_transient(
     ax_line,

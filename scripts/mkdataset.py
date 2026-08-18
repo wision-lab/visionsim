@@ -365,7 +365,7 @@ def purge_corrupted(datasets: str | os.PathLike, /, jobs: int | None = None, dry
     def validate_single(frame):
         try:
             iio.imread(frame)
-        except Exception:
+        except (ValueError, OSError):
             log.warning("Corrupted: %s", frame)
 
             if not dry_run:

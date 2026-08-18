@@ -239,16 +239,17 @@ def generate_stubs(c):
                             child.decorator_list = [ast.Name(id="type_check_only", ctx=ast.Load())]
                             child.name = name
 
-                            if node.name == "BlenderClients":
+                            if (
+                                node.name == "BlenderClients"
+                                and child.returns is not None
+                                and not (isinstance(child.returns, ast.Constant) and child.returns.value is None)
+                            ):
                                 # Switch out returntype to tuple[returntype] iff rettype != None
-                                if child.returns is not None and not (
-                                    isinstance(child.returns, ast.Constant) and child.returns.value is None
-                                ):
-                                    child.returns = ast.Subscript(
-                                        value=ast.Name(id="tuple", ctx=ast.Load()),
-                                        slice=ast.Tuple(elts=[child.returns]),
-                                        ctx=ast.Load(),
-                                    )
+                                child.returns = ast.Subscript(
+                                    value=ast.Name(id="tuple", ctx=ast.Load()),
+                                    slice=ast.Tuple(elts=[child.returns]),
+                                    ctx=ast.Load(),
+                                )
                             node.body.append(child)
 
             self.classes[node.name] = node
