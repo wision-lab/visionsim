@@ -3,6 +3,8 @@ Rendering HDR Sequences
 
 This tutorial shows how to render high-dynamic-range sequences suitable for downstream sensor emulation. HDR images store linear intensity values, unlike display-referred formats like PNG/JPEG.
 
+|
+
 HDR File Formats
 ----------------
 
@@ -29,6 +31,8 @@ HDR outputs can be saved as either ``.exr`` (OpenEXR) or ``.hdr`` (Radiance HDR)
 
 The default ``DWAA`` codec for OpenEXR provides a good balance of compression and quality. For lossless archival use ``ZIP`` or ``PIZ``.
 
+|
+
 Using the Python API
 --------------------
 
@@ -51,6 +55,8 @@ Composite outputs can also be configured for HDR:
 
     client.include_composites(file_format="OPEN_EXR", color_mode="RGB", bit_depth=16)
     client.include_composites(file_format="HDR", color_mode="RGB")
+
+|
 
 Using the CLI
 -------------

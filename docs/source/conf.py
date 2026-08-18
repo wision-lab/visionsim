@@ -12,7 +12,6 @@ project = "VisionSIM"
 copyright = "VisionSIM developers, 2026"
 author = "Sacha Jungerman"
 version = visionsim.__version__
-release = visionsim.__version__
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
