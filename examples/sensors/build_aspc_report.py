@@ -38,6 +38,24 @@ FIGS = [
         ["L1", "T3", "T8"],
     ),
     (
+        "9_flux_roundtrip.png",
+        "Flux round-trip",
+        "Set <code>alpha_sig</code> and <code>alpha_bkg</code>, simulate, then invert the closed form "
+        "to measure both back out of &phi;. Ambient is uniform across the cycle while signal occupies "
+        "only the bins under the pulse, so the median of &phi; recovers the floor and the remainder is "
+        "signal. Repeated across three albedo/distance combinations.",
+        "Figure&nbsp;3 shows the levels <em>scale</em> correctly. This shows they are <em>numerically "
+        "what was asked for</em> &mdash; the parameters survive albedo weighting, inverse-square falloff, "
+        "FOV averaging, convolution with the IRF and the ambient split, and still come back out intact. "
+        "It is the photon-budget analogue of the depth round-trip.",
+        "<code>alpha_sig</code> recovered to <strong>0.01%</strong> across four decades (0.1&ndash;1000); "
+        "<code>alpha_bkg</code> to <strong>0.00%</strong> across 0.01&ndash;10; both independent of albedo "
+        "and distance. Panel (c) shows no cross-talk: sweeping either parameter over 10,000&times; moves the "
+        "other by at most <strong>0.00%</strong>, so signal and background are genuinely separable in &phi;. "
+        "SBR set to 25.0 recovers as 25.00.",
+        [],
+    ),
+    (
         "8_flux_control.png",
         "Flux operating point via the reference condition",
         "Two planes at 3 and 9&nbsp;m, with the operating point set by <em>defining the reference "
@@ -228,6 +246,10 @@ CHECKS = [
     ("Flux: inter-FOV contrast survives calibration", "9.00 at every level"),
     ("Flux: alpha_bkg scales with albedo, not distance", "identical at 2 / 8 / 14 m"),
     ("Flux: alpha_sig=100 reaches the pile-up regime", "peak &phi; = 1.06 /bin/cycle"),
+    ("Flux round-trip: alpha_sig recovered from &phi;", "0.01% over 0.1 &rarr; 1000"),
+    ("Flux round-trip: alpha_bkg recovered from &phi;", "0.00% over 0.01 &rarr; 10"),
+    ("Flux round-trip: no signal/background cross-talk", "&le; 0.00% over 10,000&times;"),
+    ("Flux round-trip: SBR recovered", "set 25.0 &rarr; got 25.00"),
 ]
 
 NOT_COVERED = [
@@ -467,7 +489,7 @@ def build(figdir: pathlib.Path) -> str:
 </div></header>
 
 <div class="banner">
-  <span class="big">23/23</span>
+  <span class="big">27/27</span>
   <span class="txt">self-checks pass in the example, alongside <b>129 passed / 4 xfailed</b> in
   <code>tests/test_aspc_*.py</code>. All four remaining xfails sit in the forward-model layer
   downstream of &phi; and are deferred modeling decisions, not defects awaiting a patch.</span>

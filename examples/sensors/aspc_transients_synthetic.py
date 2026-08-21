@@ -87,6 +87,7 @@ relative to this file, so the output lands in the same place from any working di
     6_guards.png       regression guards for the fixes in this layer
     7_loader_contract.png  what the loader contract buys, and how violations fail
     8_flux_control.png     explicit signal / background flux operating point
+    9_flux_roundtrip.png   set the flux, then measure it back out of phi
 """
 
 from __future__ import annotations
@@ -758,6 +759,108 @@ def fig_flux(outdir, laser, hist):
     plt.close(fig)
 
 
+def recover_flux(phi_row, albedo_mean, depth_m, n_bins=N_BINS):
+    """Measure alpha_sig and alpha_bkg back out of a simulated arrival rate.
+
+    Inverts the closed form for a flat wall. Ambient is uniform across the cycle
+    while signal occupies only the few bins under the pulse, so the median of φ is a
+    robust estimate of the ambient floor; whatever is left over is signal.
+
+        floor          = alpha_bkg · albedo / n_bins
+        Σφ − n·floor   = alpha_sig · albedo / d²
+    """
+    floor = float(torch.median(phi_row))
+    alpha_bkg = floor * n_bins / albedo_mean
+    signal_total = float(phi_row.sum()) - floor * n_bins
+    alpha_sig = signal_total * depth_m**2 / albedo_mean
+    return alpha_sig, alpha_bkg
+
+
+def fig_flux_roundtrip(outdir, laser, hist):
+    """Round-trip experiment: set the flux, then measure it back out of φ.
+
+    This is the check that the requested signal and background levels are actually
+    what the simulation carries — not merely that they scale correctly."""
+    masks = torch.ones(1, GRID, GRID)
+
+    def simulate(alpha_s, alpha_b, albedo, depth):
+        a, d = flat_wall(depth, albedo=albedo)
+        _, _, phi, _ = run_pipeline(laser, hist, a, d, masks, alpha_sig=alpha_s, alpha_bkg=alpha_b)
+        return recover_flux(phi[0], albedo, depth)
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.8))
+
+    # (a) recover alpha_sig across 4 decades, at several albedo/depth combinations
+    sig_targets = [0.1, 1.0, 10.0, 100.0, 1000.0]
+    combos = [(0.8, 3.0, "#2a9d8f", "o"), (0.3, 7.0, "#e9c46a", "s"), (1.0, 11.0, "#264653", "^")]
+    sig_err = 0.0
+    for albedo, depth, colour, mark in combos:
+        got = [simulate(s, 2.0, albedo, depth)[0] for s in sig_targets]
+        sig_err = max(sig_err, max(abs(g / t - 1) for g, t in zip(got, sig_targets)))
+        axes[0].loglog(sig_targets, got, mark + "-", color=colour, ms=6, lw=1.3,
+                       label=f"albedo {albedo}, {depth} m")
+    axes[0].loglog(sig_targets, sig_targets, ls="--", color="#adb5bd", lw=1.2, zorder=0, label="ideal")
+    axes[0].set_xlabel("alpha_sig set")
+    axes[0].set_ylabel("alpha_sig recovered from φ")
+    axes[0].set_title("(a) signal flux round-trip\nrecovered through albedo and 1/d² falloff", fontsize=10)
+    axes[0].legend(fontsize=8)
+
+    # (b) recover alpha_bkg across 4 decades
+    bkg_targets = [0.01, 0.1, 1.0, 10.0]
+    bkg_err = 0.0
+    for albedo, depth, colour, mark in combos:
+        got = [simulate(5.0, b, albedo, depth)[1] for b in bkg_targets]
+        bkg_err = max(bkg_err, max(abs(g / t - 1) for g, t in zip(got, bkg_targets)))
+        axes[1].loglog(bkg_targets, got, mark + "-", color=colour, ms=6, lw=1.3,
+                       label=f"albedo {albedo}, {depth} m")
+    axes[1].loglog(bkg_targets, bkg_targets, ls="--", color="#adb5bd", lw=1.2, zorder=0, label="ideal")
+    axes[1].set_xlabel("alpha_bkg set")
+    axes[1].set_ylabel("alpha_bkg recovered from φ")
+    axes[1].set_title("(b) background flux round-trip\nrecovered independently of depth", fontsize=10)
+    axes[1].legend(fontsize=8)
+
+    # (c) the two must not cross-talk: sweeping one must not move the other
+    fixed_bkg, fixed_sig = 2.0, 5.0
+    bkg_while_sig_sweeps = [simulate(s, fixed_bkg, 0.8, 5.0)[1] for s in sig_targets]
+    sig_while_bkg_sweeps = [simulate(fixed_sig, b, 0.8, 5.0)[0] for b in bkg_targets]
+    axes[2].semilogx(sig_targets, [b / fixed_bkg for b in bkg_while_sig_sweeps], "o-",
+                     color="#2a9d8f", label="alpha_bkg while alpha_sig sweeps")
+    axes[2].semilogx(bkg_targets, [s / fixed_sig for s in sig_while_bkg_sweeps], "s-",
+                     color="#e76f51", label="alpha_sig while alpha_bkg sweeps")
+    axes[2].axhline(1.0, ls="--", color="#adb5bd", lw=1.2)
+    axes[2].set_ylim(0.9, 1.1)
+    axes[2].set_xlabel("the swept parameter")
+    axes[2].set_ylabel("held parameter / its set value")
+    axes[2].set_title("(c) no cross-talk\nsweeping one leaves the other at 1.0", fontsize=10)
+    axes[2].legend(fontsize=8)
+
+    crosstalk = max(
+        max(abs(b / fixed_bkg - 1) for b in bkg_while_sig_sweeps),
+        max(abs(s / fixed_sig - 1) for s in sig_while_bkg_sweeps),
+    )
+
+    check("Flux round-trip: alpha_sig recovered from φ",
+          sig_err < 0.02,
+          f"max error {sig_err * 100:.2f}% over 0.1–1000 x 3 albedo/depth combinations")
+    check("Flux round-trip: alpha_bkg recovered from φ",
+          bkg_err < 0.02,
+          f"max error {bkg_err * 100:.2f}% over 0.01–10 x 3 albedo/depth combinations")
+    check("Flux round-trip: signal and background do not cross-talk",
+          crosstalk < 0.02,
+          f"held parameter moves by at most {crosstalk * 100:.2f}% while the other sweeps 10,000x")
+
+    # SBR is the quantity that actually matters downstream, so state it directly.
+    s_got, b_got = simulate(100.0, 4.0, 0.8, 5.0)
+    check("Flux round-trip: SBR recovered",
+          abs((s_got / b_got) / (100.0 / 4.0) - 1) < 0.02,
+          f"set SBR {100.0 / 4.0:.1f}, recovered {s_got / b_got:.2f}")
+
+    fig.suptitle("Figure 9 — flux round-trip: set it, then measure it back out of φ", fontsize=13)
+    fig.tight_layout()
+    fig.savefig(outdir / "9_flux_roundtrip.png", dpi=130)
+    plt.close(fig)
+
+
 # --------------------------------------------------------------------------- #
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
@@ -791,6 +894,7 @@ def main():
     fig_guards(args.outdir, laser, hist)
     fig_contract(args.outdir, laser, hist)
     fig_flux(args.outdir, laser, hist)
+    fig_flux_roundtrip(args.outdir, laser, hist)
 
     width = max(len(n) for n, _, _ in CHECKS)
     print("=" * (width + 30))
