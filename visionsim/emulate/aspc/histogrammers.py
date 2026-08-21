@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import List, Union
 
@@ -7,59 +9,92 @@ from pint import Quantity
 from torch import Tensor
 from tqdm import tqdm
 
+from visionsim.emulate.aspc.detector import (
+    simulate_photon_timestamps,
+    timestamps_to_histogram,
+)
 from visionsim.emulate.aspc.units import validate_units
 from visionsim.emulate.aspc.utils import get_irradiance_with_fov, ureg
 
 
 def calculate_distorted_transient(phi_bar, dead_time_bins, n_hist_bins):
-  r""" PyTorch function translated from MATLAB/NumPy code from https://github.com/Goyal-STIR-Group/HighFluxSPL.
-  Function generates the distorted transient given input as the true transient and deadtime.
+    r"""Free-running (asynchronous) single-pixel pile-up forward model.
 
-  Citation reference:
-  J. Rapp, Y. Ma, R. M. A. Dawson and V. K. Goyal, "Dead Time Compensation for High-Flux Ranging," 
-  in IEEE Transactions on Signal Processing, vol. 67, no. 13, pp. 3471-3486, 1 July1, 2019, doi: 10.1109/TSP.2019.2914891.
-  """
-  num_bins = phi_bar.shape[-1]
-  
-  # FIX: Wrap the dead time to ensure it doesn't exceed the histogram bounds
-  # We use int() to ensure we don't get tensor-type mismatch issues with the modulo
-  dt_bins_wrapped = int(dead_time_bins) % int(n_hist_bins)
+    Exact discrete-time renewal model. After a detection in bin ``i`` the detector
+    re-arms **at** bin ``i + dead_time_bins`` (so bins ``i+1 … i+dt-1`` are blocked),
+    and the next detection is the first armed bin that receives a photon. The
+    transition kernel is therefore
 
-  cumulative_transient = torch.cumsum(phi_bar, dim=-1)
-  total_photons = torch.sum(phi_bar, dim=-1, keepdim=True)
+    .. math::
+        T[i, j] \;\propto\; p_j \prod_{m=r}^{j-1} (1 - p_m),
+        \qquad p_k = 1 - e^{-\varphi_k},\; r = i + dt
 
-  transition_matrix = torch.zeros((num_bins, num_bins), dtype=phi_bar.dtype, device=phi_bar.device)
+    walking forward from ``r`` with wraparound. The measured histogram shape is the
+    stationary distribution of ``T``.
 
-  for bin_idx in range(num_bins):
-    if bin_idx + dt_bins_wrapped < n_hist_bins:
-      # Use .clone() to prevent autograd issues with in-place modifications if training a model
-      survival_exponent = (cumulative_transient + total_photons - cumulative_transient[bin_idx + dt_bins_wrapped : bin_idx + dt_bins_wrapped + 1]).clone()
-      survival_exponent[bin_idx + dt_bins_wrapped + 1 :] = survival_exponent[bin_idx + dt_bins_wrapped + 1 :] - total_photons
-      
-      transition_matrix[bin_idx, :] = phi_bar * torch.exp(-survival_exponent) / (1 - torch.exp(-total_photons)) / (torch.sum(phi_bar * torch.exp(-survival_exponent) / (1 - torch.exp(-total_photons))) + 0.0000000000001)
-    else:
-      survival_exponent = (cumulative_transient + total_photons - cumulative_transient[bin_idx + dt_bins_wrapped - n_hist_bins : bin_idx + dt_bins_wrapped - n_hist_bins + 1]).clone()
-      survival_exponent[bin_idx + dt_bins_wrapped - n_hist_bins + 1 :] = survival_exponent[bin_idx + dt_bins_wrapped - n_hist_bins + 1 :] - total_photons
-      
-      transition_matrix[bin_idx, :] = phi_bar * torch.exp(-survival_exponent) / (1 - torch.exp(-total_photons)) / (torch.sum(phi_bar * torch.exp(-survival_exponent) / (1 - torch.exp(-total_photons))) + 0.0000000000001)
+    Two things this gets right that the previous formulation did not (verified
+    against the Monte-Carlo reference in ``detector.py`` to within binomial 3-sigma
+    on flat, ramped, random and spike transients):
 
-  if not total_photons.item():
-     return phi_bar
+    * The survival product runs over ``[r, j)`` and **excludes bin j itself** — you
+      do not have to survive a bin in order to be detected in it. The old inclusive
+      ``cumsum`` slice required exactly that, which cancels out for flat phi (a
+      constant factor absorbed by row normalisation) but biases every non-flat
+      transient. That was the residual behind finding **M1**.
+    * ``dead_time_bins`` counts *bins of dead time*, matching
+      ``camera.py``'s ``int(dead_time_s * n_bins * frequency)``. The old code
+      re-armed one bin late.
 
-  eigenvalues, eigenvectors = torch.linalg.eig(transition_matrix.T)
+    Dead times longer than one cycle are handled by walking the full cycle from
+    ``r``; there is no ``% n_hist_bins`` wrap that could silently reduce the dead
+    time to zero (finding **M3**).
 
-  principal_eigen_idx = torch.argmax(torch.abs(eigenvalues))
-  # No need to extract val, just the vectors
-  principal_eigen_vec = eigenvectors[:, principal_eigen_idx].real
+    Args:
+        phi_bar: Per-bin photon arrival rates for one pixel, shape ``(n_tbins,)``.
+        dead_time_bins: Dead time in whole bins. ``0`` means every arriving photon
+            is detected, so the shape is simply ``phi / sum(phi)``.
+        n_hist_bins: Number of bins per cycle.
 
-  if principal_eigen_vec[0] < 0:
-    principal_eigen_vec = -1 * principal_eigen_vec
+    Returns:
+        Normalized distorted transient, shape ``(n_hist_bins,)``, summing to 1.
 
-  distorted_transient = principal_eigen_vec * 1.0
-  distorted_transient = distorted_transient / (torch.sum(distorted_transient))
+    Citation reference (original formulation):
+    J. Rapp, Y. Ma, R. M. A. Dawson and V. K. Goyal, "Dead Time Compensation for
+    High-Flux Ranging," IEEE TSP, vol. 67, no. 13, pp. 3471-3486, 2019.
+    """
+    n_bins = int(n_hist_bins)
+    out_dtype = phi_bar.dtype
+    phi = torch.clamp(phi_bar[..., :n_bins].to(torch.float64), min=0.0)
+    dead_time_bins = int(dead_time_bins)
 
-  return distorted_transient
+    total = phi.sum()
+    if total <= 0:
+        return phi.to(out_dtype)
+    if dead_time_bins == 0:
+        # No dead time: every arriving photon is detected, so the expected count
+        # per bin is phi itself. Sampling occupancy (1 - e^-phi) here instead is
+        # the dt=0 finding.
+        return (phi / total).to(out_dtype)
 
+    p_detect = 1.0 - torch.exp(-phi)
+    order = torch.arange(n_bins, device=phi.device)
+    transition = torch.zeros((n_bins, n_bins), dtype=torch.float64, device=phi.device)
+
+    for bin_idx in range(n_bins):
+        # Candidate bins in the order the detector visits them after re-arming.
+        visit = (bin_idx + dead_time_bins + order) % n_bins
+        run = phi[visit]
+        # Exclusive prefix sum => survive [r, j), not [r, j].
+        survived = torch.cat([torch.zeros(1, dtype=torch.float64, device=phi.device),
+                              torch.cumsum(run, dim=0)[:-1]])
+        row = p_detect[visit] * torch.exp(-survived)
+        transition[bin_idx, visit] = row / (row.sum() + 1e-300)
+
+    eigenvalues, eigenvectors = torch.linalg.eig(transition.T)
+    principal = eigenvectors[:, torch.argmax(torch.abs(eigenvalues))].real
+    if principal[0] < 0:
+        principal = -principal
+    return (principal / principal.sum()).to(out_dtype)
 
 
 def calculate_distorted_transient_sync(
@@ -67,56 +102,77 @@ def calculate_distorted_transient_sync(
     dead_time_bins: int,
     n_hist_bins: int,
 ) -> torch.Tensor:
-    """
-    Synchronous forward model for pile-up distortion (single-hit and multi-hit).
- 
-    Models the detection probability distribution for a synchronous (gated) SPAD
-    where the detector resets at each cycle boundary. Dead time never wraps across
-    cycles.
- 
-    - Single-hit mode: set dead_time_bins >= n_hist_bins
-    - Multi-hit mode:  set dead_time_bins to the actual detector dead time
- 
-    Based on the classical Coates pile-up model generalized to multi-hit operation.
- 
+    """Synchronous (gated) single-pixel pile-up forward model.
+
+    The detector is re-armed at the start of every cycle, so dead time never
+    crosses a cycle boundary and there is no carry-in state. Exact discrete-time
+    recursion on ``F[j] = P(a detection occurs in bin j)``:
+
+    * a *first* detection at ``j`` contributes ``p_j * prod_{m<j} (1 - p_m)``;
+    * a later one contributes ``F[i] * p_j * prod_{m=i+dt}^{j-1} (1 - p_m)`` for
+      every earlier detection bin ``i`` with ``i + dt <= j``.
+
+    **Single-hit** (one detection per cycle — the conventional lidar setup that
+    Coates inverts) is ``dead_time_bins >= n_hist_bins``, and reduces exactly to
+    first-photon-wins ``p_j * prod_{m<j}(1 - p_m)``. Note that under a one-per-cycle
+    cap the dead time cannot bind at all, so the single-hit answer is *independent*
+    of its value — verified against the Monte-Carlo reference across
+    ``dt in {0, 1, 3, 8, n_hist_bins}``.
+
+    The previous implementation used the already-gated ``prob_detect`` inside the
+    survival product instead of the raw per-bin ``p_detect``, double-discounting
+    liveness; in single-hit mode it missed the Coates result by ~19 sigma
+    (finding **H1**).
+
     Args:
-        phi_bar:         Arrival rates per bin (shape: [n_hist_bins]).
-        dead_time_bins:  Dead time in number of bins. For single-hit (first-photon-wins),
-                         pass dead_time_bins >= n_hist_bins.
-        n_hist_bins:     Number of histogram bins per cycle.
- 
+        phi_bar: Per-bin photon arrival rates for one pixel, shape ``(n_tbins,)``.
+        dead_time_bins: Dead time in whole bins; ``>= n_hist_bins`` selects
+            single-hit. ``0`` means every arriving photon is detected.
+        n_hist_bins: Number of bins per cycle.
+
     Returns:
-        Normalized distorted transient (probability distribution, sums to 1).
+        Normalized distorted transient, shape ``(n_hist_bins,)``, summing to 1.
     """
-    device = phi_bar.device
-    dtype = phi_bar.dtype
- 
-    # Per-bin detection probability: p_i = 1 - exp(-r_i)
-    p_detect = 1.0 - torch.exp(-torch.clamp(phi_bar[:n_hist_bins], min=0.0))
- 
-    # prob_live[i]   = probability the detector is not in dead time at bin i
-    # prob_detect[i] = probability of actually registering a photon at bin i
-    prob_detect = torch.zeros(n_hist_bins, device=device, dtype=dtype)
- 
-    # Cycle start: detector is always live (synchronous reset)
-    prob_detect[0] = p_detect[0]
- 
-    for i in range(1, n_hist_bins):
-        # Detector is live at bin i iff no detection occurred in
-        # bins [max(0, i - dead_time_bins) .. i-1]
-        start = max(0, i - dead_time_bins)
-        prob_live_i = torch.prod(1.0 - prob_detect[start:i])
-        prob_detect[i] = prob_live_i * p_detect[i]
- 
-    # Normalize to a proper distribution
-    total = prob_detect.sum()
-    if total > 0:
-        distorted = prob_detect / total
+    n_bins = int(n_hist_bins)
+    out_dtype = phi_bar.dtype
+    phi = torch.clamp(phi_bar[..., :n_bins].to(torch.float64), min=0.0)
+    dead_time_bins = int(dead_time_bins)
+
+    total = phi.sum()
+    if total <= 0:
+        return phi.to(out_dtype)
+    if dead_time_bins == 0:
+        # As in the free-running model: with no dead time every photon is detected.
+        return (phi / total).to(out_dtype)
+
+    p_detect = 1.0 - torch.exp(-phi)
+    # log-domain survival so that long runs of bright bins do not underflow
+    log_survive = torch.log(torch.clamp(1.0 - p_detect, min=1e-300))
+    cum_log = torch.cat([torch.zeros(1, dtype=torch.float64, device=phi.device),
+                         torch.cumsum(log_survive, dim=0)])  # cum_log[k] = sum_{m<k}
+
+    first_detection = p_detect * torch.exp(cum_log[:n_bins])
+
+    if dead_time_bins >= n_bins:
+        prob_detect = first_detection  # single-hit: first photon wins
     else:
-        distorted = prob_detect
- 
-    return distorted
- 
+        # Accumulate into a list and stack, rather than writing in place into a
+        # preallocated tensor: the recursion reads earlier entries of the same
+        # buffer it writes to, which bumps the autograd version counter and makes
+        # backward() fail with "a variable needed for gradient computation has
+        # been modified by an inplace operation". Building it functionally keeps
+        # the multi-hit branch differentiable like the rest of the module.
+        detections: list[torch.Tensor] = []
+        for j in range(n_bins):
+            acc = first_detection[j]
+            for i in range(0, j - dead_time_bins + 1):
+                acc = acc + detections[i] * p_detect[j] * torch.exp(cum_log[j] - cum_log[i + dead_time_bins])
+            detections.append(acc)
+        prob_detect = torch.stack(detections)
+
+    return (prob_detect / prob_detect.sum()).to(out_dtype)
+
+
 def batch_distorted_transient_sync(
     phi_bar: torch.Tensor,
     dead_time_bins: int,  # kept for API compatibility, ignored
@@ -533,30 +589,61 @@ class HistogrammerBase:
             arrival_rates[i, :] = convolved_signal + background_extended
         return arrival_rates
 
-    def _apply_non_pr_deadtime(self, buffer: torch.Tensor, dead_time_bins: int, n_tbins: int):
+    def simulate_pixel_photon_hist(
+        self,
+        phi_bar: torch.Tensor,
+        n_pulses: int,
+        n_hist_bins: int,
+        free_running: bool,
+        dead_time_bins: int,
+        paralyzable: bool = False,
+        generator: torch.Generator | None = None,
+    ) -> torch.Tensor:
         """
-        Applies non-paralyzable dead time to a photon arrival buffer (helper function).
+        Sample a photon-detection histogram for a single pixel.
+
+        Thin wrapper over the ground-truth timestamp simulator: detections are
+        sampled as ``(cycle, bin)`` timestamps and then reduced to a histogram,
+        which is also the order real hardware works in -- a TDC emits
+        timestamps, binning happens afterwards.
+
+        Shared by the EWH and EDH histogrammers, which differ only in what they
+        do with the resulting histogram.
+
+        Gated mode is multi-hit here (no per-cycle cap). For conventional
+        single-hit lidar call
+        :func:`~visionsim.emulate.aspc.detector.simulate_photon_timestamps`
+        directly with ``max_detections_per_cycle=1``.
 
         Args:
-            buffer (torch.Tensor): A boolean tensor representing photon arrivals over time.
-                            The second half `buffer[n_tbins:]` contains current arrivals.
-            dead_time_bins (int): Number of time bins for dead time.
-            n_tbins (int): Number of time bins for a single pulse period.
+            phi_bar (torch.Tensor): Expected photon arrival rates for one pixel across time bins.
+            n_pulses (int): Number of laser pulses to simulate.
+            n_hist_bins (int): Histogram resolution. May be coarser than the
+                number of time bins in ``phi_bar``, which must then be an exact
+                multiple of it.
+            free_running (bool): True for free-running mode, False for gated mode.
+            dead_time_bins (int): Dead time in whole time bins. The detector
+                re-arms *at* ``t_detect + dead_time_bins``, so a detection blocks
+                the ``dead_time_bins - 1`` bins that follow it.
+            paralyzable (bool): If True, every arrival re-opens the dead window
+                whether or not it was detected (passive quenching).
+            generator (torch.Generator | None): Optional RNG for reproducibility.
+
+        Returns:
+            torch.Tensor: Accumulated photon histogram, shape ``(n_hist_bins,)``.
         """
-        # Identify indices where current arrivals occurred
-        current_arrivals_indices = torch.nonzero(buffer[n_tbins:], as_tuple=True)[0] + n_tbins
-
-        # print("current_arrivals_indices: ", current_arrivals_indices.shape)
-
-        for idx in current_arrivals_indices:
-            # Check for previous photon detection within the dead time window
-            start_check = int(max(idx - dead_time_bins, 0))
-            end_check = idx  # Up to (but not including) the current photon
-
-            # If any photon was detected in the previous dead_time_bins, current photon is "missed"
-            if torch.any(buffer[start_check:end_check]):
-                buffer[idx] = False  # Set current photon detection to False (missed)
-
+        n_tbins = phi_bar.shape[-1]
+        timestamps = simulate_photon_timestamps(
+            phi_bar,
+            n_pulses,
+            dead_time_bins=int(dead_time_bins),
+            free_running=bool(free_running),
+            paralyzable=bool(paralyzable),
+            max_detections_per_cycle=None,
+            generator=generator,
+        )
+        photon_hist = timestamps_to_histogram(timestamps, n_tbins, n_hist_bins)
+        return photon_hist.to(phi_bar.device)
 
 @dataclass
 class HistConfig:
@@ -612,10 +699,22 @@ class Histogrammer(HistogrammerBase):
             setattr(self, k, v)
 
     def simulate_pixel_ewh(
-        self, phi_bar: torch.Tensor, n_pulses: int, n_hist_bins: int, free_running: bool, dead_time_bins: int, fast_sim: bool = True,
+        self,
+        phi_bar: torch.Tensor,
+        n_pulses: int,
+        n_hist_bins: int,
+        free_running: bool,
+        dead_time_bins: int,
+        fast_sim: bool = True,
+        paralyzable: bool = False,
+        generator: torch.Generator | None = None,
     ) -> torch.Tensor:
         """
         Simulates the Equi-Width Histogram (EWH) for a single pixel.
+
+        The EWH *is* the sampled photon histogram, so this delegates straight to
+        :meth:`HistogrammerBase.simulate_pixel_photon_hist`; see there for the
+        detection model and the dead-time convention.
 
         Args:
             phi_bar (torch.Tensor): Expected photon arrival rates for one pixel across time bins.
@@ -623,56 +722,17 @@ class Histogrammer(HistogrammerBase):
             n_hist_bins (int): Number of histogram bins.
             free_running (bool): True for free-running mode, False for gated mode.
             dead_time_bins (int): Number of time bins for dead time.
+            fast_sim (bool): Unused; kept for call-site compatibility.
+            paralyzable (bool): If True, every arrival re-opens the dead window.
+            generator (torch.Generator | None): Optional RNG for reproducibility.
 
         Returns:
             torch.Tensor: A tensor representing the accumulated photon histogram for the pixel.
         """
-        photon_hist = torch.zeros(n_hist_bins, dtype=torch.float32, device=phi_bar.device)
-        n_tbins = phi_bar.shape[-1]
-
-        # if fast_sim:
-
-        #     if free_running:
-        #         photon_hist_prob = calculate_distorted_transient(phi_bar, dead_time_bins, n_hist_bins)
-        #     else:
-        #         photon_hist_prob = calculate_distorted_transient_sync(phi_bar, dead_time_bins, n_hist_bins)
-
-        #     photon_hist = photon_hist_prob * n_pulses
-
-        #     return photon_hist
-
-        # Buffer to store arrivals for dead-time checking
-        # First half for previous pulse arrivals, second half for current pulse arrivals
-        buffer = torch.zeros((n_tbins * 2), dtype=torch.bool, device=phi_bar.device)
-
-        # Pre-calculate probability once (outside the loop) as we are assuming phi_bar is static per pulse.
-        # Clamp negative arrival rates that can occur from convolution/offset math.
-        # p(detection) = 1 - e^(-rate), with p in [0, 1]
-        phi_bar = torch.clamp(phi_bar, min=0.0)
-        prob_detection = 1.0 - torch.exp(-phi_bar)
-        prob_detection = torch.clamp(prob_detection, 0.0, 1.0)
-
-        # print("prob_detection", prob_detection.min(), prob_detection.max(), prob_detection.mean())
-
-        for n_ in tqdm(range(n_pulses), desc="Simulating Pixel EWH"):
-            detections = torch.bernoulli(prob_detection)
-
-            # Update buffer
-            buffer[n_tbins:] = detections.bool()
-
-            # Apply non-paralyzable dead time
-            if dead_time_bins > 0:
-                self._apply_non_pr_deadtime(buffer, dead_time_bins, n_tbins)
-
-            # Accumulate detected photons into the histogram
-            photon_hist += buffer[n_tbins:].float()
-
-            # Update buffer for next pulse based on free-running or gated mode
-            if free_running:
-                buffer[:n_tbins] = buffer[n_tbins:]  # Carry over current arrivals to previous for next iteration
-            else:
-                buffer[:n_tbins] = 0  # Clear previous buffer (gated mode)
-        return photon_hist
+        return self.simulate_pixel_photon_hist(
+            phi_bar, n_pulses, n_hist_bins, free_running, dead_time_bins,
+            paralyzable=paralyzable, generator=generator,
+        )
 
     def simulate_ewh(
         self,
@@ -716,36 +776,6 @@ class Histogrammer(HistogrammerBase):
             )
         return ewh_pixel_list
 
-    def gumbel_poisson(self, rate, K=50, tau=0.5):
-        """
-        Differentiable relaxation of Poisson sampling using Gumbel-softmax.
-
-        Args:
-            rate: (B, ...) Poisson rate λ
-            K: Maximum value in support
-            tau: Temperature parameter for Gumbel-softmax
-
-        Returns:
-            relaxed sample with same shape as rate
-        """
-        # Build support [0..K]
-        ks = torch.arange(K + 1, device=rate.device).view(1, -1)
-
-        # Compute unnormalized logits = log p(k | rate)
-        # log p = -rate + k log rate - log(k!)
-        log_probs = -rate.unsqueeze(-1) + ks * torch.log(rate.unsqueeze(-1) + 1e-9) - torch.lgamma(ks + 1)
-
-        # Sample Gumbel noise
-        gumbel_noise = -torch.log(-torch.log(torch.rand_like(log_probs)))
-
-        # Relaxed Gumbel-Max --> Gumbel-Softmax
-        y = F.softmax((log_probs + gumbel_noise) / tau, dim=-1)
-
-        # Relaxed expected sample
-        relaxed_sample = (y * ks).sum(dim=-1)
-
-        return relaxed_sample
-
     def simulate_ewh_diff(
         self,
         arrival_rates: torch.Tensor,
@@ -772,7 +802,6 @@ class Histogrammer(HistogrammerBase):
         # Use expected value instead of sampling for differentiability
         # For Poisson distribution, E[X] = lambda = arrival_rates * n_pulses
         ewh_pixel_list = arrival_rates * n_pulses
-        # Alternative: ewh_pixel_list = self.gumbel_poisson(arrival_rates * n_pulses, K=40, tau=0.3)
 
         return ewh_pixel_list
 
@@ -826,50 +855,48 @@ class HistogrammerEDH(HistogrammerBase):
         return edh_bins
 
     def simulate_pixel_edh(
-        self, phi_bar: torch.Tensor, n_pulses: int, n_hist_bins: int, free_running: bool, dead_time_bins: int
+        self,
+        phi_bar: torch.Tensor,
+        n_pulses: int,
+        n_hist_bins: int,
+        free_running: bool,
+        dead_time_bins: int,
+        paralyzable: bool = False,
+        generator: torch.Generator | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Simulates the Equi-Depth Histogram (EDH) for a single pixel.
 
+        The EDH is a reduction of the equi-width photon histogram, not a
+        separate detection model: the pixel is simulated once at full TDC
+        resolution and the equi-depth boundaries are then read off the result.
+
+        Note that ``n_hist_bins`` means something different here than it does
+        for the EWH. It is the number of *equi-depth* bins, i.e. the number of
+        boundaries to place; the underlying photon histogram is always kept at
+        the full ``phi_bar`` time-bin resolution, since rebinning it first would
+        quantise the boundaries.
+
         Args:
             phi_bar (torch.Tensor): Expected photon arrival rates for one pixel across time bins.
             n_pulses (int): Number of laser pulses to simulate.
-            n_hist_bins (int): Number of histogram bins.
+            n_hist_bins (int): Number of equi-depth bins.
             free_running (bool): True for free-running mode, False for gated mode.
             dead_time_bins (int): Number of time bins for dead time.
+            paralyzable (bool): If True, every arrival re-opens the dead window.
+            generator (torch.Generator | None): Optional RNG for reproducibility.
 
         Returns:
             tuple: A tuple containing:
-                - torch.Tensor: Photon histogram.
+                - torch.Tensor: Photon histogram, at full time-bin resolution.
                 - torch.Tensor: EDH bin boundaries.
         """
         n_tbins = phi_bar.shape[-1]
-        photon_hist = torch.zeros(n_tbins, dtype=torch.float32, device=phi_bar.device)
-
-        # Buffer to store arrivals for dead-time checking
-        # First half for previous pulse arrivals, second half for current pulse arrivals
-        buffer = torch.zeros((n_tbins * 2), dtype=torch.bool, device=phi_bar.device)
-
-        for n_ in range(n_pulses):
-            # Generate photon arrivals using Poisson distribution
-            photon_vec = torch.poisson(phi_bar)
-            buffer[n_tbins:] = photon_vec > 0  # Mark where photons arrived in current pulse
-
-            # Apply non-paralyzable dead time
-            if dead_time_bins > 0:
-                self._apply_non_pr_deadtime(buffer, dead_time_bins, n_tbins)
-
-            # Accumulate detected photons into the histogram
-            photon_hist += buffer[n_tbins:].float()
-
-            # Update buffer for next pulse based on free-running or gated mode
-            if free_running:
-                buffer[:n_tbins] = buffer[n_tbins:]  # Carry over current arrivals to previous for next iteration
-            else:
-                buffer[:n_tbins] = 0  # Clear previous buffer (gated mode)
-
+        photon_hist = self.simulate_pixel_photon_hist(
+            phi_bar, n_pulses, n_tbins, free_running, dead_time_bins,
+            paralyzable=paralyzable, generator=generator,
+        )
         photon_edh = self.photon_hist2edh(photon_hist, n_hist_bins)
-
         return photon_hist, photon_edh
 
     def simulate_edh(
