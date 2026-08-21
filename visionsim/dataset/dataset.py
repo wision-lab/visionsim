@@ -2,372 +2,226 @@ from __future__ import annotations
 
 import copy
 import os
-from collections.abc import Iterable
+from collections.abc import Callable, Sequence
 from functools import cached_property
 from pathlib import Path
+from typing import Any, Literal, cast
 
-import imageio
 import imageio.v3 as iio
+import more_itertools as mitertools
+import natsort
 import numpy as np
 import numpy.typing as npt
+import OpenEXR  # type: ignore
 import torch.utils.data
-from jsonschema.exceptions import ValidationError
-from natsort import natsorted
-from numpy.lib.format import open_memmap
-from typing_extensions import Any, Literal, cast
+from typing_extensions import Self
 
-from .schema import IMG_SCHEMA, NPY_SCHEMA, read_and_validate, validate_and_write
+from visionsim.dataset.models import Camera, Metadata
+from visionsim.types import Matrix4x4
 
 
-def _resolve_root(root: str | os.PathLike, mode: Literal["img", "npy"]) -> tuple[list, npt.NDArray, dict | None]:
-    """Resolve a dataset root path into:
-        - The path of an npy file, or list of img paths
-        - A list of poses, or list[None]
-        - The contents of the transforms file or None
+class PathTransforms:
+    """Given a sequence of paths to load from, yield the minimal transforms dictionary for each path.
 
-    Args:
-        root (str | os.PathLike): Root path of the dataset.
-        mode (Literal['img', 'npy']): type of dataset to process. Can be either 'img' or 'npy'.
+    Specifically, for image paths we just yield ``{"file_path": paths[idx]}`` for every index, but if some of the paths
+    are numpy arrays, and ``iter_npys`` is true, we unpack the array's first dimension, and return the corresponding
+    ``offset`` as well. For instance, if ``paths`` points to a png, a npy of shape (4, H, W, C), and another png, an
+    index of 3 will return the path to the numpy file and an offset of 3."""
 
-    Returns:
-        data_paths: list of paths to data files in dataset.
-        poses: array of pose information for each data file, if present, else empty array.
-        transforms: dictionary of information from json file, if present, else None.
-    """
-    root = Path(root)
+    def __init__(
+        self, paths: Sequence[Path], iter_npys: bool = True, root: str | os.PathLike | None = None, **kwargs
+    ) -> None:
+        """Initialize a sequence of "dummy" transform dictionaries from a set of paths.
 
-    if root.is_dir():
-        if (root / "transforms.json").is_file():
-            transforms_path = root / "transforms.json"
-            data_path = None
-        # if found, transforms path is none and data path to root.
-        elif mode.lower() == "img":
-            img_exts = set(imageio.config.extensions.known_extensions.keys())
-            found_exts = set(p.suffix for p in root.glob("*"))
-
-            if found_exts & img_exts:
-                transforms_path = None
-                data_path = root
-            else:
-                raise FileNotFoundError(f"No image files found in {root}.")
-        # if found, transforms path is none, data path is frames.npy
-        elif mode.lower() == "npy":
-            if (root / "frames.npy").is_file():
-                transforms_path = None
-                data_path = root / "frames.npy"
-            else:
-                raise FileNotFoundError("Expected one of 'transforms.json' or 'frames.npy'. Please give full path.")
+        Args:
+            paths (Sequence[Path]): Paths to yield from
+            iter_npys (bool, optional): If true, yield from numpy arrays will before
+                moving on to next path. Defaults to True.
+            root (str | os.PathLike | None, optional): Root directory to resolve relative paths against.
+                Defaults to None.
+            **kwargs (dict[str, Any]): Additional key/value pairs to include in each transform dict.
+        """
+        self.root = Path(root).resolve() if root else None
+        if iter_npys:
+            lengths = [
+                len(np.load(str(self.root / path if self.root else path), mmap_mode="r"))
+                if path.suffix.lower() == ".npy"
+                else 1
+                for path in paths
+            ]
         else:
-            raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
-    elif root.is_file():
-        if root.suffix == ".json":
-            transforms_path = root
-            data_path = None
-        elif root.suffix == ".npy" and mode.lower() == "npy":
-            transforms_path = None
-            data_path = root
+            lengths = [len(paths)]
+
+        self.iter_npys = iter_npys
+        self.cumulative_lengths: npt.NDArray[np.intp] = np.cumsum(lengths)
+        self.lengths = lengths
+        self.paths = paths
+        self.kwargs = kwargs
+
+    def __len__(self) -> int:
+        """Length of dataset"""
+        return int(self.cumulative_lengths[-1])
+
+    def __getitem__(self, idx: int) -> dict[str, int | Path]:
+        """Return dummy transform dict at provided index.
+
+        Args:
+            idx (int): Index of item to return
+
+        Returns:
+            dict[str, int | Path]: transforms dictionary containing "file_path" of data
+                and "offset" amount if loading from a numpy array.
+        """
+        if self.iter_npys:
+            path_idx = int(np.searchsorted(self.cumulative_lengths, idx, side="right"))
+            transform: dict[str, int | Path] = {"file_path": self.paths[path_idx]}
+
+            if self.paths[path_idx].suffix.lower() == ".npy":
+                transform["offset"] = int((idx - self.cumulative_lengths[path_idx]) % self.lengths[path_idx])
         else:
-            err_msg = "a folder" if mode.lower() == "img" else "the path of an npy file"
-            raise ValueError(
-                f"Dataset root ({root}) not understood. "
-                f"It should be a json file, the parent directory of a 'transforms.json' file,"
-                f"or {err_msg} containing a collection of images."
-            )
-    else:
-        raise FileNotFoundError(f"Dataset root ({root}) not found!")
-
-    if mode.lower() == "img":
-        # Extract paths and ensure they are lexicographically sorted
-        if transforms_path:
-            transforms = read_and_validate(path=transforms_path, schema=IMG_SCHEMA)
-            frames = natsorted(transforms["frames"], key=lambda f: f["file_path"])
-            data_paths = [transforms_path.parent / f["file_path"] for f in frames]
-            poses = [f["transform_matrix"] for f in frames]
-        elif data_path:
-            data_paths = natsorted(data_path.glob("*"))
-            poses = [None] * len(data_paths)
-            transforms = None
-        else:
-            raise RuntimeError("This should be unreachable!")
-
-        if len(exts := set(Path(p).suffix for p in data_paths)) != 1:
-            raise RuntimeError(f"All images must have same extension but found {exts}.")
-    else:
-        if transforms_path:
-            transforms = read_and_validate(path=transforms_path, schema=NPY_SCHEMA)
-            data_paths = [transforms_path.parent / transforms["file_path"]]
-            poses = [f["transform_matrix"] for f in transforms["frames"]]
-        elif data_path:
-            data_paths = [data_path]
-            poses = [None] * len(np.load(str(data_path), mmap_mode="r"))
-            transforms = None
-        else:
-            raise RuntimeError("This should be unreachable!")
-
-    return data_paths, np.array(poses), transforms
-
-
-def default_collate(
-    batch: Iterable[tuple[int, npt.NDArray, npt.NDArray]],
-) -> tuple[npt.NDArray, npt.NDArray, npt.NDArray]:
-    """Collate function that takes in a batch of [(img_idx, img, pose), ...] and returns (img_idxs, imgs, poses)
-
-    Args:
-        batch (Iterable[tuple[int, npt.NDArray, npt.NDArray]]): Iterable of tuples (img_idx, img, pose).
-
-    Returns
-        Collated numpy arrays of img_idxs, imgs, poses.
-    """
-    img_idxs, imgs, poses = zip(*batch)
-    img_idxs = np.concatenate([np.atleast_1d(idx) for idx in img_idxs])
-    imgs = np.stack([np.atleast_1d(img) for img in imgs])
-    poses = np.stack([np.atleast_1d(pose) for pose in poses])
-    return img_idxs, imgs, poses
+            transform = {"file_path": self.paths[idx]}
+        return transform | self.kwargs
 
 
 class Dataset(torch.utils.data.Dataset):
-    """Base dataset implementation"""
-
-    def __init__(self) -> None:
-        # Add type hints for variables that should be defined by subclasses
-        self.poses: npt.NDArray
-        self.transforms: dict | None
-
-        raise TypeError(
-            "Cannot instantiate Dataset directly, use Dataset.from_path() to instantiate a concrete dataset type instead."
-        )
-
-    @classmethod
-    def from_path(cls, root: str | os.PathLike, mode: Literal["img", "npy"] | None = None) -> NpyDataset | ImgDataset:
-        """Given a dataset root, resolve it and instantiate the correct dataset type.
-
-        Args:
-            root (str | os.PathLike): path to dataset, either containing folder or `transforms.json`.
-            mode (Literal['img', 'npy'] | None, optional): if type of dataset is known, it can be provided, otherwise it
-                will try to be inferred. Expects either 'img' or 'npy'. Defaults to None (infer).
-
-        Raises:
-            ValueError: raise if `mode` is not understood.
-            RuntimeError: raised if dataset type can not be determined.
-
-        Returns:
-            dataset instance, either a `NpyDataset` or `ImgDataset`.
-        """
-        if mode is not None:
-            if mode.lower() == "img":
-                return ImgDataset(root)
-            elif mode.lower() == "npy":
-                return NpyDataset(root)
-            else:
-                raise ValueError(f"Mode should be one of 'img' or 'npy', got {mode}.")
-
-        # for klass in (NpyDataset, ImgDataset):
-        #     try:
-        #         return klass(root)
-        #     except (FileNotFoundError, ValueError, RuntimeError, ValidationError):
-        #         pass
-        for klass in (NpyDataset, ImgDataset):
-            try:
-                return klass(root)
-            except (FileNotFoundError, ValueError, RuntimeError, ValidationError) as e:
-                print(f"DEBUG - {klass.__name__} failed because: {e}")
-                pass
-
-        raise RuntimeError(
-            f"Could not determine type of dataset at {root}. Try opening dataset with concrete type `NpyDataset` or `ImgDataset`."
-        )
-
-    @cached_property
-    def arclength(self) -> float:
-        """Calculate the length of the trajectory"""
-
-        if not self.transforms:
-            return np.nan
-
-        points = self.poses[:, :3, -1]
-        dp = np.gradient(points, axis=0)
-        dist = np.sqrt((dp**2).sum(axis=1)).sum()
-
-        return dist
-
-
-class ImgDataset(Dataset):
-    """Dataset to iterate over frames (stored as image files) and optionally poses (as .json)."""
-
-    def __init__(self, root: str | os.PathLike) -> None:
-        """Initialize an `ImgDataset`, same as `Dataset.from_path(root, mode="img")`.
-
-        Args:
-            root (str | os.PathLike): path to dataset, either containing folder or `transforms.json`.
-        """
-        self.paths, self.poses, self.transforms = _resolve_root(root, mode="img")
-        self._idxs = np.arange(len(self))
-        self._idxs.setflags(write=False)
-        self._full_shape: tuple | None = None
-
-    @cached_property
-    def full_shape(self) -> tuple[int, int, int, int]:
-        """Get shape of dataset as (N, H, W, C)."""
-        if self._full_shape is None:
-            if self.transforms:
-                h, w, c = self.transforms["h"], self.transforms["w"], self.transforms["c"]
-            else:
-                # Peak into dataset to get H/W
-                _, im, _ = self[0]
-                h, w, c = np.array(im).shape
-            self._full_shape = (len(self), h, w, c)
-        return self._full_shape
-
-    def __len__(self) -> int:
-        return len(self.paths)
-
-    def __getitem__(self, idx: npt.ArrayLike) -> tuple[int | list[int], npt.ArrayLike, npt.NDArray]:
-        if any(i is ... or i is np.newaxis for i in np.atleast_1d(idx)):
-            raise NotImplementedError("Only basic indexing is currently supported.")
-
-        if any(isinstance(i, (list, np.ndarray, tuple)) for i in np.atleast_1d(idx)):
-            raise NotImplementedError("Integer array indexing is not yet supported.")
-
-        # Split index into the idx of the image path and the img slice
-        img_idx, *img_slice = np.atleast_1d(idx)
-        img_idx = self._idxs[img_idx]
-
-        if isinstance(img_idx, (int, np.integer)):
-            # We must read and decode the whole image even if we are only indexing a pixel...
-            im = iio.imread(self.paths[img_idx])
-            pose = self.poses[img_idx]
-            pixels = im[tuple(img_slice)] if img_slice else im
-            return cast(int, img_idx), pixels, pose
-
-        if img_idx.size:
-            img_idxs, imgs, poses = zip(*(self[tuple(np.atleast_1d(i).tolist() + img_slice)] for i in img_idx))
-            return img_idxs, imgs, np.array(poses)
-
-        return [], [], np.array([]).reshape((0, 4, 4))
-
-
-class ImgDatasetWriter:
-    """ImgDataset writer implemented as a context manager.
-
-    Example:
-        .. code-block:: python
-
-            with NpyDatasetWriter(root, transforms=...) as writer:
-                for idxs, data, poses in dataset:
-                    # Apply any transforms here
-                    writer[idxs] = (data, poses)
-    """
+    """Main dataset class for loading a ``.db``/``.json`` dataset or a set of image/exr/npy files."""
 
     def __init__(
-        self, root: str | os.PathLike, transforms: dict | None = None, pattern: str = "frame_{:06}.png", force=False
+        self,
+        transforms: Sequence[dict[str, Any]],
+        root: str | os.PathLike | None = None,
+        cameras: set[Camera] | None = None,
     ) -> None:
-        """Initialize ``ImgDatasetWriter``.
+        """Initialize a dataset object.
+
+        Note:
+            No data validation is performed here, you likely want to use one of the
+            classmethods such as :meth:`from_path` or :meth:`from_pattern` instead.
 
         Args:
-            root (str | os.PathLike): directory in which to save dataset (both ``frames/*.png`` and optionally ``.json``)
-            transforms (dict | None, optional): transforms of source dataset, ``frames`` are discarded and camera info is kept. Defaults to None.
-            pattern (str, optional): frame filename pattern, will be formatted with frame index. Defaults to "frame_{:06}.png".
-            force (bool, optional): if true, overwrite output file(s) if present. Defaults to False.
+            transforms (Sequence[dict[str, Any]]): A sequence of transforms dicts, which at a
+                minimum should have a ``file_path`` key defined.
+            root (str | os.PathLike | None, optional): Dataset root directory, if supplied all ``file_path``\\s
+                are assumed to be relative to it. Defaults to None.
+            cameras (set[Camera] | None, optional): Set of camera objects. Defaults to None.
+        """
+        self.transforms = transforms
+        self.root = Path(root).resolve() if root else None
+        self.cameras = cameras
+
+    @classmethod
+    def from_path(cls, root: str | os.PathLike) -> Self:
+        """Load a dataset from a path.
+
+        Args:
+            root (str | os.PathLike): Path to dataset file (either a ``.db`` or ``.json`` file)
+                or a directory containing a valid dataset.
 
         Raises:
-            FileExistsError: raised if dataset exists at requested location and force is false.
+            RuntimeError: raised if a dataset is not found at the provided path, or if multiple datasets are found.
+
+        Returns:
+            Self: instantiated Dataset object
         """
-        if ((Path(root) / "transforms.json").is_file() or (Path(root) / "frames").is_dir()) and not force:
-            raise FileExistsError(f"Either 'frames/' directory or 'transforms.json' file already exists in {root}")
+        root = Path(root).resolve()
 
-        self.root = Path(root)
-        Path(self.root / "frames").mkdir(exist_ok=True, parents=True)
-        self.transforms = copy.deepcopy(transforms or {})
-        self.transforms.pop("frames", None)
-        self.frames: dict[int, dict[str, Any]] = {}
-        self.pattern = pattern
+        if root.is_dir():
+            candidates = list(root.glob("*.db")) + list(root.glob("*.json"))
 
-    def __enter__(self):
-        return self
-
-    def __setitem__(self, idx: int | list[int], value: np.ndarray | tuple[npt.NDArray, npt.NDArray]):
-        if isinstance(idx, (int, np.integer)):
-            path = self.root / "frames" / self.pattern.format(idx)
-            self.frames[idx] = {"file_path": str(path.relative_to(self.root))}
-
-            if isinstance(value, tuple):
-                data, pose = value
-                iio.imwrite(path, data)
-                self.frames[idx]["transform_matrix"] = np.array(pose).tolist()
-            elif self.transforms:
-                raise RuntimeError("Expected image and pose tuple.")
-            else:
-                iio.imwrite(path, value)
+            if len(candidates) > 1:
+                raise RuntimeError(
+                    f"Ambiguous dataset root. Found multiple metadata sources ({[c.relative_to(root) for c in candidates]})."
+                )
+            elif len(candidates) == 0:
+                raise RuntimeError(f"No dataset found at {root}.")
+            metadata_path, *_ = candidates
         else:
-            if isinstance(value, tuple):
-                for i, data, pose in zip(idx, *value):
-                    self[i] = (data, pose)
-            else:
-                for i, data in zip(idx, value):
-                    self[i] = data
+            metadata_path = root
+            root = root.parent
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        # TODO: Handle any errors...
-        if self.transforms:
-            self.transforms["frames"] = [v for _, v in sorted(self.frames.items())]
-            validate_and_write(schema=IMG_SCHEMA, path=self.root / "transforms.json", transforms=self.transforms)
+        metadata = Metadata.load(metadata_path)
+        transforms = metadata.to_dense_transforms()
+        return cls(root=root, cameras=metadata.cameras, transforms=transforms)
 
-
-class NpyDataset(Dataset):
-    """Dataset to iterate over frames (stored as a possibly bitpacked npy file) and optionally poses (as .json)."""
-
-    def __init__(self, root: str | os.PathLike) -> None:
-        """Initialize an `NpyDataset`, same as `Dataset.from_path(root, mode="npy")`.
+    @classmethod
+    def from_paths(
+        cls,
+        paths: Sequence[Path],
+        iter_npys: bool = True,
+        root: str | os.PathLike | None = None,
+        cameras: set[Camera] | None = None,
+        **kwargs,
+    ) -> Self:
+        """Create a dataset object from a collection of data files.
 
         Args:
-            root (str | os.PathLike): path to dataset, either containing folder or `transforms.json`.
+            paths (Sequence[Path]): Paths to load data from.
+            iter_npys (bool, optional): If true, step into the first dimension of any numpy files
+                when iterating over data. Defaults to True.
+            root (str | os.PathLike | None, optional): Dataset root directory, if supplied all ``file_path``\\s
+                are assumed to be relative to it. Defaults to None.
+            cameras (set[Camera] | None, optional): Set of camera objects. Defaults to None.
+            **kwargs (dict[str, Any]): Optional keyword arguments passed to :class:`PathTransforms`
+
+        Raises:
+            ValueError: raised if provided paths do not exist.
+
+        Returns:
+            Self: instantiated Dataset object
         """
-        (self.paths,), self.poses, self.transforms = _resolve_root(root, mode="npy")
-        self.data = np.load(str(self.paths), mmap_mode="r")
+        if any(not (Path(root or "") / p).exists() for p in paths):
+            raise ValueError("Some paths do not exist!")
 
-        if self.transforms and self.transforms.get("bitpack"):
-            self.bitpack_dim = self.transforms.get("bitpack_dim")
-            self.full_shape: tuple[int, int, int, int] = (
-                len(self.transforms["frames"]),
-                self.transforms["h"],
-                self.transforms["w"],
-                self.transforms["c"],
-            )
-        else:
-            self.bitpack_dim = None
-            self.full_shape = self.data.shape
+        transforms = PathTransforms(paths=[Path(p) for p in paths], iter_npys=iter_npys, root=root, **kwargs)
+        return cls(transforms=cast(Sequence, transforms), root=root, cameras=cameras)
 
-        self._idxs = [np.arange(size).astype(int) for size in self.full_shape]
+    @classmethod
+    def from_pattern(
+        cls,
+        root: str | os.PathLike,
+        pattern: str,
+        cameras: set[Camera] | None = None,
+        iter_npys: bool = True,
+        key: Callable[[Any], Any] = natsort.natsort_key,
+        **kwargs,
+    ) -> Self:
+        """Same as :meth:`from_paths` but will search for all paths that match the provided pattern
+        (as found by `pathlib's glob <https://docs.python.org/3/library/pathlib.html#pathlib.Path.glob>`_)"""
+        paths = [p.relative_to(root) for p in sorted(Path(root).glob(pattern), key=key)]
+        return cls.from_paths(paths=paths, iter_npys=iter_npys, root=root, cameras=cameras, **kwargs)
 
-        # Ensure these don't get changed!
-        for array in self._idxs:
-            array.setflags(write=False)
+    @cached_property
+    def paths(self) -> list[Path]:
+        """List of all data file paths (normalized)"""
+        return [(self.root or Path("")) / t["file_path"] for t in self.transforms]
 
-    def __len__(self) -> int:
-        return self.full_shape[0]
+    @cached_property
+    def poses(self) -> list[Matrix4x4] | None:
+        """List of all camera poses, if available"""
+        poses = [np.array(t["transform_matrix"]) for t in self.transforms if "transform_matrix" in t]
 
-    def __getitem__(self, idx: npt.ArrayLike) -> tuple[int | list[int], npt.NDArray, npt.NDArray]:
-        if any(i is ... or i is np.newaxis for i in np.atleast_1d(idx)):
+        if len(self) == len(poses):
+            return poses
+        return None
+
+    @staticmethod
+    def _slice_bitpacked_array(
+        data: npt.NDArray,
+        idx: tuple[int | slice, ...] = (),
+        bitpack_dim: Literal[0, 1, 2] | None = None,
+        unpacked_size: int | None = None,
+    ) -> int | npt.NDArray:
+        if any(i is ... or i is np.newaxis for i in idx):
             raise NotImplementedError("Only basic indexing is currently supported.")
 
-        if any(isinstance(i, (list, np.ndarray, tuple)) for i in np.atleast_1d(idx)):
-            # Only one index can be a list of integers, otherwise, if we slice with multiple ones
-            # numpy will understand it as individual point coordinates instead of coords
-            # of chunks, i.e:
-            #   np.arange(4).reshape(2, 2)[0:2, 0:2] == array([[0, 1], [2, 3]])
-            #                         ---- VS. ----
-            #   np.arange(4).reshape(2, 2)[[0, 1], [0, 1]] == array([0, 3])
-            # To address this problem, we should probably convert every idx into a list of
-            # indices and find the open mesh-grid of all points (i.e: with `np.ix_`), and only
-            # do so when needed (for perf), but for now we raise.
-            raise NotImplementedError("Integer array indexing is not yet supported.")
+        if any(isinstance(i, (list, np.ndarray, tuple)) for i in idx):
+            raise NotImplementedError("Integer and boolean array indexing is not yet supported.")
 
-        if self.bitpack_dim is not None:
+        if bitpack_dim is not None:
             # Expand index over all dimensions
             # Typing bug in numpy-2.2.4: https://github.com/numpy/numpy/issues/27944
             idx_list: Any = np.atleast_1d(idx).tolist()
-            idx_list += [slice(None)] * (self.data.ndim - len(idx_list))
-            img_idx, *_ = idx_list
+            idx_list += [slice(None)] * (data.ndim - len(idx_list))
 
             # If the index of a given dimension is an integer, that dimension gets collapsed.
             # We keep track of which dims need to be squeezed and only squeeze them at the end.
@@ -380,9 +234,9 @@ class NpyDataset(Dataset):
 
             # The index along the packed dimension might be a slice so we get all indices the slice
             # would correspond to by using a proxy array.
-            # Note: If we don't copy here, numpy might return a view which will be modified below
-            #   leading to bizarre and inconsistent _silent_ errors.
-            idx_list[self.bitpack_dim] = np.copy(self._idxs[self.bitpack_dim][idx_list[self.bitpack_dim]]).flatten()
+            idx_list[bitpack_dim] = (
+                np.arange(unpacked_size or (data.shape[bitpack_dim] * 8)).astype(int)[idx_list[bitpack_dim]].flatten()
+            )
 
             # Compute the packed index and a secondary bit idx.
             # If we were unpacking into a new dimension then the bit index would simply be %8 of
@@ -396,97 +250,137 @@ class NpyDataset(Dataset):
             #   Bit indices (shifted correct amount):   [ 0,  8, 17]
             # Note: The `bit_idx` is made into at least a 1d idx as to preserve dimensionality,
             #   otherwise it would mess up the `collapsed_dims` above.
-            bit_idx = idx_list[self.bitpack_dim] % 8
-            idx_list[self.bitpack_dim] //= 8
+            bit_idx = idx_list[bitpack_dim] % 8
+            idx_list[bitpack_dim] //= 8
             bit_idx += np.arange(bit_idx.size) * 8
 
             # Perform the indexing, unpacking, bit indexing and dimensionality reduction.
-            data = np.unpackbits(self.data[tuple(idx_list)], axis=self.bitpack_dim)
-            data = np.take(data, bit_idx, axis=self.bitpack_dim)
+            data = np.unpackbits(data[tuple(idx_list)], axis=bitpack_dim)
+            data = np.take(data, bit_idx, axis=bitpack_dim)
             squeeze_dims = tuple(
                 i for i, (size, collapsed) in enumerate(zip(collapsed_dims, data.shape)) if collapsed and size == 1
             )
-            data = data.squeeze(axis=squeeze_dims)
-        else:
-            # If not bitpacked, just index...
-            data = self.data[idx]
-            img_idx, *_ = np.atleast_1d(idx)
+            return data.squeeze(axis=squeeze_dims)
+        return data[idx]
 
-        # Idx of img might be a slice...
-        img_idx = self._idxs[0][img_idx]
-        return img_idx, data, self.poses[img_idx]
+    @staticmethod
+    def load_data(
+        path: str | os.PathLike,
+        idx: tuple[int | slice, ...] = (),
+        auto_collapse: bool = True,
+        bitpack_dim: Literal[0, 1, 2] | None = None,
+        unpacked_size: int | None = None,
+    ) -> int | float | npt.NDArray:
+        """Load data from provided path, optionally slicing it.
 
+        Support various image formats, as provided by `imageio's imread <https://imageio.readthedocs.io/en/
+        stable/_autosummary/imageio.v3.imread.html>`_, exrs files, and numpy arrays (optionally bitpacked).
 
-class NpyDatasetWriter:
-    """NpyDataset writer implemented as a context manager.
+        Note:
+            This function uses `OpenEXR <https://openexr.com/en/latest/python.html#the-openexr-python-module>`_
+            to read exr files as both imageio and opencv cannot read an exr file when the data is stored in any
+            other channel than RGB(A). As of Blender v4 single-channel data, such as depth maps, are correctly
+            saved as single channel exrs, in the V channel. Previously, Blender just saved these as RGB by
+            duplicating the data channel-wise. This function (optionally) auto-detects this issue and returns
+            only a single channel numpy array.
 
-    Example:
-        .. code-block:: python
-
-            src_dataset = ImgDataset(input_dir)
-            loader = DataLoader(src_dataset, ...)
-
-            with NpyDatasetWriter(root, shape, transforms=...) as writer:
-                for idxs, data, poses in loader:
-                    # Apply any transforms here
-                    writer[idxs] = (data, poses)
-    """
-
-    def __init__(
-        self, root: str | os.PathLike, shape: tuple[int, ...], transforms=None, force=False, strict=True
-    ) -> None:
-        """Initialize `NpyDatasetWriter`.
+        Note:
+            Numpy arrays are not loaded into memory, instead they are memory mapped, making this
+            function safe to use with very large arrays.
 
         Args:
-            root (str | os.PathLike): directory in which to save dataset (both .npy and optionally .json)
-            shape (tuple[int, ...]): shape of resulting array, must be known ahead of time for npy file creation
-            transforms (dict | None, optional): transforms of source dataset, `frames` are discarded and camera info is kept. Defaults to None.
-            force (bool, optional): if true, overwrite output file(s) if present. Defaults to False.
-            strict (bool, optional): if true, throw error if the whole dataset has not been filled. Defaults to True.
+            path (str | os.PathLike): Path to the image file or numpy array.
+            idx (tuple[int | slice], optional): If present, slice the data using this index.
+                In most cases this is equivalent to slicing the data after loading it, but
+                for bitpacked numpy arrays, the slice needs to be modified first.
+                Defaults to empty tuple (no slicing).
+            auto_collapse (bool, optional): If true, when loading an EXR file that has duplicated
+                channels, collapse them down into a single channel. See note for more. Only used when
+                loading an EXR file that is saved using the "RGB" channel. Defaults to True.
+            bitpack_dim (Literal[0, 1, 2] | None, optional): Axis along which to bits have been packed.
+                Only used when loading data from a numpy file. Defaults to None.
+            unpacked_size (int | None, optional): Length of bitpacked axis once unpacked, if not specified
+                data will be returned in a larger array that is a multiple of 8. Only used when loading
+                from a numpy array that is bitpacked.
+
+        Returns:
+            int | float | npt.NDArray: Data loaded from path
+        """
+        if Path(path).suffix.lower() == ".npy":
+            data = np.load(str(path), mmap_mode="r")
+            return Dataset._slice_bitpacked_array(data, idx=idx, bitpack_dim=bitpack_dim, unpacked_size=unpacked_size)
+        elif Path(path).suffix.lower() == ".exr":
+            with OpenEXR.File(str(path)) as f:
+                if len(f.channels()) == 1 and next(iter(f.channels().keys())) in ("RGBA", "RGB", "V"):
+                    data = next(iter(f.channels().values())).pixels
+
+                    if data.ndim == 2:
+                        data = data[..., np.newaxis]
+                    elif (
+                        auto_collapse
+                        and data.ndim == 3
+                        and all(np.allclose(a, b) for a, b in mitertools.pairwise(data.transpose(2, 0, 1)))
+                    ):
+                        data = data[..., :1]
+                else:
+                    raise RuntimeError(f"Cannot read EXR with channels {list(f.channels().keys())}.")
+        else:
+            data = iio.imread(path)
+        return data[tuple(idx)] if idx else data
+
+    def __len__(self) -> int:
+        """Length of dataset"""
+        return len(self.paths)
+
+    def __getitem__(
+        self, idx: npt.ArrayLike
+    ) -> tuple[
+        int | float | npt.NDArray | tuple[int | float | npt.NDArray, ...], dict[str, Any] | tuple[dict[str, Any], ...]
+    ]:
+        """Fetch an item from the dataset and return it's data and associated metadata.
+
+        Args:
+            idx (npt.ArrayLike): Index of item, usually an integer, but more complex indices are supported.
 
         Raises:
-            FileExistsError: raised if dataset exists at requested location and force is false.
+            NotImplementedError: raised when trying to slice using Ellipses, np.NewAxis, or integer/boolean arrays.
+
+        Returns:
+            tuple[int | float | npt.NDArray | tuple[int | float | npt.NDArray, ...], dict[str, Any] | tuple[dict[str, Any], ...]]:
+                returns a tuple containing the data (as an array or number) and a dictionary containing metadata such as
+                the "file_path" data was loaded from, and camera info if applicable. If the requested index spans multiple
+                files, a tuple of data and tuple of dicts will be returned.
         """
-        if any((Path(root) / name).is_file() for name in ("frames.npy", "transforms.json")) and not force:
-            raise FileExistsError(f"Either 'frames.npy' or 'transforms.json' file already exists in {root}")
+        # Split index into the idx of the frame and the frame sub-slice
+        frame_idx, *sub_slice = idx = np.atleast_1d(idx)
+        frame_idx = np.arange(len(self))[frame_idx]
 
-        self.root = Path(root)
-        Path(root).mkdir(exist_ok=True)
-        # Shape needs to be cast to primitive types, see https://github.com/numpy/numpy/issues/28334
-        self.data = open_memmap(
-            self.root / "frames.npy", mode="w+", dtype=np.uint8, shape=tuple(np.atleast_1d(shape).tolist())
-        )
-        self.poses = np.zeros((len(self.data), 4, 4))
-        self.transforms = copy.deepcopy(transforms or {})
-        self.transforms.pop("frames", None)
-        self.strict = strict
+        if any(i is ... or i is np.newaxis for i in idx):
+            raise NotImplementedError("Only basic indexing is currently supported.")
 
-        self._setidxs = np.zeros(len(self.data))
+        if any(isinstance(i, (list, np.ndarray, tuple)) for i in idx):
+            raise NotImplementedError("Integer and boolean array indexing is not yet supported.")
 
-    def __enter__(self):
-        return self
+        # Return data from single frame/path
+        # We must read and decode the whole image even if we are only indexing a pixel...
+        if isinstance(frame_idx, (int, np.integer)):
+            transform = copy.copy(self.transforms[int(frame_idx)])
+            transform["file_path"] = self.paths[frame_idx]
 
-    def __setitem__(self, idx: int | list[int], value: np.ndarray | tuple[npt.NDArray, npt.NDArray]):
-        if isinstance(value, tuple):
-            data, poses = value
-            if self.transforms:
-                self.poses[idx] = poses
-            self.data[idx] = data
-        elif self.transforms:
-            raise RuntimeError("Expected image and pose tuple.")
-        else:
-            self.data[idx] = value
-        self._setidxs[idx] = 1
+            if self.poses:
+                transform["transform_matrix"] = self.poses[frame_idx]
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        # TODO: Handle any errors...
-        self.data.flush()
+            sub_slice = tuple([transform["offset"]] + sub_slice) if "offset" in transform else sub_slice
 
-        if self.transforms:
-            self.transforms["file_path"] = "frames.npy"
-            self.transforms["frames"] = [{"transform_matrix": mat.tolist()} for mat in self.poses]
+            bitpack_dim = transform.get("bitpack_dim")
+            full_shape = (len(self), transform.get("h"), transform.get("w"), transform.get("c"))
+            unpacked_size = full_shape[bitpack_dim] if bitpack_dim is not None else None
 
-            validate_and_write(schema=NPY_SCHEMA, path=self.root / "transforms.json", transforms=self.transforms)
-
-        if self.strict and not np.all(self._setidxs):
-            raise RuntimeError("Not all idxs were set, dataset is incomplete!")
+            data = self.load_data(
+                transform["file_path"], sub_slice, bitpack_dim=bitpack_dim, unpacked_size=unpacked_size
+            )
+            return data, transform
+        elif frame_idx.size:
+            data, transform = zip(*(self[tuple(np.atleast_1d(i).tolist() + sub_slice)] for i in frame_idx))
+            return data, transform
+        return (), ()

@@ -7,16 +7,25 @@ type: software
 authors:
   - given-names: Sacha
     family-names: Jungerman
-    affiliation: UW-Madison
-  - given-names: Max
-    family-names: Leblang
-    affiliation: UW-Madison
+    affiliation: University of Wisconsin-Madison
   - given-names: Shantanu
     family-names: Gupta
-    affiliation: UW-Madison
+    affiliation: University of Wisconsin-Madison
   - given-names: Kaustubh
     family-names: Sadekar
-    affiliation: UW-Madison
+    affiliation: Portland State University
+  - given-names: Avery
+    family-names: Gump
+    affiliation: University of Wisconsin-Madison
+  - given-names: Bhuyashi
+    family-names: Deka
+    affiliation: University of Wisconsin-Madison
+  - given-names: Max
+    family-names: Leblang
+    affiliation: University of Wisconsin-Madison
+  - given-names: Mohit
+    family-names: Gupta
+    affiliation: University of Wisconsin-Madison
 repository-code: 'https://github.com/WISION-Lab/visionsim'
 url: 'https://visionsim.readthedocs.io/en/latest/'
 abstract: >-

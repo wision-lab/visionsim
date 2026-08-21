@@ -24,9 +24,8 @@ class ExtendedService(BlenderService):
         paths = []
 
         for image in bpy.data.images.values():
-            if image.source == "FILE":
-                if not (path := Path(image.filepath_from_user()).resolve()).exists():
-                    paths.append(path)
+            if image.source == "FILE" and not (path := Path(image.filepath_from_user()).resolve()).exists():
+                paths.append(path)
 
         return paths
 

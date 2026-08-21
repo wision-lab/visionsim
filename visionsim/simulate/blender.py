@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import functools
 import inspect
 import itertools
@@ -16,22 +17,23 @@ import time
 from contextlib import ExitStack, contextmanager, nullcontext
 from multiprocessing import Process
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
+
+from visionsim.types import FILE
 
 # Import only when type checking as to not introduce
 # dependency for blender. Block module typechecking.
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Iterable, Iterator
+    from collections.abc import Callable, Collection, Generator, Iterable, Iterator
     from types import TracebackType
 
     import multiprocess  # type: ignore
     import multiprocess.pool  # type: ignore
     import numpy.typing as npt
-    from typing_extensions import Any, Concatenate, ParamSpec, Self
+    from typing_extensions import Self
 
-    from visionsim.types import UpdateFn  # noqa
+    from visionsim.types import COLOR_MODES, EXR_CODECS, FILE_FORMATS, UpdateFn
 
-    _P = ParamSpec("_P")
 
 # These are blender specific modules which aren't easily installed but
 # are loaded in when this script is ran from blender.
@@ -51,9 +53,10 @@ except ImportError:
 try:
     from visionsim.simulate.compat import file_output_node
     from visionsim.simulate.nodes import (  # type: ignore
-        flowdebug_node_group,
-        normaldebug_node_group,
-        segmentationdebug_node_group,
+        colorize_indices_node_group,
+        flow_preview_node_group,
+        normal_preview_node_group,
+        point_preview_node_group,
         vec2rgba_node_group,
     )
 except ImportError:
@@ -72,6 +75,9 @@ import numpy as np
 import rpyc  # type: ignore
 import rpyc.utils.registry  # type: ignore
 import rpyc.utils.server  # type: ignore
+from peewee import SqliteDatabase
+
+from visionsim.simulate.schema import _DEFAULT_PRAGMAS, _MODELS, _Camera, _Data, _Frame
 
 # Enable server-side logging
 logging.basicConfig(level=logging.WARNING, format="%(message)s", datefmt="[%X]", handlers=handlers)
@@ -80,25 +86,44 @@ server_log.setLevel(logging.INFO)
 
 EXPOSED_PREFIX: str = "exposed_"
 REGISTRY: tuple[Process, rpyc.utils.registry.UDPRegistryClient] | None = None
+ITEMS_PER_SUBFOLDER: int = 1000
+INDEX_PADDING: int = np.ceil(np.log10(ITEMS_PER_SUBFOLDER)).astype(int)
+
+# Taken from blender/scripts/addons_core/node_wrangler/operators/save_viewer_image.py
+FORMATS: dict[str, str] = {
+    "BMP": ".bmp",
+    "IRIS": ".rgb",
+    "PNG": ".png",
+    "JPEG": ".jpeg",
+    "JPEG2000": ".jp2",
+    "TARGA": ".tga",
+    "CINEON": ".cin",
+    "DPX": ".dpx",
+    "OPEN_EXR": ".exr",
+    "HDR": ".hdr",
+    "TIFF": ".tif",
+    "WEBP": ".webp",
+}
+COLOR_MODE_CHANNELS = {"BW": 1, "RGB": 3, "RGBA": 4}
 
 
 def require_connected_client(
-    func: Callable[Concatenate[BlenderClient, _P], Any],
-) -> Callable[Concatenate[BlenderClient, _P], Any]:
+    func: Callable[..., Any],
+) -> Callable[..., Any]:
     """Decorator which ensures a client is connected.
 
     Args:
-        func (Callable[Concatenate[BlenderClient, _P], Any]): Function to decorate
+        func (Callable[..., Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if client is not connected.
 
     Returns:
-        Callable[Concatenate[BlenderClient, _P], Any]: Decorated function.
+        Callable[..., Any]: Decorated function.
     """
 
     @functools.wraps(func)
-    def _decorator(self: BlenderClient, *args: _P.args, **kwargs: _P.kwargs) -> Any:
+    def _decorator(self: BlenderClient, *args: Any, **kwargs: Any) -> Any:
         if self.conn is None:
             raise RuntimeError(
                 f"'BlenderClient' must be connected to a server instance before calling '{func.__name__}'"
@@ -109,22 +134,22 @@ def require_connected_client(
 
 
 def require_connected_clients(
-    func: Callable[Concatenate[BlenderClients, _P], Any],
-) -> Callable[Concatenate[BlenderClients, _P], Any]:
+    func: Callable[..., Any],
+) -> Callable[..., Any]:
     """Decorator which ensures all clients are connected.
 
     Args:
-        func (Callable[Concatenate[BlenderClients, _P], Any]): Function to decorate
+        func (Callable[..., Any]): Function to decorate
 
     Raises:
-        RuntimeError: raised if at least one client is not connected.
+        RuntimeError: if at least one client is not connected.
 
     Returns:
-        Callable[Concatenate[BlenderClients, _P], Any]: Decorated function.
+        Callable[..., Any]: Decorated function.
     """
 
     @functools.wraps(func)
-    def _decorator(self: BlenderClients, *args: _P.args, **kwargs: _P.kwargs) -> Any:
+    def _decorator(self: BlenderClients, *args: Any, **kwargs: Any) -> Any:
         if any(c.conn is None for c in self):
             raise RuntimeError(
                 f"All client instances in 'BlenderClients' must be connected before calling '{func.__name__}'"
@@ -135,23 +160,23 @@ def require_connected_clients(
 
 
 def require_initialized_service(
-    func: Callable[Concatenate[BlenderService, _P], Any],
-) -> Callable[Concatenate[BlenderService, _P], Any]:
+    func: Callable[..., Any],
+) -> Callable[..., Any]:
     """Decorator which ensures the render service was initialized.
 
     Args:
-        func (Callable[Concatenate[BlenderService, _P], Any]): Function to decorate
+        func (Callable[..., Any]): Function to decorate
 
     Raises:
         RuntimeError: raised if :meth:`client.initialize <BlenderService.exposed_initialize>` has not been previously called.
 
     Returns:
-        Callable[Concatenate[BlenderService, _P], Any]: Decorated function.
+        Callable[..., Any]: Decorated function.
     """
 
     @functools.wraps(func)
-    def _decorator(self: BlenderService, *args: _P.args, **kwargs: _P.kwargs) -> Any:
-        if not self.initialized:
+    def _decorator(self: BlenderService, *args: Any, **kwargs: Any) -> Any:
+        if not self._initialized:
             raise RuntimeError(f"'BlenderService' must be initialized before calling '{func.__name__}'")
         return func(self, *args, **kwargs)
 
@@ -159,19 +184,19 @@ def require_initialized_service(
 
 
 def validate_camera_moved(
-    func: Callable[Concatenate[BlenderService, _P], Any],
-) -> Callable[Concatenate[BlenderService, _P], Any]:
+    func: Callable[..., Any],
+) -> Callable[..., Any]:
     """Decorator which emits a warning if the camera was not moved.
 
     Args:
-        func (Callable[Concatenate[BlenderService, _P], Any]): Function to decorate
+        func (Callable[..., Any]): Function to decorate
 
     Returns:
-        Callable[Concatenate[BlenderService, _P], Any]: Decorated function.
+        Callable[..., Any]: Decorated function.
     """
 
     @functools.wraps(func)
-    def _decorator(self: BlenderService, *args: _P.args, **kwargs: _P.kwargs) -> Any:
+    def _decorator(self: BlenderService, *args: Any, **kwargs: Any) -> Any:
         prev_matrix = np.array(self.camera.matrix_world.copy())
         retval = func(self, *args, **kwargs)
         post_matrix = np.array(self.camera.matrix_world.copy())
@@ -239,22 +264,29 @@ class BlenderServer(rpyc.utils.server.Server):
         )
         server_log.info(f"Started listening on {self.host}:{self.port}")
 
-    @staticmethod
     @contextmanager
+    @staticmethod
     def spawn(
         jobs: int = 1,
         timeout: float = -1.0,
-        log_dir: str | os.PathLike | None = None,
+        log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
-    ) -> Iterator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:
+    ) -> Generator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:
         """Spawn one or more blender instances and start a :class:`BlenderServer` in each.
 
         This is roughly equivalent to calling ``blender -b --python blender.py`` in many subprocesses,
         where ``blender.py`` initializes and ``start``\\s a server instance. Proper logging and termination of
         these processes is also taken care of.
 
-        Note: The returned processes and connection settings are not guaranteed to be in the same order.
+        Note:
+            The returned processes and connection settings are not guaranteed to be in the same order.
+
+        Warning:
+            If ``log`` is a file handle or descriptor, such as redirecting Blender logs to subprocess.STDOUT,
+            the writing process might get overwhelmed which can cause silent errors, dropped logs and locked
+            processes. It is thus not recommended for long render jobs to set ``log`` to anything but DEVNULL
+            or a directory.
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
@@ -263,9 +295,9 @@ class BlenderServer(rpyc.utils.server.Server):
                 spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
                 this context manager will immediately yield, even if the server is not yet ready to accept
                 incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
-            log_dir (str | os.PathLike | None, optional): path to log directory,
-                stdout/err will be captured if set, otherwise outputs will go to os.devnull.
-                Defaults to None (devnull).
+            log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
+                descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
+                Defaults to subprocess.DEVNULL for both stdout/stderr.
             autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
                 For more, see blender's CLI documentation. Defaults to False.
             executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
@@ -277,7 +309,7 @@ class BlenderServer(rpyc.utils.server.Server):
             TimeoutError: raise if unable to discover spawned servers in ``timeout`` seconds and kill any spawned processes.
 
         Yields:
-            tuple[list[subprocess.Popen], list[tuple[str, int]]]:  A tuple containing:
+            Generator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:  A tuple containing:
                 - list[subprocess.Popen]: List of ``subprocess.Popen`` corresponding to all spawned servers.
                 - list[tuple[str, int]]: List of connection setting for each server, where each element is a (hostname, port) tuple.
         """
@@ -288,7 +320,8 @@ class BlenderServer(rpyc.utils.server.Server):
         def terminate_jobs(procs):
             try:
                 yield
-
+            except KeyboardInterrupt:
+                server_log.warning("Shutting down gracefully...")
             finally:
                 for p in procs:
                     # We need to send two CTRL+C events to blender to kill it, but not on windows
@@ -301,11 +334,11 @@ class BlenderServer(rpyc.utils.server.Server):
                     p.terminate()
 
         BlenderServer.spawn_registry()
-        existing = BlenderServer.discover()
+        existing = BlenderServer.discover() if timeout > 0 else []
         procs, ports = [], []
 
-        if log_dir:
-            log_dir_path = Path(log_dir).expanduser().resolve()
+        if isinstance(log, (str, os.PathLike)):
+            log_dir_path = Path(log).expanduser().resolve()
             log_dir_path.mkdir(parents=True, exist_ok=True)
         else:
             log_dir_path = None
@@ -323,11 +356,9 @@ class BlenderServer(rpyc.utils.server.Server):
                     (log_dir_path / f"job{i:03}").mkdir(parents=True, exist_ok=True)
                     stdout = stack.enter_context(open(log_dir_path / f"job{i:03}" / "stdout.log", "w"))
                     stderr = stack.enter_context(open(log_dir_path / f"job{i:03}" / "stderr.log", "w"))
-                    proc = subprocess.Popen(cmd, stdout=stdout, stderr=stderr, universal_newlines=True)
                 else:
-                    proc = subprocess.Popen(
-                        cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, universal_newlines=True
-                    )
+                    stdout, stderr = log if isinstance(log, tuple) else (log, subprocess.STDOUT)
+                proc = subprocess.Popen(cmd, stdout=stdout, stderr=stderr, universal_newlines=True)
                 procs.append(proc)
                 ports.append(port)
             stack.enter_context(terminate_jobs(procs))
@@ -344,7 +375,7 @@ class BlenderServer(rpyc.utils.server.Server):
                         break
                     time.sleep(0.1)
             else:
-                conns = set(("localhost", p) for p in ports)
+                conns = {("localhost", p) for p in ports}
 
             yield (procs, list(conns))
 
@@ -389,7 +420,11 @@ class BlenderServer(rpyc.utils.server.Server):
             list[tuple[str, int]]: List of connection setting for each server, where each element is a (hostname, port) tuple.
         """
         _, client = BlenderServer.spawn_registry()
-        return list(cast(tuple, client.discover("BLENDER")))
+        try:
+            return list(cast(tuple, client.discover("BLENDER")))
+        except (OSError, ValueError, EOFError) as e:
+            server_log.warning(f"Failed to discover Blender servers: {e}")
+            return []
 
     def _accept_method(self, sock: socket.socket) -> None:
         # Accept a single connection, and block here until it closes. Any other incoming
@@ -420,7 +455,11 @@ class BlenderService(rpyc.Service):
             raise RuntimeError(f"{type(self).__name__} needs to be instantiated from within blender's python runtime.")
         self._conn: rpyc.Connection | None = None
         self.log: logging.Logger = server_log
-        self.initialized: bool = False
+        self._initialized: bool = False
+        self._keyframe_scale: float = 1.0
+        self._warned_no_outputs: bool = False
+        self._outputs: dict[str, Any] = {}
+        self._camera: bpy.types.Camera | None = None
 
     def _clear_cached_properties(self) -> None:
         # Based on: https://stackoverflow.com/a/71579485
@@ -458,7 +497,150 @@ class BlenderService(rpyc.Service):
         """
         bpy.ops.wm.read_factory_settings()
         self._clear_cached_properties()
-        self.initialized = False
+        self._initialized = False
+        self._keyframe_scale = 1.0
+        self._warned_no_outputs = False
+        self._outputs = {}
+        self._camera = None
+
+    def register_output_type(
+        self,
+        subpath: str,
+        node: bpy.types.CompositorNodeOutputFile,
+        slot: bpy.types.NodeOutputFileSlotFile | bpy.types.NodeCompositorFileOutputItem,
+        **camera_defaults,
+    ) -> None:
+        """Register a new output datatype. If this is not called by an ``include_`` method, the
+        metadata for that datatype will not be saved to the database and the path to which the data
+        is saved will not be updated at every render.
+
+        Warning:
+            You must pass in the slot instance that was returned when a new ``file_output_item``
+            was created and not simply one of the `node.file_output_items <https://docs.blender.org/api/
+            current/bpy.types.CompositorNodeOutputFile.html#bpy.types.CompositorNodeOutputFile.file_output_items>`_
+            as these are readonly!
+
+        Args:
+            subpath (str): Path suffix, from root data directory, of the new datatype (eg: "previews/depths")
+            node (bpy.types.CompositorNodeOutputFile): Output file node responsible for saving
+            slot (bpy.types.NodeOutputFileSlotFile | bpy.types.NodeCompositorFileOutputItem): Slot of node which
+                will save the output data.
+            **camera_defaults: Any addition camera information that will be added by default. Commonly,
+                the number of output channels is passed in (eg: c=4 for RGBA).
+
+        Raises:
+            RuntimeError: raised if output type has already been registered.
+        """
+        if subpath in self._outputs:
+            raise RuntimeError(f"Cannot register '{subpath}', as it was already registered!")
+
+        if (db_path := self.root_path / subpath / "transforms.db").exists():
+            self.log.info(f"Database at {db_path} already exists, overwriting...")
+            db_path.unlink()
+
+        db = SqliteDatabase(db_path, pragmas=_DEFAULT_PRAGMAS)
+        self._outputs[subpath] = (node, slot, db, camera_defaults)
+
+    def _include_output(
+        self,
+        subpath: str,
+        source_socket: bpy.types.NodeSocket,
+        label: str | None = None,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: int = 32,
+        preview: bool = False,
+        c: int | None = None,
+        denoise: bool = False,
+    ) -> None:
+        """Helper function to create a file output node, link it, and register the output type.
+
+        Args:
+            subpath (str): Subpath to save output in.
+            source_socket (bpy.types.NodeSocket): Socket to link to output node.
+            label (str, optional): Label for output node. Defaults to None.
+            file_format (str, optional): Format to save output as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Color mode to save output as. Defaults to "RGB".
+            exr_codec (str, optional): EXR codec to use. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth to use. Defaults to 32.
+            preview (bool, optional): If true, output node will be configured for preview. Defaults to False.
+            c (int, optional): Number of channels for registration. Defaults to None (inferred from color_mode).
+            denoise (bool, optional): If true, insert a denoise compositor node before the file output.
+                This enables the Cycles denoising data view layer passes (albedo and normal) and connects
+                them to the denoise node for higher-quality denoising. Only available for Cycles render engine.
+                Defaults to False.
+        """
+        node, (socket,), (slot,) = file_output_node(
+            self.tree,
+            self.root_path / subpath / "0000",
+            label=label or f"{subpath.replace('/', ' ').title()} Output",
+            preview=preview,
+            color_mode=color_mode,
+        )
+
+        if not preview:
+            node.format.color_management = "OVERRIDE"
+            node.format.linear_colorspace_settings.name = "Non-Color"
+            node.format.file_format = file_format
+            node.format.color_mode = color_mode
+            node.format.exr_codec = exr_codec
+            node.format.color_depth = str(bit_depth)
+            slot.name = str(Path(slot.name).with_suffix(FORMATS[file_format.upper()]))
+
+        if denoise and self.scene.render.engine.upper() == "CYCLES":
+            # Enable denoising data passes on the view layer so Cycles emits
+            # "Denoising Albedo" and "Denoising Normal" outputs from the
+            # render layers node. These guide the denoiser and produce
+            # significantly cleaner results than denoising the image alone.
+            self.view_layer.cycles.denoising_store_passes = True
+            denoise_node = self.tree.nodes.new("CompositorNodeDenoise")
+            self.tree.links.new(source_socket, denoise_node.inputs["Image"])
+            self.tree.links.new(
+                self.render_layers.outputs["Denoising Albedo"],
+                denoise_node.inputs["Albedo"],
+            )
+            self.tree.links.new(
+                self.render_layers.outputs["Denoising Normal"],
+                denoise_node.inputs["Normal"],
+            )
+            self.tree.links.new(denoise_node.outputs["Image"], socket)
+        elif denoise and self.scene.render.engine.upper() != "CYCLES":
+            self.log.warning("Cannot produce denoised output when not using CYCLES.")
+            self.tree.links.new(source_socket, socket)
+        else:
+            self.tree.links.new(source_socket, socket)
+
+        if c is None:
+            c = COLOR_MODE_CHANNELS.get(color_mode.upper())
+
+        self.register_output_type(subpath, node, slot, c=c)
+
+    def _save_metadata(
+        self,
+        paths: dict[str, Path],
+        camera_info: dict[str, str | float | int],
+        transform_matrix: list[float],
+        index: int,
+    ) -> None:
+        """Post-render callback responsible for saving frame metadata to each database.
+
+        Args:
+            paths (dict[str, Path]): A dictionary mapping the data type's subpath to the recently rendered file.
+                For example, ``{"frames": "0001/321.png", "depths": "0001/321.exr"}``.
+            camera_info (dict[str, str  |  float  |  int]): Camera info at current index, as retrieved by ``BlenderService.camera_info``.
+            transform_matrix (list[float]): Current camera extrinsic matrix.
+            index (int): Current frame index.
+        """
+        if missing := set(self._outputs.keys()) - set(paths.keys()):
+            self.log.warning(f"Metadata for outputs {missing} is missing!")
+
+        for subpath, (_, _, db, defaults) in self._outputs.items():
+            with db.connection_context(), db.atomic("IMMEDIATE"), db.bind_ctx(_MODELS):
+                db.create_tables(_MODELS, safe=True)
+                camera, _ = _Camera.get_or_create(**(defaults | camera_info))
+                data = _Data.create(path=paths[subpath])
+                _Frame.create(id=index, camera=camera, transform_matrix=transform_matrix, data=data)
 
     @property
     @require_initialized_service
@@ -492,20 +674,34 @@ class BlenderService(rpyc.Service):
             raise ValueError("Expected at least one view layer, cannot render without it. Please add one manually.")
         return bpy.context.view_layer
 
-    @functools.cached_property
+    @property
     @require_initialized_service
     def camera(self) -> bpy.types.Camera:
-        """Get and cache active camera"""
-        # Make sure there's a camera
-        cameras = [ob for ob in self.scene.objects if ob.type == "CAMERA"]
-        if not cameras:
-            raise RuntimeError("No camera found, please add one manually.")
-        elif len(cameras) > 1 and self.scene.camera:
-            self.log.warning(f"Multiple cameras found. Using active camera named: '{self.scene.camera.name}'.")
-            return self.scene.camera
-        else:
-            self.log.warning(f"No active camera was found. Using camera named: '{cameras[0].name}'.")
-            return cameras[0]
+        """Get active camera, detect when it changes."""
+        if self._camera is None:
+            cameras = [ob for ob in self.scene.objects if ob.type == "CAMERA"]
+            if not cameras:
+                raise RuntimeError("No camera found, please add one manually.")
+
+            if len(cameras) > 1 and self.scene.camera:
+                current_active = self.scene.camera
+            else:
+                current_active = cameras[0]
+
+            if len(cameras) > 1:
+                if self.scene.camera:
+                    self.log.warning(f"Multiple cameras found. Using active camera named: '{self.scene.camera.name}'.")
+                else:
+                    self.log.warning(f"No active camera was found. Using camera named: '{cameras[0].name}'.")
+            self._camera = current_active
+        elif self._camera != self.scene.camera:
+            self.log.warning(
+                f"Active camera changed from '{self._camera.name}' to '{self.scene.camera.name}' "
+                f"at frame {self.scene.frame_current}."
+            )
+            self._camera = self.scene.camera
+
+        return self._camera
 
     @require_initialized_service
     def get_parents(self, obj: bpy.types.Object) -> list[bpy.types.Object]:
@@ -540,28 +736,18 @@ class BlenderService(rpyc.Service):
         """
         # TODO: This should perhaps be `exposed_load_file`, and the root_path logic should be moved
         #   to another method which would facilitate writing to local disk/sending renders over the wire.
-        if self.initialized:
+        if self._initialized:
             self.reset()
 
         # Load blendfile
-        self.blend_file: Path = Path(str(blend_file))
+        self.root_path: Path = Path(str(root_path)).resolve()
+        self.blend_file: Path = Path(str(blend_file)).resolve()
         bpy.ops.wm.open_mainfile(filepath=str(blend_file), **kwargs)
         self.log.info(f"Successfully loaded {blend_file}")
 
-        # Ensure root paths exist
-        self.root_path: Path = Path(str(root_path)).resolve()
-        self.root_path.mkdir(parents=True, exist_ok=True)
-        (self.root_path / "frames").mkdir(parents=True, exist_ok=True)
-
         # Init various variables to track state
-        self.depth_path: bpy.types.CompositorNodeOutputFile | None = None
-        self.normal_path: bpy.types.CompositorNodeOutputFile | None = None
-        self.flow_path: bpy.types.CompositorNodeOutputFile | None = None
-        self.segmentation_path: bpy.types.CompositorNodeOutputFile | None = None
-        self.depth_extension: str = ".exr"
-        self.unbind_camera: bool = False
-        self.use_animation: bool = True
-        self.initialized = True
+        self._use_animation: bool = True
+        self._initialized = True
 
         # Ensure we are using the compositor, and node tree.
         if bpy.app.version >= (5, 0, 0):
@@ -581,9 +767,7 @@ class BlenderService(rpyc.Service):
                 self.log.warning(f"Found unexpected output node {n}")
 
         # Catalogue any animations that are already disabled, otherwise
-        self.disabled_fcurves: set[bpy.types.Action] = set(
-            fcurve for fcurve in self.exposed_iter_fcurves() if fcurve.mute
-        )
+        self._disabled_fcurves: set[bpy.types.Action] = {fcurve for fcurve in self.exposed_iter_fcurves() if fcurve.mute}
 
     @require_initialized_service
     def exposed_iter_fcurves(self, actions: list[bpy.types.Action] | None = None) -> Iterator[bpy.types.FCurve]:
@@ -612,54 +796,14 @@ class BlenderService(rpyc.Service):
                     yield fcurve
 
     @require_initialized_service
-    def exposed_empty_transforms(self) -> dict[str, Any]:
-        """Return a dictionary with camera intrinsics. Forms the basis of
-        a ``transforms.json`` file, but contains no frame data.
-
-        Returns:
-            dict[str, Any]: empty transforms dictionary containing only camera parameters.
-        """
-        transforms = {
-            k: getattr(self.camera.data, k)
-            for k in [
-                "angle",
-                "angle_x",
-                "angle_y",
-                "clip_start",
-                "clip_end",
-                "lens",
-                "lens_unit",
-                "sensor_height",
-                "sensor_width",
-                "sensor_fit",
-                "shift_x",
-                "shift_y",
-                "type",
-            ]
-        }
-        transforms["frames"] = []
-
-        # Note: This might be a blender bug, but when height==width,
-        #   angle_x != angle_y, so here we just use angle.
-        transforms["c"] = {"BW": 1, "RGB": 3, "RGBA": 4}.get(self.scene.render.image_settings.color_mode)
-        transforms["w"] = self.scene.render.resolution_x
-        transforms["h"] = self.scene.render.resolution_y
-        transforms["fl_x"] = float(1 / 2 * self.scene.render.resolution_x / np.tan(1 / 2 * self.camera.data.angle))
-        transforms["fl_y"] = float(1 / 2 * self.scene.render.resolution_y / np.tan(1 / 2 * self.camera.data.angle))
-        transforms["cx"] = 1 / 2 * self.scene.render.resolution_x + transforms["shift_x"]
-        transforms["cy"] = 1 / 2 * self.scene.render.resolution_y + transforms["shift_y"]
-        transforms["intrinsics"] = self.exposed_camera_intrinsics().tolist()
-        return transforms
-
-    @require_initialized_service
-    def exposed_original_fps(self) -> int:
+    def exposed_get_original_fps(self) -> float:
         """Get effective framerate (fps/fps_base).
 
         Returns:
-            int: Frame rate of scene.
+            float: Frame rate of scene.
         """
         # Note: Exposed properties are not supported by rpyc.
-        return int(round(self.scene.render.fps / self.scene.render.fps_base))
+        return self.scene.render.fps / self.scene.render.fps_base
 
     @require_initialized_service
     def exposed_animation_range(self) -> range:
@@ -680,159 +824,248 @@ class BlenderService(rpyc.Service):
         return (self.scene.frame_start, self.scene.frame_end, self.scene.frame_step)  # type: ignore
 
     @require_initialized_service
-    def exposed_include_depths(self, debug=True, file_format="OPEN_EXR", exr_codec="ZIP") -> None:
-        """Sets up Blender compositor to include depth map for rendered images.
+    def exposed_include_composites(
+        self,
+        file_format: FILE_FORMATS | None = None,
+        color_mode: COLOR_MODES | None = None,
+        exr_codec: EXR_CODECS | None = None,
+        bit_depth: Literal[8, 16, 32] | None = None,
+    ) -> None:
+        """Sets up Blender to include the outputs of any existing compositor nodes groups.
+
+        Note: A default arguments of ``None`` means do not change setting inherited from the blendfile's ``Output`` settings.
 
         Args:
-            debug (bool, optional): if true, colorized depth maps, helpful for quick visualizations,
-                will be generated alongside ground-truth depth maps. Defaults to True.
-            file_format (str, optional): format of depth maps, one of "OPEN_EXR" or "HDR". The former
-                is lossless, but can require significant storage, the later is lossy and more compressed.
-                If depth is needed to compute scene-flow, use open-exr. Defaults to "OPEN_EXR".
-            exr_codec (str, optional): codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+            file_format (str | None, optional): Format to save composited render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP'). Defaults to None.
+            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
+            exr_codec (str | None, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
                 options vary depending on the version of Blender, with the following being broadly available:
-                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "ZIP".
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to None.
+            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
+        """
+
+        def _compositor_not_used() -> bool:
+            # Check if any group output nodes are directly connected to the "Image" render layer.
+            nodes = collections.deque(n for n in self.tree.nodes if not isinstance(n, bpy.types.NodeGroupOutput))
+
+            # Either there's no group output or it's not connected to anything.
+            if not nodes:
+                raise RuntimeError("Cannot save compositor outputs, a `Group Output` node was not found.")
+            elif all(not i.links for node in nodes for i in node.inputs):
+                raise RuntimeError("Cannot save compositor outputs, nothing is connected to the `Group Output` node.")
+
+            while nodes:
+                node = nodes.pop()
+
+                for sock in node.inputs:
+                    for link in sock.links:
+                        if isinstance(link.from_node, bpy.types.NodeReroute):
+                            nodes.appendleft(link.from_node)
+                        elif (
+                            isinstance(link.from_node, bpy.types.CompositorNodeRLayers)
+                            and link.from_socket.name == "Image"
+                        ):
+                            return True
+            return False
+
+        if _compositor_not_used():
+            self.log.warning(
+                "No custom compositing workflow found, the 'composites' and 'frames' outputs might be identical!"
+            )
+
+        if file_format is not None:
+            self.scene.render.image_settings.file_format = file_format.upper()
+        if bit_depth is not None:
+            self.scene.render.image_settings.color_depth = str(bit_depth)
+        if color_mode is not None:
+            self.scene.render.image_settings.color_mode = color_mode.upper()
+        if exr_codec is not None:
+            self.scene.render.image_settings.exr_codec = exr_codec
+
+        # Note: The compositor output is saved by blender directly through
+        #   it's output settings so no file output node is needed.
+        self.register_output_type(
+            "composites",
+            object,
+            object,
+            c=COLOR_MODE_CHANNELS.get(self.scene.render.image_settings.color_mode.upper()),
+        )
+
+    @require_initialized_service
+    def exposed_include_frames(
+        self,
+        file_format: FILE_FORMATS = "PNG",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 8,
+    ) -> None:
+        """Sets up Blender compositor to include ground truth rendered images, bypassing any existing compositor nodes.
 
         Note:
-            The debug colormap is re-normalized on a per-frame basis, to visually
-            compare across frames, apply colorization after rendering using the CLI.
+            For linear intensity renders, use the "OPEN_EXR" format with and 32 or 16 bits.
+
+        Args:
+            file_format (str, optional): Format to save ground truth render as. Options vary depending on the version of Blender,
+                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
+                'CINEON', 'DPX', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP'). Defaults to "PNG".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 8 bits.
 
         Raises:
-            ValueError: raise if file-format nor understood.
+            ValueError: raised when file-format not understood.
+        """
+        if file_format.upper() not in FORMATS:
+            raise RuntimeError(
+                f"File format not understood, got `{file_format}` and expected one of `{', '.join(FORMATS)}`"
+            )
+
+        self._include_output(
+            "frames",
+            self.render_layers.outputs["Image"],
+            label="Frame Output",
+            file_format=file_format,
+            color_mode=color_mode,
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
+        )
+
+    @require_initialized_service
+    def exposed_include_depths(
+        self,
+        preview: bool = True,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include depth map for rendered images.
+
+        Note:
+            The preview colormap is re-normalized on a per-frame basis, to visually
+            compare across frames, apply colorization after rendering using the CLI.
+
+        Args:
+            preview (bool, optional): If true, colorized depth maps, helpful for quick visualizations,
+                will be generated alongside ground-truth depth maps. Defaults to True.
+            file_format (str, optional): Format of depth maps, one of "OPEN_EXR" or "HDR". Defaults to "OPEN_EXR".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``,
+                options vary depending on the version of Blender, with the following being broadly available:
+                ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB'). Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 32 bits.
+
+        Raises:
+            ValueError: raised when file-format not understood.
         """
         # TODO: Add colormap option?
         self.view_layer.use_pass_z = True
-        (self.root_path / "depths").mkdir(parents=True, exist_ok=True)
 
         if file_format.upper() not in ("OPEN_EXR", "HDR"):
             raise ValueError(f"Expected one of OPEN_EXR/HDR for file_format, got {file_format}.")
 
-        if debug:
-            debug_depth_path, (debug_depth_slot,) = file_output_node(
-                self.tree, self.root_path / "depths", slots=[f"debug_depth_{'#' * 6}"], label="Debug Depth Output"
-            )
-            debug_depth_path.format.file_format = "PNG"
-            debug_depth_path.format.compression = 90
-            debug_depth_path.format.color_depth = "8"
-            debug_depth_path.format.color_mode = "BW"
-
-            # Important! Set the view settings to raw otherwise result is tonemapped
-            if bpy.app.version >= (3, 2, 0):
-                debug_depth_path.format.color_management = "OVERRIDE"
-            debug_depth_path.format.view_settings.view_transform = "Raw"
-            debug_depth_path.format.view_settings.look = "None"
-            debug_depth_path.format.view_settings.gamma = 0
-            debug_depth_path.format.view_settings.exposure = 1
-            debug_depth_path.format.view_settings.use_curve_mapping = False
-
-            if bpy.app.version >= (4, 3, 0):
-                debug_depth_path.format.view_settings.use_white_balance = False
-
+        if preview:
             normalize = self.tree.nodes.new("CompositorNodeNormalize")
             self.tree.links.new(self.render_layers.outputs["Depth"], normalize.inputs[0])
-            self.tree.links.new(normalize.outputs[0], debug_depth_slot)
+            self._include_output(
+                "previews/depths",
+                normalize.outputs[0],
+                label="Preview Depth Output",
+                preview=True,
+                color_mode="BW",
+                c=1,
+            )
 
-        self.depth_path, (depth_slot,) = file_output_node(
-            self.tree, self.root_path / "depths", slots=[f"depth_{'#' * 6}"], label="Depth Output"
+        color_mode = "BW" if (file_format.upper() == "OPEN_EXR" and bpy.app.version >= (4, 3, 0)) else "RGB"
+        self._include_output(
+            "depths",
+            self.render_layers.outputs["Depth"],
+            label="Depth Output",
+            file_format=file_format,
+            color_mode=color_mode,
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
+            c=1,
         )
 
-        if bpy.app.version >= (3, 2, 0):
-            self.depth_path.format.color_management = "OVERRIDE"
-            self.depth_path.format.linear_colorspace_settings.name = "Non-Color"
-        self.depth_path.format.file_format = file_format
-
-        if file_format.upper() == "OPEN_EXR":
-            self.depth_path.format.exr_codec = exr_codec
-
-            if bpy.app.version < (4, 3, 0):
-                self.depth_path.format.color_mode = "RGB"
-            else:
-                self.depth_path.format.color_mode = "BW"
-
-            self.depth_extension = ".exr"
-        else:
-            self.depth_path.format.color_mode = "RGB"
-            self.depth_extension = ".hdr"
-
-        self.tree.links.new(self.render_layers.outputs["Depth"], depth_slot)
-
     @require_initialized_service
-    def exposed_include_normals(self, debug=True, exr_codec="ZIP") -> None:
+    def exposed_include_normals(
+        self, preview: bool = True, exr_codec: EXR_CODECS = "DWAA", bit_depth: Literal[16, 32] = 32
+    ) -> None:
         """Sets up Blender compositor to include normal map for rendered images.
 
         Args:
-            debug (bool, optional): if true, colorized normal maps will also be generated with each vector
-                component being remapped from [-1, 1] to [0-255] with xyz becoming rgb. Defaults to True.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            preview (bool, optional): If true, colorized normal maps will also be generated with each vector
+                component being remapped from [-1, 1] to [0-255] where XYZ coordinates are mapped channel-wise to RGB.
+                Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Either 16 or 32 bits. Defaults to 32 bits.
         """
         self.view_layer.use_pass_normal = True
-        (self.root_path / "normals").mkdir(parents=True, exist_ok=True)
 
-        # The node group `normaldebug` transforms normals from the global
-        # coordinate frame to the camera's, and also colors normals as RGB
+        # This node group transforms normals from the global coordinate frame
+        # to the camera's, and also colors normals as RGB
         normal_group = self.tree.nodes.new("CompositorNodeGroup")
-        normal_group.label = "NormalDebug"
-        normal_group.node_tree = normaldebug_node_group()
+        normal_group.label = "Normal Preview"
+        normal_group.node_tree = normal_preview_node_group()
         self.tree.links.new(self.render_layers.outputs["Normal"], normal_group.inputs[0])
 
-        if debug:
-            debug_normal_path, (debug_normal_slot,) = file_output_node(
-                self.tree, self.root_path / "normals", slots=[f"debug_normal_{'#' * 6}"], label="Normals Debug Output"
+        if preview:
+            self._include_output(
+                "previews/normals",
+                normal_group.outputs["RGBA"],
+                label="Normals Preview Output",
+                preview=True,
+                color_mode="RGB",
+                c=3,
             )
-            debug_normal_path.format.file_format = "PNG"
-            debug_normal_path.format.compression = 90
-            debug_normal_path.format.color_depth = "8"
-            debug_normal_path.format.color_mode = "RGB"
-
-            # Important! Set the view settings to raw otherwise result is tonemapped
-            if bpy.app.version >= (3, 2, 0):
-                debug_normal_path.format.color_management = "OVERRIDE"
-            debug_normal_path.format.view_settings.view_transform = "Raw"
-            debug_normal_path.format.view_settings.look = "None"
-            debug_normal_path.format.view_settings.gamma = 0
-            debug_normal_path.format.view_settings.exposure = 1
-            debug_normal_path.format.view_settings.use_curve_mapping = False
-
-            if bpy.app.version >= (4, 3, 0):
-                debug_normal_path.format.view_settings.use_white_balance = False
-
-            self.tree.links.new(normal_group.outputs["RGBA"], debug_normal_slot)
-
-        self.normal_path, (normal_slot,) = file_output_node(
-            self.tree, self.root_path / "normals", slots=[f"normal_{'#' * 6}"], label="Normals Output"
-        )
-
-        if bpy.app.version >= (3, 2, 0):
-            self.normal_path.format.color_management = "OVERRIDE"
-            self.normal_path.format.linear_colorspace_settings.name = "Non-Color"
-        self.normal_path.format.file_format = "OPEN_EXR"
-        self.normal_path.format.exr_codec = exr_codec
-        self.normal_path.format.color_mode = "RGB"
 
         vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
         vec2rgba.label = "Vector2RGBA"
         vec2rgba.node_tree = vec2rgba_node_group()
 
         self.tree.links.new(normal_group.outputs["Vector"], vec2rgba.inputs["Image"])
-        self.tree.links.new(vec2rgba.outputs["Image"], normal_slot)
+        self._include_output(
+            "normals",
+            vec2rgba.outputs["Image"],
+            label="Normals Output",
+            file_format="OPEN_EXR",
+            color_mode="RGB",
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
+            c=3,
+        )
 
     @require_initialized_service
-    def exposed_include_flows(self, direction="forward", debug=True, exr_codec="ZIP") -> None:
+    def exposed_include_flows(
+        self,
+        preview: bool = True,
+        direction: Literal["forward", "backward", "both"] = "forward",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
         """Sets up Blender compositor to include optical flow for rendered images.
 
         Args:
+            preview (bool, optional): If true, also save preview visualizations of flow. Defaults to True.
             direction (str, optional): One of 'forward', 'backward' or 'both'. Direction of flow to colorize
-                for debug visualization. Only used when debug is true, otherwise both forward and backward
+                for preview visualization. Only used when ``preview`` is true, otherwise both forward and backward
                 flows are saved. Defaults to "forward".
-            debug (bool, optional): If true, also save debug visualizations of flow. Defaults to True.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
                 with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
+                chosen file format, with 8, 16 and 32 bits being common. Defaults to 32 bits.
 
         Note:
-            The debug colormap is re-normalized on a per-frame basis, to visually
+            The preview colormap is re-normalized on a per-frame basis, to visually
             compare across frames, apply colorization after rendering using the CLI.
 
         Raises:
@@ -845,167 +1078,394 @@ class BlenderService(rpyc.Service):
             raise RuntimeError("Cannot compute optical flow if motion blur is enabled.")
 
         self.view_layer.use_pass_vector = True
-        (self.root_path / "flows").mkdir(parents=True, exist_ok=True)
 
-        if debug:
+        if preview:
             # Separate forward and backward flows (with a separate color not vector node)
-            if bpy.app.version >= (3, 3, 0):
-                split_flow = self.tree.nodes.new(type="CompositorNodeSeparateColor")
-                split_flow.mode = "RGB"
-            else:
-                split_flow = self.tree.nodes.new(type="CompositorNodeSepRGBA")
+            split_flow = self.tree.nodes.new(type="CompositorNodeSeparateColor")
+            split_flow.mode = "RGB"
             self.tree.links.new(self.render_layers.outputs["Vector"], split_flow.inputs["Image"])
 
-            # Create output node
-            debug_flow_path, (debug_fwd_flow_slot, debug_bwd_flow_slot) = file_output_node(
-                self.tree,
-                self.root_path / "flows",
-                slots=[f"debug_fwd_flow_{'#' * 6}", f"debug_bwd_flow_{'#' * 6}"],
-                label="Flow Debug Output",
-            )
-            debug_flow_path.format.file_format = "PNG"
-            debug_flow_path.format.compression = 90
-            debug_flow_path.format.color_depth = "8"
-            debug_flow_path.format.color_mode = "RGB"
-
-            # Important! Set the view settings to raw otherwise result is tonemapped
-            if bpy.app.version >= (3, 2, 0):
-                debug_flow_path.format.color_management = "OVERRIDE"
-            debug_flow_path.format.view_settings.view_transform = "Raw"
-            debug_flow_path.format.view_settings.look = "None"
-            debug_flow_path.format.view_settings.gamma = 0
-            debug_flow_path.format.view_settings.exposure = 1
-            debug_flow_path.format.view_settings.use_curve_mapping = False
-
-            if bpy.app.version >= (4, 3, 0):
-                debug_flow_path.format.view_settings.use_white_balance = False
-
-            # Instantiate flow debug node group(s) and connect them
+            # Instantiate flow preview node group(s) and connect them
             if direction.lower() in ("forward", "both"):
                 flow_group = self.tree.nodes.new("CompositorNodeGroup")
-                flow_group.node_tree = flowdebug_node_group()
-                flow_group.label = "FlowDebug Forward"
+                flow_group.node_tree = flow_preview_node_group()
+                flow_group.label = "Forward Flow Preview"
 
                 self.tree.links.new(split_flow.outputs[0], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs[1], flow_group.inputs["y"])
-                self.tree.links.new(flow_group.outputs["Image"], debug_fwd_flow_slot)
+                self._include_output(
+                    "previews/flows/forward",
+                    flow_group.outputs["Image"],
+                    label="Forward Flow Preview Output",
+                    preview=True,
+                    color_mode="RGB",
+                    c=3,
+                )
             if direction.lower() in ("backward", "both"):
                 flow_group = self.tree.nodes.new("CompositorNodeGroup")
-                flow_group.node_tree = flowdebug_node_group()
-                flow_group.label = "FlowDebug Backward"
+                flow_group.node_tree = flow_preview_node_group()
+                flow_group.label = "Backward Flow Preview"
 
                 self.tree.links.new(split_flow.outputs[2], flow_group.inputs["x"])
                 self.tree.links.new(split_flow.outputs[3], flow_group.inputs["y"])
-                self.tree.links.new(flow_group.outputs["Image"], debug_bwd_flow_slot)
+                self._include_output(
+                    "previews/flows/backward",
+                    flow_group.outputs["Image"],
+                    label="Backward Flow Preview Output",
+                    preview=True,
+                    color_mode="RGB",
+                    c=3,
+                )
 
         # Save flows as EXRs, flows are a 4-vec of forward flows x/y then backwards flows x/y
         # before blender 4.3, saving a vector as an image saved only 3 channels even if `color_mode`
         # is set to RGBA. So we add a dummy vec2rgba node to trick blender into treating the
         # vector as an image with 4 channels. This dummy node just splits and recombines channels.
-        self.flow_path, (flow_path_slot,) = file_output_node(
-            self.tree, self.root_path / "flows", slots=[f"flow_{'#' * 6}"], label="Flow Output"
-        )
-
-        if bpy.app.version >= (3, 2, 0):
-            self.flow_path.format.color_management = "OVERRIDE"
-            self.flow_path.format.linear_colorspace_settings.name = "Non-Color"
-        self.flow_path.format.file_format = "OPEN_EXR"
-        self.flow_path.format.exr_codec = exr_codec
-        self.flow_path.format.color_mode = "RGBA"
-
         vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
         vec2rgba.label = "Vector2RGBA"
         vec2rgba.node_tree = vec2rgba_node_group()
 
         self.tree.links.new(self.render_layers.outputs["Vector"], vec2rgba.inputs["Image"])
-        self.tree.links.new(vec2rgba.outputs["Image"], flow_path_slot)
+        self._include_output(
+            "flows",
+            vec2rgba.outputs["Image"],
+            label="Flow Output",
+            file_format="OPEN_EXR",
+            color_mode="RGBA",
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
+            c=4,
+        )
 
     @require_initialized_service
-    def exposed_include_segmentations(self, shuffle=True, debug=True, seed=1234, exr_codec="ZIP") -> None:
-        """Sets up Blender compositor to include segmentation maps for rendered images.
-
-        The debug visualization simply assigns a color to each object ID by mapping the
-        objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
-        for the background which will have a value of 0 to ensure it is black).
-
-        Args:
-            shuffle (bool, optional): shuffle debug colors, helps differentiate object instances. Defaults to True.
-            debug (bool, optional): If true, also save debug visualizations of segmentation. Defaults to True.
-            seed (int, optional): random seed used when shuffling colors. Defaults to 1234.
-            exr_codec (str, optional): codec used to compress exr file. Options vary depending on the version of Blender,
-                with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
-                Defaults to "ZIP".
-
-        Raises:
-            RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
-        """
+    def _include_ids(
+        self,
+        id_type: Literal["segmentations", "materials"],
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+        shade: bool = False,
+    ) -> None:
+        """Shared logic for including segmentation or material ID maps."""
         # TODO: Enable assignment of custom IDs for certain objects via a dictionary.
 
         if self.scene.render.engine.upper() != "CYCLES":
-            raise RuntimeError("Cannot produce segmentation maps when not using CYCLES.")
+            self.log.warning(f"Cannot produce {id_type} map when not using CYCLES.")
+            return
 
-        self.view_layer.use_pass_object_index = True
-        (self.root_path / "segmentations").mkdir(parents=True, exist_ok=True)
-        object_index_name = "Object Index" if bpy.app.version >= (5, 0, 0) else "IndexOB"
+        if id_type == "segmentations":
+            self.view_layer.use_pass_object_index = True
+            pass_idx_name = "Object Index" if bpy.app.version >= (5, 0, 0) else "IndexOB"
+            data = bpy.data.objects
+            label = "Segmentation"
+        elif id_type == "materials":
+            self.view_layer.use_pass_material_index = True
+            pass_idx_name = "Material Index" if bpy.app.version >= (5, 0, 0) else "IndexMA"
+            data = bpy.data.materials
+            label = "Material"
+        else:
+            raise ValueError(f"Unknown id_type: {id_type}")
 
-        # Assign IDs to every object (background will be 0)
-        indices = np.arange(len(bpy.data.objects))
+        # Assign IDs to every object/material (background will be 0)
+        indices = np.arange(len(data))
 
         if shuffle:
             np.random.seed(seed=seed)
             np.random.shuffle(indices)
 
-        for i, obj in zip(indices, bpy.data.objects):
-            obj.pass_index = i + 1
+        for i, item in zip(indices, data):
+            item.pass_index = i + 1
 
-        if debug:
-            seg_group = self.tree.nodes.new("CompositorNodeGroup")
-            seg_group.label = "SegmentationDebug"
-            seg_group.node_tree = segmentationdebug_node_group()
-            seg_group.node_tree.nodes["NormalizeIdx"].inputs["From Max"].default_value = len(bpy.data.objects)
+        if preview:
+            group = self.tree.nodes.new("CompositorNodeGroup")
+            group.label = f"{label} Preview"
+            group.node_tree = colorize_indices_node_group(shade=shade)
+            group.node_tree.nodes["NormalizeIdx"].inputs["From Max"].default_value = len(data)
 
-            debug_seg_path, (debug_seg_slot,) = file_output_node(
-                self.tree,
-                self.root_path / "segmentations",
-                slots=[f"debug_segmentation_{'#' * 6}"],
-                label="Segmentations Debug Output",
+            self.tree.links.new(self.render_layers.outputs[pass_idx_name], group.inputs["Index"])
+
+            if shade:
+                self.view_layer.use_pass_normal = True
+                self.tree.links.new(self.render_layers.outputs["Normal"], group.inputs["Normal"])
+
+            self._include_output(
+                f"previews/{id_type}",
+                group.outputs["Image"],
+                label=f"{label}s Preview Output",
+                preview=True,
+                color_mode="RGB",
+                c=3,
             )
-            debug_seg_path.format.file_format = "PNG"
-            debug_seg_path.format.compression = 90
-            debug_seg_path.format.color_depth = "8"
-            debug_seg_path.format.color_mode = "RGB"
 
-            # Important! Set the view settings to raw otherwise result is tonemapped
-            if bpy.app.version >= (3, 2, 0):
-                debug_seg_path.format.color_management = "OVERRIDE"
-            debug_seg_path.format.view_settings.view_transform = "Raw"
-            debug_seg_path.format.view_settings.look = "None"
-            debug_seg_path.format.view_settings.gamma = 0
-            debug_seg_path.format.view_settings.exposure = 1
-            debug_seg_path.format.view_settings.use_curve_mapping = False
-
-            if bpy.app.version >= (4, 3, 0):
-                debug_seg_path.format.view_settings.use_white_balance = False
-
-            self.tree.links.new(self.render_layers.outputs[object_index_name], seg_group.inputs["Value"])
-            self.tree.links.new(seg_group.outputs["Image"], debug_seg_slot)
-
-        self.segmentation_path, (segmentation_slot,) = file_output_node(
-            self.tree, self.root_path / "segmentations", slots=[f"segmentation_{'#' * 6}"], label="Segmentations Output"
+        color_mode = "RGB" if bpy.app.version < (4, 3, 0) else "BW"
+        self._include_output(
+            id_type,
+            self.render_layers.outputs[pass_idx_name],
+            label=f"{label}s Output",
+            file_format="OPEN_EXR",
+            color_mode=color_mode,
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
         )
 
-        if bpy.app.version >= (3, 2, 0):
-            self.segmentation_path.format.color_management = "OVERRIDE"
-            self.segmentation_path.format.linear_colorspace_settings.name = "Non-Color"
-        self.segmentation_path.format.file_format = "OPEN_EXR"
-        self.segmentation_path.format.exr_codec = exr_codec
+    @require_initialized_service
+    def exposed_include_segmentations(
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include segmentation maps for rendered images.
 
-        if bpy.app.version < (4, 3, 0):
-            self.segmentation_path.format.color_mode = "RGB"
+        The preview visualization simply assigns a color to each object ID by mapping the
+        objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
+        for the background which will have a value of 0 to ensure it is black).
+
+        Args:
+            preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate object instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
+                with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
+
+        Raises:
+            RuntimeError: raised when not using CYCLES, as other renderers do not support a segmentation pass.
+        """
+        self._include_ids(
+            "segmentations",
+            preview=preview,
+            shuffle=shuffle,
+            seed=seed,
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
+        )
+
+    @require_initialized_service
+    def exposed_include_materials(
+        self,
+        preview: bool = True,
+        shuffle: bool = True,
+        seed: int = 1234,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include material ID maps for rendered images.
+
+        The preview visualization simply assigns a color to each material ID by mapping the
+        materials ID value to a hue using a HSV node with saturation=1 and value=1 (except
+        for the background which will have a value of 0 to ensure it is black).
+
+        Args:
+            preview (bool, optional): If true, also save preview visualizations of material IDs. Defaults to True.
+            shuffle (bool, optional): Shuffle preview colors, helps differentiate material instances. Defaults to True.
+            seed (int, optional): Random seed used when shuffling colors. Defaults to 1234.
+            exr_codec (str, optional): Codec used to compress exr file. Options vary depending on the version of Blender,
+                with the following being broadly available: ('NONE', 'PXR24', 'ZIP', 'PIZ', 'RLE', 'ZIPS', 'DWAA', 'DWAB').
+                Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel, also referred to as color-depth.
+                Either 16 or 32 bits. Defaults to 32 bits.
+
+        Raises:
+            RuntimeError: raised when not using CYCLES, as other renderers do not support a material ID pass.
+        """
+        self._include_ids(
+            "materials",
+            preview=preview,
+            shuffle=shuffle,
+            seed=seed,
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
+            shade=True,
+        )
+
+    @require_initialized_service
+    def exposed_include_diffuse_pass(
+        self,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 32,
+        denoise: bool = True,
+    ) -> None:
+        """Sets up Blender compositor to include diffuse light passes for rendered images.
+
+        For CYCLES, this includes: Diffuse Direct, Diffuse Indirect and Diffuse Color.
+        For EEVEE, this includes: Diffuse Light and Diffuse Color.
+
+        Note:
+            When using CYCLES, these extra light passes might be very noisy, especially the indirect ones,
+            as they rely on raytracing. To mitigate this, you can either increase the number of samples, or the threshold in the :meth:`cycles_settings <exposed_cycles_settings>`, or/and use the denoise option.
+
+        Args:
+            file_format (str, optional): Format to save diffuse passes as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+            denoise (bool, optional): If true, apply Cycles denoising to the direct and indirect passes
+                before saving. The colour pass is left undenoised as it is noise-free by nature.
+                Has no effect when not using Cycles. Defaults to True.
+        """
+        engine = self.scene.render.engine.upper()
+        if engine == "CYCLES":
+            # (pass_name, subpath, apply_denoise)
+            passes = [
+                ("Diffuse Direct" if bpy.app.version >= (5, 0, 0) else "DiffDir", "diffuse/direct", denoise),
+                ("Diffuse Indirect" if bpy.app.version >= (5, 0, 0) else "DiffInd", "diffuse/indirect", denoise),
+                ("Diffuse Color" if bpy.app.version >= (5, 0, 0) else "DiffCol", "diffuse/color", False),
+            ]
+            self.view_layer.use_pass_diffuse_direct = True
+            self.view_layer.use_pass_diffuse_indirect = True
+            self.view_layer.use_pass_diffuse_color = True
+        elif engine == "BLENDER_EEVEE" or engine == "BLENDER_EEVEE_NEXT":
+            passes = [
+                ("DiffDir", "diffuse/light", False),
+                ("DiffCol", "diffuse/color", False),
+            ]
+            self.view_layer.use_pass_diffuse_light = True
+            self.view_layer.use_pass_diffuse_color = True
         else:
-            self.segmentation_path.format.color_mode = "BW"
+            self.log.warning(f"Diffuse passes are not supported for engine {engine}")
+            return
 
-        self.tree.links.new(self.render_layers.outputs[object_index_name], segmentation_slot)
+        for pass_name, subpath, apply_denoise in passes:
+            self._include_output(
+                subpath,
+                self.render_layers.outputs[pass_name],
+                label=f"{pass_name} Output",
+                file_format=file_format,
+                color_mode=color_mode,
+                exr_codec=exr_codec,
+                bit_depth=bit_depth,
+                denoise=apply_denoise,
+            )
+
+    @require_initialized_service
+    def exposed_include_specular_pass(
+        self,
+        file_format: FILE_FORMATS = "OPEN_EXR",
+        color_mode: COLOR_MODES = "RGB",
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[8, 16, 32] = 32,
+        denoise: bool = True,
+    ) -> None:
+        """Sets up Blender compositor to include specular light passes for rendered images.
+
+        For CYCLES, this includes: Glossy Direct, Glossy Indirect and Glossy Color.
+        For EEVEE, this includes: Specular Light and Specular Color.
+
+        Note:
+            When using CYCLES, these extra light passes might be very noisy, especially the indirect ones,
+            as they rely on raytracing. To mitigate this, you can either increase the number of samples, or the threshold in the :meth:`cycles_settings <exposed_cycles_settings>`, or/and use the denoise option.
+
+        Args:
+            file_format (str, optional): Format to save specular passes as. Defaults to "OPEN_EXR".
+            color_mode (str, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to "RGB".
+            exr_codec (str, optional): Codec used to compress exr file. Only used when ``file_format="OPEN_EXR"``. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Defaults to 32 bits.
+            denoise (bool, optional): If true, apply Cycles denoising to the direct and indirect passes
+                before saving. The colour pass is left undenoised as it is noise-free by nature.
+                Has no effect when not using Cycles. Defaults to True.
+        """
+        engine = self.scene.render.engine.upper()
+        if engine == "CYCLES":
+            # (pass_name, subpath, apply_denoise)
+            passes = [
+                ("Glossy Direct" if bpy.app.version >= (5, 0, 0) else "GlossDir", "specular/direct", denoise),
+                ("Glossy Indirect" if bpy.app.version >= (5, 0, 0) else "GlossInd", "specular/indirect", denoise),
+                ("Glossy Color" if bpy.app.version >= (5, 0, 0) else "GlossCol", "specular/color", False),
+            ]
+            self.view_layer.use_pass_glossy_direct = True
+            self.view_layer.use_pass_glossy_indirect = True
+            self.view_layer.use_pass_glossy_color = True
+        elif engine == "BLENDER_EEVEE" or engine == "BLENDER_EEVEE_NEXT":
+            passes = [
+                ("GlossDir", "specular/light", False),
+                ("GlossCol", "specular/color", False),
+            ]
+            self.view_layer.use_pass_specular_light = True
+            self.view_layer.use_pass_specular_color = True
+        else:
+            self.log.warning(f"Specular passes are not supported for engine {engine}")
+            return
+
+        for pass_name, subpath, apply_denoise in passes:
+            self._include_output(
+                subpath,
+                self.render_layers.outputs[pass_name],
+                label=f"{pass_name} Output",
+                file_format=file_format,
+                color_mode=color_mode,
+                exr_codec=exr_codec,
+                bit_depth=bit_depth,
+                denoise=apply_denoise,
+            )
+
+    @require_initialized_service
+    def exposed_include_points(
+        self,
+        preview: bool = True,
+        exr_codec: EXR_CODECS = "DWAA",
+        bit_depth: Literal[16, 32] = 32,
+    ) -> None:
+        """Sets up Blender compositor to include a world-space point map for each frame.
+
+        Note:
+            The point map corresponds to world-space positions, like those used in VGGT [1]_,
+            and not the camera-centric positions used in DUSt3R [2]_.
+
+        Args:
+            preview (bool, optional): If true, colorized point maps will also be generated, where colors are
+                assigned based on the absolute fractional world coordinates. Defaults to True.
+            exr_codec (str, optional): Codec used to compress exr file. Defaults to "DWAA".
+            bit_depth (int, optional): Bit depth per channel. Either 16 or 32 bits. Defaults to 32 bits.
+
+        .. [1] `VGGT: Visual Geometry Grounded Transformer <https://arxiv.org/abs/2503.11651>`_
+        .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
+        """
+        engine = self.scene.render.engine.upper()
+        if (engine == "BLENDER_EEVEE" or engine == "BLENDER_EEVEE_NEXT") and bpy.app.version < (4, 2, 0):
+            self.log.warning(f"Position pass is not supported for engine {engine} in Blender version {bpy.app.version}")
+            return
+
+        self.view_layer.use_pass_position = True
+
+        if preview:
+            group = self.tree.nodes.new("CompositorNodeGroup")
+            group.node_tree = point_preview_node_group()
+
+            self.tree.links.new(self.render_layers.outputs["Position"], group.inputs["Vector"])
+
+            self._include_output(
+                "previews/points",
+                group.outputs[0],
+                label="Preview Points Output",
+                preview=True,
+                color_mode="RGB",
+                c=3,
+            )
+
+        vec2rgba = self.tree.nodes.new("CompositorNodeGroup")
+        vec2rgba.label = "Vector2RGBA"
+        vec2rgba.node_tree = vec2rgba_node_group()
+
+        self.tree.links.new(self.render_layers.outputs["Position"], vec2rgba.inputs["Image"])
+        self._include_output(
+            "points",
+            vec2rgba.outputs["Image"],
+            label="Points Output",
+            file_format="OPEN_EXR",
+            color_mode="RGB",
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
+            c=3,
+        )
 
     @require_initialized_service
     def exposed_load_addons(self, *addons: str) -> None:
@@ -1021,7 +1481,10 @@ class BlenderService(rpyc.Service):
 
     @require_initialized_service
     def exposed_set_resolution(
-        self, height: tuple[int] | list[int] | int | None = None, width: int | None = None
+        self,
+        height: tuple[int] | list[int] | int | None = None,
+        width: int | None = None,
+        resolution_percentage: int = 100,
     ) -> None:
         """Set frame resolution (height, width) in pixels.
         If a single tuple is passed, instead of using keyword arguments, it will be parsed as (height, width).
@@ -1029,6 +1492,7 @@ class BlenderService(rpyc.Service):
         Args:
             height (tuple[int] | list[int] | int | None, optional): Height of render in pixels. Defaults to value from file.
             width (int | None, optional): Width of render in pixels. Defaults to value from file.
+            resolution_percentage (float, optional): Percentage of the original resolution to render at. Defaults to 100%.
 
         Raises:
             ValueError: raised if resolution is not understood.
@@ -1044,32 +1508,7 @@ class BlenderService(rpyc.Service):
             self.scene.render.resolution_y = int(height)
         if width:
             self.scene.render.resolution_x = int(width)
-        self.scene.render.resolution_percentage = 100
-
-    @require_initialized_service
-    def exposed_image_settings(
-        self, file_format: str | None = None, bit_depth: int | None = None, color_mode: str | None = None
-    ) -> None:
-        """Set the render's output format and bit-depth.
-        Useful for linear intensity renders, using "OPEN_EXR" and 32 or 16 bits.
-
-        Note: A default arguments of ``None`` means do not change setting inherited from blendfile.
-
-        Args:
-            file_format (str | None, optional): Format to save render as. Options vary depending on the version of Blender,
-                with the following being broadly available: ('BMP', 'IRIS', 'PNG', 'JPEG', 'JPEG2000', 'TARGA', 'TARGA_RAW',
-                'CINEON', 'DPX', 'OPEN_EXR_MULTILAYER', 'OPEN_EXR', 'HDR', 'TIFF', 'WEBP', 'AVI_JPEG', 'AVI_RAW', 'FFMPEG').
-                Defaults to None.
-            bit_depth (int | None, optional): Bit depth per channel, also referred to as color-depth. Options depend on the
-                chosen file format, with 8, 16 and 32bits being common. Defaults to None.
-            color_mode (str | None, optional): Typically one of ('BW', 'RGB', 'RGBA'). Defaults to None.
-        """
-        if file_format is not None:
-            self.scene.render.image_settings.file_format = file_format.upper()
-        if bit_depth is not None:
-            self.scene.render.image_settings.color_depth = str(bit_depth)
-        if color_mode is not None:
-            self.scene.render.image_settings.color_mode = color_mode.upper()
+        self.scene.render.resolution_percentage = int(resolution_percentage)
 
     @require_initialized_service
     def exposed_use_motion_blur(self, enable: bool) -> None:
@@ -1077,7 +1516,12 @@ class BlenderService(rpyc.Service):
 
         Args:
             enable (bool): If true, enable motion blur.
+
+        Raises:
+            RuntimeError: raised when motion blur is enabled as flow cannot be computed.
         """
+        if enable and "flows" in self._outputs:
+            raise RuntimeError("Cannot enable motion blur if computing optical flow.")
         self.scene.render.use_motion_blur = enable
 
     @require_initialized_service
@@ -1088,9 +1532,9 @@ class BlenderService(rpyc.Service):
             enable (bool): If true, enable animations.
         """
         for fcurve in self.exposed_iter_fcurves():
-            if fcurve not in self.disabled_fcurves:
+            if fcurve not in self._disabled_fcurves:
                 fcurve.mute = not enable
-        self.use_animation = enable
+        self._use_animation = enable
 
     @require_initialized_service
     def exposed_cycles_settings(
@@ -1179,7 +1623,6 @@ class BlenderService(rpyc.Service):
 
         if clear_animations:
             self.camera.animation_data_clear()
-        self.unbind_camera = True
 
     @require_initialized_service
     def exposed_move_keyframes(self, scale=1.0, shift=0.0) -> None:
@@ -1199,6 +1642,9 @@ class BlenderService(rpyc.Service):
         if scale == 1.0 and shift == 0.0:
             return
 
+        if self._keyframe_scale != 1.0:
+            raise NotImplementedError("Rescaling keyframes multiple times is currently unsupported.")
+
         # No idea why, but if we don't break this out into separate
         # variables the value we store is incorrect, often off by one.
         # We add, then remove one because frame_start and frame_end are inclusive,
@@ -1215,6 +1661,7 @@ class BlenderService(rpyc.Service):
             )
         self.scene.frame_start = start
         self.scene.frame_end = end
+        self._keyframe_scale = scale
 
         for fcurve in self.exposed_iter_fcurves():
             for kfp in fcurve.keyframe_points or []:
@@ -1235,6 +1682,52 @@ class BlenderService(rpyc.Service):
         self.scene.frame_set(frame_number)
 
     @require_initialized_service
+    def exposed_camera_info(self) -> dict[str, Any]:
+        """Return a dictionary with camera intrinsics.
+
+        Returns:
+            dict[str, Any]: dictionary containing camera parameters.
+        """
+        if self.camera.data.type != "PERSP":
+            raise RuntimeError(
+                f"Only perspective cameras are currently supported, got '{self.camera.data.type}' instead."
+            )
+
+        info = {
+            k: getattr(self.camera.data, k)
+            for k in [
+                "angle",
+                "angle_x",
+                "angle_y",
+                "clip_start",
+                "clip_end",
+                "lens",
+                "lens_unit",
+                "sensor_height",
+                "sensor_width",
+                "sensor_fit",
+                "shift_x",
+                "shift_y",
+                "type",
+            ]
+        }
+
+        # Note: This might be a blender bug, but when height==width,
+        #   angle_x != angle_y, so here we just use angle.
+        scale = self.scene.render.resolution_percentage / 100.0
+        info["w"] = int(self.scene.render.resolution_x * scale)
+        info["h"] = int(self.scene.render.resolution_y * scale)
+        info["fl_x"] = float(1 / 2 * self.scene.render.resolution_x / np.tan(1 / 2 * self.camera.data.angle))
+        info["fl_y"] = float(1 / 2 * self.scene.render.resolution_y / np.tan(1 / 2 * self.camera.data.angle))
+        info["shift_x"] *= self.scene.render.resolution_x * scale
+        info["shift_y"] *= self.scene.render.resolution_y * scale
+        info["cx"] = 1 / 2 * self.scene.render.resolution_x * scale + info["shift_x"]
+        info["cy"] = 1 / 2 * self.scene.render.resolution_y * scale + info["shift_y"]
+        info["fps"] = self.exposed_get_original_fps()
+        info["keyframe_scale"] = self._keyframe_scale
+        return info
+
+    @require_initialized_service
     def exposed_camera_extrinsics(self) -> npt.NDArray[np.floating]:
         """Get the 4x4 transform matrix encoding the current camera pose.
 
@@ -1244,29 +1737,6 @@ class BlenderService(rpyc.Service):
         pose = np.array(self.camera.matrix_world)
         pose[:3, :3] /= np.linalg.norm(pose[:3, :3], axis=0)
         return pose
-
-    @require_initialized_service
-    def exposed_camera_intrinsics(self) -> npt.NDArray[np.floating]:
-        """Get the 3x3 camera intrinsics matrix for active camera,
-        which defines how 3D points are projected onto 2D.
-
-        Note: Assumes pinhole camera model.
-
-        Returns:
-            npt.NDArray[np.floating]: Camera intrinsics matrix based on camera properties.
-        """
-        scale = self.scene.render.resolution_percentage / 100
-        width = self.scene.render.resolution_x * scale
-        height = self.scene.render.resolution_y * scale
-        camera_data = self.scene.camera.data
-
-        aspect_ratio = width / height
-        K = np.eye(3, dtype=np.float32)
-        K[0, 0] = width / 2.0 / np.tan(camera_data.angle / 2)
-        K[1, 1] = height / 2.0 / np.tan(camera_data.angle / 2) * aspect_ratio
-        K[0, 2] = width / 2.0
-        K[1, 2] = height / 2.0
-        return K
 
     @require_initialized_service
     @validate_camera_moved
@@ -1333,6 +1803,17 @@ class BlenderService(rpyc.Service):
         self.view_layer.update()
 
     @require_initialized_service
+    @validate_camera_moved
+    def exposed_offset_camera(self, offset: npt.ArrayLike) -> None:
+        """Move camera by a given vector in its local coordinate frame.
+
+        Args:
+            offset (npt.ArrayLike): Amount to offset by (x, y, z) in local coordinates.
+        """
+        self.camera.location += self.camera.matrix_world.to_3x3() @ mathutils.Vector(offset)
+        self.view_layer.update()
+
+    @require_initialized_service
     def exposed_set_camera_keyframe(self, frame_num: int, matrix: npt.ArrayLike | None = None) -> None:
         """Set camera keyframe at given frame number.
         If camera matrix is not supplied, currently set camera position/rotation/scale will be used,
@@ -1369,49 +1850,72 @@ class BlenderService(rpyc.Service):
             self.scene.frame_step = step
 
     @require_initialized_service
-    def exposed_render_current_frame(self, allow_skips=True, dry_run=False) -> dict[str, Any]:
+    def exposed_render_current_frame(self, allow_skips=True, dry_run=False) -> None:
         """Generates a single frame in Blender at the current camera location,
         return the file paths for that frame, potentially including depth, normals, etc.
+
+        Note:
+            This method renders the current frame as-is, it assumes the camera position,
+            frame number and all other parameters have been set.
 
         Args:
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-
-        Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
-        # TODO: Implement skipping for depth/normals/flow?
+        folder_index = f"{self.scene.frame_current // ITEMS_PER_SUBFOLDER:04}"
+        frame_index = f"{self.scene.frame_current % ITEMS_PER_SUBFOLDER:0{INDEX_PADDING}}"
+        paths = {}
 
-        # Assumes the camera position, frame number and all other params have been set
-        index = self.scene.frame_current
-        self.scene.render.filepath = str(self.root_path / "frames" / f"frame_{index:06}")
-        paths = {"file_path": Path(f"frames/frame_{index:06}").with_suffix(self.scene.render.file_extension)}
+        if not self._outputs and not self._warned_no_outputs:
+            self.log.warning(
+                "No outputs are selected, so nothing will be rendered. "
+                "Consider including different types of ground truth annotations using "
+                "the `include_X` methods (eg: `include_frames`) or equivalently using "
+                "`--config.include-frames` if using the CLI."
+            )
+            self._warned_no_outputs = True
 
-        if self.depth_path is not None:
-            paths["depth_file_path"] = Path(f"depths/depth_{index:06}{self.depth_extension}")
-        if self.normal_path is not None:
-            paths["normal_file_path"] = Path(f"normals/normal_{index:06}.exr")
-        if self.flow_path is not None:
-            paths["flow_file_path"] = Path(f"flows/flow_{index:06}.exr")
-        if self.segmentation_path is not None:
-            paths["segmentation_file_path"] = Path(f"segmentations/segmentation_{index:06}.exr")
+        for subpath, (node, slot, *_) in self._outputs.items():
+            if subpath == "composites":
+                self.scene.render.filepath = str(self.root_path / subpath / folder_index / frame_index)
+                paths[subpath] = Path(self.scene.render.filepath).with_suffix(self.scene.render.file_extension)
+            else:
+                if bpy.app.version >= (5, 0, 0):
+                    node.directory = str(self.root_path / subpath / folder_index)
+                else:
+                    node.base_path = str(self.root_path / subpath / folder_index)
+                slot.name = str(Path(slot.name).with_stem(frame_index).name)
+                paths[subpath] = self.root_path / subpath / folder_index / slot.name
 
-        if not dry_run:
+        for path in paths.values():
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+        if not dry_run:  # noqa: SIM102
             # Render frame(s), skip the render iff all files exist and `allow_skips`
             if not allow_skips or any(not Path(self.root_path / p).exists() for p in paths.values()):
-                # If `write_still` is false, depth & normals can be written but rgb will be skipped
-                skip_frame = Path(self.root_path / paths["file_path"]).exists() and allow_skips
-                bpy.ops.render.render(animation=False, write_still=not skip_frame)
+                # If `write_still` is false, depth/normals/etc can be written but composites will be skipped
+                bpy.ops.render.render(animation=False, write_still="composites" in self._outputs)
 
-        # Returns paths that were written
-        return {
-            **{k: str(p) for k, p in paths.items()},
-            "transform_matrix": self.exposed_camera_extrinsics().tolist(),
-        }
+        # Before Blender 5.0 file output nodes ALWAYS appended the frame number
+        # to the filename making our path incorrect, here we rename the file.
+        # This does not apply to composites as they are not saved via a output file node.
+        # See: https://projects.blender.org/blender/blender/issues/134920
+        if bpy.app.version < (5, 0, 0):
+            for subpath, path in paths.items():
+                if subpath != "composites":
+                    path.with_stem(f"{self.scene.frame_current:04}").rename(path)
+
+        # Update databases with frame paths and camera info
+        self._save_metadata(
+            paths={k: p.relative_to(self.root_path / k) for k, p in paths.items()},
+            transform_matrix=self.exposed_camera_extrinsics().tolist(),
+            camera_info=self.exposed_camera_info(),
+            index=self.scene.frame_current,
+        )
 
     @require_initialized_service
-    def exposed_render_frame(self, frame_number: int, allow_skips=True, dry_run=False) -> dict[str, Any]:
+    def exposed_render_frame(self, frame_number: int, allow_skips=True, dry_run=False) -> None:
         """Same as first setting current frame then rendering it.
 
         Warning:
@@ -1422,17 +1926,14 @@ class BlenderService(rpyc.Service):
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-
-        Returns:
-            dict[str, Any]: dictionary containing paths to rendered frames for this index and camera pose.
         """
         self.exposed_set_current_frame(frame_number)
-        return self.exposed_render_current_frame(allow_skips=allow_skips, dry_run=dry_run)
+        self.exposed_render_current_frame(allow_skips=allow_skips, dry_run=dry_run)
 
     @require_initialized_service
     def exposed_render_frames(
         self, frame_numbers: Iterable[int], allow_skips=True, dry_run=False, update_fn: UpdateFn | None = None
-    ) -> dict[str, Any]:
+    ) -> None:
         """Render all requested frames and return associated transforms dictionary.
 
         Args:
@@ -1447,9 +1948,6 @@ class BlenderService(rpyc.Service):
 
         Raises:
             RuntimeError: raised if trying to render frames beyond blender's limits.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
         # Ensure frame_numbers is a list to find extrema
         frame_numbers = list(frame_numbers)
@@ -1470,7 +1968,7 @@ class BlenderService(rpyc.Service):
             raise RuntimeError("Cannot render frames at negative indices. You can try shifting keyframes.")
 
         # Warn if requested frames lie outside animation range
-        if self.use_animation and (frame_start < self.scene.frame_start or self.scene.frame_end < frame_end):
+        if self._use_animation and (frame_start < self.scene.frame_start or self.scene.frame_end < frame_end):
             self.log.warning(
                 f"Current animation starts at frame #{self.scene.frame_start} and ends at "
                 f"#{self.scene.frame_end} (with step={self.scene.frame_step}), but you requested "
@@ -1484,14 +1982,10 @@ class BlenderService(rpyc.Service):
         scene_original_range = self.scene.frame_start, self.scene.frame_end
         self.scene.frame_start, self.scene.frame_end = 0, 1_048_574
 
-        # Store transforms as we go
-        transforms = self.exposed_empty_transforms()
-
         # Capture frames!
         for frame_number in frame_numbers:
             # Tell blender to update camera position and all animations and render frame
-            frame_data = self.exposed_render_frame(frame_number, allow_skips=allow_skips, dry_run=dry_run)
-            transforms["frames"].append(frame_data)
+            self.exposed_render_frame(frame_number, allow_skips=allow_skips, dry_run=dry_run)
 
             # Call any progress callbacks
             if update_fn is not None:
@@ -1499,7 +1993,6 @@ class BlenderService(rpyc.Service):
 
         # Restore animation range to original values
         self.scene.frame_start, self.scene.frame_end = scene_original_range
-        return transforms
 
     @require_initialized_service
     def exposed_render_animation(
@@ -1510,7 +2003,7 @@ class BlenderService(rpyc.Service):
         allow_skips=True,
         dry_run=False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Determines frame range to render, sets camera positions and orientations, and renders all frames in animation range.
 
         Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
@@ -1528,16 +2021,13 @@ class BlenderService(rpyc.Service):
 
         Raises:
             ValueError: raised if scene and camera are entirely static.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
         frame_start = self.scene.frame_start if frame_start is None else frame_start
         frame_end = self.scene.frame_end if frame_end is None else frame_end
         frame_step = self.scene.frame_step if frame_step is None else frame_step
         frame_range = range(frame_start, frame_end + 1, frame_step)
 
-        if not self.use_animation:
+        if not self._use_animation:
             raise ValueError(
                 "Animations are disabled, scene will be entirely static. "
                 "To instead render a single frame, use `render_frame`."
@@ -1545,7 +2035,7 @@ class BlenderService(rpyc.Service):
         elif all(p.animation_data is None for p in self.get_parents(self.camera)) and self.camera.animation_data is None:
             self.log.warning("Active camera nor it's parents are animated, camera will be static.")
 
-        return self.exposed_render_frames(frame_range, allow_skips=allow_skips, dry_run=dry_run, update_fn=update_fn)
+        self.exposed_render_frames(frame_range, allow_skips=allow_skips, dry_run=dry_run, update_fn=update_fn)
 
     @require_initialized_service
     def exposed_save_file(self, path: str | os.PathLike) -> None:
@@ -1638,10 +2128,10 @@ class BlenderClient:
     def spawn(
         cls,
         timeout: float = -1.0,
-        log_dir: str | os.PathLike | None = None,
+        log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
-    ) -> Iterator[Self]:
+    ) -> Generator[Self]:
         """Spawn and connect to a blender server.
         The spawned process is accessible through the client's ``process`` attribute.
 
@@ -1651,9 +2141,9 @@ class BlenderClient:
                 spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
                 this context manager will immediately yield, even if the server is not yet ready to accept
                 incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
-            log_dir (str | os.PathLike | None, optional): path to log directory,
-                stdout/err will be captured if set, otherwise outputs will go to os.devnull.
-                Defaults to None (devnull).
+            log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
+                descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
+                Defaults to subprocess.DEVNULL for both stdout/stderr.
             autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
                 For more, see blender's CLI documentation. Defaults to False.
             executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
@@ -1662,16 +2152,18 @@ class BlenderClient:
                 might be required when using flatpaks. Defaults to None (system PATH).
 
         Yields:
-            Self: the connected client
+            Generator[Self]: the connected client
         """
-        with BlenderServer.spawn(jobs=1, timeout=timeout, log_dir=log_dir, autoexec=autoexec, executable=executable) as (
-            procs,
-            conns,
+        with (
+            BlenderServer.spawn(jobs=1, timeout=timeout, log=log, autoexec=autoexec, executable=executable) as (
+                procs,
+                conns,
+            ),
+            cls(conns.pop()) as client,
         ):
-            with cls(conns.pop()) as client:
-                client.process = procs[0]
-                yield client
-                client.process = None
+            client.process = procs[0]
+            yield client
+            client.process = None
 
     @require_connected_client
     def render_animation_async(self, *args, **kwargs) -> rpyc.AsyncResult:
@@ -1869,10 +2361,10 @@ class BlenderClients(tuple):
         cls,
         jobs: int = 1,
         timeout: float = -1.0,
-        log_dir: str | os.PathLike | None = None,
+        log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
-    ) -> Iterator[Self]:
+    ) -> Generator[Self]:
         """Spawn and connect to one or more blender servers.
         The spawned processes are accessible through the client's ``process`` attribute.
 
@@ -1883,9 +2375,9 @@ class BlenderClients(tuple):
                 spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
                 this context manager will immediately yield, even if the server is not yet ready to accept
                 incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
-            log_dir (str | os.PathLike | None, optional): path to log directory,
-                stdout/err will be captured if set, otherwise outputs will go to os.devnull.
-                Defaults to None (devnull).
+            log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
+                descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
+                Defaults to subprocess.DEVNULL for both stdout/stderr.
             autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
                 For more, see blender's CLI documentation. Defaults to False.
             executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
@@ -1894,11 +2386,12 @@ class BlenderClients(tuple):
                 might be required when using flatpaks. Defaults to None (system PATH).
 
         Yields:
-            Self: the connected clients
+            Generator[Self]: the connected clients
         """
-        with BlenderServer.spawn(
-            jobs=jobs, timeout=timeout, log_dir=log_dir, autoexec=autoexec, executable=executable
-        ) as (procs, conns):
+        with BlenderServer.spawn(jobs=jobs, timeout=timeout, log=log, autoexec=autoexec, executable=executable) as (  # noqa: SIM117
+            procs,
+            conns,
+        ):
             with cls(*conns) as clients:
                 for client, p in zip(clients, procs):
                     client.process = p
@@ -1908,16 +2401,16 @@ class BlenderClients(tuple):
                 for client in clients:
                     client.process = None
 
-    @staticmethod
     @contextmanager
+    @staticmethod
     def pool(
         jobs: int = 1,
         timeout: float = -1.0,
-        log_dir: str | os.PathLike | None = None,
+        log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
         conns: list[tuple[str, int]] | None = None,
-    ) -> Iterator[multiprocess.Pool]:
+    ) -> Generator[multiprocess.Pool]:
         """Spawns a multiprocessing-like worker pool, each with their own :class:`BlenderClient` instance.
         The function supplied to pool.map/imap/starmap and their async variants will be automagically
         passed a client instance as their first argument that they can use for rendering.
@@ -1945,9 +2438,9 @@ class BlenderClients(tuple):
                 spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
                 this context manager will immediately yield, even if the server is not yet ready to accept
                 incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
-            log_dir (str | os.PathLike | None, optional): path to log directory,
-                stdout/err will be captured if set, otherwise outputs will go to os.devnull.
-                Defaults to None (devnull).
+            log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
+                descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
+                Defaults to subprocess.DEVNULL for both stdout/stderr.
             autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
                 For more, see blender's CLI documentation. Defaults to False.
             executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
@@ -1959,7 +2452,7 @@ class BlenderClients(tuple):
                 be ignored) instead of spawning new ones.
 
         Yields:
-            multiprocess.Pool: A ``multiprocess.Pool`` instance which has had it's applicator methods
+            Generator[multiprocess.Pool]: A ``multiprocess.Pool`` instance which has had it's applicator methods
                 (map/imap/starmap/etc) monkey-patched to inject a client instance as first argument.
         """
         # Note import here as this is a dependency only on the client-side
@@ -1991,26 +2484,25 @@ class BlenderClients(tuple):
             return inner
 
         context_manager = (
-            BlenderServer.spawn(jobs=jobs, timeout=timeout, log_dir=log_dir, autoexec=autoexec, executable=executable)
+            BlenderServer.spawn(jobs=jobs, timeout=timeout, log=log, autoexec=autoexec, executable=executable)
             if conns is None
             else nullcontext(enter_result=(None, conns))
         )
 
-        with multiprocess.Manager() as manager:
-            with context_manager as (_, conns):
-                q = manager.Queue()
+        with multiprocess.Manager() as manager, context_manager as (_, connections):
+            q = manager.Queue()
 
-                for conn in conns:
-                    q.put(conn)
+            for conn in connections:
+                q.put(conn)
 
-                with multiprocess.Pool(len(conns)) as pool:
-                    for name, method in inspect.getmembers(pool, predicate=inspect.ismethod):
-                        params = list(inspect.signature(method).parameters.keys())
+            with multiprocess.Pool(len(connections)) as pool:
+                for name, method in inspect.getmembers(pool, predicate=inspect.ismethod):
+                    params = list(inspect.signature(method).parameters.keys())
 
-                        # Get all map/starmap/apply/etc variants
-                        if not name.startswith("_") and next(iter(params), None) == "func":
-                            setattr(pool, name, modify_applicator(method, q))
-                    yield pool
+                    # Get all map/starmap/apply/etc variants
+                    if not name.startswith("_") and next(iter(params), None) == "func":
+                        setattr(pool, name, modify_applicator(method, q))
+                yield pool
 
     @require_connected_clients
     def common_animation_range(self) -> range:
@@ -2046,7 +2538,7 @@ class BlenderClients(tuple):
         allow_skips: bool = True,
         dry_run: bool = False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Render all requested frames by distributing workload across connected clients and return associated transforms dictionary.
 
         Warning:
@@ -2065,9 +2557,6 @@ class BlenderClients(tuple):
 
         Raises:
             RuntimeError: raised if trying to render frames beyond blender's limits.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
 
         # Set total number of steps, disable updates of total from child processes
@@ -2078,28 +2567,15 @@ class BlenderClients(tuple):
         if update_fn is not None:
             update_fn(total=len(frame_numbers))
 
-        # Equivalent to more-itertools' distribute
+        # Equivalent to more-itertools' distribute (round-robin)
         children = itertools.tee(frame_numbers, len(self))
         frame_chunks = [itertools.islice(it, index, None, len(self)) for index, it in enumerate(children)]
 
-        transforms_dicts = [
+        for client, frames in zip(self, frame_chunks):
             client.render_frames_async(frames, allow_skips=allow_skips, dry_run=dry_run, update_fn=ignore_total)
-            for client, frames in zip(self, frame_chunks)
-        ]
-        self.wait()
 
-        # Equivalent to more-itertools' interleave_longest
-        _marker = object()
-        frames = [
-            frame
-            for frame in itertools.chain.from_iterable(
-                itertools.zip_longest(*[t.value["frames"] for t in transforms_dicts], fillvalue=_marker)
-            )
-            if frame is not _marker
-        ]
-        transforms: dict[str, Any] = transforms_dicts.pop().value
-        transforms["frames"] = frames
-        return transforms
+        # Important: wait for all async renders to finish
+        self.wait()
 
     @require_connected_clients
     def render_animation(
@@ -2110,7 +2586,7 @@ class BlenderClients(tuple):
         allow_skips=True,
         dry_run=False,
         update_fn: UpdateFn | None = None,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Determines frame range to render, sets camera positions and orientations, and renders all frames in animation range by distributing
         workload onto all connected clients.
 
@@ -2129,9 +2605,6 @@ class BlenderClients(tuple):
 
         Raises:
             ValueError: raised if scene and camera are entirely static.
-
-        Returns:
-            dict[str, Any]: transforms dictionary containing paths to rendered frames, camera poses and intrinsics.
         """
         start, end, step = self.common_animation_range_tuple()
         frame_start = start if frame_start is None else frame_start
@@ -2139,7 +2612,7 @@ class BlenderClients(tuple):
         frame_step = step if frame_step is None else frame_step
         frame_range = range(frame_start, frame_end + 1, frame_step)
 
-        return self.render_frames(frame_range, allow_skips=allow_skips, dry_run=dry_run, update_fn=update_fn)
+        self.render_frames(frame_range, allow_skips=allow_skips, dry_run=dry_run, update_fn=update_fn)
 
     @require_connected_clients
     def save_file(self, path: str | os.PathLike) -> None:
@@ -2169,15 +2642,15 @@ class BlenderClients(tuple):
                 # the underlying connection to poll and serve any incoming events.
                 # Roughly equivalent to the following (but does not rely on private API):
                 #     awaitable._conn.serve(awaitable._ttl, waiting=awaitable._waiting)
-                awaitable.ready
+                _ = awaitable.ready
 
 
 if __name__ == "__main__":
-    if sys.version_info < (3, 9, 0):
-        raise RuntimeError("Please use newer blender version with a python version of at least 3.9.")
-
     if bpy is None:
         sys.exit()
+
+    if bpy.app.version < (3, 6, 0):
+        raise RuntimeError("Please use newer blender version, at least 3.6.")
 
     # Get script specific arguments
     try:

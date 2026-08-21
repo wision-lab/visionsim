@@ -9,17 +9,17 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+from typing import overload
 
 import tyro
 from natsort import natsorted
 from rich.logging import RichHandler
 from rich.traceback import install
-from typing_extensions import overload
 
 from . import blender, dataset, emulate, ffmpeg, interpolate, transforms
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=os.environ.get("VSIM_LOG_LEVEL", "INFO").upper(),
     format="%(message)s",
     datefmt="[%X]",
     handlers=[RichHandler(rich_tracebacks=True)],
@@ -84,15 +84,13 @@ def _validate_directories(
 def _run(
     command: list[str] | str,
     shell: bool = False,
-    echo: bool = False,
     log_path: str | os.PathLike | None = None,
     text: bool = True,
+    hide: bool = False,
     check: bool = False,
 ) -> subprocess.CompletedProcess:
     """Execute a command and return an object with the result and failure status."""
-
-    if echo:
-        _log.debug(f"Running command: {command}")
+    _log.debug(f"Running command: {command}")
 
     # shlex the command if we don't want to run in shell
     if not shell and isinstance(command, str):
@@ -104,42 +102,53 @@ def _run(
         log_out = Path(log_path).resolve() / "out.log"
         log_err = Path(log_path).resolve() / "err.log"
 
-        with open(str(log_out), "w") as f_out:
-            with open(str(log_err), "w") as f_err:
-                return subprocess.run(
-                    command,
-                    shell=shell,
-                    check=check,
-                    stdout=f_out,
-                    stderr=f_err,
-                    text=text,
-                )
+        with open(str(log_out), "w") as f_out, open(str(log_err), "w") as f_err:
+            return subprocess.run(
+                command,
+                shell=shell,
+                check=check,
+                stdout=f_out,
+                stderr=f_err,
+                text=text,
+            )
     else:
+        stdout = subprocess.PIPE if hide else None
+        stderr = subprocess.PIPE if hide else None
+
         return subprocess.run(
             command,
             shell=shell,
             check=check,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=stdout,
+            stderr=stderr,
             text=text,
         )
 
 
-def post_install(executable: str | os.PathLike | None = None, editable: bool = False):
+def post_install(
+    executable: str | os.PathLike | None = None,
+    editable: bool = False,
+    version: str | None = None,
+    path: str | None = None,
+):
     """Install additional dependencies
 
     Args:
         executable (str | os.PathLike | None, optional): Path to Blender executable. Defaults to one found on $PATH.
-        editable: (bool, optional): If set, install current visionsim as editable in blender. Only works if
+        editable (bool, optional): If set, install current visionsim as editable in blender. Only works if
             visionsim is already installed as editable locally.
+        version (str | None, optional): The version of visionsim to install. Setting this is akin to specifying the version
+            when pip installing. If set, a fresh copy from PyPI will be installed inside blender's runtime environment,
+            which might not match the currently installed version. Defaults to None (use currently installed version).
+        path (str | None, optional): The path to the visionsim source code to install, only used when --version is not set.
     """
     from visionsim.simulate import install_dependencies
 
-    if _run(f"{executable or 'blender'} --version", shell=True).returncode != 0:
+    if _run(f"{executable or 'blender'} --version", shell=True, hide=True).returncode != 0:
         raise RuntimeError(
             "No blender installation found on path! Please make sure it is discoverable, or specify executable."
         )
-    install_dependencies(executable, editable=editable)
+    install_dependencies(executable, editable=editable, version=version, path=path)
 
 
 def main():

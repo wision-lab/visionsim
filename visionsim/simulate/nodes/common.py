@@ -4,6 +4,7 @@ import bpy  # type: ignore
 
 MATH_NODE = "ShaderNodeMath" if bpy.app.version >= (5, 0, 0) else "CompositorNodeMath"
 MAPRANGE_NODE = "ShaderNodeMapRange" if bpy.app.version >= (5, 0, 0) else "CompositorNodeMapRange"
+MIX_NODE = "ShaderNodeMix" if bpy.app.version >= (5, 0, 0) else "CompositorNodeMixRGB"
 
 if bpy.app.version >= (5, 0, 0):
     SEPXYZ_NODE = "ShaderNodeSeparateXYZ"
@@ -20,11 +21,25 @@ def set_clamp(node, enable):
     # Can't just test for v5+ because some nodes still use `use_clamp`!!
     if hasattr(node, "clamp"):
         node.clamp = enable
-    else:
+    elif hasattr(node, "use_clamp"):
         node.use_clamp = enable
 
 
 def new_socket(nodegroup, *, name, in_out, socket_type, attribute_domain="POINT", subtype=None):
+    """
+    Create a new socket on a node group.
+
+    Args:
+        nodegroup: The node group to add the socket to.
+        name: The name of the socket.
+        in_out: The direction of the socket ("INPUT" or "OUTPUT").
+        socket_type: The type of the socket (e.g., "NodeSocketVector").
+        attribute_domain: The attribute domain of the socket (default: "POINT").
+        subtype: The subtype of the socket (default: None).
+
+    Returns:
+        The new socket.
+    """
     if bpy.app.version < (4, 0, 0):
         if in_out == "INPUT":
             socket = nodegroup.inputs.new(name=name, type=socket_type)

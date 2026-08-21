@@ -25,7 +25,6 @@ from rich.progress import track
 from rich.traceback import install
 
 from visionsim.cli import ffmpeg
-from visionsim.cli.blender import sequence_info
 from visionsim.simulate.blender import BlenderClients
 from visionsim.simulate.config import RenderConfig
 from visionsim.simulate.job import render_job
@@ -229,7 +228,7 @@ def create_datasets(
     with (
         BlenderClients.pool(
             jobs=render_config.jobs,
-            log_dir=Path(render_config.log_dir),
+            log=Path(render_config.log_dir),
             timeout=render_config.timeout,
             executable=render_config.executable,
             autoexec=render_config.autoexec,
@@ -245,25 +244,19 @@ def create_datasets(
                 pool.apply_async(
                     render_job,
                     args=(blend_file, sequence_dir),
-                    kwds=dict(
-                        frame_start=frame_start,
-                        frame_end=frame_start + num_frames,
-                        config=render_config,
-                        dry_run=dry_run,
-                        update_fn=tick,
-                    ),
+                    kwds={
+                        "frame_start": frame_start,
+                        "frame_end": frame_start + num_frames,
+                        "config": render_config,
+                        "dry_run": dry_run,
+                        "update_fn": tick,
+                    },
                 )
             else:
                 log.info(f"Skipping: {sequence_dir}")
         progress.wait()
         pool.close()
         pool.join()
-
-    # Gather some metadata about every sequence and save it to a "info.json" file.
-    with multiprocess.Pool(render_config.jobs) as pool:
-        info_fn = partial(sequence_info, keyframe_multiplier=render_config.keyframe_multiplier)
-        sequence_dirs = [get_sequence_dir(blend_file.stem, frame_start) for blend_file, frame_start in sequences]
-        list(pool.imap(info_fn, track(sequence_dirs, description="Gathering Metadata...")))
 
 
 @app.command
@@ -372,7 +365,7 @@ def purge_corrupted(datasets: str | os.PathLike, /, jobs: int | None = None, dry
     def validate_single(frame):
         try:
             iio.imread(frame)
-        except Exception:
+        except (ValueError, OSError):
             log.warning("Corrupted: %s", frame)
 
             if not dry_run:

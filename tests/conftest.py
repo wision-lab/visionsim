@@ -1,4 +1,6 @@
 import json
+import os
+import sys
 import warnings
 from importlib.metadata import Distribution
 from pathlib import Path
@@ -40,26 +42,30 @@ def executable(pytestconfig):
 
 
 @pytest.fixture(scope="session")
-def cube_dataset(tmp_path_factory, executable):
+def cube_dataset(tmp_path_factory, executable) -> Path:
     # Note: If this fails and you're using flatpak, it might be because
     #   the application doesn't have read/write access to /tmp!
     tmpdir = tmp_path_factory.mktemp("renders")
     log_dir = tmp_path_factory.mktemp("logs")
     scene = Path(__file__).parent / "test_files" / "scenes" / "cube.blend"
 
-    with BlenderClient.spawn(executable=executable, timeout=30, log_dir=log_dir) as client:
+    with BlenderClient.spawn(
+        executable=executable, timeout=30, log=sys.stdout if os.getenv("CI") == "true" else log_dir
+    ) as client:
         client.initialize(scene.resolve(), tmpdir.resolve())
         client.move_keyframes(scale=1 / 5)
         client.set_animation_range(10, 15)
         client.set_resolution(50, 50)
+        client.include_composites()
+        client.include_frames()
         client.include_depths()
         client.include_normals()
         client.include_flows()
         client.include_segmentations()
-        transforms = client.render_animation()
-
-        with open(tmpdir / "transforms.json", "w") as f:
-            json.dump(transforms, f, indent=2)
-
+        client.include_materials()
+        client.include_diffuse_pass()
+        client.include_specular_pass()
+        client.include_points()
+        client.render_animation()
         client.save_file(tmpdir / "cube_out.blend")
     return tmpdir

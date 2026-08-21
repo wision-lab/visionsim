@@ -6,7 +6,7 @@ Installation & Dependencies
 
 First, you'll need:
 
-* `Blender <https://www.blender.org/download/>`_ >= 3.3.1, to render new views. 
+* `Blender <https://www.blender.org/download/>`_ >= 3.6, to render new views. 
 * `FFmpeg <https://ffmpeg.org/download.html>`_, for visualizations. 
 
 
@@ -106,8 +106,6 @@ Next, we can emulate a single-photon camera using ``emulate.spad``, at the same 
 .. literalinclude:: ../../examples/quickstart.sh 
    :language: bash 
    :lines: 7
-
-Here, we pass in ``--mode=img`` to save individual binary frames as PNGs, this makes for easy visualization but requires a lot of disk space as single photon images are not well compressed by standard image formats. See :ref:`the-npy-format` for a better alternative. 
 
 Finally, let's emulate an event camera using ``emulate.events``, which responds to local changes in scene intensity:
 

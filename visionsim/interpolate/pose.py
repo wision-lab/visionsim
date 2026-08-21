@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from typing import Literal, cast
+
 import numpy as np
 import numpy.typing as npt
 from scipy.interpolate import make_interp_spline
 from scipy.spatial.transform import Rotation, RotationSpline
-from typing_extensions import Literal, cast
+
+from visionsim.types import Matrix4x4
 
 
 class pose_interp:
@@ -76,3 +79,22 @@ class pose_interp:
             transforms = np.concatenate([Rt, bottom], axis=1)
             return transforms.reshape(*t_shape, 4, 4)
         return np.stack([cast(np.ndarray, R), t], axis=0)
+
+
+def interpolate_poses(poses: list[Matrix4x4], normalize: bool = False, n: int = 2, k: int = 3) -> list[Matrix4x4]:
+    """Interpolate between pose matrices
+
+    Args:
+        poses (list[Matrix4x4]): List of pose matrices to interpolate between
+        normalize (bool): Whether the interpolation should be normalized or not
+        n (int): Number of poses to interpolate between existing poses
+        k (int): Order of spline interpolation, see :class:`pose_interp <visionsim.interpolate.pose.pose_interp>`
+
+    Returns:
+        list[Matrix4x4]: List of interpolated poses
+    """
+    indices = np.arange(len(poses))
+    interp_indices = np.linspace(0, len(poses) - 1, n * len(poses) - (n - 1))
+    pose_spline = pose_interp(poses, ts=indices, normalize=normalize, k=k)
+    interp_poses = pose_spline(interp_indices)
+    return interp_poses

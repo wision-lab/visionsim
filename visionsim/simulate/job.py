@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import json
 import os
-from pathlib import Path
+from dataclasses import asdict
 
 from visionsim.simulate.blender import BlenderClient, BlenderClients
 from visionsim.simulate.config import RenderConfig
@@ -13,21 +12,21 @@ def render_job(
     client: BlenderClient | BlenderClients,
     blend_file: str | os.PathLike,
     root: str | os.PathLike,
+    config: RenderConfig,
     *,
-    config: RenderConfig = RenderConfig(),
     frame_start: int | None = None,
     frame_end: int | None = None,
     frame_step: int | None = None,
     output_blend_file: str | os.PathLike | None = None,
     dry_run: bool = False,
     update_fn: UpdateFn | None = None,
-):
+) -> None:
     """Render a sequence from a given blender-file.
 
     Args:
         client (BlenderClient | BlenderClients): The blender client(s) which will be used for rendering.
-            These should already be connected to a `BlenderServer`, and will get automagically passed
-            in when using this function with `BlenderClients.pool` or similar.
+            These should already be connected to a ``BlenderServer``, and will get automagically passed
+            in when using this function with ``BlenderClients.pool`` or similar.
         blend_file (str | os.PathLike): Path to blender file to use.
         root (str | os.PathLike): Location at which to save all outputs.
         config (RenderConfig): Render configuration.
@@ -41,13 +40,12 @@ def render_job(
             this path. Helpful for troubleshooting. Defaults to not saving.
         dry_run (bool, optional): If enabled, do not render any frames or ground truth annotations.
         update_fn (UpdateFn | None, optional): callback function to track render progress.
-            Will first be called with `total` kwarg, indicating number of steps to be taken,
-            then will be called with `advance=1` at every step. Closely mirrors the `rich.Progress
+            Will first be called with ``total`` kwarg, indicating number of steps to be taken,
+            then will be called with ``advance=1`` at every step. Closely mirrors the `rich.Progress
             API <https://rich.readthedocs.io/en/stable/reference/progress.html#rich.progress.Progress.update>`_.
     """
     client.initialize(blend_file, root)
-    client.set_resolution(height=config.height, width=config.width)
-    client.image_settings(file_format=config.file_format, bit_depth=config.bit_depth)
+    client.set_resolution(height=config.height, width=config.width, resolution_percentage=config.resolution_percentage)
     client.use_animations(config.use_animations)
     client.load_addons(*(config.addons or []))
 
@@ -59,26 +57,45 @@ def render_job(
         use_cpu=True,
     )
 
-    if config.depths:
-        client.include_depths(debug=config.debug, exr_codec=config.exr_codec)
-    if config.normals:
-        client.include_normals(debug=config.debug, exr_codec=config.exr_codec)
-    if config.flows:
-        client.include_flows(debug=config.debug, direction=config.flow_direction, exr_codec=config.exr_codec)
-    if config.segmentations:
-        client.include_segmentations(debug=config.debug, exr_codec=config.exr_codec)
+    if config.include_composites:
+        client.include_composites(**asdict(config.composites))
+    if config.include_frames:
+        client.include_frames(**asdict(config.frames))
+    if config.include_depths:
+        client.include_depths(**asdict(config.depths))
+    if config.include_normals:
+        client.include_normals(**asdict(config.normals))
+    if config.include_flows:
+        client.include_flows(**asdict(config.flows))
+    if config.include_segmentations:
+        client.include_segmentations(**asdict(config.segmentations))
+    if config.include_materials:
+        client.include_materials(**asdict(config.materials))
+    if config.include_diffuse_pass:
+        client.include_diffuse_pass(**asdict(config.diffuse_pass))
+    if config.include_specular_pass:
+        client.include_specular_pass(**asdict(config.specular_pass))
+    if config.include_points:
+        client.include_points(**asdict(config.points))
 
     if config.unbind_camera:
         client.unbind_camera()
     if config.use_motion_blur is not None:
         client.use_motion_blur(config.use_motion_blur)
-
+    if config.camera_offset is not None:
+        for frame_number in client.common_animation_range():
+            client.set_current_frame(frame_number)
+            client.set_camera_keyframe(frame_number)
+        for frame_number in client.common_animation_range():
+            client.set_current_frame(frame_number)
+            client.offset_camera(config.camera_offset)
+            client.set_camera_keyframe(frame_number)
     client.move_keyframes(scale=config.keyframe_multiplier)
 
     if output_blend_file is not None:
         client.save_file(output_blend_file)
 
-    transforms = client.render_animation(
+    client.render_animation(
         frame_start=frame_start,
         frame_end=frame_end,
         frame_step=frame_step,
@@ -86,6 +103,3 @@ def render_job(
         dry_run=dry_run,
         update_fn=update_fn,
     )
-
-    with open(Path(root) / "transforms.json", "w") as f:
-        json.dump(transforms, f, indent=2)

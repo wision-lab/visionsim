@@ -9,4 +9,37 @@ VisionSIM is a modular and extensible framework for distributed simulations with
    :width: 75%
    :align: center
 
-.. include:: contents.rst
+
+.. toctree::
+   :hidden:
+   :caption: Getting Started
+
+   quick-start
+   overview
+   installation 
+
+.. toctree::
+   :hidden:
+   :caption: Sections
+
+   sections/simulation
+   sections/interpolation
+   sections/emulation 
+   sections/datasets
+
+.. toctree::
+   :hidden:
+   :caption: Tutorials & Use Cases
+
+   tutorials/extending 
+   tutorials/hdr
+   tutorials/stereo
+   tutorials/large-dataset
+
+.. toctree::
+   :hidden:
+   :caption: For Developers
+
+   API Documentation <apidocs/visionsim>
+   CLI Usage <apidocs/visionsim.cli>
+   development

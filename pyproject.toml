@@ -20,7 +20,6 @@ classifiers = [
     "Operating System :: OS Independent"
 ]
 dependencies = [
-    "opencv-python",
     "imageio",
     "more_itertools",
     "numpy",
@@ -30,14 +29,15 @@ dependencies = [
     "invoke",
     "natsort",
     "rich",
-    "jsonschema",
-    "torchvision",
     "OpenEXR",
     "multiprocess",
     "rpyc",
     "fastdigest",
     "tyro",
     "ephemeral-port-reserve",
+    "peewee",
+    "pydantic",
+    "typing-extensions",
 ]
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
@@ -59,7 +59,6 @@ exclude = ["visionsim/interpolate/rife/*"]
 [tool.mypy]
 exclude = [
     "visionsim/interpolate/rife/*",
-    "visionsim/emulate/dvs/*"
 ]
 follow_imports="skip"
 
@@ -76,6 +75,8 @@ dev = [
     "types-jsonschema",
     'scipy-stubs; python_version >= "3.10"',
     "psutil",
+    "types-peewee",
+    "syrupy>=4.9.1",
 ]
 docs = [
     "invoke",
@@ -83,6 +84,7 @@ docs = [
     "sphinx",
     "sphinxcontrib-programoutput>=0.18",
     "click_extra[sphinx,pygments]",
+    "myst-parser",  # Should not be needed, but click_extra throws an error if it's not installed
     "sphinx-copybutton",
     "sphinxcontrib-video",
     "sphinxcontrib-napoleon",

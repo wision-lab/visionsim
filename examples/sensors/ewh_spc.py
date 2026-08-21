@@ -1,10 +1,10 @@
 from pathlib import Path
 
 import cv2
-import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from matplotlib import gridspec
 from scipy.constants import c
 from SPCSim.data_loaders.transient_loaders import TransientGenerator
 from SPCSim.postproc.ewh_postproc import PostProcEWH
@@ -108,7 +108,7 @@ ax3.axis("off")
 ax_line = fig.add_subplot(gs[1, :])
 transient = phi_bar[row, col] * N_pulses * (alpha_bkg + alpha_sig)
 
-ax3.set_title("Depth from %d-bin EWH" % N_bins)
+ax3.set_title(f"Depth from {N_bins}-bin EWH")
 ax_line.set_title("Equi-width histogram (EWH)")
 ewh_bins_axis = torch.linspace(0, N_tbins - N_tbins // N_bins, N_bins)
 plot_transient(
