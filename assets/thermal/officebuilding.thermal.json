@@ -1,0 +1,624 @@
+{
+  "schema_version": 1,
+  "scene": "officebuilding.blend",
+  "generated_by": "drafted with model assistance from a dump of the scene's materials (node graphs, slot areas, emission), then reviewed and corrected against the blend",
+  "defaults": {},
+  "materials": {
+    "CAR PAINT": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Node group 'UBER CAR PAINT 072616' = car body paint (painted steel/aluminium panel); unused material slot (0 objects in this scene), so name/group is the only evidence."
+    },
+    "CAR PAINT.001": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Same 'UBER CAR PAINT' shader, applied to 25 objects (Circle*, Cube.003/.012/...); car paint = painted sheet metal, closest preset is metal_painted."
+    },
+    "CAR PAINT.002": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Same UBER CAR PAINT family, used on Cylinder.026."
+    },
+    "CAR PAINT.003": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Same UBER CAR PAINT family, used on Cylinder."
+    },
+    "CARBON FIBER": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.3,
+      "reason": "Node group 'carbon fiber'; unused (0 objects). No carbon-fibre-composite preset exists; approximated as generic rigid plastic (pvc) since the resin matrix dominates surface thermal response. Low confidence: real carbon-fibre laminate diffusivity is not well represented by any preset in the library."
+    },
+    "CLOTH": {
+      "preset": "fabric",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Node group named 'CLOTH' (Diffuse+Velvet+Translucent mix, a cloth-sheen shader); unused (0 objects), but the name and shader construction directly indicate fabric."
+    },
+    "CONCRETE": {
+      "preset": "concrete",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.8,
+      "reason": "Node group named 'CON CRETE'; unused (0 objects) but the explicit name matches the concrete preset directly."
+    },
+    "Cracked Glow FX": {
+      "preset": null,
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.1,
+      "reason": "Node group 'Cracked Glow' - a decorative crack/glow FX shader (Voronoi cracks + emission), not applied to any object in this scene (0 objects). No physical surface material maps to a stylised FX shader, so left null rather than guessing."
+    },
+    "DOOR 1": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.55,
+      "reason": "Textures DOOR.jpg/DOOR_NRM.jpg/DOOR_OCC.jpg/DOOR_SPEC.jpg give no colour/species info; generic interior doors in an office building are most commonly solid/veneered wood, so wood is the best-supported guess. Moderate confidence only."
+    },
+    "DOOR 2.001": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.55,
+      "reason": "Textures 'DOUBLE DOOR.jpg' family (used on Cube.010); same reasoning as DOOR 1 - generic interior double door, assumed wood."
+    },
+    "FELT": {
+      "preset": "fabric",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Node group named 'FELT' (BMD_FeltShader: diffuse+glossy fabric-style mix); unused (0 objects). No dedicated felt preset exists; fabric is the closest available material."
+    },
+    "FUSE BOX.001": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.45,
+      "reason": "Used on 3 Plane objects (electrical panel faces); no image texture, only a generic PBR2_TEXTURE node group instance. Fuse/breaker boxes are conventionally painted sheet-steel enclosures, so metal_painted is the best guess given the name; low-moderate confidence since there is no texture/colour evidence."
+    },
+    "Fencing_Diamond_Mesh.001": {
+      "preset": "aluminium",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.4,
+      "reason": "Diamond-mesh grille texture 'Fencing_Diamond_Mesh.png.001' on the JBL_Twin speaker prop's grille; a diamond-pattern perforated speaker grille is typically thin metal mesh. Ambiguous versus a fabric acoustic mesh, so only moderate confidence."
+    },
+    "GALVANIZED METAL": {
+      "preset": "steel",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.55,
+      "reason": "Node group named 'galvanized metal'; unused (0 objects). No galvanised-specific preset exists (the zinc coating is thin and doesn't change the bulk thermal mass much); bare steel is the closest preset."
+    },
+    "GLASS": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Node group 'Glass - Advanced' (Glass BSDF + Transparent BSDF mix); unused (0 objects) but the name and shader are unambiguous."
+    },
+    "GLASS 2": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Used on Cube.015/Cube.046; named GLASS, no further texture evidence needed."
+    },
+    "GLASS 2.001": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Used on Plane.028; same GLASS family."
+    },
+    "GLASS.001": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Used on Cube.004; same GLASS family."
+    },
+    "GLASS.002": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Used on Cube.021; same GLASS family."
+    },
+    "Hologram FX": {
+      "preset": null,
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.1,
+      "reason": "Node group 'Hologram FX 072916' - a stylised holographic-display FX shader (fresnel + wireframe + volume-absorption + emission); unused (0 objects) and has no physical-surface analogue in the preset library, so left null."
+    },
+    "LED": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Node group named 'LED' contains an Emission node (strength 1.7, green) mixed with Glossy/Toon BSDFs - a small indicator-LED lens. LED lenses/encapsulant are typically moulded plastic; unused (0 objects) in this scene."
+    },
+    "LED.001": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Same 'LED' shader, used on Circle.017 (a small indicator light)."
+    },
+    "LIGHT GLOW": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Node group 'LIGHT BULB GLOW' (Glass BSDF mixed with a strong warm-orange Emission, strength 18.4) - a light-bulb glass envelope; unused (0 objects)."
+    },
+    "LIGHT GLOW.001": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Same LIGHT BULB GLOW shader, used on 3 Cylinder objects (lamp/bulb geometry) alongside a matching 'PBR - GLASS.001' shade material on the same objects."
+    },
+    "LIGHT GLOW.002": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Same LIGHT BULB GLOW shader, used on Cylinder.015/.021."
+    },
+    "LIGHT GLOW.003": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Same LIGHT BULB GLOW shader, used on Cylinder.017/.022."
+    },
+    "LIGHT GLOW.004": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Same LIGHT BULB GLOW shader, used on 3 Cylinder objects."
+    },
+    "LIGHT GLOW.005": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Same LIGHT BULB GLOW shader, used on Cylinder.018."
+    },
+    "Leather": {
+      "preset": "leather",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Node group named 'LEATHER'; unused (0 objects) but the explicit name matches the leather preset directly."
+    },
+    "MARBLE TEXTURE": {
+      "preset": "marble",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Node group 'marbled floor PBR.001'; used on 8 objects (Circle.015/.016, Cube.006/.042/.044/...) - a marble/stone floor or counter finish, matching the marble preset."
+    },
+    "MARBLE TEXTURE.001": {
+      "preset": "marble",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Same marbled-floor shader family, used on Cube.005."
+    },
+    "MARBLE TEXTURE.002": {
+      "preset": "marble",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Same marbled-floor shader family, used on Plane.004/.005/.006."
+    },
+    "MARBLED FLOOR_PBR": {
+      "preset": "marble",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Node group 'marbled floor PBR'; unused (0 objects) but the explicit name matches marble."
+    },
+    "MOSS STONE": {
+      "preset": "marble",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.4,
+      "reason": "Node group named 'MOSS STONE'; unused (0 objects). No moss/weathered-stone preset exists; approximated with the marble/granite/engineered-stone preset as the closest natural-stone analogue. Low confidence given the vegetation (moss) layer isn't represented at all."
+    },
+    "M_0130_Gainsboro.001": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Used on the JBL_Twin speaker prop; Principled BSDF base_color = light grey (0.86, 'Gainsboro'), metallic=0.0, roughness=0.5 - a painted/moulded plastic housing colour option, not bare metal."
+    },
+    "Material.001": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.3,
+      "reason": "Generic default Blender material name on Cylinder.014 (a small trim/cap on a multi-slot object that also carries PBR GOLD.002). Only evidence is a black Diffuse BSDF colour; guessed as a plain black plastic accent. Low confidence - name gives no information."
+    },
+    "Material.002": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.3,
+      "reason": "Same generic default-named material pattern (black Diffuse BSDF, no texture), used on Cylinder.003. Low confidence for the same reason as Material.001."
+    },
+    "Material1.001": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Used on the JBL_Twin speaker prop; texture 'TXT_boitier_black.jpg.001' ('boitier' = French for housing/case, black) - the speaker's plastic outer case."
+    },
+    "PBR - BASIC": {
+      "preset": null,
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.15,
+      "reason": "Node group 'PBR2_TEXTURE' - a generic, uninstantiated PBR template with no assigned colour/image and 0 objects using it. No evidence to assign a specific preset."
+    },
+    "PBR - GLASS": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Node group named 'PBR - GLASS' (Fresnel + Glass/Refraction BSDF mix); unused (0 objects) but the explicit name matches the glass preset."
+    },
+    "PBR - GLASS.001": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Same PBR - GLASS shader; used on 6 objects (Cube.026/.027/.028, Cylinder.016/.019/.020) - paired with 'LIGHT GLOW.001' bulb-glow material on the same lamp objects, i.e. this is the glass shade around the glowing bulb."
+    },
+    "PBR - GLASS.002": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Same PBR - GLASS shader, paired with LIGHT GLOW.002 on Cylinder.015/.021 (lamp shade)."
+    },
+    "PBR - GLASS.003": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Same PBR - GLASS shader, paired with LIGHT GLOW.003 on Cylinder.017/.022 (lamp shade)."
+    },
+    "PBR - GLASS.004": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Same PBR - GLASS shader, paired with LIGHT GLOW.005 on Cylinder.018 (lamp shade)."
+    },
+    "PBR - METAL": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.4,
+      "reason": "Node group 'PBR METAL' - a generic procedural metal template (colour-ramp + noise, no specific finish specified); unused (0 objects). Ambiguous coated/generic metal, so metal_painted per the guidance for ambiguous metals."
+    },
+    "PBR - TEXTURE": {
+      "preset": null,
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.15,
+      "reason": "Node groups 'PBR2_TEXTURE'/'PBR2_TEXTURE INPUT' with no image assigned and 0 objects using it - the un-instantiated base template of the PBR - TEXTURE.* family. No evidence to assign a preset."
+    },
+    "PBR - TEXTURE.001": {
+      "preset": "drywall",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Images 'wall texture.jpg'/'_NRM'/'_OCC'/'_SPEC', used on 9 objects (Cube.008/.014/.018/...) - a generic painted interior wall surface; drywall is the commonest office wall/partition material."
+    },
+    "PBR - TEXTURE.002": {
+      "preset": "drywall",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Same 'wall texture' image family, used on Cube - generic interior wall surface."
+    },
+    "PBR 2": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.55,
+      "reason": "Images 'GARAGE DOOR.jpg' family, used on Cube.001/Cube.032 - a sectional/roll-up garage door, conventionally painted steel or aluminium panel; metal_painted covers the painted-steel case."
+    },
+    "PBR GOLD": {
+      "preset": "aluminium_polished",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.35,
+      "reason": "Node group 'Gold' (+ 'metal rough normal'); unused (0 objects). No gold preset exists in the library; approximated with aluminium_polished as the closest low-emissivity, reflective decorative-metal-trim preset. Low confidence - composition is not aluminium."
+    },
+    "PBR GOLD.001": {
+      "preset": "aluminium_polished",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.35,
+      "reason": "Same PBR GOLD shader, used on Cube.039 (small decorative trim/hardware accent)."
+    },
+    "PBR GOLD.002": {
+      "preset": "aluminium_polished",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.35,
+      "reason": "Same PBR GOLD shader, used on Cylinder.014."
+    },
+    "PBR GOLD.003": {
+      "preset": "aluminium_polished",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.35,
+      "reason": "Same PBR GOLD shader, used on Cylinder.001."
+    },
+    "PBR GOLD.004": {
+      "preset": "aluminium_polished",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.35,
+      "reason": "Same PBR GOLD shader, used on 3 Cylinder objects (.031/.032/.033)."
+    },
+    "PBR TITANIUM": {
+      "preset": "stainless_steel",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.45,
+      "reason": "Node group 'Titanium' (+ 'metal rough normal'); unused (0 objects). No titanium preset exists; stainless_steel is the closest available low-conductivity structural/trim metal."
+    },
+    "PBR TITANIUM.001": {
+      "preset": "stainless_steel",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Same Titanium shader, used on 7 objects (Cube.002/.007/.025, Cylinder.002, Plane, ...) with a generic 'metal_NRM.jpg' normal map confirming bare/brushed metal trim."
+    },
+    "PBR TITANIUM.002": {
+      "preset": "stainless_steel",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Same Titanium shader family, used on Cube.041/.043 (metal_NRM.jpg.003 normal map)."
+    },
+    "PBR TITANIUM.003": {
+      "preset": "stainless_steel",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Same Titanium shader family, used on Cube.022."
+    },
+    "PBR TITANIUM.004": {
+      "preset": "stainless_steel",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Same Titanium shader family, used on Cube.034."
+    },
+    "PBR TITANIUM.005": {
+      "preset": "stainless_steel",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Same Titanium shader family, used on Cube.035/.037/.038."
+    },
+    "PBR TITANIUM.006": {
+      "preset": "stainless_steel",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Same Titanium shader family, used on Cube.040 (metal_NRM.jpg.001)."
+    },
+    "PBR TITANIUM.007": {
+      "preset": "stainless_steel",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Same Titanium shader family, used on Plane.001/.002/.003 (metal_NRM.jpg.002)."
+    },
+    "PICTURE": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Image texture 'NEW YORK.jpg' on Plane.007 - a framed printed photo; paper is the closest preset for a printed picture/poster."
+    },
+    "PICTURE 2": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Image texture 'NEW YORK 2.jpg' on Plane.010 - same framed-photo reasoning as PICTURE."
+    },
+    "PLASTIC_SMOOTH": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Node group 'PBR2_TEXTURE'; unused (0 objects) but the explicit name 'PLASTIC_SMOOTH' matches the generic pvc/plastic preset."
+    },
+    "PLASTIC_SMOOTH.001": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Same PLASTIC_SMOOTH family, used on Circle.014, Cylinder.050/.055."
+    },
+    "PLASTIC_SMOOTH.002": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Same PLASTIC_SMOOTH family, used on the JBL_Twin speaker prop."
+    },
+    "Plastic: Black": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Used on Tube04; Principled BSDF base_color near-black (0.047), metallic=0.0, roughness=0.5 - explicit name and values both confirm a non-metallic black plastic part."
+    },
+    "RUBBER": {
+      "preset": "rubber",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.8,
+      "reason": "Node group named 'RUBBER'; unused (0 objects) but the explicit name matches the rubber preset directly."
+    },
+    "RUBBER TIRE TEXTURE": {
+      "preset": "rubber",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Node group 'TIRE' (noise + normal map + mix shader); unused (0 objects); a tire tread is rubber."
+    },
+    "Satin": {
+      "preset": "fabric",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.4,
+      "reason": "Node group 'BMD_SatinShader' (Glossy+Translucent BSDF mix, no diffuse-only term); unused (0 objects). The translucency suggests satin fabric rather than a satin metal finish, but the name is genuinely ambiguous between the two, hence low confidence."
+    },
+    "TINTED WINDOW": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Glass BSDF + Transparent BSDF mix, explicitly named 'TINTED WINDOW'; unused (0 objects) but name and shader are unambiguous glass."
+    },
+    "WOOD": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Node group named 'WOOD'; unused (0 objects) but the explicit name matches the wood preset directly."
+    },
+    "_0136_Charcoal_1.001": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.4,
+      "reason": "JBL_Twin speaker prop colour swatch; Diffuse BSDF colour 0.137 (charcoal grey) mixed with a small Glossy term - matches the sibling swatches' painted-plastic-housing pattern (clearcoat-style finish over plastic, not bare metal)."
+    },
+    "_0137_Black_1.001": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "JBL_Twin speaker prop colour swatch; Principled BSDF base_color=black, metallic=0.0, roughness=0.5 - confirmed non-metallic plastic housing colour."
+    },
+    "_25DimGray.001": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.45,
+      "reason": "JBL_Twin speaker prop colour swatch; Principled BSDF base_color=dim grey (0.41), metallic=0.0 - plastic housing colour option, matching sibling swatches."
+    },
+    "_Black_.001": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.4,
+      "reason": "JBL_Twin speaker prop colour swatch; Diffuse+Glossy mix, colour=black - same painted-plastic pattern as the other named colour swatches on this prop."
+    },
+    "_Charcoal_.001": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.4,
+      "reason": "JBL_Twin speaker prop colour swatch; Diffuse+Glossy mix, colour=0.137 (charcoal) - same painted-plastic pattern as sibling swatches."
+    },
+    "_DarkGoldenrod_.001": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.4,
+      "reason": "JBL_Twin speaker prop colour swatch; Principled BSDF base_color=goldenrod (0.72,0.53,0.04), metallic=0.0 - despite the 'gold' colour name, metallic is explicitly 0, i.e. a painted plastic housing colour, not real metal."
+    },
+    "_Silver_.001": {
+      "preset": "aluminium",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.35,
+      "reason": "JBL_Twin speaker prop colour swatch; only evidence is a light-grey (0.75) legacy diffuse colour with no Principled/metallic value captured. Genuinely ambiguous between a painted-plastic 'silver' colour option (like its siblings) and real metal trim; picked aluminium for the metallic name but confidence is low."
+    },
+    "jbl_logo.001": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.55,
+      "reason": "Logo decal texture 'jbl_logo.jpg.001' on the JBL_Twin speaker's plastic housing."
+    },
+    "jbl_logo1_.001": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.55,
+      "reason": "Logo decal texture 'jbl_logo1_.jpg.001' on the JBL_Twin speaker's plastic housing."
+    },
+    "light 1": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Plain Emission node (strength 3.0, grey 0.8), used on 8 objects (Cube.007/.009/.013/..., Cylinder.052) - a lit ceiling-fixture/diffuser panel. No other node evidence exists; glass is a reasonable guess for a diffuser/bulb envelope; role is forced FEM_PARTICIPANT with no Dirichlet pin per the standing no-pinned-sources instruction."
+    },
+    "light 1.001": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Same plain-Emission fixture shader, used on Cube.041/.043."
+    },
+    "light 2": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Same plain-Emission fixture shader but stronger (strength 10.0), used on Cube.045 - likely a brighter fixture/spotlight face."
+    },
+    "light switch.001": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Images 'LIGHT SWITCH.jpg'/'LIGHT SWITCH_NRM.jpg', used on 5 LIGHT SWITCH objects - wall switch plates are conventionally moulded plastic."
+    },
+    "socket.001": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Images 'SOCKET.jpg'/'SOCKET_NRM.jpg', used on 11 SOCKET objects - electrical outlet plates are conventionally moulded plastic."
+    },
+    "white cement": {
+      "preset": "concrete",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Used on Cube.011 with image 'wall texture.jpg'; name 'white cement' names a cement-based finish directly, closest preset is concrete."
+    }
+  }
+}

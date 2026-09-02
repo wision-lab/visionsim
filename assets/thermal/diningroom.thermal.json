@@ -1,0 +1,330 @@
+{
+  "schema_version": 1,
+  "scene": "diningroom.blend",
+  "generated_by": "drafted with model assistance from a dump of the scene's materials (node graphs, slot areas, emission), then reviewed and corrected against the blend",
+  "defaults": {},
+  "materials": {
+    "BOLA DECORACION": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.45,
+      "reason": "Spanish 'bola decoracion' = decoration ball(s); shader is a 'PBR-Metallic' node group (pure Glossy BSDF, no diffuse term) with a neutral grey base color (~0.30,0.32,0.32); the 3 small orbs sit on the wood shelf (ESTANTERIA) next to 'ceramica negra'. Ambiguous whether raw or coated metal, so following the guidance to prefer metal_painted for ambiguous coated metal."
+    },
+    "BookCover": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "No image texture (generic 0.8-grey Diffuse+Glossy); shares the 'BezierCurve' open-book prop with BookEdge/BookInlet/Page/Page2/Stripy Edge. A book's outer cover is card/paper stock."
+    },
+    "BookCover_Colors": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Texture 'book_cover_colors.jpg' is a printed book-cover image on a Diffuse+Glossy 'coated card' shader."
+    },
+    "BookCover_Cycles": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Texture 'introduction to cycles.jpg' is a printed book-cover image (a Blender/Cycles manual)."
+    },
+    "BookCover_Interior": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Texture 'book_cover_interior.jpg' - the book's inside-cover artwork."
+    },
+    "BookEdge": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Texture 'Book Edge4.jpg' is a photographed page-edge texture; explicit book part, Diffuse-only shader."
+    },
+    "BookInlet": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.55,
+      "reason": "No texture, flat dark-green Diffuse color; likely the book's endpaper/inside-cover lining. Paper is the closest preset though it could instead be a ribbon; noting the uncertainty."
+    },
+    "cantos": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Spanish 'cantos' = edges; Cube.007 is a 5m x 1.5cm x 5cm strip at floor level (skirting/edge trim), textured with the same WoodFlooring08_* maps as 'parked. suelo' (the floor)."
+    },
+    "carton": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.8,
+      "reason": "Spanish 'carton' = cardboard; used by 216 small (~6x6x5cm) Plane objects stacked in a tall multi-row grid at x=-2.59 - a bookshelf full of book spines. Cardboard/cardstock book covers map to the 'paper' preset (closest available; no dedicated cardboard entry)."
+    },
+    "carton 2": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.45,
+      "reason": "Same 'carton'=cardboard name and dark-brown diffuse as 'carton', but geometry is six very thin (4mm diameter, 2.36m tall) cylinders interspersed among the carton bookshelf rows - the shape doesn't look like cardboard sheeting (possibly shelf-support dowels or a modelling leftover). Kept the name-implied preset but lowered confidence for the shape mismatch."
+    },
+    "ceramica": {
+      "preset": "ceramic",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Spanish 'ceramica' = ceramic; 'PBR-Dielectric' shader with a light warm-gray color; the 'Circle' object (~30cm diameter, 40cm tall) sits at table height like a tabletop vase/bowl centerpiece."
+    },
+    "ceramica negra": {
+      "preset": "ceramic",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Spanish 'ceramica negra' = black ceramic; 'PBR-Dielectric' shader with a near-black color; small pot (~20cm) on the shelf next to the decoration balls."
+    },
+    "chrome": {
+      "preset": "aluminium_polished",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Explicit name 'chrome'; a pure mirror Glossy BSDF (roughness 0.0). The 4 Cylinder objects are parented to the chair-seat discs in the 'silla' collection - the chrome pedestal/leg of the dining chairs."
+    },
+    "CRISTAL": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Spanish 'cristal' = glass; explicit 'PBR-Glass' node group (Transparent + Refraction BSDF, IOR 2.0). Cube.010 is a large (1.71m x 2.69m x 2.7cm) flat pane co-located with the 'metal 2' frame members - a window pane."
+    },
+    "decoration_twig_wood": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Explicit name says wood; dark-brown Diffuse/Glossy shader on a branching hierarchy of 'decoration_twig_branch' objects - a decorative dry-twig arrangement typical of a dining-table centerpiece."
+    },
+    "ESTANTERIA": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Spanish 'estanteria' = shelving; Cube.001 is a 1.72m x 13cm x 7cm plank with an amber/honey diffuse tint (0.83,0.78,0.36) under a clear-coat (Refraction IOR 1.45 + Glossy reflection), the varnished-wood shader pattern used elsewhere in this asset pack. The decoration balls sit on it."
+    },
+    "LibroMat_02": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book (Spanish/Italian); texture 'UVlibro_o2.jpg' is a printed book-cover UV image."
+    },
+    "LibroMat_Aldila": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book; texture 'UVlibroAldiLa.jpg' is a printed book-cover UV image."
+    },
+    "LibroMat_cripta": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book; texture 'UVlibro_Cripta.jpg' is a printed book-cover UV image."
+    },
+    "LibroMat_desideri": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book; texture 'UVlibro_desideri.jpg' is a printed book-cover UV image."
+    },
+    "LibroMat_duenon": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book; texture 'UVlibro_Duenon.jpg' is a printed book-cover UV image."
+    },
+    "LibroMat_EV": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book; texture 'UVlibro_EV.jpg' is a printed book-cover UV image."
+    },
+    "LibroMat_Fate": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book; texture 'UVlibro_FATE.jpg' is a printed book-cover UV image; simple Diffuse-only shader (matte paperback)."
+    },
+    "LibroMat_Gostanza": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book; texture 'UVlibro_Gostanza.jpg' is a printed book-cover UV image; simple Diffuse-only shader (matte paperback)."
+    },
+    "LibroMat_i4k": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book; texture 'UVlibro_i4k.jpg' is a printed book-cover UV image."
+    },
+    "LibroMat_Izu": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book; texture 'UVlibro_Izu.jpg' is a printed book-cover UV image."
+    },
+    "LibroMat_laico": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book; reuses texture 'UVlibro_o2.jpg' - another book sharing the same cover art."
+    },
+    "LibroMat_Marne": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book; texture 'UVlibro_marne.jpg' is a printed book-cover UV image."
+    },
+    "LibroMat_paginestrappate": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book, 'paginestrappate' = torn pages; texture 'UVlibro_paginestrappate.jpg' confirms a worn-paper book cover."
+    },
+    "LibroMat_poihosmesso": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book; texture 'UVlibro_Poihosmesso.jpg' is a printed book-cover UV image."
+    },
+    "LibroMat_rumore": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book; texture 'UVlibro_Rumore.jpg' is a printed book-cover UV image."
+    },
+    "LibroMat_Sogni": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book; texture 'UVlibro_sogni.jpg' is a printed book-cover UV image."
+    },
+    "LibroMat_Uova": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "'Libro' = book; texture 'UVlibro_uova.jpg' is a printed book-cover UV image."
+    },
+    "Material.001": {
+      "preset": null,
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.2,
+      "reason": "Generic default Blender name, no image texture. Shares the 'PBR-Dielectric' node-group family used elsewhere for ceramica/walls (near-black, smooth, roughness 0.05) but carries no name or texture evidence to pin down a specific material; two identical ~65cm low-poly cubes of unclear function (Cube.002/Cube.011). Left unassigned rather than guessed."
+    },
+    "metal": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.55,
+      "reason": "Explicit name 'metal'; anisotropic + glossy layered reflectance (brushed-metal look), neutral gray tint. Cube.003/Cube.004 are co-located with 'PINTURA' (the framed-picture canvas) - the picture's metal frame. Ambiguous coated-vs-bare metal, so using metal_painted per guidance."
+    },
+    "metal 2": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.55,
+      "reason": "Same shader family as 'metal'. Cube.008/Cube.009 are 1.72m x 13cm x 75cm bars co-located with the 'CRISTAL' glass pane - a window's metal frame. Ambiguous coated-vs-bare metal, so using metal_painted per guidance."
+    },
+    "Page": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Texture 'page1.png', explicit open book-page material on the 'BezierCurve' book prop."
+    },
+    "Page2": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Texture 'page2.png', explicit open book-page material on the 'BezierCurve' book prop."
+    },
+    "PARED blanca": {
+      "preset": "plaster",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.8,
+      "reason": "Spanish 'pared blanca' = white wall; 'PBR-Dielectric' shader with a light near-white color (~0.84 gray). One of the room-shell object Cube.012's wall material slots."
+    },
+    "PARED VERDE": {
+      "preset": "plaster",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Spanish 'pared verde' = green wall; 'PBR-Dielectric' shader with a dark green tint. Same room-shell object (Cube.012) as 'PARED blanca', likely a painted wainscot/accent-wall band."
+    },
+    "parked. suelo": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Spanish '(pared.) suelo' = floor; uses the same WoodFlooring08_* texture set as 'cantos' (the matching floor-edge trim). The room-shell object's floor slot."
+    },
+    "PINTURA": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.8,
+      "reason": "Spanish 'pintura' = painting; textures are literal artwork images ('PICTURE.png', 'cuadro-abstracto-marron-oxido-y-blanco.jpg' = 'abstract painting brown-rust-and-white'). The printed-canvas insert of a framed picture (Cube.003/Cube.004, alongside the 'metal' frame material)."
+    },
+    "planchas": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Spanish 'planchas' = boards/sheets; texture set 'TexturesCom_PlywoodOld0068_*' is literally an old-plywood material."
+    },
+    "plastico blanco": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Spanish 'plastico blanco' = white plastic; used by all 8 chair-seat-shell/disc objects in the 'silla' collection, sitting above the chrome pedestal legs (a molded-plastic shell chair). The shader's exposed base-color default reads near-black, but that input appears fed by an unused Magic-Texture/Hue-Sat chain not reaching the final surface, so the explicit name is treated as authoritative over that one suspicious value."
+    },
+    "Stripy Edge": {
+      "preset": "fabric",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.45,
+      "reason": "Texture 'stripy_book_slip.png' on the 'BezierCurve' book prop alongside BookCover/Page*; a striped 'book slip' most often reads as a silk/fabric ribbon bookmark, though it could instead be a printed paper wrapper band - genuinely uncertain between the two."
+    },
+    "Vildapel Bamboo Planter": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Name says 'Bamboo Planter'; texture 'REF Wooden Planter.JPG'. Four planter-pot objects of graduated size (34-65cm), consistent with a set of wood/bamboo planters; no dedicated bamboo preset so using wood."
+    }
+  }
+}
