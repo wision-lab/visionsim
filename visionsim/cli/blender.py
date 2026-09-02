@@ -94,6 +94,61 @@ def render_animation(
         )
 
 
+def heatsim_solve(
+    blend_file: Path,
+    /,
+    config: RenderConfig,
+    output_file: Path | None = None,
+) -> None:
+    """Run the FEM heat-transfer solve on a blend-file without rendering.
+
+    Primes the scene's heat simulation cache so that a subsequent
+    ``vsim blender.render-animation`` call with ``config.include_thermal = True``
+    can skip the expensive solve step. Opens the blend-file in a single background
+    Blender instance, runs the FEM solve via ``clients.heatsim_solve``, and
+    optionally saves the modified blend-file to disk.
+
+    Args:
+        blend_file: Path to blend file.
+        config: Render configuration; ``config.thermal`` drives the FEM solver
+            parameters and ``config.executable``, ``config.log_dir``,
+            ``config.timeout``, and ``config.autoexec`` control the Blender
+            instance.
+        output_file: If set, write the modified blend file to this path.
+            Helpful for troubleshooting. Defaults to not saving.
+    """
+    from dataclasses import asdict
+
+    from visionsim.cli import _log, _run  # avoid circular import
+    from visionsim.simulate.blender import BlenderClients
+    from visionsim.utils.progress import ElapsedProgress
+
+    if _run(f"{config.executable or 'blender'} --version", shell=True, hide=True).returncode != 0:
+        raise RuntimeError("No blender installation found on path!")
+    if not (blend_file := blend_file.resolve()).exists():
+        raise FileNotFoundError(f"Blender file {blend_file} not found.")
+
+    output_file = output_file.resolve() if output_file else None
+
+    _log.info(f"Running thermal solve on {blend_file.stem}...")
+
+    with (
+        BlenderClients.spawn(
+            jobs=1,
+            log=config.log_dir,
+            timeout=config.timeout,
+            executable=config.executable,
+            autoexec=config.autoexec,
+        ) as clients,
+        ElapsedProgress() as progress,
+    ):
+        progress.add_task(f"Solving {blend_file.stem}...")
+        clients.initialize(blend_file, blend_file.parent)
+        clients.heatsim_solve(**asdict(config.thermal))
+        if output_file is not None:
+            clients.save_file(output_file)
+
+
 def optimize_rate(
     blend_file: Path,
     /,
@@ -186,6 +241,7 @@ def optimize_rate(
     probe_config.include_materials = False
     probe_config.include_points = False
     probe_config.include_segmentations = False
+    probe_config.include_thermal = False
     probe_config.previews = False
     probe_config.autoscale = False
     probe_config.jobs = 1
