@@ -1,0 +1,304 @@
+{
+  "schema_version": 1,
+  "scene": "classroom.blend",
+  "generated_by": "drafted with model assistance from a dump of the scene's materials (node graphs, slot areas, emission), then reviewed and corrected against the blend; every material is a FEM_PARTICIPANT (no pinned Dirichlet sources)",
+  "defaults": {
+    "preset": "plaster"
+  },
+  "materials": {
+    "beige_paintedPipe": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Name says painted pipe; pipes are typically metal, paint coating gives high emissivity."
+    },
+    "plaster": {
+      "preset": "plaster",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Explicitly named plaster used on ceiling."
+    },
+    "whiteChalk": {
+      "preset": "plaster",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Chalk is calcium-based, thermally similar to gypsum plaster."
+    },
+    "paintedCeiling": {
+      "preset": "plaster",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Painted ceiling beams with plaster-wall texture."
+    },
+    "beigeWall": {
+      "preset": "plaster",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Interior walls with painted plaster wall texture."
+    },
+    "woodFloor": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Name and texture 'base_woodFloor.jpg' clearly indicate wood."
+    },
+    "leatherCoat": {
+      "preset": "leather",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Name and texture 'base_leather.jpg' clearly indicate leather."
+    },
+    "woodPlanks": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Name and texture 'woodPlanks.jpg' clearly indicate wood."
+    },
+    "yellowLetter": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Text/letter objects are likely paper-based."
+    },
+    "dayLight_portal": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.4,
+      "reason": "Emissive daylight portal (strength 20) on windows representing strong solar radiation input."
+    },
+    "varnishedWoodDoor": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Name and texture 'base_brownWood.jpg' indicate varnished wood door."
+    },
+    "beigePaint": {
+      "preset": "plaster",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.8,
+      "reason": "Painted ceiling moulding with plaster-wall texture."
+    },
+    "whitePaintedWindow": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Used by 'woodWindow' objects; painted wooden window frames."
+    },
+    "blackPaintedWood": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Name explicitly says painted wood."
+    },
+    "cork": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Cork is bark-derived; wood is the closest available preset."
+    },
+    "paintedBlind": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Painted blind slats; likely painted metal, ambiguous with PVC."
+    },
+    "ceilingAirVent": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Air vents are typically painted metal; prefer metal_painted for coated metal."
+    },
+    "blackBoard": {
+      "preset": "plaster",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.4,
+      "reason": "Blackboard surface; could be slate, plaster, or enameled steel, plaster is closest."
+    },
+    "paper": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Explicitly named paper used by 'whitePages'."
+    },
+    "worldMap": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Map texture 'europeMap.png' on paper."
+    },
+    "boardFrame": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Board frame is typically wooden; texture is reused plaster wall."
+    },
+    "white_glossPaint": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Glossy painted lamp housing and board part; painted metal surface."
+    },
+    "drawing.007": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Child drawing texture 'childDrawing_08.png' on paper."
+    },
+    "drawing.003": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Child drawing texture 'childDrawing_07.png' on paper."
+    },
+    "drawing.001": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Child drawing texture 'childDrawing_01.jpg' on paper."
+    },
+    "greyDiffusePaint": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Painted ceiling pipe hangers; painted metal hardware."
+    },
+    "beigePaintedwood": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.8,
+      "reason": "Name explicitly says painted wood."
+    },
+    "drawing.005": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Child drawing texture 'childDrawing_05.jpg' on paper."
+    },
+    "drawing.006": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Child drawing texture 'childDrawing_06.jpg' on paper."
+    },
+    "drawing.008": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Child drawing texture 'childDrawing_04.jpg' on paper."
+    },
+    "porcelainHandle": {
+      "preset": "porcelain",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Name explicitly says porcelain handle."
+    },
+    "frostedGlass": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Name and texture 'base_frostedGlass.png' clearly indicate glass."
+    },
+    "drawing.002": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Child drawing texture 'childDrawing_03.jpg' on paper."
+    },
+    "postit": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Post-it note is paper."
+    },
+    "beigePaintedPlastic": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.8,
+      "reason": "Name says plastic; wall plugs and switches are typically rigid PVC."
+    },
+    "blackBoardLight": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Deliberately NOT pinned as a DIRICHLET_SOURCE, so no object is held at a fixed temperature and every surface solves from the same ambient start. Emissive lamp element (strength 1.0) for blackboard lamp; typical lamp element temperature."
+    },
+    "coloredPlastic": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Name says colored plastic; PVC is the generic rigid plastic preset."
+    },
+    "sc.blade": {
+      "preset": "steel",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.4,
+      "reason": "Possibly scissors blade; bare steel metal, but name is ambiguous."
+    },
+    "drawing": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Drawing material with checker texture; likely on paper."
+    },
+    "drawing.004": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Drawing material with no texture info; follows naming pattern of paper drawings."
+    },
+    "dust": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.3,
+      "reason": "Dust particles; no clear match, using global default PVC."
+    },
+    "override_black": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.3,
+      "reason": "Rendering override material; no physical basis, using global default PVC."
+    }
+  }
+}

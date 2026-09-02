@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import sys
 import warnings
 from importlib.metadata import Distribution
@@ -38,13 +39,25 @@ def executable(pytestconfig):
         )
 
     install_dependencies(executable=executable_path, editable=True)
-    return executable_path
+
+    # Resolve to a real path. `--executable` defaults to None, and CI invokes a bare
+    # `pytest`, so tests that interpolate this into an argv (subprocess.run([str(exe), ...]))
+    # would otherwise spawn the literal string "None" and fail with FileNotFoundError.
+    # Tests that pass it to BlenderClient.spawn() tolerate None because that resolves
+    # against $PATH itself; argv-interpolating tests do not.
+    resolved = executable_path or shutil.which("blender")
+    if resolved is None:
+        pytest.skip("No Blender executable: pass --executable=/path/to/blender or put `blender` on PATH.")
+    return resolved
 
 
 @pytest.fixture(scope="session")
 def cube_dataset(tmp_path_factory, executable) -> Path:
     # Note: If this fails and you're using flatpak, it might be because
     #   the application doesn't have read/write access to /tmp!
+    # Note: This fixture also renders the thermal modality (prepare_thermal +
+    #   include_thermal), so a regression in the thermal pipeline will surface
+    #   across all cube_dataset-based tests, not only the thermal-specific ones.
     tmpdir = tmp_path_factory.mktemp("renders")
     log_dir = tmp_path_factory.mktemp("logs")
     scene = Path(__file__).parent / "test_files" / "scenes" / "cube.blend"
@@ -66,6 +79,8 @@ def cube_dataset(tmp_path_factory, executable) -> Path:
         client.include_diffuse_pass()
         client.include_specular_pass()
         client.include_points()
+        client.prepare_thermal(device="cpu", domain="POINTS")
+        client.include_thermal(radiance=True, preview=True)
         client.render_animation()
         client.save_file(tmpdir / "cube_out.blend")
     return tmpdir

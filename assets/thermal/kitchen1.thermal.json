@@ -1,0 +1,290 @@
+{
+  "schema_version": 1,
+  "scene": "kitchen1.blend",
+  "generated_by": "drafted with model assistance from a dump of the scene's materials (node graphs, slot areas, emission), then reviewed and corrected against the blend; every material is a FEM_PARTICIPANT (no pinned Dirichlet sources)",
+  "defaults": {
+    "preset": "plaster"
+  },
+  "materials": {
+    "FREGADERO": {
+      "preset": "stainless_steel",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Spanish 'fregadero' = sink; kitchen sinks are typically stainless steel; shared 'iron_rusted_rougness.jpg' is a generic roughness map."
+    },
+    "DIC METAL": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Metal housing of a dichroic lamp (DICROICA_II); ambiguous metal so prefer metal_painted per guidance."
+    },
+    "PISO MADERA": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Spanish 'piso madera' = wood floor; textures WOO PISO.jpg and WOOD PISO BUMP.jpg confirm."
+    },
+    "MUROS": {
+      "preset": "plaster",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Spanish 'muros' = walls; texture STUCO BLANCO.jpg indicates plastered/stucco wall."
+    },
+    "PORCELANA": {
+      "preset": "porcelain",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Spanish 'porcelana' = porcelain; used by 'mortero' (mortar/pestle)."
+    },
+    "PLATOS": {
+      "preset": "ceramic",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Spanish 'platos' = plates/dishes; likely ceramic tableware though also used by cocina gas."
+    },
+    "DIC ILUM": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Deliberately NOT pinned as a DIRICHLET_SOURCE (a fixed 350 K would be the obvious choice) so that no object is held at a fixed temperature and every surface solves from the same ambient start. Converted to FEM_PARTICIPANT so no object is pinned and every surface solves from the same ambient start. Emissive element of a dichroic lamp; lamp elements ~340-360 K."
+    },
+    "MADERA ESTANTES": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Spanish 'madera estantes' = wood shelves; texture MADERA DIFUSA.jpg confirms."
+    },
+    "CRISTAL LAMPARA.001": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Spanish 'cristal lampara' = glass lamp shade; BSDF metallic ignored per guidance."
+    },
+    "jarrones": {
+      "preset": "ceramic",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Spanish 'jarrones' = vases; vases are commonly ceramic."
+    },
+    "jarrones.001": {
+      "preset": "ceramic",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Spanish 'jarrones' = vases; lighter variant, still likely ceramic."
+    },
+    "agua test": {
+      "preset": "water",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Spanish 'agua' = water; transmission=1.0 confirms transparent liquid."
+    },
+    "bronce": {
+      "preset": "copper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.8,
+      "reason": "Spanish 'bronce' = bronze; copper is the closest preset for a copper alloy."
+    },
+    "CRISTAL LAMPARA": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Spanish 'cristal lampara' = glass lamp shade."
+    },
+    "CRISTAL LAMPARA.002": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Spanish 'cristal lampara' = glass lamp shade; dark variant."
+    },
+    "madera pared": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Spanish 'madera pared' = wood wall; texture MADERA DIFUSA.jpg confirms."
+    },
+    "METALBANQUETAS": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Spanish 'metal banquetas' = metal stools; furniture metal is typically painted/coated."
+    },
+    "AGUA EXTRANA": {
+      "preset": "water",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Spanish 'agua extraña' = strange water; transmission=0.43 indicates liquid."
+    },
+    "ALUMINIO RUGOSO.001": {
+      "preset": "aluminium",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Spanish 'aluminio rugoso' = rough aluminium; mill-finish aluminium preset fits."
+    },
+    "CERAMICA NEGRA": {
+      "preset": "ceramic",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Spanish 'ceramica negra' = black ceramic."
+    },
+    "metal oscuro": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Spanish 'metal oscuro' = dark metal; dark coated/painted metal, prefer metal_painted."
+    },
+    "metal cocina 01": {
+      "preset": "stainless_steel",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Spanish 'metal cocina' = kitchen metal; stove/appliance bodies are commonly stainless steel."
+    },
+    "CUADRO": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.8,
+      "reason": "Spanish 'cuadro' = painting/picture; texture CUADRO.JPG indicates printed artwork on paper."
+    },
+    "METAL MESA": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Spanish 'metal mesa' = table metal; furniture metal is typically painted/coated."
+    },
+    "ALUMINIO RUGOSO": {
+      "preset": "aluminium",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Spanish 'aluminio rugoso' = rough aluminium; mill-finish aluminium preset fits."
+    },
+    "CABLE": {
+      "preset": "rubber",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Cable sheathing matches the rubber preset description directly."
+    },
+    "hojas.001": {
+      "preset": "foliage",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Spanish 'hojas' = leaves; used by IvyLeaf with Leaf textures."
+    },
+    "ilum": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Deliberately NOT pinned as a DIRICHLET_SOURCE (a fixed 350 K would be the obvious choice) so that no object is held at a fixed temperature and every surface solves from the same ambient start. Converted to FEM_PARTICIPANT so no object is pinned and every surface solves from the same ambient start. Emissive lamp element (strength=4.0); lamp elements ~340-360 K."
+    },
+    "CERAMICA": {
+      "preset": "ceramic",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Spanish 'ceramica' = ceramic."
+    },
+    "METAL pica carnes": {
+      "preset": "iron",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.55,
+      "reason": "Spanish 'pica carnes' = meat grinder; traditional meat grinders are cast iron."
+    },
+    "MADERA BANQUETAS": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Spanish 'madera banquetas' = wood stools; texture MADERA DIFUSA.jpg confirms."
+    },
+    "archmodels66_033_1": {
+      "preset": "foliage",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Used by 'orquidea' (orchid); archmodel texture likely part of the plant."
+    },
+    "CESPED.000": {
+      "preset": "foliage",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Spanish 'cesped' = grass; texture grass_color_V2.JPG confirms."
+    },
+    "metal cubre llamas": {
+      "preset": "steel",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Spanish 'cubre llamas' = flame cover; bare steel exposed to flame on gas stove."
+    },
+    "hojas": {
+      "preset": "foliage",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Spanish 'hojas' = leaves; used by 'hoja planta' with HOJA DE PLANTA OK.jpg."
+    },
+    "prato": {
+      "preset": "ceramic",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Portuguese 'prato' = plate; smooth white surface (roughness=0) suggests ceramic tableware."
+    },
+    "AGUA": {
+      "preset": "water",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Spanish 'agua' = water; transmission=1.0 confirms."
+    },
+    "_87": {
+      "preset": "foliage",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Used by 'orquidea' (orchid); texture HOJA.jpg = leaf."
+    },
+    "_90": {
+      "preset": "foliage",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Used by 'orquidea' (orchid); texture PARA TRANS.jpg suggests translucent flower petal."
+    },
+    "blender_logo": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Logo/label with printed texture blender_logo.jpg; paper preset for printed labels."
+    }
+  }
+}

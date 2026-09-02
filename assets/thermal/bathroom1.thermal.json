@@ -1,0 +1,274 @@
+{
+  "schema_version": 1,
+  "scene": "bathroom1.blend",
+  "generated_by": "drafted with model assistance from a dump of the scene's materials (node graphs, slot areas, emission), then reviewed and corrected against the blend",
+  "defaults": {},
+  "materials": {
+    "Alu bross armoire sdb": {
+      "preset": "aluminium",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "French 'alu brossé armoire sdb' = brushed aluminium bathroom-cabinet (door object 'porte arm sdb.002'); texture pulido2.jpg ('pulido' = polished); Diffuse/Glossy mix (0.5) with near-white glossy component (roughness 0.45) matches brushed mill-finish aluminium."
+    },
+    "Alu brosse": {
+      "preset": "aluminium",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.8,
+      "reason": "French 'alu brossé' = brushed aluminium; used on 'motif radiateur.001' (radiator grille/motif) and a cylinder; pure Glossy BSDF, near-white (0.92), roughness 0.32 -- matches brushed aluminium bars."
+    },
+    "Bois porte.003": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.55,
+      "reason": "French 'bois porte' = wood door/frame; used on Cube.1120, which also carries 'verre lampe sdb' (glass) -- i.e. a light fixture with a wooden frame and glass shade. No wood texture is present (flat grey 0.8 diffuse), so the name is the main evidence and confidence is moderate."
+    },
+    "CarPaint_flip 1.001": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.4,
+      "reason": "Used on 'robinet.001' (a tap/faucet whose body otherwise uses 'chrome robinet'); this slot is a small pure-Diffuse red patch (0.72,0,0), most likely a painted hot-water indicator accent on the metal tap. 'CarPaint' names a paint/coating, so metal_painted (coated metal) is the closest preset; low confidence since the exact part is not identifiable."
+    },
+    "Cardboard": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Explicit name 'Cardboard', used on the 'Toilet paper' object (the roll's cardboard core, diffuse brown 0.58/0.43/0.25); the preset library has no dedicated cardboard entry, so 'paper' (paper, card, books...) is the closest match."
+    },
+    "Glass_CG001.003": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Name says Glass; Glass BSDF node, IOR 1.45 (matches soda-lime glass), roughness 0.0; used on two cylinder objects (small glass fixture parts)."
+    },
+    "Glass_Head light .001": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Name 'Glass_Head light' = glass of a cabinet head-light; Glass BSDF, IOR 1.45; shares object 'porte arm sdb.002' with the brushed-aluminium cabinet door, consistent with a built-in light fixture on the cabinet."
+    },
+    "Metal_Bling chrome": {
+      "preset": "stainless_steel",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Name says 'bling chrome' (shiny chrome accessory); Glossy BSDF, near-white (1.0), roughness 0.55 (semi-polished, not a perfect mirror); no dedicated chrome preset so stainless_steel (fittings) is used per guidance; object is a generically-named imported cylinder so the exact part is unclear."
+    },
+    "Metal_brass": {
+      "preset": "copper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Name says brass; used on 'motif radiateur.001' (radiator decorative motif) alongside brushed-aluminium bars; Diffuse colour (0.68,0.54,0.44) is brass-toned. No brass preset exists; copper (closest copper-alloy analogue, as used for 'bronce' in kitchen1.thermal.json) is the nearest fit."
+    },
+    "Metal_goldleaf.002": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.45,
+      "reason": "Name says gold leaf (thin decorative gilt coating over a substrate, object 'Plane.008'); Diffuse gold colour (0.8,0.78,0.28) mixed 50/50 with a glossy component. No gold preset exists; treated as a coated/painted metal finish per guidance rather than a solid conductive metal, since gold leaf is a coating, not bulk metal."
+    },
+    "Other_shinyplasti.002": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Name explicitly says 'shiny plastic'; pure Diffuse BSDF, deep blue (0,0,0.85); pvc is the generic rigid-plastic preset."
+    },
+    "Prise electrique": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.8,
+      "reason": "French 'prise électrique' = electrical outlet; near-white Diffuse (0.95) with a small glossy highlight -- typical of a white plastic wall-outlet cover plate."
+    },
+    "ToilCeramic": {
+      "preset": "porcelain",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Used by 'baignoire' (bathtub), 'lavabo.000' (basin) and 'sdb cuvette wc' (toilet bowl) -- the bathroom's vitreous-china sanitaryware. Diffuse near-white with a slight blue tint (0.92,0.91,1.0) plus a glossy glaze component (roughness 0.26). Although the material is literally named 'Ceramic', real bath/sink/toilet fixtures are vitrified porcelain, and the porcelain preset explicitly lists 'basins' -- chosen over the generic ceramic (tile/pottery) preset for that reason."
+    },
+    "armoire wc": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.45,
+      "reason": "French 'armoire wc' = WC cabinet; used on the cabinet body 'armoire sdb.002' and several small hardware cylinders (shared with 'chrome robinet' on the same objects, i.e. chrome hardware + a painted/laminate body). Near-white Diffuse (0.93) and a fully rough Glossy (roughness 1.0) suggest a matte painted or laminate cabinet surface; pvc used as the generic coated-panel default. Could plausibly be painted wood instead -- genuinely ambiguous."
+    },
+    "black": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.45,
+      "reason": "Generic pure-black Diffuse BSDF (0,0,0); used on small parts of 'Tube.001' (shared with 'chrome robinet', i.e. a black end-cap/grommet on chrome pipework) and 'thermostat.002' (shared with 'thermostat', i.e. the black dial/knob). No texture or name detail beyond colour; pvc used as the generic small-plastic-part default -- could equally be rubber."
+    },
+    "black radiateur": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "French 'black radiateur' = black radiator; used on 'Cylinder.190' (radiator body); Glossy BSDF, black (0,0,0), roughness 0.55 -- a painted-steel radiator body, matching the metal_painted preset for coated metal."
+    },
+    "blend-a-med": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Texture 'blend-a-med.jpg' is the label of a real toothpaste brand (Blend-a-med); the tube body is a plastic/laminate cosmetic-product container, matched to the generic pvc preset."
+    },
+    "capuchon tube": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "French 'capuchon tube' = tube cap; used on object 'Cone01_Plastic ' whose own name says Plastic; Diffuse/Glossy mix, blue-tinted (0.63,0.64,0.8)."
+    },
+    "carrelage sol": {
+      "preset": "ceramic",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "French 'carrelage sol' = floor tile; texture 'carrelage sol3.jpg'; glossy glaze layer (roughness 0.26) over the diffuse texture; classic glazed ceramic floor tile, covering ~8.5 m^2 of floor."
+    },
+    "chrome robinet": {
+      "preset": "stainless_steel",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.65,
+      "reason": "French 'chrome robinet' = chrome tap/fitting; used on nearly every chrome hardware part in the scene (taps 'robinet.000/.001/.002', drain 'siphon sdb', shower tray 'bac douche.000', bathtub 'baignoire.000', screws, tubes); pure Glossy BSDF, near-white/blue (0.93,0.95,1.0), roughness 0.0 (mirror finish). No dedicated chrome preset exists; stainless_steel chosen per guidance ('prefer stainless_steel for ... sanitaryware fittings') even though the roughness is closer to a mirror-polished finish."
+    },
+    "couv linge sdb": {
+      "preset": "fabric",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "French 'couv(re) linge sdb' = bathroom laundry/linen cover; used on 'Plane.013'; a Wave-texture-driven shader mix over brown Diffuse/Glossy colours (0.56/0.46/0.28) suggesting a woven or rippled cloth/wicker cover; fabric is the closest preset."
+    },
+    "lamp ext sdb": {
+      "preset": null,
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.3,
+      "reason": "THIS IS THE SCENE'S SOLE EMISSIVE MATERIAL / LIGHT SOURCE: it is the only material in the file with an Emission shader node (warm-white colour 1.0/0.98/0.82, strength 1.2) and the scene has zero light objects, so all illumination comes from this material. It is applied to a single flat 'Plane' object; measured world-space area is ~100 m^2 (10 m x 10 m, not the ~4 m^2 suggested), consistent with a large offstage backlight/'daylight portal'-style proxy panel (French name = 'exterior bathroom lamp') rather than a real room surface. It is not a physical building material, so no thermal preset honestly applies -- left null rather than guessing. Per the hard constraint, role is still FEM_PARTICIPANT and dirichlet_K is null (no pinned sources), even though this is the light source."
+    },
+    "miroir bord": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "French 'miroir bord' = mirror edge/border; same object ('miroir sdb') as the 'mirroir' material, i.e. the beveled edge of the bathroom mirror. Glossy BSDF, white, roughness 0.71 (frosted, unlike the perfectly specular main mirror face) -- consistent with an unpolished glass edge; glass chosen as the substrate material."
+    },
+    "mirroir": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.65,
+      "reason": "'Mirroir' (misspelling of French 'miroir' = mirror); object 'miroir sdb', the bathroom mirror explicitly expected per the task brief. Pure Glossy BSDF, white, roughness 0.0 (perfect mirror finish). A mirror's thermal behaviour is dominated by its glass substrate (with a thin metallic backing not separately modelled), so glass is used rather than a metal preset."
+    },
+    "nivea capuchon": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "French 'nivea capuchon' = Nivea (real skincare brand) bottle cap, on object 'apres rasage' (aftershave); dark-blue Diffuse (0.03,0.02,0.61) plastic cap; pvc preset."
+    },
+    "nivea decalc": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.45,
+      "reason": "French 'décalc(omanie)' = decal/label; texture 'nivea2.JPG' is a printed product label on the same 'apres rasage' aftershave bottle; treated as a thin plastic/printed-film label on the bottle, matched to pvc; could plausibly be paper instead."
+    },
+    "nivea flacon": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "French 'flacon' = bottle; the main body of the 'apres rasage' aftershave bottle; near-white Diffuse (0.95) plastic bottle, pvc preset."
+    },
+    "paper": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Explicit name 'paper'; used on the 'Toilet paper' object's sheet (paired with the 'Cardboard' core material); white Diffuse (1.0) plus a slight glossy sheen."
+    },
+    "plastic douche": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "French 'plastic douche' = shower plastic, explicit name; cream-coloured Diffuse/Glossy mix on shower-enclosure panel parts (Cube.1149/.1150); pvc preset."
+    },
+    "plastic sanitaire": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "French 'plastic sanitaire' = sanitary plastic, explicit name; used across many small sanitaryware plastic parts (toilet seat/fittings: Circle.018, Torus.001/.011, Plane.001/.006/.011); near-white Diffuse/Glossy; pvc preset."
+    },
+    "radiateur": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "French 'radiateur' = radiator; used on 'motif radiateur.001' alongside the brushed-aluminium bars and brass accents -- this slot is the painted body/frame (cream Diffuse 0.8/0.75/0.64, semi-glossy roughness 0.32); metal_painted preset for the coated-steel radiator body."
+    },
+    "sdb mur": {
+      "preset": "ceramic",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "French 'sdb mur' = bathroom wall; texture 'carrelage mur4.jpg' = wall tile 4; glazed glossy layer over the tile diffuse texture. This is the single largest material in the scene by area (~48 m^2), consistent with the main wall tiling."
+    },
+    "sdb mur deco": {
+      "preset": "ceramic",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "French 'sdb mur déco' = bathroom decorative wall (tile); texture 'carrelage sdb deco2.jpg' = decorative bathroom tile; same glazed-tile shader structure as 'sdb mur'."
+    },
+    "sdb verre depoli": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "French 'verre dépoli' = frosted/ground glass; Glass BSDF, IOR 1.45, roughness 0.32 (frosted, vs. 0.0 for the other clear-glass materials); used on Cube.1121, likely a frosted shower door or window pane."
+    },
+    "serviette wc": {
+      "preset": "fabric",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "French 'serviette wc' = WC hand towel; explicit name and a single flat plane (Plane.067); purple-blue Diffuse (0.3,0.225,0.62) matches a dyed cotton towel; fabric preset."
+    },
+    "tapis sdb": {
+      "preset": "carpet",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "French 'tapis sdb' = bathroom rug/bath mat; texture 'tapis sdb3.jpg'; used on two floor planes (Plane.009/.010); carpet is the closest preset for a bath mat."
+    },
+    "thermostat": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Explicit name 'thermostat' (heating control unit, object 'thermostat.002', paired with the 'black' dial material); near-white Diffuse (0.905) housing with a rough glossy sheen (0.71); typical white plastic wall-thermostat housing, pvc preset."
+    },
+    "verre lampe sdb": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "French 'verre lampe sdb' = bathroom lamp glass; Glass BSDF, IOR 1.45, roughness 0.0; shares object Cube.1120 with the 'Bois porte.003' wood-frame material, i.e. the glass shade of a wood-framed light fixture."
+    }
+  }
+}

@@ -154,6 +154,118 @@ class PointsConfig:
 
 
 @dataclass
+class ThermalConfig:
+    # --- outputs ---
+    radiance: bool = True
+    """If true, also render the gray-body thermal-camera radiance image (second render pass)"""
+    preview: bool = True
+    """Also save an inferno-colormap PNG preview of the temperature map"""
+    assignments: Path | None = None
+    """Path to a thermal material assignment sidecar (``<scene>.thermal.json``). When set, thermal properties
+    are resolved per material slot from the sidecar; when unset the global defaults below are used for every
+    surface. Sidecars are authored offline by ``scripts/thermal_assign.py`` and committed."""
+    # --- per-object override hook (else globals below) ---
+    # overrides: dict[str, ...]  # (future: per-object params by object name; today, globals + obj.heat_sim_material)
+    # --- global material defaults (used where no per-object value is set) ---
+    initial_temperature_K: float = 295.0
+    """Default initial temperature for meshes without a per-object value"""
+    thermal_diffusivity_mm2_s: float = 0.17
+    """Default thermal diffusivity (mm^2/s)"""
+    density_kg_m3: float = 1330.0
+    """Default material density (kg/m^3)"""
+    specific_heat_J_kgK: float = 880.0
+    """Default specific heat (J/kg*K)"""
+    emissivity: float = 0.9
+    """Default surface emissivity in [0, 1]"""
+    # --- solver ---
+    irradiance_scale: float = 100.0
+    """Scale factor applied to computed irradiance (heating input)"""
+    sim_time_s: float = 1.0
+    """Total simulated time in seconds (static scene mode)"""
+    timestep_s: float = 0.05
+    """Solver timestep in seconds"""
+    domain: Literal["POINTS", "MESH"] = "POINTS"
+    """FEM domain: surface point cloud (recommended) or mesh"""
+    laplacian_backend: Literal["ROBUST", "IGL"] = "ROBUST"
+    """Laplacian backend"""
+    irradiance_source: Literal["DIRECT_KERNEL", "CYCLES_BAKE"] = "DIRECT_KERNEL"
+    """Where absorbed flux comes from.
+
+    ``DIRECT_KERNEL`` (default) is analytic: per-light form factors, Embree shadow rays
+    and a 9-coefficient SH sky. Fast, but it counts only objects of type ``LIGHT`` plus
+    the world sky, and models no indirect bounce -- so a scene lit by emissive geometry
+    (window planes, light portals, emissive fixture panels) receives no flux from its
+    actual light source.
+
+    ``CYCLES_BAKE`` bakes DIFFUSE DIRECT+INDIRECT per object instead, resolving emissive
+    meshes, indirect bounce, portals and HDRI transport. Prefer it whenever the scene's
+    real light source is not a lamp object. The symptom of the wrong choice is a room
+    that renders flat at its initial temperature while its RGB render is well lit.
+    """
+    bake_samples: int = 1024
+    """Cycles bake samples for the irradiance map (``CYCLES_BAKE`` only).
+
+    Adaptive sampling is disabled for the bake, so this is a true per-texel sample count
+    rather than a cap. It is set here rather than inherited from the blend because
+    production blends are tuned for a look, often with a loose adaptive threshold that
+    terminates texels well below the nominal cap -- fine for an image, not for a physical
+    input, since baked irradiance noise propagates into the temperature field.
+
+    A steady-state surface sits at ``T ~ (E/(eps*sigma))**0.25``, so a relative error in
+    irradiance appears as roughly a quarter of that in temperature. Noise falls as
+    ``1/sqrt(N)``, so quadrupling this buys a little under half the noise. Denoising does
+    not apply to a bake; sample count is the only lever.
+    """
+    irradiance_texture_size: int = 512
+    """Resolution of the Cycles bakes, in pixels per side (square).
+
+    Governs both the albedo bake and, under ``CYCLES_BAKE``, the irradiance bake. This is
+    the *spatial detail* of the baked flux, as distinct from ``bake_samples``, which is its
+    *noise*: more samples make a smoother bake at the same resolution, and cannot recover
+    detail the resolution never captured. A large surface unwrapped into one 512px tile
+    gets few texels per square metre however many samples you throw at it, so raise this
+    for scenes with big floors, walls or ceilings. Cost is quadratic in this value.
+    """
+    device: Literal["cuda", "cpu"] = "cuda"
+    """Torch device for the solve; falls back to cpu if cuda is unavailable"""
+    # --- thermal atlas (texel-domain render) ---
+    render_domain: Literal["VERTEX", "TEXEL"] = "VERTEX"
+    """Where solved temperatures live for rendering: per-vertex (today's behavior, byte-identical)
+    or in a shared texture atlas sampled per-pixel by the shader (denser surfaces, no reliance on
+    mesh vertex density)."""
+    atlas_texel_density: float = 1500.0
+    """Target texels/m^2 for atlas-eligible objects (those whose native vertex density is below
+    this). Provisional default pending an in-render timing benchmark (see the design spec's
+    validation plan); tune down for large/slow scenes."""
+    atlas_tile_min: int = 16
+    """Minimum atlas tile side, in texels (per object)."""
+    atlas_tile_max: int = 512
+    """Maximum atlas tile side, in texels (per object)."""
+    atlas_texel_soft_max: int = 500_000
+    """Soft ceiling on total atlas texels + retained vertices; exceeding it rescales the
+    effective density down uniformly and warns, rather than allocating an unbounded solve."""
+    # --- radiance render ---
+    radiance_scale: float = 1.0
+    """Gray-body emission magnitude knob for the thermal_radiance render"""
+    # --- file formats (mirror DepthsConfig) ---
+    exr_codec: EXR_CODECS = "DWAA"
+    """Encoding used to compress EXRs"""
+    bit_depth: Literal[16, 32] = 32
+    """Bit depth for temperature/radiance EXRs"""
+    # --- animated (transient) ---
+    animated: bool = False
+    """Solve heat transfer per-frame as geometry animates (transient). When False, the static single-shot solve is used."""
+    substeps_per_frame: int = 4
+    """Solver substeps per Blender frame in animated mode (dt = (1/fps)/substeps_per_frame)."""
+    frame_start: int | None = None
+    """First frame of the animated solve; defaults to the scene frame_start."""
+    frame_end: int | None = None
+    """Last frame of the animated solve; defaults to the scene frame_end."""
+    every_n_frames: int = 1
+    """Solve every Nth frame (cost control); skipped frames hold the last solved field."""
+
+
+@dataclass
 class RenderConfig:
     executable: Path | None = None
     """Path to blender executable"""
@@ -203,6 +315,10 @@ class RenderConfig:
     """If true, enable world-space point map outputs"""
     points: PointsConfig = field(default_factory=PointsConfig)
     """Point maps configuration options"""
+    include_thermal: bool = False
+    """If true, enable thermal outputs (temperature map + thermal-camera radiance)"""
+    thermal: ThermalConfig = field(default_factory=ThermalConfig)
+    """Thermal modality configuration options"""
     include_all: bool = False
     """If true, enable all ground truth outputs"""
     previews: bool = True
@@ -259,6 +375,7 @@ class RenderConfig:
             self.include_diffuse_pass = True
             self.include_specular_pass = True
             self.include_points = True
+            self.include_thermal = True
 
         self.depths.preview &= self.previews
         self.normals.preview &= self.previews
@@ -266,3 +383,4 @@ class RenderConfig:
         self.segmentations.preview &= self.previews
         self.materials.preview &= self.previews
         self.points.preview &= self.previews
+        self.thermal.preview &= self.previews

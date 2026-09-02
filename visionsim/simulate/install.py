@@ -48,6 +48,19 @@ if __name__ == "__main__":
     print(f"Blender Python executable: {sys.executable}", flush=True)
     print(f"Blender Python path: {sys.path}", flush=True)
 
+    # torch wheel source is platform-specific.  On Linux/Windows we pull the GPU
+    # build from the cu124 index (matches NVIDIA driver >=520 / CUDA 12.x; adjust the
+    # index URL for other drivers, e.g. cu118 for older cards).  macOS has no cu124
+    # wheels, so we install the default wheel there (MPS/CPU) - otherwise pip would
+    # fail to resolve and (with check=True) abort the whole post-install.
+    if sys.platform == "darwin":
+        torch_cmd = base_cmd + ["pip", "install", "torch"]
+    else:
+        torch_cmd = base_cmd + ["pip", "install", "torch", "--index-url", "https://download.pytorch.org/whl/cu124"]
+
+    # NOTE: the core visionsim install precedes the torch/scipy/robust_laplacian
+    # step so that a torch/index hiccup can never block the base package setup
+    # (scipy/robust_laplacian are not on the PyTorch index, so they go via PyPI).
     commands = [
         base_cmd + ["ensurepip"],
         base_cmd + ["pip", "install", "-U", "pip"],
@@ -55,6 +68,8 @@ if __name__ == "__main__":
         base_cmd
         + ["pip", "install", "--no-warn-script-location", "--force-reinstall", "--no-dependencies", "--verbose"]
         + module_spec,
+        torch_cmd,
+        base_cmd + ["pip", "install", "scipy", "robust_laplacian"],
     ]
 
     try:

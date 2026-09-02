@@ -77,6 +77,9 @@ def render_job(
         client.include_specular_pass(**asdict(config.specular_pass))
     if config.include_points:
         client.include_points(**asdict(config.points))
+    if config.include_thermal:
+        client.prepare_thermal(**asdict(config.thermal))
+        client.include_thermal(**asdict(config.thermal))
 
     if config.unbind_camera:
         client.unbind_camera()
