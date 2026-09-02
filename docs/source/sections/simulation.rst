@@ -7,3 +7,4 @@ World Simulation
    blender/groundtruths
    blender/keyframing
    blender/rendering
+   blender/thermal
