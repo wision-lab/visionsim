@@ -9,7 +9,7 @@ import scipy.sparse as sp
 import torch
 
 from visionsim.simulate.heatsim.laplacian import point_cloud_laplacian_and_mass
-from visionsim.simulate.heatsim.physics import STEFAN_BOLTZMANN_MM
+from visionsim.simulate.heatsim.physics import AMBIENT_TEMPERATURE_K, STEFAN_BOLTZMANN_MM
 
 _log = logging.getLogger("rich")
 
@@ -172,7 +172,7 @@ class HeatSimFEM:
         boundary_mask = torch.from_numpy(boundary_mask_np.astype(np.float32)).to(self.device)
 
         sigma = STEFAN_BOLTZMANN_MM
-        Tamb = 295.0
+        Tamb = AMBIENT_TEMPERATURE_K
         h = 0.0
 
         vec_rad_A = None

@@ -29,11 +29,11 @@ _log = logging.getLogger("rich")
 
 # Stefan-Boltzmann constant (SI, W/m²·K⁴).  Used as a magnitude knob × radiance_scale
 # in the shader; the solver uses the same value converted to W/mm².
+from visionsim.simulate.heatsim.physics import AMBIENT_TEMPERATURE_K
 from visionsim.simulate.heatsim.physics import STEFAN_BOLTZMANN_SI as _SIGMA_SI
 
 # Defaults used when the scene provides no overrides.
 _DEFAULT_EMISSIVITY: float = 0.9
-_AMBIENT_K: float = 295.372
 _THERMAL_WORLD_NAME: str = "HeatSim_Thermal_World"
 
 # Keys inside the opaque state dict returned by enter_thermal_scene.
@@ -610,9 +610,9 @@ def enter_thermal_scene(scene: Any, *, radiance_scale: float) -> dict:
         state[_KEY_WORLD] = orig_world.name if orig_world is not None else None
 
         # Match the gray-body emission units in the reflected world term.
-        # Include radiance_scale in the cached world name.
-        _ambient_radiance = _SIGMA_SI * (_AMBIENT_K**4) * float(radiance_scale)
-        world_name = f"{_THERMAL_WORLD_NAME}_vs_{radiance_scale:.6g}"
+        # Include ambient temperature and radiance_scale in the cached world name.
+        _ambient_radiance = _SIGMA_SI * (AMBIENT_TEMPERATURE_K**4) * float(radiance_scale)
+        world_name = f"{_THERMAL_WORLD_NAME}_{AMBIENT_TEMPERATURE_K:.6g}K_vs_{radiance_scale:.6g}"
         thermal_world = bpy.data.worlds.get(world_name)
         if thermal_world is None:
             thermal_world = bpy.data.worlds.new(world_name)

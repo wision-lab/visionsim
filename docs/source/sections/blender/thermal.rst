@@ -88,11 +88,11 @@ of a particular asset.
 
 The scene starts at ``initial-temperature-K`` except at pinned sources. The
 solver advances in ``timestep-s`` increments for ``sim-time-s`` and renders the
-last temperature field. The ambient reference in the heat calculation is
-295 K; the thermal-render world uses about 295.372 K. These are fixed model
-references, separate from the configurable initial temperature. Geometry is
-converted to millimetres internally; specify diffusivity in mm²/s, density in
-kg/m³, specific heat in J/(kg·K), and temperature in K.
+last temperature field. Both the heat calculation and thermal-render world use
+a fixed 295 K ambient reference, separate from the configurable initial
+temperature. Geometry is converted to millimetres internally; specify
+diffusivity in mm²/s, density in kg/m³, specific heat in J/(kg·K), and
+temperature in K.
 
 Thermal parameters
 ------------------
@@ -283,7 +283,9 @@ temperature.
 
 For scenes with several materials on one object, supply a JSON sidecar so a
 wooden seat and metal legs need not share one thermal material. A sidecar maps
-*Blender material names* to presets. Save this as ``scene.thermal.json``::
+*Blender material names* to presets. The :doc:`thermal assignment tutorial
+<../../tutorials/thermal-assignments>` shows how to inventory a scene, draft a
+sidecar and check it before rendering. Save this as ``scene.thermal.json``::
 
     {
       "schema_version": 1,

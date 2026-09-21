@@ -342,8 +342,8 @@ def test_radiance_matches_gray_body_for_per_vertex_emissivity(executable):
     Two defects made this false. The gray-body shader baked ONE emissivity constant into
     the mix factor and assigned that single material to every mesh, so the per-vertex
     ``emissivity`` attribute the solve writes was never read and every surface radiated as
-    if eps=0.9. And the thermal world emitted ``_AMBIENT_K`` (295.372 -- a temperature)
-    where the reflected ``(1 - eps)`` term needs a radiance, ``sigma*T_amb^4`` (431.6).
+    if eps=0.9. And the thermal world emitted the ambient temperature directly
+    where the reflected ``(1 - eps)`` term needs a radiance, ``sigma*T_amb^4``.
 
     The second was a ~4% error while eps was pinned at 0.9 and invisible; it dominates at
     low emissivity, where a surface is mostly a mirror. Both matter for LWIR: the preset
@@ -354,9 +354,10 @@ def test_radiance_matches_gray_body_for_per_vertex_emissivity(executable):
     code = r"""
 import bpy, numpy as np, tempfile, os
 from visionsim.simulate.heatsim import thermal_shader as ts
+from visionsim.simulate.heatsim.physics import AMBIENT_TEMPERATURE_K
 
 SIGMA = 5.670374419e-8
-T_AMB = ts._AMBIENT_K
+T_AMB = AMBIENT_TEMPERATURE_K
 T_HOT = 350.0
 
 def render_with(eps):
