@@ -5,7 +5,7 @@ Provides four entry points consumed by the thermal render pipeline:
 * :func:`setup_temperature_aov`      — register a ``temperature`` value AOV on a view-layer
                                        and append ``Attribute → ShaderNodeOutputAOV`` to
                                        every material; returns the compositor socket name.
-* :func:`enter_thermal_scene`        — swap scene to gray-body emission materials, disable
+* :func:`enter_thermal_scene`        — override materials for the gray-body pass, disable
                                        lights, set a gray world; returns a restore state dict.
 * :func:`restore_scene`              — undo :func:`enter_thermal_scene` from the state dict.
 * :func:`stamp_default_temperatures` — stamp per-object ``heatsim_default_temperature``
@@ -43,7 +43,7 @@ _THERMAL_WORLD_NAME: str = "HeatSim_Thermal_World"
 _RENDERABLE_GEOMETRY_TYPES: frozenset[str] = frozenset({"MESH", "CURVE", "SURFACE", "META", "FONT"})
 
 _KEY_WORLD: str = "orig_world"
-_KEY_MATERIALS: str = "orig_materials"
+_KEY_MATERIAL_OVERRIDES: str = "orig_material_overrides"
 _KEY_LIGHT_HIDE_RENDER: str = "light_hide_render"
 _KEY_LIGHT_HIDE_VIEWPORT: str = "light_hide_viewport"
 _KEY_CLAMP: str = "orig_sample_clamp"
@@ -533,7 +533,7 @@ def setup_temperature_aov(scene: Any, view_layer: Any) -> str:
 def enter_thermal_scene(scene: Any, *, radiance_scale: float) -> dict:
     """Swap *scene* into thermal rendering state for a gray-body radiance pass.
 
-    Replaces every mesh object's materials with the gray-body emission material,
+    Overrides view-layer materials with the gray-body emission material,
     hides all light objects from render, and sets a uniform-background thermal world.
     Returns an opaque state dict; pass it to :func:`restore_scene` to undo all changes.
 
@@ -547,8 +547,7 @@ def enter_thermal_scene(scene: Any, *, radiance_scale: float) -> dict:
 
     Note:
         Self-restoring: the ``state`` dict is populated *as* the scene is mutated,
-        and any exception mid-swap (e.g. ``materials.clear()`` raising on
-        library-linked/overridden mesh data) triggers a full :func:`restore_scene`
+        and any exception during setup triggers a full :func:`restore_scene`
         rollback before the error is re-raised.  This guarantees the scene is never
         left half-swapped even though the caller has not yet received ``state``.
     """
@@ -556,27 +555,20 @@ def enter_thermal_scene(scene: Any, *, radiance_scale: float) -> dict:
 
     # Bind the (mutable) record containers into ``state`` up-front so a rollback
     # during the loops below sees everything recorded so far.
-    orig_materials: dict[str, list[Any]] = {}
+    material_overrides: dict[str, Any] = {}
     hide_render: dict[str, bool] = {}
     hide_viewport: dict[str, bool] = {}
-    state[_KEY_MATERIALS] = orig_materials
+    state[_KEY_MATERIAL_OVERRIDES] = material_overrides
     state[_KEY_LIGHT_HIDE_RENDER] = hide_render
     state[_KEY_LIGHT_HIDE_VIEWPORT] = hide_viewport
 
     try:
         thermal_mat = _build_gray_body_material(radiance_scale)
 
-        # -- Save per-object material assignments and swap to thermal material --
-        # Record AFTER clear() succeeds: if clear() raises on a non-editable mesh
-        # the object is left untouched and is (correctly) not in the restore map,
-        # so the rollback never double-clears it.
-        for obj in scene.objects:
-            if obj.type != "MESH":
-                continue
-            mat_names = [slot.material.name if slot.material else None for slot in obj.material_slots]
-            obj.data.materials.clear()
-            orig_materials[obj.name] = mat_names
-            obj.data.materials.append(thermal_mat)
+        # Render overrides preserve face indices, shared meshes and object-linked slots.
+        for view_layer in scene.view_layers:
+            material_overrides[view_layer.name] = view_layer.material_override
+            view_layer.material_override = thermal_mat
 
         # -- Save and disable all lights (hide from render + viewport) ----------
         for obj in scene.objects:
@@ -643,18 +635,11 @@ def restore_scene(scene: Any, state: dict) -> None:
             :func:`enter_thermal_scene`).
         state: The opaque dict returned by :func:`enter_thermal_scene`.
     """
-    # -- Restore per-object materials ------------------------------------------
-    orig_materials: dict[str, list[Any]] = state.get(_KEY_MATERIALS, {})
-    for obj in scene.objects:
-        if obj.type != "MESH":
-            continue
-        saved = orig_materials.get(obj.name)
-        if saved is None:
-            continue
-        obj.data.materials.clear()
-        for mat_name in saved:
-            mat = bpy.data.materials.get(mat_name) if mat_name else None
-            obj.data.materials.append(mat)
+    # -- Restore view-layer material overrides --------------------------------
+    material_overrides = state.get(_KEY_MATERIAL_OVERRIDES, {})
+    for view_layer in scene.view_layers:
+        if view_layer.name in material_overrides:
+            view_layer.material_override = material_overrides[view_layer.name]
 
     # -- Restore Cycles sample clamps -------------------------------------------
     cy = getattr(scene, "cycles", None)

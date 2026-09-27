@@ -232,40 +232,48 @@ print('NO_ATLAS_FALLBACK_OK')
 
 
 def test_enter_restore_round_trip(executable):
-    """enter_thermal_scene then restore_scene must leave materials, lights, and world unchanged."""
-    code = (
-        "import bpy;"
-        "from visionsim.simulate.heatsim import thermal_shader as ts;"
-        # Build a simple scene: cube with a named material + a point light.
-        "bpy.ops.object.select_all(action='SELECT');"
-        "bpy.ops.object.delete();"
-        "bpy.ops.mesh.primitive_cube_add();"
-        "cube = bpy.context.active_object;"
-        "mat = bpy.data.materials.new('TestMat');"
-        "cube.data.materials.append(mat);"
-        "bpy.ops.object.light_add(type='POINT');"
-        "light = bpy.context.active_object;"
-        # Record original state.
-        "orig_mat_name = cube.material_slots[0].material.name;"
-        "orig_light_hide = light.hide_render;"
-        "orig_light_hide_vp = light.hide_viewport;"
-        "scene = bpy.context.scene;"
-        "orig_world = scene.world;"
-        # Round-trip.
-        "state = ts.enter_thermal_scene(scene, radiance_scale=1.0);"
-        "ts.restore_scene(scene, state);"
-        # Verify materials restored.
-        "restored_name = cube.material_slots[0].material.name if cube.material_slots[0].material else None;"
-        "assert restored_name == orig_mat_name, f'material: expected {orig_mat_name!r}, got {restored_name!r}';"
-        # Verify light visibility restored (enter_thermal_scene mutates both flags).
-        "assert light.hide_render == orig_light_hide, f'light hide_render changed';"
-        "assert light.hide_viewport == orig_light_hide_vp, f'light hide_viewport changed';"
-        # Verify world restored.
-        "assert scene.world is orig_world, f'world not restored: {scene.world!r} vs {orig_world!r}';"
-        "print('ROUND_TRIP_OK')"
+    """Thermal passes preserve shared meshes, face assignments and object overrides."""
+    code = r"""
+import bpy
+from visionsim.simulate.heatsim import thermal_shader as ts
+
+bpy.ops.mesh.primitive_cube_add()
+a = bpy.context.object
+materials = [bpy.data.materials.new(name) for name in ('First', 'Second', 'ObjectOverride')]
+for mat in materials[:2]:
+    a.data.materials.append(mat)
+for face in a.data.polygons:
+    face.material_index = face.index % 2
+b = a.copy()
+bpy.context.collection.objects.link(b)
+b.material_slots[1].link = 'OBJECT'
+b.material_slots[1].material = materials[2]
+scene = bpy.context.scene
+extra_layer = scene.view_layers.new('ExistingOverride')
+extra_layer.material_override = materials[0]
+light = next(o for o in scene.objects if o.type == 'LIGHT')
+
+def snapshot():
+    return (
+        tuple(a.data.materials),
+        tuple(p.material_index for p in a.data.polygons),
+        tuple((o.data, tuple((s.link, s.material) for s in o.material_slots)) for o in (a, b)),
+        tuple(v.material_override for v in scene.view_layers),
+        scene.world, light.hide_render, light.hide_viewport,
     )
+
+before = snapshot()
+for _ in range(3):
+    state = ts.enter_thermal_scene(scene, radiance_scale=1.0)
+    assert snapshot()[:3] == before[:3], 'thermal setup changed source material assignments'
+    assert all(v.material_override == ts._build_gray_body_material(1.0) for v in scene.view_layers)
+    ts.restore_scene(scene, state)
+    assert snapshot() == before, 'thermal pass did not restore scene state'
+
+print('ROUND_TRIP_OK')
+"""
     out = subprocess.run([str(executable), "-b", "--python-expr", code], capture_output=True, text=True, check=False)
-    assert "ROUND_TRIP_OK" in out.stdout, out.stderr
+    assert "ROUND_TRIP_OK" in out.stdout, out.stdout + out.stderr
 
 
 def test_meshes_without_materials_get_a_temperature_carrying_surface(executable):
@@ -402,3 +410,96 @@ print("GRAY_BODY_EMISSIVITY_OK")
 """
     out = subprocess.run([str(executable), "-b", "--python-expr", code], capture_output=True, text=True, check=False)
     assert "GRAY_BODY_EMISSIVITY_OK" in out.stdout, out.stdout + out.stderr
+
+
+def test_rgb_unchanged_across_thermal_renders(executable, tmp_path):
+    """The RGB/thermal render loop preserves RGB pixels and cleans up failed passes."""
+    code = r"""
+import bpy, numpy as np, sys
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+from visionsim.simulate import blender as blender_module
+from visionsim.simulate.blender import BlenderService
+from visionsim.simulate.heatsim import thermal_shader as ts
+
+root = Path(sys.argv[sys.argv.index('--') + 1])
+cube = bpy.data.objects['Cube']
+cube.data.materials.clear()
+for name, color in [('Red', (0.8, 0.05, 0.02, 1)), ('Blue', (0.02, 0.1, 0.8, 1))]:
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    mat.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = color
+    cube.data.materials.append(mat)
+for face in cube.data.polygons:
+    face.material_index = face.index % 2
+blend = root / 'scene.blend'
+bpy.ops.wm.save_as_mainfile(filepath=str(blend))
+service = BlenderService()
+service.exposed_initialize(blend, root)
+scene = service.scene
+scene.render.engine = 'CYCLES'
+scene.cycles.device = 'CPU'
+scene.cycles.samples = 8
+scene.cycles.seed = 0
+scene.cycles.use_animated_seed = False
+scene.render.use_persistent_data = False
+scene.render.resolution_x = scene.render.resolution_y = 48
+scene.render.resolution_percentage = 100
+service.exposed_include_frames(file_format='OPEN_EXR', exr_codec='ZIP', bit_depth=32)
+scene.frame_set(1)
+service.exposed_render_current_frame(allow_skips=False)
+
+ts.stamp_default_temperatures(scene, default_K=310)
+ts.setup_temperature_aov(scene, service.view_layer)
+service.exposed_include_thermal(preview=False)
+for frame in (2, 3):
+    scene.frame_set(frame)
+    service.exposed_render_current_frame(allow_skips=False)
+
+def pixels(path):
+    img = bpy.data.images.load(str(path), check_existing=False)
+    values = np.array(img.pixels[:])
+    bpy.data.images.remove(img)
+    return values
+
+frames = sorted((root / 'frames').rglob('*.exr'))
+assert len(frames) == 3, frames
+baseline = pixels(frames[0])
+for path in frames[1:]:
+    np.testing.assert_allclose(pixels(path), baseline, rtol=0, atol=1e-6)
+radiance = sorted((root / 'thermal_radiance').rglob('*.exr'))
+assert len(radiance) == 2, radiance
+assert np.isfinite(pixels(radiance[0])).all()
+assert pixels(radiance[0]).max() > 100, 'thermal override did not emit radiance'
+
+before = (scene.world, service.view_layer.material_override,
+          [(o.name, o.hide_render, o.hide_viewport) for o in scene.objects if o.type == 'LIGHT'])
+mutes = {name: entry[0].mute for name, entry in service._outputs.items()}
+for failed_pass in (1, 2):
+    calls = []
+    def fail_render(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == failed_pass:
+            raise RuntimeError('injected render failure')
+    proxy = SimpleNamespace(app=bpy.app, context=bpy.context,
+                            ops=SimpleNamespace(render=SimpleNamespace(render=fail_render)))
+    with patch.object(blender_module, 'bpy', proxy):
+        try:
+            service.exposed_render_current_frame(allow_skips=False)
+        except RuntimeError as exc:
+            assert str(exc) == 'injected render failure'
+        else:
+            raise AssertionError('render failure was not propagated')
+    assert len(calls) == failed_pass
+    after = (scene.world, service.view_layer.material_override,
+             [(o.name, o.hide_render, o.hide_viewport) for o in scene.objects if o.type == 'LIGHT'])
+    assert after == before
+    assert {name: entry[0].mute for name, entry in service._outputs.items()} == mutes
+print('RGB_THERMAL_LOOP_OK')
+"""
+    out = subprocess.run(
+        [str(executable), "-b", "--python-expr", code, "--", str(tmp_path)],
+        capture_output=True, text=True, check=False,
+    )
+    assert "RGB_THERMAL_LOOP_OK" in out.stdout, out.stdout + out.stderr
