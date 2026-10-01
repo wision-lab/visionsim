@@ -1,12 +1,136 @@
 from __future__ import annotations
 
 import json
+import os
+from contextlib import contextmanager
+from copy import deepcopy
 from functools import partial
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import torch
 
 from visionsim.simulate.config import RenderConfig
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from visionsim.simulate.blender import BlenderClients
+    from visionsim.utils.progress import ElapsedProgress
+
+
+def _validate_inputs(blend_file: Path, output_dir: Path, output_file: Path | None) -> tuple[Path, Path, Path | None]:
+    """Validate user-supplied paths and resolve them to absolute locations.
+
+    Args:
+        blend_file: Path to blend file.
+        output_dir: Dataset output folder, created if it doesn't exist.
+        output_file: If set, path to write the modified blend file to.
+
+    Returns:
+        tuple[Path, Path, Path | None]: Resolved blend file, output directory and output file.
+
+    Raises:
+        FileNotFoundError: raised if the blend file does not exist.
+    """
+    if not (blend_file := blend_file.resolve()).exists():
+        raise FileNotFoundError(f"Blender file {blend_file} not found.")
+
+    output_dir = output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    return blend_file, output_dir, output_file.resolve() if output_file else None
+
+
+def _resolve_autoscale(config: RenderConfig) -> RenderConfig:
+    """Resolve the number of render jobs when autoscaling is requested.
+
+    Falls back to a single job when autoscaling isn't possible (no GPU, or multiple GPUs), otherwise
+    divides the free VRAM by ``config.max_job_vram``. A no-op when ``config.autoscale`` is false.
+
+    Args:
+        config: Render configuration.
+
+    Returns:
+        RenderConfig: A copy of ``config`` with the resolved ``jobs``. The passed-in config is
+            left untouched.
+    """
+    from visionsim.cli import _log  # avoid circular import
+
+    if not config.autoscale:
+        return config
+
+    config = deepcopy(config)
+
+    if not torch.cuda.is_available():
+        _log.warning("No GPU devices found, cannot autoscale. Falling back on using a single render job.")
+        config.autoscale = False
+        config.max_job_vram = None
+        config.jobs = 1
+    elif torch.cuda.device_count() != 1:
+        _log.warning("Cannot autoscale when using multi-gpu. Falling back on using a single render job.")
+        config.autoscale = False
+        config.max_job_vram = None
+        config.jobs = 1
+    else:
+        idx = torch.cuda.current_device()
+        device = torch.device(idx)
+        free, _ = torch.cuda.mem_get_info(device)
+        config.jobs = free // config.max_job_vram
+        _log.info(f"Auto-scaling to using {config.jobs} render jobs on {torch.cuda.get_device_name(idx)}.")
+
+    return config
+
+
+def _require_blender(executable: str | os.PathLike | None = None) -> None:
+    """Check that a blender installation is available.
+
+    Args:
+        executable: Path to the blender executable. Defaults to looking for one on ``$PATH``.
+
+    Raises:
+        RuntimeError: raised if no blender installation is found.
+    """
+    from visionsim.cli import _run  # avoid circular import
+
+    if _run(f"{executable or 'blender'} --version", shell=True, hide=True).returncode != 0:
+        raise RuntimeError("No blender installation found on path!")
+
+
+@contextmanager
+def _spawn_clients(
+    *,
+    config: RenderConfig,
+    background: bool = True,
+) -> Generator[tuple[BlenderClients, ElapsedProgress]]:
+    """Spawn connected blender clients along with a progress bar.
+
+    The number of clients is driven by ``config.jobs``; callers that require a specific job count
+    (eg: playblasts) must set it on the config first.
+
+    Args:
+        config: Render configuration.
+        background: If true, spawn blender in background mode. Viewport renders (playblasts) require
+            a GL context, so they must spawn with ``background=False`` (and a display). Defaults to True.
+
+    Yields:
+        tuple[BlenderClients, ElapsedProgress]: Connected clients and a progress instance.
+    """
+    from visionsim.simulate.blender import BlenderClients
+    from visionsim.utils.progress import ElapsedProgress
+
+    with (
+        BlenderClients.spawn(
+            jobs=config.jobs,
+            log=config.log_dir,
+            timeout=config.timeout,
+            executable=config.executable,
+            autoexec=config.autoexec,
+            background=background,
+        ) as clients,
+        ElapsedProgress() as progress,
+    ):
+        yield clients, progress
 
 
 def render_animation(
@@ -33,52 +157,16 @@ def render_animation(
             this path. Helpful for troubleshooting. Defaults to not saving.
         dry_run: if true, nothing will be rendered at all. Defaults to False.
     """
-    from visionsim.cli import _log, _run  # avoid circular import
-    from visionsim.simulate.blender import BlenderClients
     from visionsim.simulate.job import render_job
-    from visionsim.utils.progress import ElapsedProgress
-
-    # Runtime checks and gard rails
-    if _run(f"{config.executable or 'blender'} --version", shell=True, hide=True).returncode != 0:
-        raise RuntimeError("No blender installation found on path!")
-    if not (blend_file := blend_file.resolve()).exists():
-        raise FileNotFoundError(f"Blender file {blend_file} not found.")
-
-    output_dir = output_dir.resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_file.resolve() if output_file else None
-
-    if config.autoscale:
-        if not torch.cuda.is_available():
-            _log.warning("No GPU devices found, cannot autoscale. Falling back on using a single render job.")
-            config.autoscale = False
-            config.max_job_vram = None
-            config.jobs = 1
-        elif torch.cuda.device_count() != 1:
-            _log.warning("Cannot autoscale when using multi-gpu. Falling back on using a single render job.")
-            config.autoscale = False
-            config.max_job_vram = None
-            config.jobs = 1
-        else:
-            idx = torch.cuda.current_device()
-            device = torch.device(idx)
-            free, _ = torch.cuda.mem_get_info(device)
-            config.jobs = free // config.max_job_vram
-            _log.info(f"Auto-scaling to using {config.jobs} render jobs on {torch.cuda.get_device_name(idx)}.")
 
     if config.jobs <= 0:
-        raise RuntimeError(f"At least one render job is needed, got `render_config.jobs={config.jobs}`.")
+        raise RuntimeError(f"At least one render job is needed, got `config.jobs={config.jobs}`.")
 
-    with (
-        BlenderClients.spawn(
-            jobs=config.jobs,
-            log=config.log_dir,
-            timeout=config.timeout,
-            executable=config.executable,
-            autoexec=config.autoexec,
-        ) as clients,
-        ElapsedProgress() as progress,
-    ):
+    blend_file, output_dir, output_file = _validate_inputs(blend_file, output_dir, output_file)
+    config = _resolve_autoscale(config)
+    _require_blender(config.executable)
+
+    with _spawn_clients(config=config) as (clients, progress):
         task = progress.add_task(f"Rendering {blend_file.stem}...")
         render_job(
             clients,
@@ -87,6 +175,87 @@ def render_animation(
             frame_start=frame_start,
             frame_end=frame_end,
             frame_step=frame_step,
+            config=config,
+            output_blend_file=output_file,
+            dry_run=dry_run,
+            update_fn=partial(progress.update, task),
+        )
+
+
+def render_playblast(
+    blend_file: Path,
+    output_dir: Path,
+    /,
+    config: RenderConfig,
+    frame_start: int | None = None,
+    frame_end: int | None = None,
+    frame_step: int | None = None,
+    video: bool = True,
+    output_file: Path | None = None,
+    dry_run: bool = False,
+) -> None:
+    """Create a fast preview (playblast) of an animation from a single blend-file.
+
+    This uses Blender's viewport/OpenGL renderer instead of a full render, which is much quicker
+    but produces no ground truth annotations. Output is written to a dedicated ``playblast/``
+    folder inside ``output_dir``, either as a single video file or a PNG frame sequence.
+
+    This always runs in a single render job, overriding ``config.jobs`` and ``config.autoscale``.
+    Playblasts are fast, need a GL context (ie: a non-background Blender), and write a single
+    shared output file that is not safe to render in parallel.
+
+    Tip: There is no need for a physical display. If one isn't already available, on linux you can
+    start this headlessly with a virtual X server, eg:
+    ``DISPLAY="" WAYLAND_DISPLAY="" xvfb-run -a --server-args="-screen 0 1920x1080x24" visionsim blender.render-playblast ...``
+
+    Args:
+        blend_file: Path to blend file.
+        output_dir: Dataset output folder.
+        config: Render configuration. ``jobs`` and ``autoscale`` are ignored.
+        frame_start: Start rendering at this frame index (inclusive).
+        frame_end: Stop rendering at this frame index (inclusive).
+        frame_step: Step to render frames by. Defaults to internal value.
+        video: If true, encode the preview as a single video file, otherwise save a PNG
+            frame sequence along with a metadata database. Defaults to True.
+        output_file: If set, write the modified blend file to
+            this path. Helpful for troubleshooting. Defaults to not saving.
+        dry_run: if true, nothing will be rendered at all. Defaults to False.
+
+    Raises:
+        RuntimeError: raised if no blender installation is found on path.
+        FileNotFoundError: raised if the blend file does not exist.
+    """
+    from visionsim.cli import _log
+    from visionsim.simulate.job import playblast_job
+
+    blend_file, output_dir, output_file = _validate_inputs(blend_file, output_dir, output_file)
+
+    # Work on a copy: the job overrides below must not leak into the caller's config.
+    config = deepcopy(config)
+
+    # Playblasts are fast, there is no point in spreading the work across multiple render jobs.
+    # They also need a GL context, which Blender only has outside of background mode, and their single
+    # output file is not parallel-safe, so the job count is forced to one regardless of the config.
+    if config.autoscale or config.jobs != 1:
+        _log.warning(
+            f"Playblast rendering always uses a single render job, ignoring "
+            f"`config.autoscale={config.autoscale}` and `config.jobs={config.jobs}`."
+        )
+    config.autoscale = False
+    config.max_job_vram = None
+    config.jobs = 1
+    _require_blender(config.executable)
+
+    with _spawn_clients(config=config, background=False) as (clients, progress):
+        task = progress.add_task(f"Playblasting {blend_file.stem}...")
+        playblast_job(
+            clients,
+            blend_file,
+            output_dir,
+            frame_start=frame_start,
+            frame_end=frame_end,
+            frame_step=frame_step,
+            video=video,
             config=config,
             output_blend_file=output_file,
             dry_run=dry_run,
@@ -152,7 +321,6 @@ def optimize_rate(
     Returns:
         float: Estimated keyframe multiplier.
     """
-    import copy
     import tempfile
 
     import numpy as np
@@ -169,7 +337,7 @@ def optimize_rate(
         raise ValueError(f"Parameter `init_k` ({init_k}) must be positive.")
 
     # Build a lightweight probe config: coarse resolution, flows only, single job, no previews, low samples.
-    probe_config = copy.deepcopy(config)
+    probe_config = deepcopy(config)
     probe_config.resolution_percentage = resolution_percentage
     probe_config.max_samples = 1
     probe_config.adaptive_threshold = False
