@@ -52,6 +52,9 @@ vsim = "visionsim.cli:main"
 [tool.hatch.version]
 path = "visionsim/__init__.py"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.ruff]
 line-length = 121
 exclude = ["visionsim/interpolate/rife/*"]
