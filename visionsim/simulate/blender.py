@@ -19,6 +19,7 @@ from multiprocessing import Process
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from visionsim.simulate.config import ThermalConfig
 from visionsim.types import FILE
 
 # Import only when type checking as to not introduce
@@ -460,6 +461,13 @@ class BlenderService(rpyc.Service):
         self._warned_no_outputs: bool = False
         self._outputs: dict[str, Any] = {}
         self._camera: bpy.types.Camera | None = None
+        self._thermal_radiance: dict[str, Any] | None = None
+        self._thermal_assignment: Any | None = None
+        self._loaded_persistent_data: bool | None = None
+        self._persistent_data_before_thermal: bool | None = None
+        # TEXEL render domain: the AtlasPlan from the most recent exposed_prepare_thermal
+        # call (None in VERTEX mode, or if TEXEL mode found nothing atlas-eligible).
+        self._thermal_atlas_plan: Any | None = None
 
     def _clear_cached_properties(self) -> None:
         # Based on: https://stackoverflow.com/a/71579485
@@ -502,6 +510,11 @@ class BlenderService(rpyc.Service):
         self._warned_no_outputs = False
         self._outputs = {}
         self._camera = None
+        self._thermal_radiance = None
+        self._thermal_assignment = None
+        self._loaded_persistent_data = None
+        self._persistent_data_before_thermal = None
+        self._thermal_atlas_plan = None
 
     def register_output_type(
         self,
@@ -538,7 +551,7 @@ class BlenderService(rpyc.Service):
             self.log.info(f"Database at {db_path} already exists, overwriting...")
             db_path.unlink()
 
-        db = SqliteDatabase(db_path, pragmas=_DEFAULT_PRAGMAS)
+        db = SqliteDatabase(str(db_path), pragmas=_DEFAULT_PRAGMAS)
         self._outputs[subpath] = (node, slot, db, camera_defaults)
 
     def _include_output(
@@ -551,6 +564,7 @@ class BlenderService(rpyc.Service):
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: int = 32,
         preview: bool = False,
+        preview_view_transform: str | None = None,
         c: int | None = None,
         denoise: bool = False,
     ) -> None:
@@ -565,6 +579,9 @@ class BlenderService(rpyc.Service):
             exr_codec (str, optional): EXR codec to use. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth to use. Defaults to 32.
             preview (bool, optional): If true, output node will be configured for preview. Defaults to False.
+            preview_view_transform (str, optional): When set on a preview output, overrides the preview
+                default "Raw" view transform (e.g. "Standard" to sRGB-encode a colormapped image).
+                Ignored for non-preview outputs. Defaults to None (leave the preview default "Raw").
             c (int, optional): Number of channels for registration. Defaults to None (inferred from color_mode).
             denoise (bool, optional): If true, insert a denoise compositor node before the file output.
                 This enables the Cycles denoising data view layer passes (albedo and normal) and connects
@@ -610,6 +627,11 @@ class BlenderService(rpyc.Service):
             self.tree.links.new(source_socket, socket)
         else:
             self.tree.links.new(source_socket, socket)
+
+        if preview and preview_view_transform is not None:
+            # file_output_node(preview=True) forces "Raw"; override it (e.g. to
+            # "Standard") when the compositor output must be display-encoded.
+            node.format.view_settings.view_transform = preview_view_transform
 
         if c is None:
             c = COLOR_MODE_CHANNELS.get(color_mode.upper())
@@ -745,9 +767,18 @@ class BlenderService(rpyc.Service):
         bpy.ops.wm.open_mainfile(filepath=str(blend_file), **kwargs)
         self.log.info(f"Successfully loaded {blend_file}")
 
+        # Register the heatsim per-object thermal material properties so that
+        # ``obj.heat_sim_material`` and ``obj.heat_simulation_enabled`` are available
+        # on any loaded blend. Guarded so repeated initializations don't re-register.
+        from visionsim.simulate.heatsim import register as heatsim_register
+
+        if not hasattr(bpy.types.Object, "heat_sim_material"):
+            heatsim_register()
+
         # Init various variables to track state
         self._use_animation: bool = True
         self._initialized = True
+        self._loaded_persistent_data = bool(self.scene.render.use_persistent_data)
 
         # Ensure we are using the compositor, and node tree.
         if bpy.app.version >= (5, 0, 0):
@@ -1467,6 +1498,421 @@ class BlenderService(rpyc.Service):
             c=3,
         )
 
+    def _thermal_config(
+        self,
+        *,
+        initial_temperature_K: float,
+        thermal_diffusivity_mm2_s: float,
+        density_kg_m3: float,
+        specific_heat_J_kgK: float,
+        emissivity: float,
+        irradiance_scale: float,
+        sim_time_s: float,
+        timestep_s: float,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"],
+        assignments: str | None = None,
+    ) -> tuple[dict, dict, Path, Any]:
+        """Resolve thermal material defaults, solver settings, cache root and sidecar."""
+
+        defaults = {
+            "initial_temperature_K": initial_temperature_K,
+            "thermal_diffusivity_mm2_s": thermal_diffusivity_mm2_s,
+            "density_kg_m3": density_kg_m3,
+            "specific_heat_J_kgK": specific_heat_J_kgK,
+            "emissivity": emissivity,
+            "irradiance_scale": irradiance_scale,
+        }
+        solver_cfg = {
+            "sim_time_s": sim_time_s,
+            "timestep_s": timestep_s,
+            "device": device,
+            "bake_samples": bake_samples,
+            "irradiance_texture_size": irradiance_texture_size,
+        }
+        scene_assignment = None
+        if assignments is not None:
+            from visionsim.simulate.heatsim import materials
+
+            assignment_path = Path(str(assignments))
+            scene_assignment = materials.load_assignments(assignment_path)
+            server_log.info(
+                "thermal: loaded %d material assignments from %s",
+                len(scene_assignment.materials), assignment_path,
+            )
+        cache_root = Path(str(self.blend_file) + ".heatsim")
+        return defaults, solver_cfg, cache_root, scene_assignment
+
+    def _thermal_solve(
+        self,
+        *,
+        initial_temperature_K: float,
+        thermal_diffusivity_mm2_s: float,
+        density_kg_m3: float,
+        specific_heat_J_kgK: float,
+        emissivity: float,
+        irradiance_scale: float,
+        sim_time_s: float,
+        timestep_s: float,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"],
+        assignments: str | None = None,
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500_000,
+        recompute: bool = False,
+    ) -> tuple[dict, Any, Path]:
+        """Build the requested sampling plan and solve a fixed scene snapshot."""
+        from visionsim.simulate.heatsim import adapter, cache
+
+        source_digest = cache.source_identity(bpy.data)
+        if source_digest is None:
+            server_log.info("thermal: source scene cannot be identified safely; baking and solving afresh")
+
+        defaults, solver_cfg, cache_root, assignment = self._thermal_config(
+            initial_temperature_K=initial_temperature_K,
+            thermal_diffusivity_mm2_s=thermal_diffusivity_mm2_s,
+            density_kg_m3=density_kg_m3,
+            specific_heat_J_kgK=specific_heat_J_kgK,
+            emissivity=emissivity,
+            irradiance_scale=irradiance_scale,
+            sim_time_s=sim_time_s,
+            timestep_s=timestep_s,
+            bake_samples=bake_samples,
+            irradiance_texture_size=irradiance_texture_size,
+            device=device,
+            assignments=assignments,
+        )
+        self._thermal_assignment = assignment
+
+        atlas_plan = None
+        if render_domain in {"AUTO", "TEXEL"}:
+            sim_objects = adapter.gather_meshes(self.scene)
+            atlas_cfg = {
+                "render_domain": render_domain,
+                "atlas_texel_density": atlas_texel_density,
+                "atlas_tile_min": atlas_tile_min,
+                "atlas_tile_max": atlas_tile_max,
+                "atlas_texel_soft_max": atlas_texel_soft_max,
+            }
+            atlas_plan = adapter.build_atlas_plan(self.scene, sim_objects, atlas_cfg)
+
+        history = adapter.solve_scene(
+            self.scene,
+            defaults=defaults,
+            solver_cfg=solver_cfg,
+            cache_root=cache_root,
+            assignment=assignment,
+            atlas_plan=atlas_plan,
+            source_digest=source_digest,
+            recompute=recompute,
+        )
+        return history, atlas_plan, cache_root
+
+    def _thermal_load_pack_atlas_image(self, atlas_path: Path) -> None:
+        """Load the EXR :func:`adapter.write_atlas` wrote and (re)register it as the
+        ``HeatSim_Temperature_Atlas`` Blender image, packed so the shader (built right
+        after this call, by ``thermal_shader.setup_temperature_aov``, and later at render
+        time by ``thermal_shader.enter_thermal_scene``) can find it by name -- and so it
+        keeps working even if the source EXR under the ``.heatsim`` cache directory later
+        moves or is cleaned up.
+        """
+        from visionsim.simulate.heatsim.names import ATLAS_IMAGE_NAME
+
+        existing = bpy.data.images.get(ATLAS_IMAGE_NAME)
+        if existing is not None and not existing.get("heatsim_generated", False):
+            raise RuntimeError(f"Image {ATLAS_IMAGE_NAME!r} is user-owned; cannot replace it with a thermal atlas")
+        bound_nodes = [
+            node for mat in bpy.data.materials if mat.use_nodes and mat.node_tree is not None
+            for node in mat.node_tree.nodes
+            if node.bl_idname == "ShaderNodeTexImage" and node.image == existing
+        ] if existing is not None else []
+        if existing is not None:
+            bpy.data.images.remove(existing)
+        image = bpy.data.images.load(str(atlas_path))
+        image.name = ATLAS_IMAGE_NAME
+        image["heatsim_generated"] = True
+        image.colorspace_settings.name = "Non-Color"
+        image.pack()
+        for node in bound_nodes:
+            node.image = image
+
+    @require_initialized_service
+    def exposed_prepare_thermal(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ThermalConfig.initial_temperature_K,
+        thermal_diffusivity_mm2_s: float = ThermalConfig.thermal_diffusivity_mm2_s,
+        density_kg_m3: float = ThermalConfig.density_kg_m3,
+        specific_heat_J_kgK: float = ThermalConfig.specific_heat_J_kgK,
+        emissivity: float = ThermalConfig.emissivity,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500_000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Solve a fixed thermal field, write attributes or atlas, and set up the AOV."""
+        from visionsim.simulate.heatsim import adapter, thermal_shader
+
+        self._thermal_atlas_plan = None
+
+        # Cycles' persistent data keeps the device-side scene alive between frames, but
+        # the thermal passes swap materials and AOV wiring on every frame. That
+        # combination intermittently renders a surface's temperature as 0 K: over a
+        # 50-frame classroom sequence it blanked whole objects in 6 frames on one run and
+        # 2 on the next (up to 31% of a frame), and which frames broke changed run to run.
+        # Turning it off for thermal runs drops the 0 K fraction from ~1.9% to ~0.03%
+        # (background only) and makes the sequence deterministic.
+        if self.scene.render.use_persistent_data:
+            self.log.info("thermal: disabling Cycles persistent data (stale AOV state between frames)")
+            self._persistent_data_before_thermal = self._loaded_persistent_data
+            self.scene.render.use_persistent_data = False
+
+        history, atlas_plan, cache_root = self._thermal_solve(
+            initial_temperature_K=initial_temperature_K,
+            thermal_diffusivity_mm2_s=thermal_diffusivity_mm2_s,
+            density_kg_m3=density_kg_m3,
+            specific_heat_J_kgK=specific_heat_J_kgK,
+            emissivity=emissivity,
+            irradiance_scale=irradiance_scale,
+            sim_time_s=sim_time_s,
+            timestep_s=timestep_s,
+            bake_samples=bake_samples,
+            irradiance_texture_size=irradiance_texture_size,
+            device=device,
+            assignments=assignments,
+            render_domain=render_domain,
+            atlas_texel_density=atlas_texel_density,
+            atlas_tile_min=atlas_tile_min,
+            atlas_tile_max=atlas_tile_max,
+            atlas_texel_soft_max=atlas_texel_soft_max,
+            recompute=recompute,
+        )
+        self._thermal_atlas_plan = atlas_plan
+        # Write the ambient fallback before per-object Dirichlet values. AOV setup
+        # follows atlas loading because its shader nodes reference the packed image.
+        thermal_shader.stamp_default_temperatures(self.scene, default_K=initial_temperature_K)
+
+        # Unset per-object properties resolve from these global defaults.
+        adapter.write_frame_attributes(
+            self.scene,
+            history,
+            -1,
+            {
+                "initial_temperature_K": initial_temperature_K,
+                "thermal_diffusivity_mm2_s": thermal_diffusivity_mm2_s,
+                "density_kg_m3": density_kg_m3,
+                "specific_heat_J_kgK": specific_heat_J_kgK,
+                "emissivity": emissivity,
+            },
+            assignment=self._thermal_assignment,
+            atlas_plan=atlas_plan,
+        )
+        # Global temperature range for the preview colormap, spanning the solved
+        # scene's actual data instead of a fixed band -- already pools TEXEL objects'
+        # texel temperatures the same way as VERTEX objects' vertex temperatures, since
+        # `history` doesn't distinguish the two. Stashed on the service so
+        # ``include_thermal`` (a separate call on the same instance) can read it.
+        self._thermal_temp_range = adapter.global_temperature_range(history, initial_temperature_K)
+
+        if atlas_plan is not None and atlas_plan.texels:
+            atlas_path = adapter.write_atlas(
+                history, atlas_plan, cache_root,
+                defaults={
+                    "initial_temperature_K": initial_temperature_K,
+                    "thermal_diffusivity_mm2_s": thermal_diffusivity_mm2_s,
+                    "density_kg_m3": density_kg_m3,
+                    "specific_heat_J_kgK": specific_heat_J_kgK,
+                    "emissivity": emissivity,
+                    "irradiance_scale": irradiance_scale,
+                },
+                assignment=self._thermal_assignment,
+            )
+            self._thermal_load_pack_atlas_image(atlas_path)
+
+        thermal_shader.setup_temperature_aov(self.scene, self.view_layer)
+
+    @require_initialized_service
+    def exposed_heatsim_solve(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ThermalConfig.initial_temperature_K,
+        thermal_diffusivity_mm2_s: float = ThermalConfig.thermal_diffusivity_mm2_s,
+        density_kg_m3: float = ThermalConfig.density_kg_m3,
+        specific_heat_J_kgK: float = ThermalConfig.specific_heat_J_kgK,
+        emissivity: float = ThermalConfig.emissivity,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500_000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Solve and cache a fixed thermal field without adding render outputs."""
+        self._thermal_solve(
+            initial_temperature_K=initial_temperature_K,
+            thermal_diffusivity_mm2_s=thermal_diffusivity_mm2_s,
+            density_kg_m3=density_kg_m3,
+            specific_heat_J_kgK=specific_heat_J_kgK,
+            emissivity=emissivity,
+            irradiance_scale=irradiance_scale,
+            sim_time_s=sim_time_s,
+            timestep_s=timestep_s,
+            bake_samples=bake_samples,
+            irradiance_texture_size=irradiance_texture_size,
+            device=device,
+            assignments=assignments,
+            render_domain=render_domain,
+            atlas_texel_density=atlas_texel_density,
+            atlas_tile_min=atlas_tile_min,
+            atlas_tile_max=atlas_tile_max,
+            atlas_texel_soft_max=atlas_texel_soft_max,
+            recompute=recompute,
+        )
+
+    @require_initialized_service
+    def exposed_include_thermal(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ThermalConfig.initial_temperature_K,
+        thermal_diffusivity_mm2_s: float = ThermalConfig.thermal_diffusivity_mm2_s,
+        density_kg_m3: float = ThermalConfig.density_kg_m3,
+        specific_heat_J_kgK: float = ThermalConfig.specific_heat_J_kgK,
+        emissivity: float = ThermalConfig.emissivity,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500_000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Add the temperature AOV and optional preview and radiance outputs."""
+        # Temperature ground-truth output (Kelvin), driven by the "temperature" AOV
+        # registered by prepare_thermal via setup_temperature_aov.
+        self._include_output(
+            "temperature",
+            self.render_layers.outputs["temperature"],
+            label="Temperature Output",
+            file_format="OPEN_EXR",
+            color_mode="BW",
+            exr_codec=exr_codec,
+            bit_depth=bit_depth,
+            c=1,
+        )
+
+        if preview:
+            from visionsim.simulate.nodes import thermal_preview_node_group
+
+            # Span the colormap over the solved scene's actual temperature range
+            # (computed in prepare_thermal) instead of the fixed 295-400 K default,
+            # so low-dT scenes are not crushed to the dark end of inferno.
+            rng = getattr(self, "_thermal_temp_range", None)
+            group = self.tree.nodes.new("CompositorNodeGroup")
+            group.label = "Thermal Preview"
+            group.node_tree = (
+                thermal_preview_node_group(tmin=rng[0], tmax=rng[1])
+                if rng is not None
+                else thermal_preview_node_group()
+            )
+            self.tree.links.new(self.render_layers.outputs["temperature"], group.inputs["Temperature"])
+            # heat-sim writes srgb_encode(inferno_lut) as its PNG; the compositor
+            # inferno output is scene-linear, so display-encode it with the
+            # Standard (sRGB) view transform instead of the preview default "Raw".
+            self._include_output(
+                "previews/temperature",
+                group.outputs["Image"],
+                label="Preview Temperature Output",
+                preview=True,
+                preview_view_transform="Standard",
+                color_mode="RGB",
+                c=3,
+            )
+
+        if radiance:
+            node, (socket,), (slot,) = file_output_node(
+                self.tree,
+                self.root_path / "thermal_radiance" / "0000",
+                label="Thermal Radiance Output",
+                color_mode="RGB",
+            )
+            node.format.color_management = "OVERRIDE"
+            node.format.linear_colorspace_settings.name = "Non-Color"
+            node.format.file_format = "OPEN_EXR"
+            node.format.color_mode = "RGB"
+            node.format.exr_codec = exr_codec
+            node.format.color_depth = str(bit_depth)
+            slot.name = str(Path(slot.name).with_suffix(FORMATS["OPEN_EXR"]))
+
+            self.tree.links.new(self.render_layers.outputs["Image"], socket)
+            self.register_output_type("thermal_radiance", node, slot, c=3)
+            # Arm the second render pass only after registration succeeds, so a raise
+            # mid-setup cannot leave the flag truthy with _outputs["thermal_radiance"] missing.
+            self._thermal_radiance = {
+                "radiance_scale": radiance_scale,
+                "exr_codec": exr_codec,
+                "bit_depth": bit_depth,
+            }
+
+    @staticmethod
+    def _thermal_values(config: dict[str, Any]) -> dict[str, Any]:
+        from dataclasses import asdict
+
+        values = asdict(ThermalConfig(**dict(config)))
+        if values["assignments"] is not None:
+            values["assignments"] = str(values["assignments"])
+        return values
+
+    @require_initialized_service
+    def exposed_configure_thermal(self, config: dict[str, Any]) -> None:
+        """Validate one serialized ThermalConfig and prepare both thermal outputs."""
+        values = self._thermal_values(config)
+        self.exposed_prepare_thermal(**values)
+        self.exposed_include_thermal(**values)
+
+    @require_initialized_service
+    def exposed_heatsim_solve_config(self, config: dict[str, Any]) -> None:
+        """Validate one serialized ThermalConfig and solve without render outputs."""
+        self.exposed_heatsim_solve(**self._thermal_values(config))
+
     @require_initialized_service
     def exposed_load_addons(self, *addons: str) -> None:
         """Load blender addons by name (case-insensitive).
@@ -1894,8 +2340,60 @@ class BlenderService(rpyc.Service):
         if not dry_run:  # noqa: SIM102
             # Render frame(s), skip the render iff all files exist and `allow_skips`
             if not allow_skips or any(not Path(self.root_path / p).exists() for p in paths.values()):
-                # If `write_still` is false, depth/normals/etc can be written but composites will be skipped
-                bpy.ops.render.render(animation=False, write_still="composites" in self._outputs)
+                # Snapshot original node mute states and pre-mute thermal_radiance so the
+                # main render does not write an incorrect (RGB-material) radiance file.
+                # The "composites" entry uses `object` as a placeholder (no real .mute),
+                # so we skip it; composites are suppressed in the second pass by write_still=False.
+                # `_orig_mute` is bound before the guard so the finally always restores cleanly,
+                # and a single outer try/finally covers BOTH render passes: if the main render
+                # raises, thermal_radiance.mute is still restored (otherwise it would stay muted
+                # permanently across subsequent frames, silently dropping radiance output).
+                _thermal_armed = getattr(self, "_thermal_radiance", None)
+                _orig_mute: dict[str, bool] = {}
+                _thermal_state = None
+                try:
+                    if _thermal_armed:
+                        from visionsim.simulate.heatsim import thermal_shader
+
+                        for _sp, _entry in self._outputs.items():
+                            if _sp != "composites":
+                                _orig_mute[_sp] = _entry[0].mute
+                        self._outputs["thermal_radiance"][0].mute = True
+
+                    # If `write_still` is false, depth/normals/etc can be written but composites will be skipped
+                    bpy.ops.render.render(animation=False, write_still="composites" in self._outputs)
+
+                    # Thermal radiance second render pass: swap to gray-body materials and re-render
+                    # so the `thermal_radiance` output node captures the emitted thermal-camera radiance
+                    # for this frame. The node path reuses the same per-frame indexing as the main loop.
+                    if _thermal_armed:
+                        node, slot, *_ = self._outputs["thermal_radiance"]
+                        if bpy.app.version >= (5, 0, 0):
+                            node.directory = str(self.root_path / "thermal_radiance" / folder_index)
+                        else:
+                            node.base_path = str(self.root_path / "thermal_radiance" / folder_index)
+                        slot.name = str(Path(slot.name).with_stem(frame_index).name)
+
+                        # Mute every real output-file node except thermal_radiance so only
+                        # the gray-body radiance EXR is written during this pass.
+                        for _sp, _entry in self._outputs.items():
+                            if _sp == "composites":
+                                continue
+                            _entry[0].mute = _sp != "thermal_radiance"
+
+                        _thermal_state = thermal_shader.enter_thermal_scene(
+                            self.scene, radiance_scale=_thermal_armed["radiance_scale"]
+                        )
+                        bpy.ops.render.render(animation=False, write_still=False)
+                finally:
+                    # Restore the thermal scene (if entered) and all node mute states to their
+                    # pre-render originals, regardless of which render pass (if any) raised.
+                    if _thermal_state is not None:
+                        from visionsim.simulate.heatsim import thermal_shader
+
+                        thermal_shader.restore_scene(self.scene, _thermal_state)
+                    for _sp, _was_muted in _orig_mute.items():
+                        self._outputs[_sp][0].mute = _was_muted
 
         # Before Blender 5.0 file output nodes ALWAYS appended the frame number
         # to the filename making our path incorrect, here we rename the file.
@@ -1916,17 +2414,7 @@ class BlenderService(rpyc.Service):
 
     @require_initialized_service
     def exposed_render_frame(self, frame_number: int, allow_skips=True, dry_run=False) -> None:
-        """Same as first setting current frame then rendering it.
-
-        Warning:
-            Calling this has the side-effect of changing the current frame.
-
-        Args:
-            frame_number (int): frame to render
-            allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
-            dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-        """
+        """Render one camera frame using the current scene state."""
         self.exposed_set_current_frame(frame_number)
         self.exposed_render_current_frame(allow_skips=allow_skips, dry_run=dry_run)
 
@@ -1982,17 +2470,13 @@ class BlenderService(rpyc.Service):
         scene_original_range = self.scene.frame_start, self.scene.frame_end
         self.scene.frame_start, self.scene.frame_end = 0, 1_048_574
 
-        # Capture frames!
-        for frame_number in frame_numbers:
-            # Tell blender to update camera position and all animations and render frame
-            self.exposed_render_frame(frame_number, allow_skips=allow_skips, dry_run=dry_run)
-
-            # Call any progress callbacks
-            if update_fn is not None:
-                update_fn(advance=1)
-
-        # Restore animation range to original values
-        self.scene.frame_start, self.scene.frame_end = scene_original_range
+        try:
+            for frame_number in frame_numbers:
+                self.exposed_render_frame(frame_number, allow_skips=allow_skips, dry_run=dry_run)
+                if update_fn is not None:
+                    update_fn(advance=1)
+        finally:
+            self.scene.frame_start, self.scene.frame_end = scene_original_range
 
     @require_initialized_service
     def exposed_render_animation(
@@ -2052,7 +2536,13 @@ class BlenderService(rpyc.Service):
 
         self.log.info(f"Saving scene to {path}...")
         path.parent.mkdir(exist_ok=True, parents=True)
-        bpy.ops.wm.save_as_mainfile(filepath=str(path))
+        current_persistent = self.scene.render.use_persistent_data
+        try:
+            if self._persistent_data_before_thermal is not None:
+                self.scene.render.use_persistent_data = self._persistent_data_before_thermal
+            bpy.ops.wm.save_as_mainfile(filepath=str(path))
+        finally:
+            self.scene.render.use_persistent_data = current_persistent
 
 
 class BlenderClient:
@@ -2316,6 +2806,12 @@ class BlenderClients(tuple):
 
         return inner
 
+    def __getattr__(self, name: str) -> Callable[..., Any]:
+        method = getattr(BlenderService, EXPOSED_PREFIX + name, None)
+        if method is None:
+            raise AttributeError(name)
+        return self._method_dispatch_factory(name, method)
+
     def __enter__(self) -> Self:
         """Connect all clients to their render servers via a context manager.
 
@@ -2327,17 +2823,6 @@ class BlenderClients(tuple):
             # Enter each client's context, connecting them all to servers
             self.stack.enter_context(client)
 
-            # Dynamically generate methods that dispatch to all clients
-            # TODO: We currently assume all clients use `BlenderService`.
-            # TODO: Move this to a __getattr__ method like in BlenderClient!
-            for method_name in dir(BlenderService):
-                if method_name.startswith(EXPOSED_PREFIX):
-                    name = method_name.removeprefix(EXPOSED_PREFIX)
-
-                    if name not in dir(self):
-                        method = getattr(BlenderService, method_name)
-                        multicall = self._method_dispatch_factory(name, method)
-                        setattr(self, name, multicall)
         return self
 
     def __exit__(

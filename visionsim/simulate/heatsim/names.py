@@ -1,0 +1,10 @@
+"""Identifiers shared by thermal bake, atlas and shader stages."""
+
+THERMAL_VIEW_LAYER_NAME = "HeatSim Thermal"
+THERMAL_MATERIAL_NAME = "HeatSim_Thermal_Override"
+IRRADIANCE_LAYER_NAME = "HeatSim_Irradiance"
+ALBEDO_LAYER_NAME = "HeatSim_Albedo"
+BAKE_UV_LAYER_NAME = "HeatSim_Bake_UV"
+ATLAS_UV_LAYER_NAME = "HeatSim_Atlas_UV"
+ATLAS_IMAGE_NAME = "HeatSim_Temperature_Atlas"
+ATLAS_COVERAGE_PROP = "heatsim_atlas_coverage"

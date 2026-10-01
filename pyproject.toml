@@ -26,6 +26,7 @@ dependencies = [
     "torch",
     "matplotlib",
     "scipy",
+    "robust-laplacian",
     "invoke",
     "natsort",
     "rich",
@@ -54,13 +55,15 @@ path = "visionsim/__init__.py"
 
 [tool.ruff]
 line-length = 121
+force-exclude = true
 exclude = ["visionsim/interpolate/rife/*"]
 
+[tool.ruff.lint.per-file-ignores]
+"visionsim/simulate/heatsim/materials.py" = ["TRY004"]
+
 [tool.mypy]
-exclude = [
-    "visionsim/interpolate/rife/*",
-]
-follow_imports="skip"
+exclude = ["visionsim/interpolate/rife/*"]
+follow_imports = "skip"
 
 [dependency-groups]
 dev = [

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -154,6 +155,91 @@ class PointsConfig:
 
 
 @dataclass
+class ThermalConfig:
+    # --- outputs ---
+    radiance: bool = True
+    """If true, also render the gray-body thermal-camera radiance image (second render pass)"""
+    preview: bool = True
+    """Also save an inferno-colormap PNG preview of the temperature map"""
+    assignments: Path | None = None
+    """Path to a thermal material assignment sidecar (``<scene>.thermal.json``). When set, thermal properties
+    are resolved per material slot from the sidecar; otherwise authored object values or the global defaults
+    below apply. Sidecars are described in the thermal rendering tutorial."""
+    # Generic fallback estimates, independent of named material presets.
+    # Used where neither a sidecar preset nor an authored object value applies.
+    initial_temperature_K: float = 295.0
+    """Default initial temperature for meshes without a per-object value"""
+    thermal_diffusivity_mm2_s: float = 0.17
+    """Default thermal diffusivity (mm^2/s)"""
+    density_kg_m3: float = 1330.0
+    """Default material density (kg/m^3)"""
+    specific_heat_J_kgK: float = 880.0
+    """Default specific heat (J/kg*K)"""
+    emissivity: float = 0.9
+    """Default surface emissivity in [0, 1]"""
+    # --- solver ---
+    irradiance_scale: float = 100.0
+    """Scale factor applied to computed irradiance (heating input)"""
+    sim_time_s: float = 1.0
+    """Total simulated time in seconds (static scene mode)"""
+    timestep_s: float = 0.05
+    """Solver timestep in seconds"""
+    bake_samples: int = 1024
+    """Cycles irradiance bake samples; adaptive sampling is disabled."""
+    irradiance_texture_size: int = 512
+    """Width and height of the square Cycles albedo and irradiance bakes."""
+    device: Literal["cuda", "cpu"] = "cuda"
+    """Torch device for the solve; falls back to cpu if cuda is unavailable"""
+    # --- thermal atlas (texel-domain render) ---
+    render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO"
+    """AUTO selects texels for coarse surfaces and vertices for suitable dense meshes.
+
+    TEXEL forces atlas sampling; VERTEX forces mesh-vertex sampling.
+    """
+    atlas_texel_density: float = 1500.0
+    """Target solve texels per square metre on atlas-selected surfaces."""
+    atlas_tile_min: int = 16
+    """Minimum atlas tile side, in texels (per object)."""
+    atlas_tile_max: int = 512
+    """Maximum atlas tile side, in texels (per object)."""
+    atlas_texel_soft_max: int = 500_000
+    """Soft ceiling on total atlas texels + retained vertices; exceeding it rescales the
+    effective density down uniformly and warns, rather than allocating an unbounded solve."""
+    # --- radiance render ---
+    recompute: bool = False
+    """Bypass reusable thermal solve results and regenerate bakes."""
+    radiance_scale: float = 1.0
+    """Gray-body emission magnitude knob for the thermal_radiance render"""
+    # --- file formats (mirror DepthsConfig) ---
+    exr_codec: EXR_CODECS = "ZIP"
+    """Encoding used to compress EXRs"""
+    bit_depth: Literal[16, 32] = 32
+    """Bit depth for temperature/radiance EXRs"""
+
+    def __post_init__(self) -> None:
+        positive = ("thermal_diffusivity_mm2_s", "density_kg_m3", "specific_heat_J_kgK",
+                    "sim_time_s", "timestep_s", "atlas_texel_density")
+        for name in positive:
+            value = getattr(self, name)
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"thermal.{name} must be finite and positive")
+        for name in ("initial_temperature_K", "irradiance_scale", "radiance_scale"):
+            value = getattr(self, name)
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"thermal.{name} must be finite and nonnegative")
+        if not 0 <= self.emissivity <= 1 or not math.isfinite(self.emissivity):
+            raise ValueError("thermal.emissivity must be in [0, 1]")
+        if self.render_domain not in {"AUTO", "VERTEX", "TEXEL"}:
+            raise ValueError("thermal.render_domain must be AUTO, VERTEX or TEXEL")
+        if self.bake_samples < 1 or self.irradiance_texture_size < 1:
+            raise ValueError("thermal bake resolution and samples must be positive")
+        if not 1 <= self.atlas_tile_min <= self.atlas_tile_max:
+            raise ValueError("thermal atlas tile bounds are invalid")
+        if self.atlas_texel_soft_max < 1:
+            raise ValueError("thermal atlas budget must be positive")
+
+
+@dataclass
 class RenderConfig:
     executable: Path | None = None
     """Path to blender executable"""
@@ -203,6 +289,10 @@ class RenderConfig:
     """If true, enable world-space point map outputs"""
     points: PointsConfig = field(default_factory=PointsConfig)
     """Point maps configuration options"""
+    include_thermal: bool = False
+    """If true, enable thermal outputs (temperature map + thermal-camera radiance)"""
+    thermal: ThermalConfig = field(default_factory=ThermalConfig)
+    """Thermal modality configuration options"""
     include_all: bool = False
     """If true, enable all ground truth outputs"""
     previews: bool = True
@@ -259,6 +349,7 @@ class RenderConfig:
             self.include_diffuse_pass = True
             self.include_specular_pass = True
             self.include_points = True
+            self.include_thermal = True
 
         self.depths.preview &= self.previews
         self.normals.preview &= self.previews
@@ -266,3 +357,4 @@ class RenderConfig:
         self.segmentations.preview &= self.previews
         self.materials.preview &= self.previews
         self.points.preview &= self.previews
+        self.thermal.preview &= self.previews
