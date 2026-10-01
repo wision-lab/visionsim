@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from visionsim.simulate.config import ThermalConfig
 from visionsim.simulate.heatsim.names import ATLAS_COVERAGE_PROP, ATLAS_IMAGE_NAME, ATLAS_UV_LAYER_NAME
 
 try:
@@ -33,7 +34,7 @@ from visionsim.simulate.heatsim.physics import AMBIENT_TEMPERATURE_K
 from visionsim.simulate.heatsim.physics import STEFAN_BOLTZMANN_SI as _SIGMA_SI
 
 # Defaults used when the scene provides no overrides.
-_DEFAULT_EMISSIVITY: float = 0.9
+_DEFAULT_EMISSIVITY: float = ThermalConfig.emissivity
 _THERMAL_WORLD_NAME: str = "HeatSim_Thermal_World"
 
 # Keys inside the opaque state dict returned by enter_thermal_scene.

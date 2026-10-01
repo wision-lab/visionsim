@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import logging
 
+from visionsim.simulate.config import ThermalConfig
+
 try:
     import bpy  # type: ignore
     from bpy.props import BoolProperty, EnumProperty, FloatProperty, PointerProperty  # type: ignore
@@ -33,7 +35,7 @@ if _BPY_AVAILABLE:
         initial_temperature_K: FloatProperty(  # type: ignore[valid-type, assignment]
             name="Initial Temp (K)",
             description="Initial temperature for this object (used if no per-vertex attribute override is provided)",
-            default=295.0,  # match ThermalConfig.initial_temperature_K (config.py)
+            default=ThermalConfig.initial_temperature_K,
             min=0.0,
         )
 
@@ -43,28 +45,28 @@ if _BPY_AVAILABLE:
                 "Thermal diffusivity for this object in mm²/s (used if no per-vertex attribute override is provided). "
                 "Note: your solver uses mm-units internally, so mm²/s is the natural unit here."
             ),
-            default=0.17,  # PVC default
+            default=ThermalConfig.thermal_diffusivity_mm2_s,
             min=0.0,
         )
 
         density_kg_m3: FloatProperty(  # type: ignore[valid-type, assignment]
             name="Density ρ (kg/m³)",
             description="Material density in kg/m^3 (used if no per-vertex attribute override is provided)",
-            default=1330.0,  # PVC
+            default=ThermalConfig.density_kg_m3,
             min=0.0,
         )
 
         specific_heat_J_kgK: FloatProperty(  # type: ignore[valid-type, assignment]
             name="Specific Heat c (J/kgK)",
             description="Specific heat capacity in J/(kg*K) (used if no per-vertex attribute override is provided)",
-            default=880.0,  # PVC
+            default=ThermalConfig.specific_heat_J_kgK,
             min=0.0,
         )
 
         emissivity: FloatProperty(  # type: ignore[valid-type, assignment]
             name="Emissivity ε",
             description="Surface emissivity for thermal rendering and radiation calculations (0-1)",
-            default=0.9,
+            default=ThermalConfig.emissivity,
             min=0.0,
             max=1.0,
         )

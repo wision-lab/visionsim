@@ -17,8 +17,7 @@ There is deliberately **no** solar-absorptivity column: absorbed flux is already
 computed post-``(1 - albedo)`` from Cycles bakes of the scene's real textures,
 so a per-preset absorptivity would double-count.
 
-Nothing here calls out to a network or an LLM. Sidecars are authored offline by
-authored as JSON and committed; this module reads them.
+Sidecars are authored offline as JSON and committed; this module reads them.
 """
 
 from __future__ import annotations
@@ -65,37 +64,137 @@ class ThermalPreset:
 
 
 # key, alpha (mm^2/s), density (kg/m^3), specific heat (J/kg.K), IR emissivity, notes.
-#
+# Bulk properties are approximate constants; alpha = 1e6 * k / (rho * c).
+# Emissivity (eps) is one gray-body scalar shared by the heat solve and thermal render.
+# Source finishes, temperatures and bands are approximations for that model, not camera calibration.
+# T below means total spectrum; LW means 8-14 um. Uncited emissivities remain surface estimates.
+# [1] NIST TN 1681, section 5.2.1, equations 5.6a and 5.7a evaluated at 20 C.
+#     https://nvlpubs.nist.gov/nistpubs/technicalnotes/nist.tn.1681.pdf
+# [2] NETZSCH, PS: Polystyrene, Properties table.
+#     https://analyzing-testing.netzsch.com/en-AU/polymers-netzsch-com/commodity-thermoplastics/ps-polystyrene/
+# [3] NIST, physical properties of selected metals at 295 K.
+#     https://www.nist.gov/ncnr/neutron-instruments/sample-environment/sample-mounting/reference-tables
+# [4] NIST Chemistry WebBook, aluminium solid heat capacity near 298 K.
+#     https://webbook.nist.gov/cgi/cbook.cgi?ID=C7429905&Mask=2&Table=on&Type=JANAFS
+# [5] ASHRAE Fundamentals, chapter 26, table 1 (bulk properties at 24 C), table 9 (rocks).
+#     https://handbook.ashrae.org/Handbooks/F25/SI/F25_Ch26/F25_Ch26_si.aspx
+# [6] NIST Chemistry WebBook, copper solid heat capacity near 298 K.
+#     https://webbook.nist.gov/cgi/cbook.cgi?ID=C7440508&Mask=2&Table=on&Type=JANAFS
+# [7] Outokumpu Core range datasheet, table 7, Core 304/4301 at 20 C.
+#     https://www.outokumpu.com/en/products/product-ranges/-/media/files/products/core/outokumpu-core-range-datasheet.pdf?modified=20251117111909&revision=025e9931-a1d5-4c8f-8ff5-f881d38916da
+# [8] NIST GCR 15-917-36, section 5.4.6: estimated cast-iron pan specific heat.
+#     https://nvlpubs.nist.gov/nistpubs/gcr/2015/NIST.GCR.15-917-36.pdf
+# [9] Pilkington ATS-129, page 2: soda-lime silica float glass at 75 F (~24 C).
+#     https://www.pilkington.com/-/media/pilkington/site-content/usa/window-manufacturers/technical-bulletins/ats-129---properties-of-soda-lime-silica-float-glass.pdf
+# [10] NETZSCH, PVC-U: Polyvinyl Chloride (Unplasticized), Properties table.
+#     https://analyzing-testing.netzsch.com/en/polymers-netzsch-com/commodity-thermoplastics/pvc-u-polyvinyl-chloride-unplasticized/
+# [11] NISTIR 4973, Appendix E, pp. 89-90: cotton and cellulose specific heat.
+#     https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=917009
+# [12] NETZSCH, Q: Silicone rubber, Properties table (page URL uses an HNBR slug).
+#     https://analyzing-testing.netzsch.com/en-US/polymers-netzsch-com/elastomers/hnbr-hydrogenated-acrylonitrile-butadiene-rubber-1
+# [13] IAPWS SR6-08(2011), table 8: liquid water at 298.15 K and 0.1 MPa.
+#     https://iapws.org/technical-guidance/release/LiquidWater.download
+# [14] ASHRAE Refrigeration, chapter 19: composition-dependent food properties.
+#     https://handbook.ashrae.org/Handbooks/R18/SI/r18_ch19/r18_ch19_si.aspx
+# [15] Buyel et al. (2016), leaf thermal properties, Journal of Biotechnology 217, 100-108.
+#     https://pubmed.ncbi.nlm.nih.gov/26608794/
+# [16] Lidbeck and Syed (2017), experimental Li-ion cell characterization, abstract.
+#     https://odr.chalmers.se/items/87a21437-25d3-4026-9e7c-f71fa964af37
+# [17] IT'IS Tissue Properties Database, Skin averages (2024-06-04 data file).
+#     https://itis.swiss/virtual-population/tissue-properties/database
+# [18] FLIR, Emissivity tables, table 22.1 (surface, temperature and spectrum columns).
+#     https://support.flir.com/docdownload/assets/web/27eh/en-us/T505002.xml.html
+# [19] Optotherm, Emissivity Values (approximate surface-dependent ranges).
+#     https://www.optotherm.com/slides/slide/emissivity-values-30
 _PRESET_TABLE = (
-    ("aluminium", 97.0, 2700.0, 978.0, 0.20, "Mill-finish / lightly oxidised aluminium."),
-    ("pvc", 0.17, 1330.0, 880.0, 0.93, "Generic rigid plastic; also the global default."),
-    ("glass", 0.34, 2500.0, 840.0, 0.92, "Soda-lime glass. Opaque in LWIR despite visible transparency."),
-    ("copper", 111.0, 8960.0, 385.0, 0.15, "Oxidised copper."),
-    ("polystyrene", 0.5, 1050.0, 1300.0, 0.90, "Expanded / rigid polystyrene."),
-    ("wood", 0.082, 897.0, 2380.0, 0.90, "Generic hardwood."),
-    ("steel", 4.2, 7930.0, 280.0, 0.28, "Bare rolled steel."),
-    ("brick", 0.52, 2200.0, 800.0, 0.93, "Common fired brick."),
-    ("concrete", 0.5, 2300.0, 880.0, 0.92, "Structural concrete."),
-    ("plaster", 0.4, 1200.0, 1090.0, 0.91, "Plastered / rendered wall."),
-    ("asphalt", 0.3, 2100.0, 920.0, 0.95, "Asphalt / bitumen."),
-    ("iron", 18.0, 7200.0, 450.0, 0.31, "Cast iron."),
-    ("li_ion", 0.2, 2500.0, 1100.0, 0.88, "Li-ion cell pack; rare in interior scenes."),
-    ("aluminium_polished", 97.0, 2700.0, 978.0, 0.05, "Mirror-polished aluminium; the low emissivity is the point."),
-    ("stainless_steel", 4.0, 7900.0, 500.0, 0.16, "Brushed stainless: appliance bodies, sinks, cookware."),
-    ("metal_painted", 4.2, 7930.0, 280.0, 0.92, "Steel bulk, painted/powder-coated surface. Use for any coated metal."),
-    ("ceramic", 0.6, 2300.0, 850.0, 0.93, "Glazed ceramic tile, sanitaryware, pottery."),
-    ("porcelain", 0.7, 2400.0, 840.0, 0.92, "Vitrified porcelain: tableware, basins."),
-    ("marble", 1.2, 2700.0, 880.0, 0.94, "Marble / granite / engineered stone worktops."),
-    ("drywall", 0.31, 800.0, 1090.0, 0.90, "Gypsum plasterboard; the commonest interior wall/ceiling."),
-    ("fabric", 0.09, 300.0, 1300.0, 0.95, "Upholstery, curtains, bedding, clothing."),
-    ("carpet", 0.06, 200.0, 1300.0, 0.90, "Carpet and rugs. Lowest diffusivity in the library."),
-    ("leather", 0.11, 900.0, 1500.0, 0.95, "Leather and leatherette upholstery."),
-    ("rubber", 0.10, 1200.0, 1400.0, 0.94, "Rubber, silicone, gaskets, cable sheathing."),
-    ("paper", 0.13, 700.0, 1340.0, 0.93, "Paper, card, books, posters, lampshade paper."),
-    ("water", 0.143, 997.0, 4182.0, 0.96, "Liquid water. Surface FEM ignores convection, so approximate."),
-    ("foliage", 0.15, 700.0, 3000.0, 0.96, "Live and artificial plants, leaves, grass."),
-    ("food", 0.14, 1000.0, 3200.0, 0.95, "Food items; high water content dominates the bulk properties."),
-    ("skin", 0.11, 1050.0, 3470.0, 0.98, "Human skin. Pair with role=DIRICHLET_SOURCE at ~307 K."),
+    # [3, 4] Pure aluminium: k = 235 W/(m.K), c rounded to 900; alpha rounded to 97.
+    # [19] eps: rough aluminium, estimate within 0.10-0.30.
+    ("aluminium", 97.0, 2700.0, 900.0, 0.20, "Uncoated aluminium with a rough surface."),
+    # [10] Choose rho = 1400, c = 880, k = 0.21 within the listed ranges; alpha ~ 0.17.
+    # [18] eps: textured dull PVC flooring, LW at 70 C; surface proxy.
+    ("pvc", 0.17, 1400.0, 880.0, 0.93, "Representative unplasticized PVC."),
+    # [9] k = 0.937 W/(m.K); derived alpha ~ 0.43.
+    # [9] eps: hemispherical value at 24 C, used for the gray-body approximation.
+    ("glass", 0.43, 2500.0, 880.0, 0.84, "Uncoated soda-lime float glass. Opaque in LWIR."),
+    # [3, 6] Pure copper: k = 400 W/(m.K), c rounded to 385; derived alpha ~ 116.
+    # [18] eps: midpoint of oxidized copper's 0.6-0.7 range, T at 50 C.
+    ("copper", 116.0, 8960.0, 385.0, 0.65, "Oxidised copper."),
+    # [2] Use k = 0.16 W/(m.K), the midpoint of 0.14-0.18; derived alpha rounded to 0.12.
+    ("polystyrene", 0.12, 1050.0, 1300.0, 0.90, "Solid polystyrene; excludes expanded foam."),
+    # [5] Oak at 12% moisture: choose rho = 700 (660-750), k = 0.17 (0.16-0.18).
+    # Use hardwood c = 1630; derived alpha ~ 0.15 approximates conduction across the grain.
+    # [18] eps: planed oak, T at 20 C.
+    ("wood", 0.15, 700.0, 1630.0, 0.90, "Representative oak at 12% moisture; scalar approximation."),
+    # [1] Structural steel: c ~ 440 J/(kg.K), k ~ 53.3 W/(m.K); derived alpha ~ 15.4.
+    # [18] eps: freshly rolled steel, T at 20 C.
+    ("steel", 15.4, 7850.0, 440.0, 0.24, "Freshly rolled bare structural steel."),
+    # [5] Fired clay, rho = 1920: choose k = 0.90 within 0.81-0.98; derived alpha ~ 0.59.
+    # [18] eps: common red brick, T at 20 C.
+    ("brick", 0.59, 1920.0, 800.0, 0.93, "Representative fired-clay brick."),
+    # [5] Aggregate concrete, rho = 2240: midpoints k = 1.95 (1.3-2.6), c = 900 (800-1000).
+    # [18] eps: concrete, T at 20 C.
+    ("concrete", 0.97, 2240.0, 900.0, 0.92, "Representative sand/gravel or stone aggregate concrete."),
+    # [5] Gypsum plaster: rho = 1120, k = 0.38; c = 1090 remains an estimate; alpha ~ 0.31.
+    # [18] eps: rough plaster, T at 20 C.
+    ("plaster", 0.31, 1120.0, 1090.0, 0.91, "Gypsum plaster; not cement render."),
+    # [5] Filled bitumen: rho = 1900, k = 0.58; c = 920 remains an estimate; alpha ~ 0.33.
+    # [19] eps: estimate within the asphalt range, 0.90-1.00.
+    ("asphalt", 0.33, 1900.0, 920.0, 0.95, "Asphalt / bitumen with inert fill."),
+    # Bulk estimates; c = 450 is close to the 460 J/(kg.K) estimate in [8].
+    # Density and alpha are retained assumptions, not values from that reference.
+    ("iron", 18.0, 7200.0, 450.0, 0.31, "Approximate cast-iron properties; grade unspecified."),
+    # [16] c = 1100 measured for pouch/prismatic cells; density and alpha remain estimates.
+    # eps estimates a coated casing; a bare metal casing needs a metal surface value.
+    ("li_ion", 0.2, 2500.0, 1100.0, 0.88, "Approximate cell bulk; scalar model ignores directional conduction."),
+    # [3, 4] Same pure-aluminium bulk properties as aluminium above.
+    # [18] eps: polished aluminium, T at 100 C.
+    ("aluminium_polished", 97.0, 2700.0, 900.0, 0.05, "Mirror-polished aluminium."),
+    # [7] Use grade 304 bulk properties: k = 15 W/(m.K); derived alpha ~ 3.8.
+    # [18] eps: buffed 18-8 stainless, T at 20 C.
+    ("stainless_steel", 3.8, 7900.0, 500.0, 0.16, "Grade 304 stainless with a buffed finish."),
+    # [1] Same structural-steel bulk properties as steel above.
+    # [18] eps: paint proxy, LW range 0.92-0.94 at 70 C.
+    ("metal_painted", 15.4, 7850.0, 440.0, 0.92, "Steel with nonmetallic paint; coating thermal mass neglected."),
+    # Ceramic and porcelain bulk values are estimates without a verified source for these tuples.
+    # [19] Ceramic eps: estimate within 0.90-0.95.
+    ("ceramic", 0.6, 2300.0, 850.0, 0.93, "Approximate glazed ceramic: tile, sanitaryware, pottery."),
+    # [18] Porcelain eps: glazed surface, T at 20 C.
+    ("porcelain", 0.7, 2400.0, 840.0, 0.92, "Approximate vitrified porcelain: tableware, basins."),
+    # Bulk estimates imply k ~ 2.85, within [5] table 9's marble range (1.2-4.3 W/(m.K)).
+    # That range does not source the individual density, specific heat, or alpha values.
+    ("marble", 1.2, 2700.0, 880.0, 0.94, "Approximate natural marble; other worktop materials may differ."),
+    # [5] Gypsum/plaster board: k = 0.16 W/(m.K); derived alpha ~ 0.22.
+    # [19] eps: estimate within the gypsum range, 0.85-0.95.
+    ("drywall", 0.22, 640.0, 1150.0, 0.90, "Representative gypsum plasterboard."),
+    # [11] Use solid-cotton c ~ 1300 as a proxy; fabric density and alpha remain estimates.
+    # [19] eps: upper end of the close-weave textile range, 0.70-0.95.
+    ("fabric", 0.09, 300.0, 1300.0, 0.95, "Approximate textile properties; weave and fiber dependent."),
+    # [5] Estimate k ~ 0.045 W/(m.K), guided by a 19 mm carpet/pad with R = 0.42 m^2.K/W.
+    # Density and specific heat remain estimates, not values from that assembly; alpha ~ 0.17.
+    # [19] eps: estimate within the carpet range, 0.85-1.00.
+    ("carpet", 0.17, 200.0, 1300.0, 0.90, "Approximate effective carpet properties."),
+    # Leather bulk values remain estimates without a verified source for this tuple.
+    # eps uses [19]'s 0.95-1.00 estimate; [18] reports 0.75-0.80 for tanned leather.
+    ("leather", 0.11, 900.0, 1500.0, 0.95, "Approximate natural leather; synthetic leather may differ."),
+    # [12] c = 1400 falls within the silicone range (1300-1500); use as an elastomer proxy.
+    # Density and alpha remain generic estimates, not the silicone values in [12].
+    # [18] eps: approximate the hard-rubber value of 0.95, T at 20 C.
+    ("rubber", 0.10, 1200.0, 1400.0, 0.94, "Approximate solid elastomer; formulation dependent."),
+    # [11] Use cellulose c = 1340 as a paper proxy; density and alpha remain estimates.
+    # [18] eps: white bond paper, T at 20 C.
+    ("paper", 0.13, 700.0, 1340.0, 0.93, "Approximate paper/card; coatings and porosity may differ."),
+    # [13] Round rho to 997, c to 4180; k ~ 0.6065 W/(m.K) gives alpha ~ 0.146 at 25 C.
+    # [18] eps: distilled water, T at 20 C.
+    ("water", 0.146, 997.0, 4180.0, 0.96, "Liquid water at 25 C; surface FEM ignores convection."),
+    # [15] c = 3000 is an estimate between species means of 2253 and 3661 J/(kg.K).
+    # Density and alpha remain estimates; transpiration is omitted.
+    ("foliage", 0.15, 700.0, 3000.0, 0.96, "Approximate live foliage; artificial plants need their actual material."),
+    # Bulk estimates for unfrozen food; [14] gives composition models, not this specific tuple.
+    # [19] eps: estimate within the food range, 0.85-1.00.
+    ("food", 0.14, 1000.0, 3200.0, 0.95, "Approximate unfrozen food; composition dependent."),
+    # [17] Mean rho = 1109, c ~ 3391, k ~ 0.372 W/(m.K); alpha ~ 0.099. Perfusion omitted.
+    # [18] eps: human skin, T at 32 C.
+    ("skin", 0.099, 1109.0, 3391.0, 0.98, "Human skin. Pair with role=DIRICHLET_SOURCE at ~307 K."),
 )
 
 
@@ -157,7 +256,7 @@ def _lookup_preset(key: Any, where: str) -> ThermalPreset | None:
     preset = PRESETS.get(str(key))
     if preset is None:
         warnings.warn(
-            f"thermal assignment {where}: unknown preset {str(key)!r}; falling back to the global defaults",
+            f"thermal assignment {where}: unknown preset {str(key)!r}; using fallback material properties",
             UserWarning,
             stacklevel=3,
         )
@@ -253,7 +352,7 @@ def load_assignments(path: Path) -> SceneAssignment:
 
 
 def _slot_tables(obj: Any, assignment: SceneAssignment, fallback: dict[str, Any]) -> dict[str, np.ndarray]:
-    """Per-slot scalar tables. Unassigned slots inherit the object-level *fallback*."""
+    """Per-slot scalar tables. Unassigned slots use the scene preset, then the object-level *fallback*."""
     names = []
     for slot in obj.material_slots:
         material = getattr(slot, "material", None)

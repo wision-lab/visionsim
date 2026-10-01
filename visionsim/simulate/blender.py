@@ -19,6 +19,7 @@ from multiprocessing import Process
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from visionsim.simulate.config import ThermalConfig
 from visionsim.types import FILE
 
 # Import only when type checking as to not introduce
@@ -1645,11 +1646,11 @@ class BlenderService(rpyc.Service):
         self,
         radiance: bool = True,
         preview: bool = True,
-        initial_temperature_K: float = 295.0,
-        thermal_diffusivity_mm2_s: float = 0.17,
-        density_kg_m3: float = 1330.0,
-        specific_heat_J_kgK: float = 880.0,
-        emissivity: float = 0.9,
+        initial_temperature_K: float = ThermalConfig.initial_temperature_K,
+        thermal_diffusivity_mm2_s: float = ThermalConfig.thermal_diffusivity_mm2_s,
+        density_kg_m3: float = ThermalConfig.density_kg_m3,
+        specific_heat_J_kgK: float = ThermalConfig.specific_heat_J_kgK,
+        emissivity: float = ThermalConfig.emissivity,
         irradiance_scale: float = 100.0,
         sim_time_s: float = 1.0,
         timestep_s: float = 0.05,
@@ -1753,11 +1754,11 @@ class BlenderService(rpyc.Service):
         self,
         radiance: bool = True,
         preview: bool = True,
-        initial_temperature_K: float = 295.0,
-        thermal_diffusivity_mm2_s: float = 0.17,
-        density_kg_m3: float = 1330.0,
-        specific_heat_J_kgK: float = 880.0,
-        emissivity: float = 0.9,
+        initial_temperature_K: float = ThermalConfig.initial_temperature_K,
+        thermal_diffusivity_mm2_s: float = ThermalConfig.thermal_diffusivity_mm2_s,
+        density_kg_m3: float = ThermalConfig.density_kg_m3,
+        specific_heat_J_kgK: float = ThermalConfig.specific_heat_J_kgK,
+        emissivity: float = ThermalConfig.emissivity,
         irradiance_scale: float = 100.0,
         sim_time_s: float = 1.0,
         timestep_s: float = 0.05,
@@ -1802,11 +1803,11 @@ class BlenderService(rpyc.Service):
         self,
         radiance: bool = True,
         preview: bool = True,
-        initial_temperature_K: float = 295.0,
-        thermal_diffusivity_mm2_s: float = 0.17,
-        density_kg_m3: float = 1330.0,
-        specific_heat_J_kgK: float = 880.0,
-        emissivity: float = 0.9,
+        initial_temperature_K: float = ThermalConfig.initial_temperature_K,
+        thermal_diffusivity_mm2_s: float = ThermalConfig.thermal_diffusivity_mm2_s,
+        density_kg_m3: float = ThermalConfig.density_kg_m3,
+        specific_heat_J_kgK: float = ThermalConfig.specific_heat_J_kgK,
+        emissivity: float = ThermalConfig.emissivity,
         irradiance_scale: float = 100.0,
         sim_time_s: float = 1.0,
         timestep_s: float = 0.05,
@@ -1894,8 +1895,6 @@ class BlenderService(rpyc.Service):
     @staticmethod
     def _thermal_values(config: dict[str, Any]) -> dict[str, Any]:
         from dataclasses import asdict
-
-        from visionsim.simulate.config import ThermalConfig
 
         values = asdict(ThermalConfig(**dict(config)))
         if values["assignments"] is not None:

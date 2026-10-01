@@ -57,22 +57,22 @@
       "preset": "stainless_steel",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.5,
-      "reason": "Name says 'bling chrome' (shiny chrome accessory); Glossy BSDF, near-white (1.0), roughness 0.55 (semi-polished, not a perfect mirror); no dedicated chrome preset so stainless_steel (fittings) is used per guidance; object is a generically-named imported cylinder so the exact part is unclear."
+      "confidence": 0.35,
+      "reason": "Chrome-named accessory on an imported cylinder. Buffed stainless steel is an approximate substitute; the part, substrate and finish are unverified."
     },
     "Metal_brass": {
       "preset": "copper",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.6,
-      "reason": "Name says brass; used on 'motif radiateur.001' (radiator decorative motif) alongside brushed-aluminium bars; Diffuse colour (0.68,0.54,0.44) is brass-toned. No brass preset exists; copper (closest copper-alloy analogue, as used for 'bronce' in kitchen1.thermal.json) is the nearest fit."
+      "confidence": 0.3,
+      "reason": "Name and colour suggest brass on 'motif radiateur.001'. Copper is an approximate substitute: its pure-copper bulk values and oxidised-surface emissivity are not established for this alloy or finish."
     },
     "Metal_goldleaf.002": {
       "preset": "metal_painted",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.45,
-      "reason": "Name says gold leaf (thin decorative gilt coating over a substrate, object 'Plane.008'); Diffuse gold colour (0.8,0.78,0.28) mixed 50/50 with a glossy component. No gold preset exists; treated as a coated/painted metal finish per guidance rather than a solid conductive metal, since gold leaf is a coating, not bulk metal."
+      "confidence": 0.2,
+      "reason": "Gold-leaf appearance on Plane.008; substrate unknown. Painted steel is an unverified placeholder: neither its steel bulk properties nor its nonmetallic-paint emissivity describes gold leaf."
     },
     "Other_shinyplasti.002": {
       "preset": "pvc",
@@ -141,8 +141,8 @@
       "preset": "stainless_steel",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.65,
-      "reason": "French 'chrome robinet' = chrome tap/fitting; used on nearly every chrome hardware part in the scene (taps 'robinet.000/.001/.002', drain 'siphon sdb', shower tray 'bac douche.000', bathtub 'baignoire.000', screws, tubes); pure Glossy BSDF, near-white/blue (0.93,0.95,1.0), roughness 0.0 (mirror finish). No dedicated chrome preset exists; stainless_steel chosen per guidance ('prefer stainless_steel for ... sanitaryware fittings') even though the roughness is closer to a mirror-polished finish."
+      "confidence": 0.35,
+      "reason": "Chrome taps, drains and other fittings with a mirror Glossy shader. Buffed stainless steel is an approximate substitute; the substrate and chrome-surface emissivity are unknown."
     },
     "couv linge sdb": {
       "preset": "fabric",

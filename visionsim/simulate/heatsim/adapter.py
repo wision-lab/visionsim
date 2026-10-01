@@ -16,6 +16,7 @@ from typing import Any
 
 import numpy as np
 
+from visionsim.simulate.config import ThermalConfig
 from visionsim.simulate.heatsim import atlas, cache, materials
 from visionsim.simulate.heatsim.names import (
     ATLAS_COVERAGE_PROP,
@@ -654,7 +655,7 @@ def write_atlas(
     emissivity_history: dict[str, np.ndarray] = {}
     for name, tex in atlas_plan.texels.items():
         count = len(tex["xy"])
-        eps: np.ndarray = np.full(count, 0.9, dtype=np.float64)
+        eps: np.ndarray = np.full(count, ThermalConfig.emissivity, dtype=np.float64)
         if defaults is not None:
             obj = next((o for o in bpy.context.scene.objects if o.name == name), None)
             if obj is None:

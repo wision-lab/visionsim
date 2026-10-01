@@ -8,8 +8,8 @@
       "preset": "metal_painted",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.45,
-      "reason": "Spanish 'bola decoracion' = decoration ball(s); shader is a 'PBR-Metallic' node group (pure Glossy BSDF, no diffuse term) with a neutral grey base color (~0.30,0.32,0.32); the 3 small orbs sit on the wood shelf (ESTANTERIA) next to 'ceramica negra'. Ambiguous whether raw or coated metal, so following the guidance to prefer metal_painted for ambiguous coated metal."
+      "confidence": 0.3,
+      "reason": "Decorative balls with a metallic Glossy shader. Painted steel is an assumed substitute; neither a steel substrate nor a nonmetallic coating is established by the shader."
     },
     "BookCover": {
       "preset": "paper",
@@ -92,8 +92,8 @@
       "preset": "aluminium_polished",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.85,
-      "reason": "Explicit name 'chrome'; a pure mirror Glossy BSDF (roughness 0.0). The 4 Cylinder objects are parented to the chair-seat discs in the 'silla' collection - the chrome pedestal/leg of the dining chairs."
+      "confidence": 0.3,
+      "reason": "Chrome-named chair pedestals with a mirror Glossy shader. Polished aluminium is a low-emissivity substitute only; aluminium bulk properties and this emissivity are not established for the actual substrate or plating."
     },
     "CRISTAL": {
       "preset": "glass",
@@ -246,15 +246,15 @@
       "preset": "metal_painted",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.55,
-      "reason": "Explicit name 'metal'; anisotropic + glossy layered reflectance (brushed-metal look), neutral gray tint. Cube.003/Cube.004 are co-located with 'PINTURA' (the framed-picture canvas) - the picture's metal frame. Ambiguous coated-vs-bare metal, so using metal_painted per guidance."
+      "confidence": 0.35,
+      "reason": "Picture frame with a brushed-metal shader. Painted steel is an assumed substitute; substrate and coating are unknown, so its paint emissivity is unverified."
     },
     "metal 2": {
       "preset": "metal_painted",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.55,
-      "reason": "Same shader family as 'metal'. Cube.008/Cube.009 are 1.72m x 13cm x 75cm bars co-located with the 'CRISTAL' glass pane - a window's metal frame. Ambiguous coated-vs-bare metal, so using metal_painted per guidance."
+      "confidence": 0.35,
+      "reason": "Window frame sharing the 'metal' shader family. Painted steel is an assumed substitute; substrate and coating are unknown, so its paint emissivity is unverified."
     },
     "Page": {
       "preset": "paper",
@@ -295,22 +295,22 @@
       "preset": "paper",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.8,
-      "reason": "Spanish 'pintura' = painting; textures are literal artwork images ('PICTURE.png', 'cuadro-abstracto-marron-oxido-y-blanco.jpg' = 'abstract painting brown-rust-and-white'). The printed-canvas insert of a framed picture (Cube.003/Cube.004, alongside the 'metal' frame material)."
+      "confidence": 0.5,
+      "reason": "Framed artwork with picture textures. Paper is an approximate substitute; the images do not establish whether the support is paper, canvas or another material."
     },
     "planchas": {
       "preset": "wood",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.9,
-      "reason": "Spanish 'planchas' = boards/sheets; texture set 'TexturesCom_PlywoodOld0068_*' is literally an old-plywood material."
+      "confidence": 0.6,
+      "reason": "Boards with 'TexturesCom_PlywoodOld0068_*' textures. The oak-based wood preset approximates plywood; the species, laminate and moisture content are unknown."
     },
     "plastico blanco": {
       "preset": "pvc",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.6,
-      "reason": "Spanish 'plastico blanco' = white plastic; used by all 8 chair-seat-shell/disc objects in the 'silla' collection, sitting above the chrome pedestal legs (a molded-plastic shell chair). The shader's exposed base-color default reads near-black, but that input appears fed by an unused Magic-Texture/Hue-Sat chain not reaching the final surface, so the explicit name is treated as authoritative over that one suspicious value."
+      "confidence": 0.5,
+      "reason": "White moulded-plastic chair shells in the 'silla' collection. Unplasticized PVC is an approximate substitute; the polymer is not identified."
     },
     "Stripy Edge": {
       "preset": "fabric",
@@ -323,8 +323,8 @@
       "preset": "wood",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.75,
-      "reason": "Name says 'Bamboo Planter'; texture 'REF Wooden Planter.JPG'. Four planter-pot objects of graduated size (34-65cm), consistent with a set of wood/bamboo planters; no dedicated bamboo preset so using wood."
+      "confidence": 0.5,
+      "reason": "Bamboo-named planters with 'REF Wooden Planter.JPG'. The oak-based wood preset is an approximation; bamboo-specific properties are not represented."
     }
   }
 }

@@ -10,8 +10,8 @@
       "preset": "stainless_steel",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.6,
-      "reason": "Spanish 'fregadero' = sink; kitchen sinks are typically stainless steel; shared 'iron_rusted_rougness.jpg' is a generic roughness map."
+      "confidence": 0.5,
+      "reason": "Kitchen sink, assumed stainless steel. The shared 'iron_rusted_rougness.jpg' map does not identify its alloy or finish; grade 304 and buffed-surface emissivity are approximations."
     },
     "DIC METAL": {
       "preset": "metal_painted",
@@ -94,8 +94,8 @@
       "preset": "copper",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.8,
-      "reason": "Spanish 'bronce' = bronze; copper is the closest preset for a copper alloy."
+      "confidence": 0.3,
+      "reason": "Spanish 'bronce' suggests bronze. Copper is an approximate substitute: its pure-copper bulk values and oxidised-surface emissivity are not established for this alloy or finish."
     },
     "CRISTAL LAMPARA": {
       "preset": "glass",
@@ -157,8 +157,8 @@
       "preset": "stainless_steel",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.7,
-      "reason": "Spanish 'metal cocina' = kitchen metal; stove/appliance bodies are commonly stainless steel."
+      "confidence": 0.5,
+      "reason": "Kitchen appliance metal, assumed stainless steel. Grade 304 and buffed-surface emissivity are approximations; the asset does not establish the alloy or finish."
     },
     "CUADRO": {
       "preset": "paper",
@@ -241,8 +241,8 @@
       "preset": "steel",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.6,
-      "reason": "Spanish 'cubre llamas' = flame cover; bare steel exposed to flame on gas stove."
+      "confidence": 0.35,
+      "reason": "Gas-stove flame cover, assumed steel. The preset's freshly rolled surface is an approximation; oxidation, soot and the actual alloy are unverified."
     },
     "hojas": {
       "preset": "foliage",

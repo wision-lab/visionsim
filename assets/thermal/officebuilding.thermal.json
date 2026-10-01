@@ -36,8 +36,8 @@
       "preset": "pvc",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.3,
-      "reason": "Node group 'carbon fiber'; unused (0 objects). No carbon-fibre-composite preset exists; approximated as generic rigid plastic (pvc) since the resin matrix dominates surface thermal response. Low confidence: real carbon-fibre laminate diffusivity is not well represented by any preset in the library."
+      "confidence": 0.2,
+      "reason": "Unused 'carbon fiber' shader. PVC is a placeholder; laminate composition and directional thermal properties are unknown and are not represented by this preset."
     },
     "CLOTH": {
       "preset": "fabric",
@@ -99,8 +99,8 @@
       "preset": "steel",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.55,
-      "reason": "Node group named 'galvanized metal'; unused (0 objects). No galvanised-specific preset exists (the zinc coating is thin and doesn't change the bulk thermal mass much); bare steel is the closest preset."
+      "confidence": 0.35,
+      "reason": "Unused 'galvanized metal' shader. Steel approximates the substrate, but the preset's freshly rolled steel emissivity does not describe the zinc coating."
     },
     "GLASS": {
       "preset": "glass",
@@ -239,8 +239,8 @@
       "preset": "marble",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.4,
-      "reason": "Node group named 'MOSS STONE'; unused (0 objects). No moss/weathered-stone preset exists; approximated with the marble/granite/engineered-stone preset as the closest natural-stone analogue. Low confidence given the vegetation (moss) layer isn't represented at all."
+      "confidence": 0.3,
+      "reason": "Unused 'MOSS STONE' shader. Natural marble is an approximate substitute for unidentified stone; the moss layer is not represented."
     },
     "M_0130_Gainsboro.001": {
       "preset": "pvc",
@@ -351,92 +351,92 @@
       "preset": "aluminium_polished",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.35,
-      "reason": "Node group 'Gold' (+ 'metal rough normal'); unused (0 objects). No gold preset exists in the library; approximated with aluminium_polished as the closest low-emissivity, reflective decorative-metal-trim preset. Low confidence - composition is not aluminium."
+      "confidence": 0.25,
+      "reason": "Unused 'Gold' shader. Polished aluminium is a low-emissivity substitute; its bulk properties describe aluminium, while the actual substrate and finish are unknown."
     },
     "PBR GOLD.001": {
       "preset": "aluminium_polished",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.35,
-      "reason": "Same PBR GOLD shader, used on Cube.039 (small decorative trim/hardware accent)."
+      "confidence": 0.25,
+      "reason": "Same PBR GOLD shader, used on Cube.039 (small decorative trim/hardware accent). Polished aluminium is a substitute for an unknown substrate and finish, not a gold material model."
     },
     "PBR GOLD.002": {
       "preset": "aluminium_polished",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.35,
-      "reason": "Same PBR GOLD shader, used on Cylinder.014."
+      "confidence": 0.25,
+      "reason": "Same PBR GOLD shader, used on Cylinder.014. Polished aluminium is a substitute for an unknown substrate and finish, not a gold material model."
     },
     "PBR GOLD.003": {
       "preset": "aluminium_polished",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.35,
-      "reason": "Same PBR GOLD shader, used on Cylinder.001."
+      "confidence": 0.25,
+      "reason": "Same PBR GOLD shader, used on Cylinder.001. Polished aluminium is a substitute for an unknown substrate and finish, not a gold material model."
     },
     "PBR GOLD.004": {
       "preset": "aluminium_polished",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.35,
-      "reason": "Same PBR GOLD shader, used on 3 Cylinder objects (.031/.032/.033)."
+      "confidence": 0.25,
+      "reason": "Same PBR GOLD shader, used on 3 Cylinder objects (.031/.032/.033). Polished aluminium is a substitute for an unknown substrate and finish, not a gold material model."
     },
     "PBR TITANIUM": {
       "preset": "stainless_steel",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.45,
-      "reason": "Node group 'Titanium' (+ 'metal rough normal'); unused (0 objects). No titanium preset exists; stainless_steel is the closest available low-conductivity structural/trim metal."
+      "confidence": 0.3,
+      "reason": "Unused 'Titanium' shader. Buffed grade-304 stainless steel is an approximate substitute; its bulk properties and emissivity do not establish those of titanium."
     },
     "PBR TITANIUM.001": {
       "preset": "stainless_steel",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.5,
-      "reason": "Same Titanium shader, used on 7 objects (Cube.002/.007/.025, Cylinder.002, Plane, ...) with a generic 'metal_NRM.jpg' normal map confirming bare/brushed metal trim."
+      "confidence": 0.3,
+      "reason": "Same Titanium shader, used on 7 objects (Cube.002/.007/.025, Cylinder.002, Plane, ...) with a generic 'metal_NRM.jpg' normal map suggesting a brushed-metal appearance. Buffed stainless steel is an approximate substitute, not measured titanium properties."
     },
     "PBR TITANIUM.002": {
       "preset": "stainless_steel",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.5,
-      "reason": "Same Titanium shader family, used on Cube.041/.043 (metal_NRM.jpg.003 normal map)."
+      "confidence": 0.3,
+      "reason": "Same Titanium shader family, used on Cube.041/.043 (metal_NRM.jpg.003 normal map). Buffed stainless steel is an approximate substitute, not measured titanium properties."
     },
     "PBR TITANIUM.003": {
       "preset": "stainless_steel",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.5,
-      "reason": "Same Titanium shader family, used on Cube.022."
+      "confidence": 0.3,
+      "reason": "Same Titanium shader family, used on Cube.022. Buffed stainless steel is an approximate substitute, not measured titanium properties."
     },
     "PBR TITANIUM.004": {
       "preset": "stainless_steel",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.5,
-      "reason": "Same Titanium shader family, used on Cube.034."
+      "confidence": 0.3,
+      "reason": "Same Titanium shader family, used on Cube.034. Buffed stainless steel is an approximate substitute, not measured titanium properties."
     },
     "PBR TITANIUM.005": {
       "preset": "stainless_steel",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.5,
-      "reason": "Same Titanium shader family, used on Cube.035/.037/.038."
+      "confidence": 0.3,
+      "reason": "Same Titanium shader family, used on Cube.035/.037/.038. Buffed stainless steel is an approximate substitute, not measured titanium properties."
     },
     "PBR TITANIUM.006": {
       "preset": "stainless_steel",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.5,
-      "reason": "Same Titanium shader family, used on Cube.040 (metal_NRM.jpg.001)."
+      "confidence": 0.3,
+      "reason": "Same Titanium shader family, used on Cube.040 (metal_NRM.jpg.001). Buffed stainless steel is an approximate substitute, not measured titanium properties."
     },
     "PBR TITANIUM.007": {
       "preset": "stainless_steel",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.5,
-      "reason": "Same Titanium shader family, used on Plane.001/.002/.003 (metal_NRM.jpg.002)."
+      "confidence": 0.3,
+      "reason": "Same Titanium shader family, used on Plane.001/.002/.003 (metal_NRM.jpg.002). Buffed stainless steel is an approximate substitute, not measured titanium properties."
     },
     "PICTURE": {
       "preset": "paper",
@@ -561,8 +561,8 @@
       "preset": "aluminium",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.35,
-      "reason": "JBL_Twin speaker prop colour swatch; only evidence is a light-grey (0.75) legacy diffuse colour with no Principled/metallic value captured. Genuinely ambiguous between a painted-plastic 'silver' colour option (like its siblings) and real metal trim; picked aluminium for the metallic name but confidence is low."
+      "confidence": 0.2,
+      "reason": "JBL_Twin speaker colour swatch with only a light-grey legacy diffuse colour recorded. Aluminium is an unverified placeholder; the name does not distinguish metal from silver-coloured plastic."
     },
     "jbl_logo.001": {
       "preset": "pvc",

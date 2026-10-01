@@ -8,6 +8,7 @@ import numpy as np
 import scipy.sparse as sp
 import torch
 
+from visionsim.simulate.config import ThermalConfig
 from visionsim.simulate.heatsim.laplacian import point_cloud_laplacian_and_mass
 from visionsim.simulate.heatsim.physics import AMBIENT_TEMPERATURE_K, STEFAN_BOLTZMANN_MM
 
@@ -161,7 +162,7 @@ class HeatSimFEM:
         if c_np is None:
             c_np = np.full_like(boundary_mask_np, float(self.gen_params.C), dtype=np.float64)
         if eps_np is None:
-            eps_np = np.full_like(boundary_mask_np, 0.9, dtype=np.float64)
+            eps_np = np.full_like(boundary_mask_np, ThermalConfig.emissivity, dtype=np.float64)
         eps_np = np.clip(eps_np, 0.0, 1.0)
 
         rho_t = torch.from_numpy(rho_np.astype(np.float32)).to(self.device)

@@ -163,11 +163,10 @@ class ThermalConfig:
     """Also save an inferno-colormap PNG preview of the temperature map"""
     assignments: Path | None = None
     """Path to a thermal material assignment sidecar (``<scene>.thermal.json``). When set, thermal properties
-    are resolved per material slot from the sidecar; when unset the global defaults below are used for every
-    surface. Sidecars are described in the thermal rendering tutorial."""
-    # --- per-object override hook (else globals below) ---
-    # overrides: dict[str, ...]  # (future: per-object params by object name; today, globals + obj.heat_sim_material)
-    # --- global material defaults (used where no per-object value is set) ---
+    are resolved per material slot from the sidecar; otherwise authored object values or the global defaults
+    below apply. Sidecars are described in the thermal rendering tutorial."""
+    # Generic fallback estimates, independent of named material presets.
+    # Used where neither a sidecar preset nor an authored object value applies.
     initial_temperature_K: float = 295.0
     """Default initial temperature for meshes without a per-object value"""
     thermal_diffusivity_mm2_s: float = 0.17

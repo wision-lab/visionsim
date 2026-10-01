@@ -73,8 +73,8 @@
       "preset": "glass",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.4,
-      "reason": "Emissive daylight portal (strength 20) on windows representing strong solar radiation input."
+      "confidence": 0.25,
+      "reason": "Emissive daylight proxy on the windows (strength 20). Glass is an assumed window material; shader emission does not establish a physical composition or temperature."
     },
     "varnishedWoodDoor": {
       "preset": "wood",
@@ -108,8 +108,8 @@
       "preset": "wood",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.5,
-      "reason": "Cork is bark-derived; wood is the closest available preset."
+      "confidence": 0.25,
+      "reason": "Name suggests cork. The oak-based wood preset is a rough substitute; cork-specific density, heat capacity and diffusivity are not represented."
     },
     "paintedBlind": {
       "preset": "metal_painted",
@@ -129,8 +129,8 @@
       "preset": "plaster",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.4,
-      "reason": "Blackboard surface; could be slate, plaster, or enameled steel, plaster is closest."
+      "confidence": 0.3,
+      "reason": "Blackboard of unknown construction. Gypsum plaster is a placeholder; slate or enamelled steel would require different properties."
     },
     "paper": {
       "preset": "paper",
@@ -290,15 +290,15 @@
       "preset": "pvc",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.3,
-      "reason": "Dust particles; no clear match, using global default PVC."
+      "confidence": 0.2,
+      "reason": "Dust particles of unknown composition. PVC is an explicit placeholder assignment, not the global fallback or a measured dust material."
     },
     "override_black": {
       "preset": "pvc",
       "role": "FEM_PARTICIPANT",
       "dirichlet_K": null,
-      "confidence": 0.3,
-      "reason": "Rendering override material; no physical basis, using global default PVC."
+      "confidence": 0.2,
+      "reason": "Rendering override with no identified physical material. PVC is an explicit placeholder assignment, not the global fallback."
     }
   }
 }

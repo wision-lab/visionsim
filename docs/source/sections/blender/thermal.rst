@@ -305,8 +305,10 @@ sidecar and check it before rendering. Save this as ``scene.thermal.json``::
 Pass it using ``--config.thermal.assignments scene.thermal.json``. Material
 names must match the blend file exactly. ``schema_version`` must be ``1``;
 ``scene`` is an informational label. The optional ``defaults.preset`` applies
-to unnamed materials; when neither it nor a material entry supplies a preset,
-the object's authored values or global defaults apply.
+when a material entry is missing or has no preset, including unnamed slots.
+When neither supplies a preset, the object's authored values or the generic
+fallback values in ``ThermalConfig`` apply. A null preset does not exclude a
+surface from the simulation.
 
 A ``FEM_PARTICIPANT`` starts at its initial temperature and evolves during the
 solve. A ``DIRICHLET_SOURCE`` stays pinned at ``dirichlet_K`` and can warm or
