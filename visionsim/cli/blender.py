@@ -113,8 +113,8 @@ def optimize_rate(
     max_depth: float | None = None,
     debug_path: Path | None = None,
 ) -> float:
-    """Find the keyframe multiplier `k` such that the `percentile`-th percentile optical flow magnitude
-    is about `target` pixels.
+    """Find the keyframe multiplier ``k`` such that the ``percentile``-th percentile optical flow magnitude
+    is about ``target`` pixels.
 
     This method uses a simplified Newton method to find the keyframe multiplier, assuming flow is roughly
     proportional to `1/k`. At every step, `render-animation` at a coarse resolution and low sample count is run,
@@ -141,8 +141,8 @@ def optimize_rate(
             multiplier in a single iteration.
         scale_decay: Decay the scale factor multiplier by this much after each iteration,
             helps prevent oscillations.
-        stall_tolerance: If `p_flow`, the percentile-th percentile flow, changes by less than this
-            fraction of `target` between consecutive iterations, the search is considered stalled and
+        stall_tolerance: If ``p_flow``, the percentile-th percentile flow, changes by less than this
+            fraction of ``target`` between consecutive iterations, the search is considered stalled and
             terminates early with a warning.
         max_depth: If set, pixels with depth greater than this limit are ignored when computing the
             percentile flow. Depth rendering will be enabled.
