@@ -17,3 +17,14 @@ If you use VisionSIM in your work, please cite:
   year         = {2026}
 }
 ```
+
+## License
+
+VisionSIM is released under the GNU General Public License, version 3 or later
+(GPL-3.0-or-later) — see [LICENSE.md](LICENSE.md).
+
+A commercial license is available for those who cannot comply with the GPL: contact us if
+you are interested.
+
+Contributions are accepted under the MIT License; see [CONTRIBUTING.md](CONTRIBUTING.md) for the
+details. No contributor license agreement (CLA) is required.
