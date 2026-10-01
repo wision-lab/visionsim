@@ -138,6 +138,9 @@ Output and file settings
 Material defaults
 ~~~~~~~~~~~~~~~~~
 
+These are generic fallback estimates from ``ThermalConfig``, independent of
+the named material presets.
+
 .. list-table::
    :header-rows: 1
    :widths: 32 12 56
@@ -332,6 +335,10 @@ common starting points are shown below. The full set of preset names is
 rather than a measured piece of furniture or appliance. A coating can change
 surface emissivity even when the metal underneath has similar thermal mass.
 
+Source links, derivations, surface assumptions and estimated values are recorded
+alongside the preset table in
+`materials.py <../../_modules/visionsim/simulate/heatsim/materials.html>`_.
+
 .. list-table:: Example preset values
    :header-rows: 1
    :widths: 25 18 18 19 12
@@ -342,34 +349,34 @@ surface emissivity even when the metal underneath has similar thermal mass.
      - Specific heat (J/kg·K)
      - Emissivity
    * - ``wood``
-     - 0.082
-     - 897
-     - 2380
+     - 0.15
+     - 700
+     - 1630
      - 0.90
    * - ``plaster``
-     - 0.4
-     - 1200
+     - 0.31
+     - 1120
      - 1090
      - 0.91
    * - ``glass``
-     - 0.34
+     - 0.43
      - 2500
-     - 840
-     - 0.92
+     - 880
+     - 0.84
    * - ``metal_painted``
-     - 4.2
-     - 7930
-     - 280
+     - 15.4
+     - 7850
+     - 440
      - 0.92
    * - ``stainless_steel``
-     - 4.0
+     - 3.8
      - 7900
      - 500
      - 0.16
    * - ``aluminium_polished``
      - 97.0
      - 2700
-     - 978
+     - 900
      - 0.05
 
 Within an atlas tile, material properties follow the face's material slot.
