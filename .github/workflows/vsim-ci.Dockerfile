@@ -2,10 +2,13 @@
 FROM debian:trixie-slim
 WORKDIR /app 
 
-# Install system dependencies needed for both Visionsim and Blender
+# Install system dependencies needed for both Visionsim and Blender.
+# `xvfb` (plus `xauth` and mesa's software `libgl1-mesa-dri` driver) provides the headless virtual
+# display with a (llvmpipe) GL context that Blender's viewport/playblast renderer needs.
 RUN apt-get update && apt-get install --no-install-recommends -y \
     build-essential curl ca-certificates automake autoconf pkg-config \
     libxi6 libxkbcommon-x11-0 libglfw3-dev libgles2-mesa-dev libsm6 \
+    xvfb xauth libgl1-mesa-dri \
     ffmpeg git nano bzip2 xz-utils \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -32,3 +35,11 @@ RUN uv pip install --no-cache torch torchvision --index-url https://download.pyt
 COPY . /src
 RUN uv pip install --no-cache --editable /src
 RUN visionsim post-install --editable
+
+# Blender's viewport renderer (playblast) needs an X display with a GL context, which containers
+# lack. The entrypoint starts a virtual one with Xvfb before running the container's command.
+COPY .github/workflows/xvfb-entrypoint.sh /usr/local/bin/xvfb-entrypoint.sh
+RUN chmod +x /usr/local/bin/xvfb-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/xvfb-entrypoint.sh"]
+CMD ["bash"]
