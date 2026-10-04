@@ -442,7 +442,7 @@ def _normalize_and_expand(curve: npt.NDArray, hilbert_delta: float, n_points: in
     total_length = segment_lengths.sum()
     segment_points: list[npt.NDArray] = []
     for i in range(n_sub_segments):
-        n_segment_points = max(1, int(math.ceil(segment_lengths[i] / total_length * n_points)))
+        n_segment_points = max(1, math.ceil(segment_lengths[i] / total_length * n_points))
         segment = np.zeros((curve.shape[0], n_segment_points + 1))
         for j in range(curve.shape[0]):
             if curve[j, i] == curve[j, i + 1]:
@@ -509,7 +509,7 @@ def make_tof_gray_codes(n_captures: int, n_depths: int) -> npt.NDArray:
     """
     gray_codes = make_max_min_run_length_gray_codes() if n_captures == 5 else make_gray_codes_reduced(n_captures)
     n_segments = gray_codes.shape[0]
-    points_per_segment = int(math.ceil(n_depths / n_segments))
+    points_per_segment = math.ceil(n_depths / n_segments)
     code_blocks: list[npt.NDArray] = []
     for i in range(n_segments):
         next_index = (i + 1) % n_segments
@@ -601,7 +601,7 @@ def make_tof_hilbert_codes(
     else:
         raise ValueError(f"Unsupported n_captures={n_captures}, dim={dim}")
     n_segments = permutation_matrix.shape[1]
-    points_per_segment = int(math.ceil(n_depths / n_segments))
+    points_per_segment = math.ceil(n_depths / n_segments)
     hilbert_curve = _hilbert_3d if dim == 3 else _hilbert_2d
     curve = hilbert_curve(hilbert_order)
     curve_points = _normalize_and_expand(curve, hilbert_delta, points_per_segment)

@@ -510,7 +510,7 @@ class TestSimulation:
             assert scaled == pytest.approx(2 * baseline)
         else:
             scaled = simulate_measurements(depths, albedo, mod, ref, _PERIOD, **kwargs)
-            assert scaled == pytest.approx(list(kwargs.values())[0] * baseline)
+            assert scaled == pytest.approx(next(iter(kwargs.values())) * baseline)
 
     def test_inverse_square_falloff_and_phase_wrap(self):
         """A depth one period deeper has the same phase but a 1/d**2 falloff."""
@@ -531,7 +531,7 @@ class TestSimulation:
         assert ambient_only[:, 0] == pytest.approx(ambient_only[:, 1])
         assert ambient_only == pytest.approx(
             2 * simulate_measurements(depths, np.full(2, 0.5), mod, ref, _PERIOD, ambient_power=1.0, light_power=0.0)
-        )  # noqa: E501
+        )
 
     def test_matches_analytic_model(self):
         mod, ref = _codes("deltaSin", 4, 501)
