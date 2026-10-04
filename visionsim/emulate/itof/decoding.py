@@ -38,7 +38,7 @@ def _compute_segment_distance(
         ``[start, end]``, shape ``(n_points,)``.
     """
     v = end - start
-    seg_len_sq = np.sum(v**2)
+    seg_len_sq: npt.NDArray[np.floating] = np.sum(v**2)
     if points_sq_sum is None:
         points_sq_sum = np.sum(points**2, axis=0)
 

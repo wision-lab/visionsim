@@ -50,7 +50,7 @@ def make_conv_sinusoidal_codes(n_captures: int, n_depths: int) -> tuple[npt.NDAr
     See Also:
         :func:`visionsim.emulate.itof.decoding.decode` with ``scheme="convSin"``.
     """
-    sample_indices = np.arange(n_depths, dtype=float)  # (n_depths,)
+    sample_indices: npt.NDArray[np.floating] = np.arange(n_depths, dtype=float)  # (n_depths,)
     phases = 2 * np.pi * np.arange(n_captures)[:, None] / n_captures  # (n_captures, 1)
     modulation = 0.5 + 0.5 * np.cos(2 * np.pi * sample_indices / n_depths)  # (n_depths,) – same for every capture
     modulation_codes = np.broadcast_to(modulation / modulation.sum(), (n_captures, n_depths)).copy()
@@ -76,7 +76,7 @@ def make_delta_sinusoidal_codes(n_captures: int, n_depths: int) -> tuple[npt.NDA
     See Also:
         :func:`visionsim.emulate.itof.decoding.decode` with ``scheme="deltaSin"``.
     """
-    sample_indices = np.arange(n_depths, dtype=float)
+    sample_indices: npt.NDArray[np.floating] = np.arange(n_depths, dtype=float)
     phases = 2 * np.pi * np.arange(n_captures)[:, None] / n_captures  # (n_captures, 1)
     modulation_codes = np.zeros((n_captures, n_depths))
     modulation_codes[:, 0] = 1.0  # impulse at t=0 for every capture
@@ -102,7 +102,7 @@ def make_conv_square_codes(n_captures: int, n_depths: int) -> tuple[npt.NDArray,
     See Also:
         :func:`visionsim.emulate.itof.decoding.decode` with ``scheme="convSquare"``.
     """
-    sample_indices = np.arange(n_depths, dtype=float)
+    sample_indices: npt.NDArray[np.floating] = np.arange(n_depths, dtype=float)
     phases = 2 * np.pi * np.arange(n_captures)[:, None] / n_captures  # (n_captures, 1)
     modulation = (0.5 + 0.5 * np.cos(2 * np.pi * sample_indices / n_depths) >= 0.5).astype(float)  # (n_depths,)
     modulation_codes = np.broadcast_to(modulation / modulation.sum(), (n_captures, n_depths)).copy()
@@ -133,7 +133,7 @@ def make_single_ramp_codes(n_depths: int) -> tuple[npt.NDArray, npt.NDArray]:
         with ``scheme="singleRamp"``.
     """
     n_bins = 2 * n_depths - 1
-    sample_indices = np.arange(n_bins, dtype=float)
+    sample_indices: npt.NDArray[np.floating] = np.arange(n_bins, dtype=float)
     modulation_codes = np.zeros((3, n_bins))
     reference_codes = np.zeros((3, n_bins))
     modulation = 0.5 + 0.5 * np.cos(2 * np.pi * sample_indices / n_bins - np.pi / 2)
@@ -168,7 +168,7 @@ def make_double_ramp_codes(n_depths: int) -> tuple[npt.NDArray, npt.NDArray]:
         with ``scheme="doubleRamp"``.
     """
     n_bins = 2 * n_depths - 1
-    sample_indices = np.arange(n_bins, dtype=float)
+    sample_indices: npt.NDArray[np.floating] = np.arange(n_bins, dtype=float)
     modulation_codes = np.zeros((3, n_bins))
     reference_codes = np.zeros((3, n_bins))
     modulation = 0.5 + 0.5 * np.cos(2 * np.pi * sample_indices / n_bins - np.pi / 2)
@@ -212,7 +212,7 @@ def make_multi_freq_sinusoidal_codes(
     See Also:
         :func:`visionsim.emulate.itof.decoding.decode` with ``scheme="multFreqSin"``.
     """
-    sample_indices = np.arange(n_depths, dtype=float)  # (n_depths,)
+    sample_indices: npt.NDArray[np.floating] = np.arange(n_depths, dtype=float)  # (n_depths,)
     waveform_phases = 2 * np.pi * sample_indices * freq_vec[:, None] / n_depths  # (n_captures, n_depths)
     modulation = 0.5 + 0.5 * np.cos(waveform_phases)  # (n_captures, n_depths)
     modulation_codes = modulation / modulation.sum(axis=1, keepdims=True)
@@ -257,7 +257,7 @@ def make_max_min_run_length_gray_codes() -> npt.NDArray:
     """
     base_pairs = np.array([[0, 0], [0, 1], [1, 1], [1, 0]])
     toggle_sequence = [1, 3, 2, 3, 1, 2, 3, 2, 1, 3, 2, 3, 1, 2, 3, 2]
-    states = np.zeros((len(toggle_sequence) + 1, 3), dtype=int)
+    states: npt.NDArray[np.integer] = np.zeros((len(toggle_sequence) + 1, 3), dtype=int)
     for i, t in enumerate(toggle_sequence):
         states[i + 1] = states[i].copy()
         states[i + 1, t - 1] = 1 - states[i + 1, t - 1]
