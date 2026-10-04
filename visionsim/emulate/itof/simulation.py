@@ -59,7 +59,7 @@ def simulate_measurements(
     albedos: npt.NDArray,
     modulation_codes: npt.NDArray,
     reference_codes: npt.NDArray,
-    max_depth: float,
+    period: float,
     *,
     exposure_time: float = 1.0,
     ambient_power: float = 0.0,
@@ -75,7 +75,9 @@ def simulate_measurements(
         albedos: Reflectance values (0-1), same shape as *depths*.
         modulation_codes: Modulation codes, shape ``(n_captures, n_bins)``.
         reference_codes: Reference (demodulation) codes, shape ``(n_captures, n_bins)``.
-        max_depth: Unambiguous depth range in metres.
+        period: Duration of one code period in seconds, i.e. ``1 / f``. The
+            correlation function is periodic over it, so ``n_bins`` bins span the
+            round-trip distance ``c * period / 2`` and depths wrap back over it.
         exposure_time: Camera exposure time in seconds. Defaults to 1.0.
         ambient_power: Average ambient irradiance. Defaults to 0.0.
         light_power: Peak active light intensity. Defaults to 1.0.
@@ -87,10 +89,11 @@ def simulate_measurements(
         .. [1] `Gupta et al. (2018), "What Are Optimal Coding Functions for Time-of-Flight Imaging?"
            <https://wisionlab.com/wp-content/uploads/2018/07/Gupta_ToG18_ToFOptimalCodingFunctions.pdf>`_
     """
-    # Time resolution per bin based on unambiguous range max_depth
     n_captures, n_bins = modulation_codes.shape
-    time_resolution = 2 * max_depth / (n_bins * scipy.constants.c)
-    period = n_bins * time_resolution
+    # The codes span one period, so the correlation wraps over the distance
+    # light travels in that time, and back out.
+    max_depth = scipy.constants.c * period / 2
+    time_resolution = period / n_bins
 
     # kappa is the integral of the reference functions in a period
     kappa = reference_codes.sum(axis=1) * time_resolution  # (n_captures,)
@@ -106,8 +109,8 @@ def simulate_measurements(
         )
         interpolator = PchipInterpolator(correlation_distances, correlation)
 
-        # The phase of the correlation function wraps around the unambiguous
-        # range, while the 1/d**2 falloff below follows the true distance.
+        # The phase of the correlation function wraps around the code period,
+        # while the 1/d**2 falloff below follows the true distance.
         correlation_samples = interpolator(depths % max_depth)
 
         # Reference formula: (T_exp / T_period) * (beta * correlation + ambient * kappa * albedo)

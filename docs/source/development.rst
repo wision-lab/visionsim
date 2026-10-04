@@ -6,11 +6,11 @@ Editable Install
 
 To install visionsim locally in an editable state with all required development dependencies, clone the repository, navigate to it and run::
     
-    $ pip install -e . --group dev --group docs
+    pip install -e . --group dev --group docs
 
 Similarly, to install visionsim in an editable manner within Blender's runtime, you can do the following::
 
-    $ visionsim post-install --editable
+    visionsim post-install --editable
 
 | 
 
@@ -19,7 +19,7 @@ Running Tests
 
 We use pytest for testing, all tests can be ran directly using the pytest CLI from the project's root, or equivalently using `inv test`. When running the tests, you can optionally pass in the name of a specific test file/test function and path to a install of Blender to test with, like so:: 
 
-    $ pytest tests/test_simulate.py --executable=<path-to-blender>
+    pytest tests/test_simulate.py --executable=<path-to-blender>
 
 To ensure that there's no conflicts due to different versions of the libraries between the server/client sides, a editable ``post-install`` task is run when starting the tests.
 
@@ -32,7 +32,7 @@ Running CI Locally
 
 You can run the CI locally using the `ACT CLI <https://github.com/nektos/act>`_, or use it's `vscode extension <https://sanjulaganepola.github.io/github-local-actions-docs/>`_ as a front end. Using the CLI, you can run all workflows that trigger on a push using `act push`. The following command will run the workflows and, if they fail, open an interactive shell into the latest container::
     
-    $ act push || docker exec -it `docker ps -q | head -n1` bash  
+    act push || docker exec -it `docker ps -q | head -n1` bash  
 
 |
 
@@ -41,7 +41,7 @@ Building the Documentation
 
 In the project root, with visionsim installed with the dev dependencies, run::
 
-    $ inv clean build-docs --preview
+    inv clean build-docs --preview
 
 |
 
@@ -58,7 +58,7 @@ It's also recommended using the pre-commit hook that will lint/test/clean
 the code before every commit. For this make sure that `invoke` and `pre-commit` are 
 installed (via pip) and then install the pre-hooks with::
 
-    $ pre-commit install
+    pre-commit install
 
 See `pre-commit <https://pre-commit.com/#intro>`_ for more.
 
@@ -71,8 +71,8 @@ To prepare for a new release, first ensure all tests, linting, formatting and ty
 
 The up-to-date source on this is the `python package authority <https://packaging.python.org/en/latest/tutorials/packaging-projects>`_, but you'll have to first build the source distribution using::
 
-    $ python -m build
+    python -m build
 
 Then upload it to PyPI with twine::
 
-    $ python -m twine upload dist/*
+    python -m twine upload dist/*

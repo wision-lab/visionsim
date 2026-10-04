@@ -59,6 +59,7 @@ from visionsim.emulate.itof.decoding import (
 
 _C = scipy.constants.c
 _FREQ = 120e6
+_PERIOD = 1 / _FREQ  # one code period, 1 / f
 _D_MAX = _C / (2 * _FREQ)  # unambiguous range of a single-period scheme, ~1.25 m
 
 # Tap layouts of the multi-frequency scheme, as documented by the reference
@@ -115,7 +116,7 @@ def _roundtrip(
     freq_vec, shifts_vec = _tap_vectors(scheme, n_captures)
     mod, ref = _codes(scheme, n_captures, n_depths, hilbert_order=hilbert_order, hilbert_delta=hilbert_delta)
     true_depths = np.atleast_1d(np.asarray(depths, dtype=float))
-    measurements = simulate_measurements(true_depths, np.full(true_depths.shape, albedo), mod, ref, _D_MAX)
+    measurements = simulate_measurements(true_depths, np.full(true_depths.shape, albedo), mod, ref, _PERIOD)
     mult_freq_kwargs = {"freq_vec": freq_vec, "shifts_vec": shifts_vec} if scheme == "multFreqSin" else {}
     decoded = decode(
         scheme, measurements, freq, hilbert_order=hilbert_order, hilbert_delta=hilbert_delta, **mult_freq_kwargs
@@ -494,28 +495,28 @@ class TestSimulation:
     def test_output_shape_1d_and_2d(self):
         mod, ref = _codes("convSin", 4, 501)
         depths_1d = np.array([0.3, 0.7, 1.2])
-        assert simulate_measurements(depths_1d, np.full(3, 0.5), mod, ref, _D_MAX).shape == (4, 3)
+        assert simulate_measurements(depths_1d, np.full(3, 0.5), mod, ref, _PERIOD).shape == (4, 3)
         depths_2d = np.full((8, 6), 0.5)
-        assert simulate_measurements(depths_2d, np.full((8, 6), 0.5), mod, ref, _D_MAX).shape == (4, 8, 6)
+        assert simulate_measurements(depths_2d, np.full((8, 6), 0.5), mod, ref, _PERIOD).shape == (4, 8, 6)
 
     @pytest.mark.parametrize("kwargs", [{"exposure_time": 2.5}, {"light_power": 3.0}, {"albedo": None}])
     def test_linear_terms(self, kwargs: dict):
         mod, ref = _codes("convSin", 4, 501)
         depths = np.array([0.3, 0.7])
         albedo = np.array([0.4, 0.9])
-        baseline = simulate_measurements(depths, albedo, mod, ref, _D_MAX)
+        baseline = simulate_measurements(depths, albedo, mod, ref, _PERIOD)
         if "albedo" in kwargs:
-            scaled = simulate_measurements(depths, albedo * 2, mod, ref, _D_MAX)
+            scaled = simulate_measurements(depths, albedo * 2, mod, ref, _PERIOD)
             assert scaled == pytest.approx(2 * baseline)
         else:
-            scaled = simulate_measurements(depths, albedo, mod, ref, _D_MAX, **kwargs)
+            scaled = simulate_measurements(depths, albedo, mod, ref, _PERIOD, **kwargs)
             assert scaled == pytest.approx(list(kwargs.values())[0] * baseline)
 
     def test_inverse_square_falloff_and_phase_wrap(self):
         """A depth one period deeper has the same phase but a 1/d**2 falloff."""
         mod, ref = _codes("convSin", 4, 1001)
         depths = np.array([0.25, 0.25 + _D_MAX, 0.5, 0.5 + _D_MAX])
-        measurements = simulate_measurements(depths, np.full(4, 0.8), mod, ref, _D_MAX)
+        measurements = simulate_measurements(depths, np.full(4, 0.8), mod, ref, _PERIOD)
         for i in (0, 2):
             assert measurements[:, i + 1] / measurements[:, i] == pytest.approx(
                 (depths[i] / depths[i + 1]) ** 2, rel=1e-6
@@ -525,11 +526,11 @@ class TestSimulation:
         mod, ref = _codes("convSin", 4, 501)
         depths = np.array([0.3, 1.1])
         ambient_only = simulate_measurements(
-            depths, np.full(2, 0.5), mod, ref, _D_MAX, ambient_power=2.0, light_power=0.0
+            depths, np.full(2, 0.5), mod, ref, _PERIOD, ambient_power=2.0, light_power=0.0
         )
         assert ambient_only[:, 0] == pytest.approx(ambient_only[:, 1])
         assert ambient_only == pytest.approx(
-            2 * simulate_measurements(depths, np.full(2, 0.5), mod, ref, _D_MAX, ambient_power=1.0, light_power=0.0)
+            2 * simulate_measurements(depths, np.full(2, 0.5), mod, ref, _PERIOD, ambient_power=1.0, light_power=0.0)
         )  # noqa: E501
 
     def test_matches_analytic_model(self):
@@ -542,14 +543,14 @@ class TestSimulation:
             albedos,
             mod,
             ref,
-            _D_MAX,
+            _PERIOD,
             exposure_time=exposure_time,
             ambient_power=ambient_power,
             light_power=light_power,
         )
         n = mod.shape[1]
-        time_resolution = 2 * _D_MAX / (n * _C)
-        period = n * time_resolution
+        time_resolution = _PERIOD / n
+        period = _PERIOD
         distances = np.linspace(0, _D_MAX, n, endpoint=False)
         for i in range(mod.shape[0]):
             correlation = compute_correlation_function(mod[i], ref[i], time_resolution, n_depths=n)
@@ -562,19 +563,19 @@ class TestSimulation:
 
     def test_non_negative_without_ambient(self):
         mod, ref = _codes("convSin", 4, 501)
-        measurements = simulate_measurements(np.array([0.2, 0.9]), np.full(2, 0.5), mod, ref, _D_MAX)
+        measurements = simulate_measurements(np.array([0.2, 0.9]), np.full(2, 0.5), mod, ref, _PERIOD)
         assert np.all(measurements >= 0)
 
     def test_zero_depth_is_finite(self):
         mod, ref = _codes("convSin", 4, 501)
-        measurements = simulate_measurements(np.array([0.0, 1e-9]), np.full(2, 0.5), mod, ref, _D_MAX)
+        measurements = simulate_measurements(np.array([0.0, 1e-9]), np.full(2, 0.5), mod, ref, _PERIOD)
         assert np.all(np.isfinite(measurements))
 
     def test_mismatched_code_lengths(self):
         mod, _ = _codes("convSin", 4, 501)
         _, ref = _codes("convSin", 4, 502)
         with pytest.raises(ValueError, match="same length"):
-            simulate_measurements(np.array([0.5]), np.array([0.5]), mod, ref, _D_MAX)
+            simulate_measurements(np.array([0.5]), np.array([0.5]), mod, ref, _PERIOD)
 
 
 # ──────────────────────── Depth decoding / round-trips ─────────────────────
@@ -647,7 +648,7 @@ class TestDecoding:
         n_captures = 3
         depths = np.linspace(0.02, _D_MAX - 0.02, 200)
         mod, ref = _codes("deltaHilbertDimOne", n_captures, 1001)
-        measurements = simulate_measurements(depths, np.full(depths.shape, 0.8), mod, ref, _D_MAX)
+        measurements = simulate_measurements(depths, np.full(depths.shape, 0.8), mod, ref, _PERIOD)
         interval_indices, decoded = decode_hilbert(measurements, _FREQ, dim=1)
         n_intervals = len(make_gray_codes_reduced(n_captures))
         assert np.all(interval_indices >= 0)  # nothing left unassigned
@@ -698,7 +699,7 @@ class TestDecoding:
         """Decoding only uses relative intensities, so scaling is a no-op."""
         mod, ref = _codes(scheme, n_captures, 1001)
         depths = np.array([0.3, 0.8])
-        measurements = simulate_measurements(depths, np.full(2, 0.7), mod, ref, _D_MAX)
+        measurements = simulate_measurements(depths, np.full(2, 0.7), mod, ref, _PERIOD)
         assert decode(scheme, measurements * 1e3, _FREQ) == pytest.approx(decode(scheme, measurements, _FREQ))
 
     def test_batch_matches_per_pixel(self):
@@ -715,7 +716,7 @@ class TestDecoding:
         shifts_vec = np.array([0.0, 0.0, 2 * np.pi / 3, 4 * np.pi / 3])
         mod, ref = make_coding_functions("multFreqSin", 4, 1001, freq_vec=freq_vec, shifts_vec=shifts_vec)
         depths = np.array([0.3, 0.5])
-        measurements = simulate_measurements(depths, np.full(2, 0.8), mod, ref, _D_MAX)
+        measurements = simulate_measurements(depths, np.full(2, 0.8), mod, ref, _PERIOD)
         with pytest.raises(NotImplementedError, match="not supported"):
             decode("multFreqSin", measurements, _FREQ, freq_vec=freq_vec, shifts_vec=shifts_vec)
 
@@ -724,7 +725,7 @@ class TestDecoding:
         freq_vec, shifts_vec = _tap_vectors("multFreqSin", n_captures)
         depths = np.array([0.2, 1.0])
         mod, ref = _codes("multFreqSin", n_captures, 1001)
-        measurements = simulate_measurements(depths, np.full(2, 0.8), mod, ref, _D_MAX)
+        measurements = simulate_measurements(depths, np.full(2, 0.8), mod, ref, _PERIOD)
         direct = decode_mult_freq_sinusoid(measurements, _FREQ, freq_vec, shifts_vec)
         dispatched = decode("multFreqSin", measurements, _FREQ, freq_vec=freq_vec, shifts_vec=shifts_vec)
         assert direct == pytest.approx(dispatched)
@@ -824,14 +825,19 @@ class TestItfCli:
         assert measurements.dtype == np.float32
         assert np.all(np.isfinite(measurements))
 
+        # Acquisition parameters belong to the capture, not to any camera pose,
+        # so they live in params.json rather than in the transforms schema.
+        params = json.loads((output_dir / "params.json").read_text())
+        assert params["scheme"] == "convSin"
+        assert params["n_captures"] == 4
+        assert params["freq_hz"] == pytest.approx(_FREQ)
+        assert params["num_bins"] == 200
+        assert params["unambiguous_range_m"] == pytest.approx(_D_MAX)
+        assert "effective_range_m" not in params
+
         metadata = Metadata.load(output_dir / "transforms.json")
         assert len(metadata.frames) == 2
-        assert metadata.itof_scheme == "convSin"
-        assert metadata.itof_captures == 4
-        assert metadata.itof_freq_hz == pytest.approx(_FREQ)
-        assert metadata.itof_num_bins == 200
-        assert metadata.itof_effective_range_m == pytest.approx(_D_MAX)
-        assert metadata.itof_unambiguous_range_m == pytest.approx(_D_MAX)
+        assert not any(key.startswith("itof_") for key in metadata.frames[0].model_dump())
 
     def test_preview_taps(self, tmp_path: Path):
         from visionsim.cli import emulate
@@ -864,10 +870,12 @@ class TestItfCli:
         with caplog.at_level(logging.WARNING, logger="rich"):
             emulate.itof(input_dir=input_dir, output_dir=tmp_path / "out", scheme="singleRamp", num_bins=200)
         assert any("unambiguous range" in record.getMessage() for record in caplog.records)
+        # The recorded range is the one the warning compares against, halved for ramps.
+        params = json.loads((tmp_path / "out" / "params.json").read_text())
+        assert params["unambiguous_range_m"] == pytest.approx(0.5 * _D_MAX)
 
     def test_hilbert_parameters_are_forwarded(self, tmp_path: Path):
         from visionsim.cli import emulate
-        from visionsim.dataset.models import Metadata
 
         input_dir = _write_dataset(tmp_path / "in", [0.4])
         output_dir = tmp_path / "out"
@@ -880,9 +888,9 @@ class TestItfCli:
             hilbert_order=2,
             hilbert_delta=0.1,
         )
-        metadata = Metadata.load(output_dir / "transforms.json")
-        assert metadata.itof_hilbert_order == 2
-        assert metadata.itof_hilbert_delta == pytest.approx(0.1)
+        params = json.loads((output_dir / "params.json").read_text())
+        assert params["hilbert_order"] == 2
+        assert params["hilbert_delta"] == pytest.approx(0.1)
 
     def test_shape_mismatch(self, tmp_path: Path):
         from visionsim.cli import emulate

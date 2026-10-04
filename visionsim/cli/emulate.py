@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import scipy.constants
 
 from visionsim.emulate.itof.coding import CodingScheme, unambiguous_range
 
@@ -463,6 +462,8 @@ def itof(
         force: overwrite output directory if it exists.
         preview: If True, generate image previews of the taps and save them to output_dir/preview.
     """
+    import json
+
     import imageio.v3 as iio
 
     from visionsim.cli import _log
@@ -496,11 +497,11 @@ def itof(
         if depth_dir:
             dataset_depth = Dataset.from_path(depth_dir)
 
-    SPEED_OF_LIGHT = scipy.constants.c
-    max_depth = SPEED_OF_LIGHT / (2 * freq)  # Unambiguous range in metres
-    # The ramp schemes span two correlation periods, so their usable range is
-    # only half of max_depth; anything deeper folds back into the recovered depths.
-    effective_range = unambiguous_range(scheme, freq)
+    # The modulation codes span one period, 1 / f. The ramp codes span two of
+    # them, so the range they recover without folding is only half the c / 2f
+    # that the simulator wraps depths into.
+    period = 1.0 / freq
+    unambiguous_depth = unambiguous_range(scheme, freq)
 
     if dataset_depth is not None and len(dataset_albedo) != len(dataset_depth):
         raise ValueError(
@@ -518,6 +519,29 @@ def itof(
         freq_vec=freqs,
         shifts_vec=shifts,
     )
+    # Acquisition parameters live outside the transforms schema, which describes
+    # camera trajectory. Record them once alongside the measurements, mirroring
+    # the events simulator's params.json.
+    params: dict[str, Any] = {
+        "scheme": scheme,
+        "n_captures": n_captures,
+        "freq_hz": freq,
+        "num_bins": num_bins,
+        "hilbert_order": hilbert_order,
+        "hilbert_delta": hilbert_delta,
+        "unambiguous_range_m": unambiguous_depth,
+        "exposure_time": exposure_time,
+        "ambient_power": ambient_power,
+        "light_power": light_power,
+    }
+    if freq_vec is not None:
+        params["freq_vec"] = list(freq_vec)
+    if shifts_vec is not None:
+        params["shifts_vec"] = list(shifts_vec)
+
+    with open(output_dir / "params.json", "w") as f:
+        json.dump(params, f, indent=2)
+
     clipped_range_warned = False
     transforms: list[dict[str, Any]] = []
 
@@ -562,11 +586,15 @@ def itof(
             if albedo.shape[:2] != depth.shape[:2]:
                 raise ValueError(f"Shape mismatch: albedo {albedo.shape} vs depth {depth.shape}")
 
-            if not clipped_range_warned and np.nanmax(depth) > effective_range:
+            # Sky and missed rays carry the renderer's sentinel (see the preview
+            # mask below), which is not scene geometry and must not drive the
+            # range warning.
+            valid_depth = depth[np.isfinite(depth) & (depth < 1e10)]
+            if not clipped_range_warned and valid_depth.size and np.max(valid_depth) > unambiguous_depth:
                 clipped_range_warned = True
                 _log.warning(
-                    f"Depths up to {np.nanmax(depth):.3f} m exceed the unambiguous range of scheme "
-                    f"'{scheme}' ({effective_range:.3f} m); those pixels will fold back into the recovered range."
+                    f"Depths up to {np.max(valid_depth):.3f} m exceed the unambiguous range of scheme "
+                    f"'{scheme}' ({unambiguous_depth:.3f} m); those pixels will fold back into the recovered range."
                 )
 
             # simulate_measurements works in metres
@@ -575,7 +603,7 @@ def itof(
                 albedos=albedo,
                 modulation_codes=modulation_codes,
                 reference_codes=reference_codes,
-                max_depth=max_depth,
+                period=period,
                 exposure_time=exposure_time,
                 ambient_power=ambient_power,
                 light_power=light_power,
@@ -592,7 +620,12 @@ def itof(
                 invalid_depth = depth >= 1e10
 
                 cmap = plt.get_cmap("twilight_shifted")
-                meas_norm = measurements / (measurements.max() + 1e-9)
+                # Normalize over finite samples only: an inf/nan depth leaves NaN
+                # in the measurements, and a plain max() would then blank every
+                # pixel in the frame rather than just the sky.
+                finite = np.isfinite(measurements)
+                peak = measurements[finite].max() if finite.any() else 0.0
+                meas_norm = measurements / (peak + 1e-9)
 
                 for m in meas_norm:
                     m[invalid_depth] = np.nan
@@ -605,24 +638,6 @@ def itof(
 
             out_transform = transform.copy()
             out_transform["file_path"] = out_file_path.name
-            # Record how these measurements were produced so they can be decoded
-            # without guessing the acquisition parameters.
-            out_transform.update(
-                {
-                    "itof_scheme": scheme,
-                    "itof_captures": n_captures,
-                    "itof_freq_hz": freq,
-                    "itof_num_bins": num_bins,
-                    "itof_hilbert_order": hilbert_order,
-                    "itof_hilbert_delta": hilbert_delta,
-                    "itof_unambiguous_range_m": max_depth,
-                    "itof_effective_range_m": effective_range,
-                }
-            )
-            if freq_vec is not None:
-                out_transform["itof_freq_vec"] = list(freq_vec)
-            if shifts_vec is not None:
-                out_transform["itof_shifts_vec"] = list(shifts_vec)
             transforms.append(out_transform)
 
             progress.update(task, advance=1)

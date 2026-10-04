@@ -11,7 +11,7 @@ where :math:`\varphi` is the recovered phase and :math:`f` the modulation freque
 .. math::
     d_\text{max} = \frac{c}{2f}
 
-which is roughly :math:`1.25\,\text{m}` at :math:`f = 120\,\text{MHz}`; the ramp schemes described below only reach half of that. Scene points beyond the range *fold* back into the recovered depths: only the phase wraps, while the radiometric falloff keeps following the true distance.
+which is roughly :math:`1.25\,\text{m}` at :math:`f = 120\,\text{MHz}`; the ramp schemes described below only reach half of that. Scene points beyond the range *fold* back into the recovered depths: the phase wraps, but the radiometric falloff still tracks the true distance.
 
 |
 
@@ -45,12 +45,11 @@ Ambient light adds a depth-independent offset: light that does not originate fro
 .. math::
     m_k = \frac{T_\text{exp}}{T_\text{period}} \left( \beta \, C_k(d) + P_\text{ambient} \, \kappa_k \, \alpha \right)
 
-with :math:`T_\text{period}` the code period. :math:`C_k(d)` is the circular correlation of the modulation with the :math:`k`-th reference code, sampled at :math:`d` modulo :math:`d_\text{max}`, and :math:`\kappa_k` is the integral of that reference code over one period. Arbitrary coding functions simply replace :math:`A + B\cos(\varphi_k - \varphi)` by :math:`C_k(d)`. The coding schemes below differ in how well the resulting measurements :math:`\{m_k\}` separate depth, albedo and ambient light; Gupta et al. [1]_ study which coding functions do that optimally.
+with :math:`T_\text{period}` the code period. :math:`C_k(d)` is the circular correlation of the modulation with the :math:`k`-th reference code, sampled at :math:`d` modulo :math:`d_\text{max}`, and :math:`\kappa_k` is the integral of that reference code over one period. Arbitrary coding functions replace :math:`A + B\cos(\varphi_k - \varphi)` by :math:`C_k(d)`. The coding schemes below differ in how well the resulting measurements :math:`\{m_k\}` separate depth, albedo and ambient light; Gupta et al. [1]_ study which coding functions do that optimally.
 
-What is not modeled
-^^^^^^^^^^^^^^^^^^^
+.. note::
 
-The emulator produces noiseless measurements. Shot noise (which would scale with :math:`\sqrt{m_k}`), read noise, quantization, and motion or blur effects are not simulated [4]_, so the emulated taps are the correlation samples an ideal sensor would report. Noise can be added downstream if needed.
+    The emulator produces noiseless measurements. Shot noise (which would scale with :math:`\sqrt{m_k}`), read noise, quantization, and motion or blur effects are not simulated [4]_, so the emulated taps are the correlation samples an ideal sensor would report.
 
 |
 
@@ -102,16 +101,21 @@ The modulation and reference waveforms determine how well a sensor separates dep
     * - ``multFreqSin``
       - 4 or odd :math:`\geq 5`
       - :func:`make_multi_freq_sinusoidal_codes <visionsim.emulate.itof.coding.make_multi_freq_sinusoidal_codes>` :math:`\rightarrow` :func:`decode_mult_freq_sinusoid <visionsim.emulate.itof.decoding.decode_mult_freq_sinusoid>`
-      - Several frequencies per capture set; needs ``freq_vec`` and ``shifts_vec``
+      - Several frequencies per capture set; needs ``freq_vec`` and ``shifts_vec``. At four captures the three shifted taps of one frequency must be the widest group, so the single low-frequency tap cannot be used to widen the range
 
-Every row is also reachable through the :func:`make_coding_functions <visionsim.emulate.itof.coding.make_coding_functions>` dispatcher, which takes a scheme name (:class:`CodingScheme <visionsim.emulate.itof.coding.CodingScheme>`), the capture count ``n_captures``, the number of time bins and any scheme-specific parameters, and returns the matching ``(modulation_codes, reference_codes)`` pair. Each cell of the ``Encoder / Decoder`` column pairs the code builder with the decoder that inverts its measurements. The ``Captures`` column lists the capture counts that the linked decoder accepts: the code builders are equally permissive for the sinusoidal and square schemes (any ``n_captures``), the ramp codes are always three captures, and the Hilbert and multi-frequency schemes accept only the counts listed above. The ramp schemes span two correlation periods in one code array, so their correlation function is only monotonic over :math:`c/4f`; deeper points mirror back into the reported range. :func:`unambiguous_range <visionsim.emulate.itof.coding.unambiguous_range>` returns the usable range per scheme.
+The figure below shows each scheme as a row, with the emitter waveform, the demodulation waveform of each tap, and the correlation function that tap measures over depth:
 
-.. note::
+.. figure:: ../../_static/itof-codes-all.svg
+    :alt: Modulation, demodulation and correlation functions for every coding scheme
+    :align: center
+    :class: only-light
 
-    Two decoding behaviors matter when picking a scheme:
+.. figure:: ../../_static/itof-codes-all-dark.svg
+    :alt: Modulation, demodulation and correlation functions for every coding scheme
+    :align: center
+    :class: only-dark
 
-    * The ramp schemes are unambiguous only over :math:`c/4f`, i.e. half of what the other schemes cover at the same frequency; at :math:`f = 120\,\text{MHz}` that is :math:`0.62\,\text{m}`. The CLI warns when a dataset exceeds the effective range of the selected scheme.
-    * For the higher-dimensional Hilbert schemes the segment classifier compares each pixel against segment endpoints on the coarse Hilbert grid, so isolated pixels whose taps nearly vanish can be misassigned. This shows up as occasional large depth errors for the ``n_captures = 5`` codes; the ``n_captures = 4`` variety and all ``dim = 1`` codes are unaffected. :func:`decode_hilbert <visionsim.emulate.itof.decoding.decode_hilbert>` also returns the interval indices of its classifier, which makes these misassignments easy to spot.
+The sinusoidal schemes differ only in their emitters, since both mix against the same sinusoidal reference: a continuous sinusoid for ``convSin``, a single impulse per capture for ``deltaSin``. The square scheme thresholds both waveforms to two levels. The ramp schemes are named for their correlation rather than their emitter, because a square wave at half the modulation frequency correlates into a triangle, which is why their usable range is only ``c/4f``. Their uniform-illumination tap and their dark capture are how the ambient and offset terms are estimated: for ``singleRamp`` these are the second and third taps, while ``doubleRamp`` spends its second tap on a half-period-shifted square reference and keeps only the dark capture in common with it. The Hilbert scheme replaces the smooth reference with a Gray-coded staircase, while the multi-frequency scheme is the only one whose modulation differs per tap, since each capture emits its own frequency. Every column is generated from :func:`make_coding_functions <visionsim.emulate.itof.coding.make_coding_functions>` and :func:`compute_correlation_function <visionsim.emulate.itof.simulation.compute_correlation_function>` at 128 bins.
 
 |
 
@@ -120,20 +124,28 @@ Emulation
 
 To emulate an iToF sensor from a dataset of depth and albedo frames, use the CLI::
 
-    $ visionsim emulate.itof --input-dir=path/to/frames --output-dir=output/itof --scheme=convSin --n-captures=4 --freq=120e6
+    visionsim emulate.itof \
+        --input-dir=path/to/frames \
+        --output-dir=output/itof \
+        --scheme=convSin --n-captures=4 --freq=120e6
 
 Multi-frequency coding needs the per-tap vectors, and the Hilbert schemes expose the curve parameters::
 
-    $ visionsim emulate.itof --input-dir=path/to/frames --output-dir=output/itof \
-        --scheme=multFreqSin --n-captures=5 --freq-vec 1 1 1 2 2 --shifts-vec 0 2.094 4.189 0 1.571
+    visionsim emulate.itof \
+        --input-dir=path/to/frames \
+        --output-dir=output/itof \
+        --scheme=multFreqSin --n-captures=5 \
+        --freq-vec 1 1 1 2 2 --shifts-vec 0 2.094 4.189 0 1.571
 
-Each frame is stored as a ``.npy`` array of shape ``(n_captures, H, W)`` holding the raw per-tap measurements. The emitted ``transforms.json`` records how the data was produced, so it can be decoded without guessing the acquisition parameters: ``itof_scheme``, ``itof_captures``, ``itof_freq_hz``, ``itof_num_bins``, ``itof_hilbert_order``, ``itof_hilbert_delta``, ``itof_unambiguous_range_m``, ``itof_effective_range_m`` and, for ``multFreqSin``, ``itof_freq_vec`` and ``itof_shifts_vec``.
+Each frame is stored as a ``.npy`` array of shape ``(n_captures, H, W)`` holding the raw per-tap measurements. The acquisition parameters are written once to ``params.json`` next to them, so the data can be decoded without guessing how it was produced.
 
-The correlation is evaluated on ``--num-bins`` depth bins. ``--exposure-time``, ``--ambient-power`` and ``--light-power`` set the radiometry, and the Hilbert schemes take ``--hilbert-order`` and ``--hilbert-delta``. Passing ``--preview`` also writes a colorized image per tap, the CLI warns when the scene contains depths beyond the effective range of the selected scheme, and ``--force`` overwrites an existing output directory.
+The correlation is evaluated on ``--num-bins`` depth bins, which sets how finely the returning signal is sampled before each tap's value is read off it; raising it sharpens the correlation near its knees at proportionally more compute. The remaining acquisition flags are ``--exposure-time``, ``--ambient-power`` and ``--light-power`` for the radiometry, and ``--hilbert-order`` and ``--hilbert-delta`` for the Hilbert curve. Passing ``--preview`` writes a colorized image per tap, and ``--force`` overwrites an existing output directory.
+
+The unambiguous range is recorded in ``params.json`` as ``unambiguous_range_m``. It is ``c/2f`` for most schemes and ``c/4f`` for the ramp schemes, whose codes span two correlation periods; depths past it fold back into the recovered range, and the CLI warns when a scene contains them.
 
 .. note::
 
-    A worked example of the whole pipeline, from rendering to decoding, is in :doc:`../../tutorials/itof`.
+    A worked example of the whole pipeline, from emulation to decoding, is in :doc:`../../tutorials/itof`.
 
 |
 
@@ -146,40 +158,40 @@ Recovering the phase
 With :math:`K = 4` captures and quarter-period offsets the phase has a closed form [2]_:
 
 .. math::
-    \varphi = \operatorname{atan2}\left(m_4 - m_2,\; m_1 - m_3\right), \qquad d = \frac{c}{4\pi f}\,\varphi
+    \varphi = \operatorname{atan2}\left(m_2 - m_4,\; m_1 - m_3\right), \qquad d = \frac{c}{4\pi f}\,\varphi
 
 For an arbitrary number of uniformly shifted captures, the offset and the two quadrature components follow from a linear least-squares fit of the taps onto the basis :math:`\{1, \cos\varphi_k, \sin\varphi_k\}`, giving :math:`\varphi = \operatorname{atan2}(\sum_k m_k \sin\varphi_k, \sum_k m_k \cos\varphi_k)`. That is what :func:`decode_sinusoid <visionsim.emulate.itof.decoding.decode_sinusoid>` implements, and the same interval-wise fitting idea underlies the square, ramp and Hilbert decoders, which fit their own piecewise-linear code instead.
 
-Because the phase is only defined modulo :math:`2\pi`, the recovered depth is ambiguous beyond :math:`d_\text{max} = c/2f`. Multi-frequency coding removes that ambiguity: each frequency yields a wrapped phase, and unwrapping them coarse-to-fine extends the range to :math:`c / (2 f_\text{min})` (see :func:`decode_mult_freq_sinusoid <visionsim.emulate.itof.decoding.decode_mult_freq_sinusoid>`).
+Because the phase is only defined modulo :math:`2\pi`, the recovered depth is ambiguous beyond :math:`d_\text{max} = c/2f`. Multi-frequency coding removes that ambiguity: each frequency yields a wrapped phase, and unwrapping them coarse-to-fine extends the range to that of the widest multi-shift group (see :func:`decode_mult_freq_sinusoid <visionsim.emulate.itof.decoding.decode_mult_freq_sinusoid>`).
 
 Decoding emulated frames
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-The measurements can be decoded back to depth with :func:`decode <visionsim.emulate.itof.decoding.decode>`, which dispatches to a per-scheme decoder based on the scheme name. The acquisition parameters recorded in ``transforms.json`` are enough to call it::
+The measurements can be decoded back to depth with :func:`decode <visionsim.emulate.itof.decoding.decode>`, which dispatches to a per-scheme decoder based on the scheme name. The acquisition parameters recorded in ``params.json`` are enough to call it::
 
     import json
     import numpy as np
     from visionsim.emulate.itof import decode
 
-    with open("output/itof/transforms.json") as f:
-        transform = json.load(f)["frames"][0]
+    with open("output/itof/params.json") as f:
+        params = json.load(f)
 
-    measurements = np.load("output/itof/" + transform["file_path"])  # (n_captures, H, W)
+    measurements = np.load("output/itof/0000.npy")  # (n_captures, H, W)
     depths = decode(
-        transform["itof_scheme"],
+        params["scheme"],
         measurements.reshape(measurements.shape[0], -1),
-        freq=transform["itof_freq_hz"],
+        freq=params["freq_hz"],
+        freq_vec=params.get("freq_vec"),
+        shifts_vec=params.get("shifts_vec"),
     ).reshape(measurements.shape[1:])
 
-The decoded depths are in metres, and the capture count has to match the scheme (see the table above). ``multFreqSin`` additionally needs the same ``itof_freq_vec`` and ``itof_shifts_vec`` that were used during acquisition. When the scheme is known ahead of time the individual decoders can also be called directly:
+The decoded depths are in metres, and the capture count has to match the scheme (see the table above). ``multFreqSin`` additionally needs the same ``freq_vec`` and ``shifts_vec`` that were used during acquisition; passing ``None`` is fine for every other scheme, which is why the example reads them from ``params.json`` with ``get`` rather than indexing directly.
 
-* :func:`decode_sinusoid <visionsim.emulate.itof.decoding.decode_sinusoid>` for ``convSin`` and ``deltaSin``
-* :func:`decode_square <visionsim.emulate.itof.decoding.decode_square>` for ``convSquare``
-* :func:`decode_single_ramp <visionsim.emulate.itof.decoding.decode_single_ramp>` and :func:`decode_double_ramp <visionsim.emulate.itof.decoding.decode_double_ramp>` for the ramp schemes
-* :func:`decode_hilbert <visionsim.emulate.itof.decoding.decode_hilbert>` for the Hilbert schemes; it additionally returns the interval indices of its segment classifier, which is useful for inspecting the misassignments described above
-* :func:`decode_mult_freq_sinusoid <visionsim.emulate.itof.decoding.decode_mult_freq_sinusoid>` for ``multFreqSin``
+They all take the measurements of shape ``(n_captures, n_pixels)`` and the modulation frequency in Hz, and return depths in metres. The one reason to call them directly rather than through :func:`decode <visionsim.emulate.itof.decoding.decode>` is the Hilbert scheme, where :func:`decode_hilbert <visionsim.emulate.itof.decoding.decode_hilbert>` also returns the interval indices of its segment classifier; the dispatcher returns depths alone.
 
-They all take the measurements of shape ``(n_captures, n_pixels)`` and the modulation frequency in Hz, and return depths in metres. The matching codes for each decoder are built by the :func:`make_coding_functions <visionsim.emulate.itof.coding.make_coding_functions>` entry point or by the per-scheme ``make_*_codes`` builders listed in the table above.
+.. note::
+
+    The higher-dimensional Hilbert decoders compare each pixel against segment endpoints on the coarse Hilbert grid, so isolated pixels whose taps nearly vanish can be assigned to the wrong segment. This shows up as occasional large depth errors for the ``n_captures = 5`` codes; the ``n_captures = 4`` variety and all ``dim = 1`` codes are unaffected. The interval indices returned by :func:`decode_hilbert <visionsim.emulate.itof.decoding.decode_hilbert>` make these misassignments easy to spot.
 
 |
 

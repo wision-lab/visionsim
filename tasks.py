@@ -131,13 +131,34 @@ def build_docs(c, preview=False, full=False):
         with c.cd(ROOT_DIR / "cache"):
             # Create examples from the quick start guide
             with open(ROOT_DIR / "examples/quickstart.sh", "r") as f:
-                cmds = [line for line in f if line.strip() and not line.startswith("#")]
+                # Commands are written across several physical lines with trailing
+                # backslashes, so join continuations before running each one or the
+                # continuation lines are executed as standalone commands.
+                chunks = []
+                for line in f:
+                    if not line.strip() or line.startswith("#"):
+                        continue
+                    if chunks and chunks[-1].endswith("\\\n"):
+                        chunks[-1] = chunks[-1][:-2] + " " + line.lstrip()
+                    else:
+                        chunks.append(line)
+                cmds = chunks
 
+            # The renderer shards its output into numbered subfolders
+            # (frames/0000/*.png). The emulators write straight into their output
+            # root: rgb shards PNGs there, events puts previews under preview/.
             cmds += [
-                f"gifski $(ls -1a quickstart/lego-gt/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif --width=320 --height=320",
-                f"gifski quickstart/lego-rgb25fps/frames/*.png --fps 25 -o {DOCS_STATIC}/lego-rgb25fps-preview.gif --width=320 --height=320",
-                f"gifski $(ls -1a quickstart/lego-spc4kHz/frames/*.png | sed -n '1~160p') --fps 25 -o {DOCS_STATIC}/lego-spc4kHz-preview.gif --width=320 --height=320",
-                f"gifski $(ls -1a quickstart/lego-dvs125fps/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-dvs125fps-preview.gif --width=320 --height=320",
+                f"gifski $(ls -1a quickstart/lego-gt/frames/*/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif --width=320 --height=320",
+                f"gifski $(ls -1a quickstart/lego-gt/previews/depths/*/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-depth-preview.gif --width=320 --height=320",
+                f"gifski $(ls -1a quickstart/lego-rgb25fps/*/*.png) --fps 25 -o {DOCS_STATIC}/lego-rgb25fps-preview.gif --width=320 --height=320",
+                f"gifski $(ls -1a quickstart/lego-spc4kHz/frames/*/*.png | sed -n '1~160p') --fps 25 -o {DOCS_STATIC}/lego-spc4kHz-preview.gif --width=320 --height=320",
+                f"gifski $(ls -1a quickstart/lego-dvs125fps/preview/*/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-dvs125fps-preview.gif --width=320 --height=320",
+            ]
+            # iToF writes raw .npy taps rather than images, so its previews come
+            # from the colorized PNGs that --preview dumps per tap. The quickstart
+            # script above already ran the emulation, so only animate tap 0 here.
+            cmds += [
+                f"gifski $(ls -1a quickstart/lego-itof/preview/tap_0/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-itof-preview.gif --width=320 --height=320",
             ]
             for cmd in cmds:
                 _run(c, cmd, echo=True, warn=True)
@@ -145,11 +166,16 @@ def build_docs(c, preview=False, full=False):
             # Create interpolation examples
             for i, n in enumerate((25, 50, 100, 200)):
                 for cmd in (
-                    f"visionsim blender.render-animation lego.blend interpolation/lego-{n:04}/ --keyframe-multiplier={n / 100} --width=320 --height=320",
-                    f"visionsim interpolate.frames interpolation/lego-{n:04}/ -o interpolation/lego{n:04}-interp/ -n={int(64 / 2**i)}",
-                    f"gifski $(ls -1a interpolation/lego{n:04}-interp/frames/*.png | sed -n '1~8p') --fps 25 -o {DOCS_STATIC}/lego{n:04}-interp.gif",
+                    f"visionsim blender.render-animation lego.blend interpolation/lego-{n:04}/ --config.keyframe-multiplier={n / 100} --width=320 --height=320",
+                    f"visionsim interpolate.dataset --input-dir=interpolation/lego-{n:04}/frames --output-dir=interpolation/lego{n:04}-interp/ --n={int(64 / 2**i)}",
+                    f"gifski $(ls -1a interpolation/lego{n:04}-interp/*/*.png | sed -n '1~8p') --fps 25 -o {DOCS_STATIC}/lego{n:04}-interp.gif",
                 ):
                     _run(c, cmd, echo=True, warn=True)
+
+        # Coding-scheme waveforms come straight from the library, so they need
+        # neither blender nor a rendered dataset, but they are still figures and
+        # regenerate only on a full build alongside the rest.
+        _run(c, "python scripts/plot_itof_codes.py", echo=True, warn=True)
 
     # Run autodocs
     with c.cd(ROOT_DIR):
