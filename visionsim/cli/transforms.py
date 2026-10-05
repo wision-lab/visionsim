@@ -110,7 +110,7 @@ def colorize_flows(
         quantile: if vmax is None, use this quantile to estimate it from the data
         gamma: gamma correction to apply to the normalized flow magnitude, this is
             helpful for visualizing flows that are small. Typically set to 2.2
-        local: if True, normalize each frame independently, ignores `vmax` and `quantile`
+        local: if True, normalize each frame independently, ignores ``vmax`` and ``quantile``
         step: drop some frames when colorizing, use frames 0+step*n
     """
 

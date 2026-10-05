@@ -130,6 +130,7 @@ class BlenderServer(rpyc.utils.server.Server):
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        background: bool = True,
     ) -> Generator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:
         """Spawn one or more blender instances and start a :class:`BlenderServer` in each.
 
@@ -162,6 +163,10 @@ class BlenderServer(rpyc.utils.server.Server):
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
+            background (bool, optional): if true, spawn blender in background mode (``-b``). This is faster
+                and does not require a display, but has no OpenGL context, so viewport renders (playblasts)
+                are unavailable. Set to false to keep a window/GL context open (requires a display).
+                Defaults to True.
 
         Raises:
             TimeoutError: raise if unable to discover spawned servers in ``timeout`` seconds and kill any spawned processes.
@@ -967,6 +972,49 @@ class BlenderService(rpyc.Service):
         """
 
     @require_initialized_service
+    def exposed_render_playblast(
+        self,
+        frame_start: int | None = None,
+        frame_end: int | None = None,
+        frame_step: int | None = None,
+        video: bool = True,
+        allow_skips: bool = True,
+        dry_run: bool = False,
+        update_fn: UpdateFn | None = None,
+    ) -> None:
+        """Render a fast preview of the animation using Blender's viewport/OpenGL renderer.
+
+        This uses :meth:`bpy.ops.render.opengl <bpy.ops.render.opengl>` in animation mode, which reuses
+        whatever viewport engine, shading and anti-aliasing settings are configured in the blend-file
+        (these are NOT affected by :class:`RenderConfig <visionsim.simulate.config.RenderConfig>`).
+        Output is written to a dedicated ``playblast/`` directory, separate from any ground truth outputs.
+
+        Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
+              By default the whole animation will render when no start/end and step values are set.
+        Note: This does NOT restore the context it was called in. Like the other render methods, the scene
+              is mutated in place (frame range, render filepath, image/file format and registered outputs).
+              Reopen the blend-file if you need to reset these attributes.
+
+        Args:
+            frame_start (int, optional): Starting index (inclusive) of frames to render as seen in blender.
+                Defaults to None, meaning value from ``.blend`` file.
+            frame_end (int, optional): Ending index (inclusive) of frames to render as seen in blender.
+                Defaults to None, meaning value from ``.blend`` file.
+            frame_step (int, optional): Skip every nth frame. Defaults to None, meaning value from ``.blend`` file.
+            video (bool, optional): If true, encode the preview as a single video file (``playblast/playblast.mp4``).
+                If false, save a sequence of PNG images (``playblast/0001.png``, ...) along with a ``playblast/transforms.db``
+                metadata database. Defaults to True.
+            allow_skips (bool, optional): If true, skip rendering when the output already exists. Defaults to True.
+            dry_run (bool, optional): If true, nothing will be rendered at all. Defaults to False.
+            update_fn (UpdateFn, optional): Same as :meth:`render_frames <exposed_render_frames>`.
+
+        Raises:
+            RuntimeError: raised if the running Blender version is too old to support this feature, or if
+                there is no window/3D-viewport context available (eg: Blender is running in background mode).
+            ValueError: raised if scene and camera are entirely static.
+        """
+
+    @require_initialized_service
     def exposed_save_file(self, path: str | os.PathLike) -> None:
         """Save the opened blender file. This is useful for introspecting the state of the compositor/scene/etc.
 
@@ -1045,6 +1093,7 @@ class BlenderClient:
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        background: bool = True,
     ) -> Generator[Self]:
         """Spawn and connect to a blender server.
         The spawned process is accessible through the client's ``process`` attribute.
@@ -1064,6 +1113,9 @@ class BlenderClient:
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
+            background (bool, optional): if true, spawn blender in background mode (``-b``). Background mode
+                has no OpenGL context, so viewport renders (playblasts) require ``background=False``, which
+                also requires a display. Defaults to True.
 
         Yields:
             Generator[Self]: the connected client
@@ -1095,6 +1147,21 @@ class BlenderClient:
 
         Returns:
             rpyc.AsyncResult: Result encapsulating the return value of ``render_frames``.
+                After ``wait``ing for the render to finish, it can be accessed using
+                the ``.value`` attribute.
+        """
+
+    @require_connected_client
+    def render_playblast_async(self, *args, **kwargs) -> rpyc.AsyncResult:
+        """Asynchronously call :meth:`render_playblast <BlenderService.exposed_render_playblast>`
+        and return an rpyc.AsyncResult.
+
+        Args:
+            *args: Same as :meth:`BlendService.exposed_render_playblast`
+            *kwargs: Same as :meth:`BlendService.exposed_render_playblast`
+
+        Returns:
+            rpyc.AsyncResult: Result encapsulating the return value of ``render_playblast``.
                 After ``wait``ing for the render to finish, it can be accessed using
                 the ``.value`` attribute.
         """
@@ -1723,6 +1790,49 @@ class BlenderClient:
         """
 
     @type_check_only
+    def render_playblast(
+        self,
+        frame_start: int | None = None,
+        frame_end: int | None = None,
+        frame_step: int | None = None,
+        video: bool = True,
+        allow_skips: bool = True,
+        dry_run: bool = False,
+        update_fn: UpdateFn | None = None,
+    ) -> None:
+        """Render a fast preview of the animation using Blender's viewport/OpenGL renderer.
+
+        This uses :meth:`bpy.ops.render.opengl <bpy.ops.render.opengl>` in animation mode, which reuses
+        whatever viewport engine, shading and anti-aliasing settings are configured in the blend-file
+        (these are NOT affected by :class:`RenderConfig <visionsim.simulate.config.RenderConfig>`).
+        Output is written to a dedicated ``playblast/`` directory, separate from any ground truth outputs.
+
+        Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
+              By default the whole animation will render when no start/end and step values are set.
+        Note: This does NOT restore the context it was called in. Like the other render methods, the scene
+              is mutated in place (frame range, render filepath, image/file format and registered outputs).
+              Reopen the blend-file if you need to reset these attributes.
+
+        Args:
+            frame_start (int, optional): Starting index (inclusive) of frames to render as seen in blender.
+                Defaults to None, meaning value from ``.blend`` file.
+            frame_end (int, optional): Ending index (inclusive) of frames to render as seen in blender.
+                Defaults to None, meaning value from ``.blend`` file.
+            frame_step (int, optional): Skip every nth frame. Defaults to None, meaning value from ``.blend`` file.
+            video (bool, optional): If true, encode the preview as a single video file (``playblast/playblast.mp4``).
+                If false, save a sequence of PNG images (``playblast/0001.png``, ...) along with a ``playblast/transforms.db``
+                metadata database. Defaults to True.
+            allow_skips (bool, optional): If true, skip rendering when the output already exists. Defaults to True.
+            dry_run (bool, optional): If true, nothing will be rendered at all. Defaults to False.
+            update_fn (UpdateFn, optional): Same as :meth:`render_frames <exposed_render_frames>`.
+
+        Raises:
+            RuntimeError: raised if the running Blender version is too old to support this feature, or if
+                there is no window/3D-viewport context available (eg: Blender is running in background mode).
+            ValueError: raised if scene and camera are entirely static.
+        """
+
+    @type_check_only
     def save_file(self, path: str | os.PathLike) -> None:
         """Save the opened blender file. This is useful for introspecting the state of the compositor/scene/etc.
 
@@ -1791,6 +1901,7 @@ class BlenderClients(tuple):
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        background: bool = True,
     ) -> Generator[Self]:
         """Spawn and connect to one or more blender servers.
         The spawned processes are accessible through the client's ``process`` attribute.
@@ -1811,6 +1922,9 @@ class BlenderClients(tuple):
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
+            background (bool, optional): if true, spawn blender instances in background mode (``-b``). Background
+                mode has no OpenGL context, so viewport renders (playblasts) require ``background=False``, which
+                also requires a display. Defaults to True.
 
         Yields:
             Generator[Self]: the connected clients
@@ -2501,4 +2615,47 @@ class BlenderClients(tuple):
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
                 This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
+        """
+
+    @type_check_only
+    def render_playblast(
+        self,
+        frame_start: int | None = None,
+        frame_end: int | None = None,
+        frame_step: int | None = None,
+        video: bool = True,
+        allow_skips: bool = True,
+        dry_run: bool = False,
+        update_fn: UpdateFn | None = None,
+    ) -> None:
+        """Render a fast preview of the animation using Blender's viewport/OpenGL renderer.
+
+        This uses :meth:`bpy.ops.render.opengl <bpy.ops.render.opengl>` in animation mode, which reuses
+        whatever viewport engine, shading and anti-aliasing settings are configured in the blend-file
+        (these are NOT affected by :class:`RenderConfig <visionsim.simulate.config.RenderConfig>`).
+        Output is written to a dedicated ``playblast/`` directory, separate from any ground truth outputs.
+
+        Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
+              By default the whole animation will render when no start/end and step values are set.
+        Note: This does NOT restore the context it was called in. Like the other render methods, the scene
+              is mutated in place (frame range, render filepath, image/file format and registered outputs).
+              Reopen the blend-file if you need to reset these attributes.
+
+        Args:
+            frame_start (int, optional): Starting index (inclusive) of frames to render as seen in blender.
+                Defaults to None, meaning value from ``.blend`` file.
+            frame_end (int, optional): Ending index (inclusive) of frames to render as seen in blender.
+                Defaults to None, meaning value from ``.blend`` file.
+            frame_step (int, optional): Skip every nth frame. Defaults to None, meaning value from ``.blend`` file.
+            video (bool, optional): If true, encode the preview as a single video file (``playblast/playblast.mp4``).
+                If false, save a sequence of PNG images (``playblast/0001.png``, ...) along with a ``playblast/transforms.db``
+                metadata database. Defaults to True.
+            allow_skips (bool, optional): If true, skip rendering when the output already exists. Defaults to True.
+            dry_run (bool, optional): If true, nothing will be rendered at all. Defaults to False.
+            update_fn (UpdateFn, optional): Same as :meth:`render_frames <exposed_render_frames>`.
+
+        Raises:
+            RuntimeError: raised if the running Blender version is too old to support this feature, or if
+                there is no window/3D-viewport context available (eg: Blender is running in background mode).
+            ValueError: raised if scene and camera are entirely static.
         """

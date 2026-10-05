@@ -151,6 +151,11 @@ def test_database_threading(tmp_path_factory, executable):
 def test_metadata_roundtrip_from_db(cube_dataset):
     for path in cube_dataset.glob("**/*.db"):
         meta = Metadata.load(path)
-        meta.save(path.parent / "transforms.json")
+        json_path = path.parent / "transforms.json"
+        meta.save(json_path)
 
-        assert Metadata.load(path.parent / "transforms.json").model_dump() == meta.model_dump()
+        assert Metadata.load(json_path).model_dump() == meta.model_dump()
+
+        # Note: Other tests (eg: `test_dataset_merge`) glob this directory and expect a
+        #   single metadata source, so clean up after ourselves.
+        json_path.unlink()

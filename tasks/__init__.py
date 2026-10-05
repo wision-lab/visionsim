@@ -12,6 +12,7 @@ import fnmatch
 import glob
 import os
 import platform
+import shlex
 import shutil
 import sys
 import webbrowser
@@ -115,13 +116,19 @@ def lint(c):
 
 
 @task
-def test(c):
+def test(c, executable=None):
     """Run the test suite with pytest.
 
     Passes ``-s`` so test output, including anything printed by a failing test,
     goes straight to the terminal instead of being captured.
+
+    Args:
+        executable: Path to Blender executable. Defaults to one found on $PATH.
     """
-    _run(c, "pytest -s")
+    command = f"pytest -s -c {shlex.quote(str(ROOT_DIR / 'pyproject.toml'))} {shlex.quote(str(TEST_DIR))}"
+    if executable:
+        command += f" --executable {shlex.quote(executable)}"
+    _run(c, command)
 
 
 @task

@@ -25,6 +25,10 @@ To ensure that there's no conflicts due to different versions of the libraries b
 
 The ``-rP`` option is also helpful for seeing any stdout messages that are otherwise hidden. 
 
+Some tests (``tests/test_viewport.py``) exercise Blender's viewport renderer, which opens a real window and needs a GL context, so they are skipped when no display is set. To run them headlessly, install ``xvfb`` and start a virtual display before the test command:
+
+    $ DISPLAY="" WAYLAND_DISPLAY="" xvfb-run -a --server-args="-screen 0 1920x1080x24" pytest tests/test_viewport.py
+
 | 
 
 Running CI Locally
