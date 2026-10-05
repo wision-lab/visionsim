@@ -1,28 +1,25 @@
-"""Plot modulation, demodulation and correlation functions for each iToF coding scheme.
+"""iToF coding-scheme waveforms: ``docs/source/sections/sensors/itof.rst``.
 
-Writes one SVG per theme into ``docs/source/_static``.
-Run through ``inv build-docs --full`` or directly::
-
-    python scripts/plot_itof_codes.py
+The figure is pure library code (no blender, no rendered dataset): every scheme
+is drawn as a row of modulation, demodulation and correlation functions, and the
+only-light/only-dark pair is written together.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import matplotlib
 
-matplotlib.use("Agg")  # headless: this script only writes files
+matplotlib.use("Agg")  # headless: this task only writes files
 import matplotlib.pyplot as plt
 import numpy as np
 
 # Registers the "science"/"nature"/"ieee" matplotlib styles; the import has no stubs.
 import scienceplots  # type: ignore[import-untyped]  # noqa: F401
 
-from visionsim.emulate.itof.coding import make_coding_functions
+from visionsim.emulate.itof.coding import CodingScheme, make_coding_functions
 from visionsim.emulate.itof.simulation import compute_correlation_function
 
-DOCS_STATIC = Path(__file__).parent.parent / "docs" / "source" / "_static"
+from ..._page import STATIC, Node, page_task
 
 N_BINS = 128
 # Order 2 pushes the 2-D and 3-D curves past 900 bins at 5 captures, where they
@@ -39,7 +36,7 @@ MULT_FREQ_SHIFTS = np.array([0.0, 0.0, 2 * np.pi / 3, 4 * np.pi / 3])
 
 # (scheme, n_captures, extra kwargs). Capture counts differ: the 3-D Hilbert
 # curve needs five and the multi-frequency scheme one frequency per tap.
-SCHEMES: list[tuple[str, int, dict]] = [
+SCHEMES: list[tuple[CodingScheme, int, dict]] = [
     ("convSin", 3, {}),
     ("deltaSin", 3, {}),
     ("convSquare", 3, {}),
@@ -81,11 +78,22 @@ def _apply_theme(dark: bool) -> None:
     plt.rcParams.update({"figure.facecolor": "none", "axes.facecolor": "none", "savefig.facecolor": "none"})
 
 
-def _codes_and_correlation(scheme: str, n_captures: int, kwargs: dict):
-    """Return modulation codes, reference codes, correlations and their x axes.
+def _codes_and_correlation(scheme: CodingScheme, n_captures: int, kwargs: dict):
+    """Compute modulation codes, reference codes, correlations and their x axes.
 
-    Both x axes run 0-1 over one unambiguous range so the rows line up, but a
-    ramp code array holds two periods, so the two axes differ in bin count.
+    The two x axes both run 0-1 over one unambiguous range so the rows line up,
+    but a ramp code array holds two periods, so the axes differ in bin count.
+
+    Args:
+        scheme: Coding scheme identifier.
+        n_captures: Number of captures (phase shifts) for the scheme.
+        kwargs: Extra scheme-specific arguments forwarded to
+            :func:`~visionsim.emulate.itof.coding.make_coding_functions`, such as
+            ``hilbert_order`` or ``freq_vec``.
+
+    Returns:
+        The x axis for the codes, the x axis for the correlations, the modulation
+        codes, the reference codes, and the stacked correlations.
     """
     modulation_codes, reference_codes = make_coding_functions(scheme, n_captures, N_BINS, **kwargs)
     n_points = modulation_codes.shape[1]
@@ -119,8 +127,15 @@ def _codes_and_correlation(scheme: str, n_captures: int, kwargs: dict):
     return x_codes, x_corr, modulation_codes, reference_codes, correlations
 
 
-def make_grid(schemes: list[tuple[str, int, dict]]):
-    """Plot every scheme as a row of modulation, demodulation and correlation."""
+def make_grid(schemes: list[tuple[CodingScheme, int, dict]]):
+    """Plot every scheme as a row of modulation, demodulation and correlation.
+
+    Args:
+        schemes: One ``(scheme, n_captures, kwargs)`` triple per row.
+
+    Returns:
+        The matplotlib figure holding the grid.
+    """
     n_rows = len(schemes)
     fig, axes = plt.subplots(n_rows, 3, figsize=(11, 2.3 * n_rows), squeeze=False)
 
@@ -168,18 +183,28 @@ def make_grid(schemes: list[tuple[str, int, dict]]):
     return fig
 
 
-def main() -> None:
-    DOCS_STATIC.mkdir(parents=True, exist_ok=True)
+def plot_codes() -> None:
+    """Write the light and dark iToF coding-scheme figures into ``_static``."""
+    STATIC.mkdir(parents=True, exist_ok=True)
 
     # The docs pick between the two with the only-light / only-dark classes.
     for dark, suffix in ((False, ""), (True, "-dark")):
         _apply_theme(dark)
         fig = make_grid(SCHEMES)
-        out = DOCS_STATIC / f"itof-codes-all{suffix}.svg"
-        fig.savefig(out, dpi=200, bbox_inches="tight")
+        fig.savefig(STATIC / f"itof-codes-all{suffix}.svg", dpi=200, bbox_inches="tight")
         plt.close(fig)
-        print(f"wrote {out}")
 
 
-if __name__ == "__main__":
-    main()
+NODES = (
+    Node(
+        name="itof-codes-all",
+        files=(STATIC / "itof-codes-all.svg", STATIC / "itof-codes-all-dark.svg"),
+        # The recipe writes both files above; the coding schemes and correlation
+        # model it imports are not tracked, so pass --force to rebuild after
+        # changing them.
+        is_figure=True,
+        recipe=lambda executable: plot_codes(),
+    ),
+)
+
+build = page_task(NODES, "itof", "Regenerate the iToF coding-scheme figures.")

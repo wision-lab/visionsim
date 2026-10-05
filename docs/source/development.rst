@@ -43,6 +43,49 @@ In the project root, with visionsim installed with the dev dependencies, run::
 
     inv clean build-docs --preview
 
+Sphinx does not run any figure recipe. Every documentation page that has
+generated figures gets its own task under the ``figures`` namespace, whose tree
+mirrors the documentation tree below ``docs/source`` (dots separate
+subdirectories). Only that page's figures are rebuilt, and only those that are
+stale, so re-running a page task is cheap::
+
+    $ inv --list                     # figures.quick-start, figures.sections.interpolation, ...
+    $ inv figures.quick-start
+    $ inv figures.sections.interpolation
+    $ inv figures.sections.sensors.itof
+
+``--dry-run`` reports what would happen without writing anything, and ``--force``
+rebuilds the page's figures even when their files exist. Neither re-provisions a
+dataset whose output directory is already populated, so delete that directory
+when a change to the dataset itself needs to be picked up::
+
+    $ inv figures.sections.interpolation --dry-run
+    $ inv figures.sections.interpolation --force
+
+A page is one dependency graph. Its module lists only the figures the page owns,
+and each figure names the intermediates it needs through ``requires``. Shared
+intermediates, such as the rendered and interpolated datasets several quick-start
+figures read, live in ``_page.INTERMEDIATES`` and are provisioned at most once
+per invocation. Each node is attempted once. A node whose requirement failed is
+skipped with one line naming that requirement, so a failed render is reported
+once at its root instead of failing again for every dependent. Cycles and unknown
+requirement names are rejected when the task loads, so ``inv --list`` fails
+instead of a run half-way through.
+
+Figures and intermediates that render need ``cache/lego.blend``, obtained manually or with
+`gdown <https://github.com/wkentaro/gdown>`_ using the ``--fuzzy --folder``
+command in ``examples/README.md``; without it the blender command fails and the
+node is reported as skipped.
+
+Some tasks use ``gifski`` to encode preview gif which is not a Python dependency. Install with 
+``cargo install gifski``, or a package from https://gif.ski.
+
+Paths resolve from the repository root, so a linked worktree starts with an empty
+``cache/`` and re-renders everything, even though the main checkout already holds
+the datasets. Sharing one cache avoids that::
+
+    $ ln -s /path/to/main/checkout/cache cache
+
 |
 
 Dev tools
