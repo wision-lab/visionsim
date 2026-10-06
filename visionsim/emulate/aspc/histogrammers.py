@@ -42,7 +42,7 @@ def calculate_distorted_transient(phi_bar, dead_time_bins, n_hist_bins):
       constant factor absorbed by row normalisation) but biases every non-flat
       transient. That was the residual behind finding **M1**.
     * ``dead_time_bins`` counts *bins of dead time*, matching
-      ``camera.py``'s ``int(dead_time_s * n_bins * frequency)``. The old code
+      ``camera.py``'s ``int(dead_time * n_bins * pulse_repetition)``. The old code
       re-armed one bin late.
 
     Dead times longer than one cycle are handled by walking the full cycle from
@@ -461,10 +461,97 @@ class HistogrammerBase:
 
         transient_list = []
         ambient_offsets = []
-        for frame_idx in range(irradiance_frames.shape[0]):
+        if len(irradiance_frames.shape) == 3:
+            for frame_idx in range(irradiance_frames.shape[0]):
+                for mask_idx, fov_mask in enumerate(tqdm(fov_masks, desc="Processing FOV masks", disable=True)):
+
+                    index_mask = fov_mask > 0
+                    current_irradiance_vals = irradiance_frames[frame_idx][index_mask]
+
+                    # Number of render pixels this FOV covers. The SPAD sees the *average*
+                    # radiance over its FOV, and each render pixel subtends 1/n_fov_pixels of
+                    # it, so contributions are weighted by 1/n_fov_pixels rather than summed
+                    # raw. Without this the collected photon count scales with render
+                    # resolution, coupling the render grid to the physical sensor (F3).
+                    n_fov_pixels = int(index_mask.sum())
+                    if n_fov_pixels == 0:
+                        transient_list.append(
+                            torch.zeros(
+                                (1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=irradiance_frames.device
+                            )
+                        )
+                        ambient_offsets.append(torch.zeros((), device=irradiance_frames.device))
+                        continue
+
+                    # Apply FOV correction if parameters are provided. NOTE: this is a
+                    # wide-angle arcsin correction (factor ~1.00-1.08), NOT a per-FOV
+                    # normalisation -- that is handled by n_fov_pixels above.
+                    if (
+                        sensor_fov is not None
+                        and pixel_fov_list is not None
+                        and w is not None
+                        and h is not None
+                        and omega is not None
+                    ):
+                        fov_irradiance_vals = get_irradiance_with_fov(
+                            current_irradiance_vals, sensor_fov, pixel_fov_list[mask_idx], omega, w, h
+                        )
+                    else:
+                        fov_irradiance_vals = current_irradiance_vals
+
+                    current_depth_vals = depth_frames[frame_idx][index_mask]
+                    masked_offsets = offsets[frame_idx][index_mask]
+
+                    # Extract magnitude only if these are Pint Quantity objects, otherwise use as-is
+                    if hasattr(current_depth_vals, "magnitude"):
+                        current_depth_vals = current_depth_vals.magnitude
+                    if hasattr(fov_irradiance_vals, "magnitude"):
+                        fov_irradiance_vals = fov_irradiance_vals.magnitude
+                    if hasattr(masked_offsets, "magnitude"):
+                        masked_offsets = masked_offsets.magnitude
+
+                    # Apply vignette weights (values in [0, 1]) to the irradiance that is
+                    # actually binned. Vignetting attenuates real signal, so it legitimately
+                    # reduces the total -- it is not a normalisation.
+                    fov_irradiance_vals = fov_irradiance_vals * fov_mask[index_mask]
+
+                    # Reject physically invalid depths (non-finite, or <= 0 meaning "no
+                    # surface"). Out-of-range depths are NOT invalid -- see aliasing below.
+                    valid = torch.isfinite(current_depth_vals) & (current_depth_vals > 0)
+                    current_depth_vals = current_depth_vals[valid]
+                    fov_irradiance_vals = fov_irradiance_vals[valid]
+
+                    ambient_offsets.append(masked_offsets.sum() / (n_fov_pixels * gt_ntime_bins))
+
+                    if current_depth_vals.numel() == 0:
+                        transient_list.append(
+                            torch.zeros(
+                                (1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=irradiance_frames.device
+                            )
+                        )
+                        continue
+
+                    # Convert depth values to time bin locations. Returns beyond max_depth
+                    # arrive during a later laser cycle, so they *alias* back into the window
+                    # at (2d/c) mod (1/f) rather than being clamped into the last bin. This
+                    # is a property of the arrival process and is therefore independent of
+                    # gated vs free-running operation.
+                    transient_idx = torch.floor(current_depth_vals * gt_ntime_bins / max_depth).to(torch.long)
+                    transient_idx = torch.remainder(transient_idx, gt_ntime_bins)
+
+                    row = torch.zeros(
+                        gt_ntime_bins, dtype=fov_irradiance_vals.dtype, device=fov_irradiance_vals.device
+                    )
+                    row = row.scatter_add(0, transient_idx, fov_irradiance_vals / n_fov_pixels)
+                    transient_list.append(row.unsqueeze(0))
+
+            final_transients = torch.concat(transient_list)
+            return final_transients, ambient_offsets
+        else:
             for mask_idx, fov_mask in enumerate(tqdm(fov_masks, desc="Processing FOV masks", disable=True)):
+              
                 index_mask = fov_mask > 0
-                current_irradiance_vals = irradiance_frames[frame_idx][index_mask]
+                current_irradiance_vals = irradiance_frames[index_mask]
 
                 # Number of render pixels this FOV covers. The SPAD sees the *average*
                 # radiance over its FOV, and each render pixel subtends 1/n_fov_pixels of
@@ -497,8 +584,8 @@ class HistogrammerBase:
                 else:
                     fov_irradiance_vals = current_irradiance_vals
 
-                current_depth_vals = depth_frames[frame_idx][index_mask]
-                masked_offsets = offsets[frame_idx][index_mask]
+                current_depth_vals = depth_frames[index_mask]
+                masked_offsets = offsets[index_mask]
 
                 # Extract magnitude only if these are Pint Quantity objects, otherwise use as-is
                 if hasattr(current_depth_vals, "magnitude"):
@@ -543,8 +630,9 @@ class HistogrammerBase:
                 row = row.scatter_add(0, transient_idx, fov_irradiance_vals / n_fov_pixels)
                 transient_list.append(row.unsqueeze(0))
 
-        final_transients = torch.concat(transient_list)
-        return final_transients, ambient_offsets
+            final_transients = torch.concat(transient_list)
+            return final_transients, ambient_offsets
+
 
     def calculate_arrival_rates(
         self, irf: torch.Tensor, transients: torch.Tensor, offset, gt_ntime_bins: int
@@ -665,7 +753,7 @@ class HistConfig:
     )
     vignette: bool = True
     n_pulses: int = 100
-    dead_time_s: Quantity = 10e-9 * ureg.second
+    dead_time: Quantity = 10e-9 * ureg.second
     free_running: bool = True
     fast_sim: bool = True
 
@@ -682,8 +770,8 @@ class HistConfig:
             raise ValueError("bin_width must be > 0")
         if self.n_pulses <= 0:
             raise ValueError("n_pulses must be > 0")
-        if self.dead_time_s <= 0:
-            raise ValueError("dead_time_s must be > 0")
+        if self.dead_time <= 0:
+            raise ValueError("dead_time must be > 0")
 
 
 class Histogrammer(HistogrammerBase):
@@ -770,7 +858,7 @@ class Histogrammer(HistogrammerBase):
             return [photon_hists[i] for i in range(photon_hists.shape[0])]
 
         ewh_pixel_list = []
-        for p_idx in tqdm(range(arrival_rates.shape[0]), desc="Simulating EWH"):
+        for p_idx in tqdm(range(arrival_rates.shape[0]), desc="Simulating EWH",disable=True):
             ewh_pixel_list.append(
                 self.simulate_pixel_ewh(arrival_rates[p_idx], n_pulses, n_hist_bins, free_running, dead_time_bins, fast_sim=fast_sim)
             )

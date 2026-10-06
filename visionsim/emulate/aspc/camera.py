@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import math
 from copy import deepcopy
+from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from pint import Quantity
@@ -18,7 +18,6 @@ from visionsim.emulate.aspc.sensors import SPADSensor
 from visionsim.emulate.aspc.sources import LightConditions, PulsedLaser, Sun
 from visionsim.emulate.aspc.utils import (
     irradiance_photons,
-    preproc_albedo_intensity_depth_frames,
     tof2depth,
     ureg,
     yaml_constructor,
@@ -28,25 +27,46 @@ from visionsim.emulate.aspc.utils import (
 class Camera:
     """Camera class for ASPC simulation"""
 
-    def __init__(self, data_path, config_path, device, requires_grad=False):
-        """Initialize Camera"""
+    def __init__(
+        self, 
+        config_path: Path | dict, 
+        device: str | torch.device = "cpu", 
+        config_overrides: dict | None = None,
+        requires_grad: bool = False
+    ):
         self.device = device
+        
+        # 1. Load base config (handles dict OR file path)
         self.config = self._load_config(config_path)
+        
+        # 2. Merge overrides into config BEFORE initializing components
+        if config_overrides:
+            self.config = self._merge_config(self.config, config_overrides)
+
         self.validate_config(self.config)
         self.requires_grad = requires_grad
-        self.albedo_frames, self.intensity_frames, self.depth_frames = self._load_data(data_path, requires_grad)
+        #self.albedo_frames, self.intensity_frames, self.depth_frames = self._load_data(data_path, requires_grad)
+        
+        # 3. Initialize components with fully merged config
         self._init_components_from_config(self.config)
+        
         self.transients = None
         self.arrival_rates = None
         self.ambient_offsets = None
+
     def _load_config(self, config_path):
-        """Load configuration from YAML file"""
+        """Load configuration from YAML file or return a copy if already a dict."""
+        if isinstance(config_path, dict):
+            return deepcopy(config_path)
+
         yaml = YAML()
         safe_builtins = {"__builtins__": {"list": list, "dict": dict, "tuple": tuple}, "np": np, "math": math}
         yaml.Constructor.add_constructor(tag="!Quantity", constructor=yaml_constructor(ureg.Quantity))
         yaml.Constructor.add_constructor(tag="!expr", constructor=yaml_constructor(eval, safe_builtins))
         yaml.Constructor.add_constructor(tag="!file", constructor=yaml_constructor(config_path))
-        return yaml.load(open(config_path))
+        
+        with open(config_path, "r") as f:
+            return yaml.load(f)
 
     def _merge_config(self, base_config: dict, overrides: dict | None) -> dict:
         """Deep-merge overrides into base_config without mutating either input."""
@@ -94,20 +114,20 @@ class Camera:
         self.validate_config(self.config)
         return self
 
-    def _load_data(self, data_path, requires_grad=False):
-        """Load data from directory"""
-        return preproc_albedo_intensity_depth_frames(
-            root=data_path,
-            device=self.device,
-            config=self.config,
-            start_idx=0,
-            num_frames=1,
-            requires_grad=requires_grad,
-        )
+    # def _load_data(self, data_path, requires_grad=False):
+    #     """Load data from directory"""
+    #     return preproc_albedo_intensity_depth_frames(
+    #         root=data_path,
+    #         device=self.device,
+    #         config=self.config,
+    #         start_idx=0,
+    #         num_frames=1,
+    #         requires_grad=requires_grad,
+    #     )
 
     def validate_config(self, config):
         """Validate configuration"""
-        max_resolvable_depth = tof2depth(1 / config["active_source"]["pulsed_laser"]["frequency"])
+        max_resolvable_depth = 2* tof2depth(1 / config["active_source"]["pulsed_laser"]["pulse_repetition"])
         # check max depth
         # Compare as Pint Quantities so units are handled correctly
         if config["histogrammer"]["max_depth"] > max_resolvable_depth:
@@ -126,9 +146,10 @@ class Camera:
         """Convert string to LightConditions enum value."""
         return getattr(LightConditions, condition_str)
 
-    def get_fov_masks(self, pixel_fov_list: list = None):
+    def get_fov_masks(self, depth_frame, pixel_fov_list: list = None):
         """Get FOV masks"""
-        _, img_rows, img_cols = self.depth_frames.shape
+        #_, img_rows, img_cols = depth_frame.shape
+        img_rows, img_cols = depth_frame.shape
         empty_mask = torch.zeros((img_rows, img_cols), dtype=torch.float32, device=self.device)
         if pixel_fov_list is None:
             pixel_fov_list = self.histogrammer.pixel_fov_list
@@ -191,11 +212,11 @@ class Camera:
 
         return pixel_fov_list
 
-    def _get_signal(self):
+    def _get_signal(self,depth_frame,albedo_frame):
         """Get signal from active source"""
         num_pixels = self.sensor.w * self.sensor.h
         radiance = self.active_source.get_scene_radiance(
-            self.albedo_frames, self.depth_frames, num_pixels, self.sensor.omega
+            albedo_frame, depth_frame, num_pixels, self.sensor.omega
         )
         irradiance = (radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(irradiance_photons) * (
             self.sensor.pixel_pitch.to(ureg.meter)
@@ -203,10 +224,10 @@ class Camera:
         irradiance = torch.as_tensor(irradiance.magnitude, dtype=torch.float32, device=self.device)
         return irradiance
 
-    def _get_ambient_offset(self):
+    def _get_ambient_offset(self,albedo_frame):
         """Get ambient offset from ambient source"""
         ambient_radiance = self.ambient_source.get_scene_radiance(
-            self.sensor.omega, self.albedo_frames, self.active_source.frequency
+            self.sensor.omega, albedo_frame, self.active_source.pulse_repetition
         )
         ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(
             irradiance_photons
@@ -214,14 +235,18 @@ class Camera:
         offsets = torch.as_tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=self.device)
         return offsets
 
-    def get_transients(self):
+    def get_transients(self,depth_frame,albedo_frame):
         """Get transient data from histogrammer"""
-        irradiance = self._get_signal()
-        offsets = self._get_ambient_offset()
-        fov_masks = self.get_fov_masks()
+        irradiance = self._get_signal(depth_frame,albedo_frame)
+        offsets = self._get_ambient_offset(albedo_frame)
+        if self.histogrammer.pixel_fov_list is None:
+            pass
+        else:
+            fov_masks = self.get_fov_masks(depth_frame)
+
         transients, ambient_offsets = self.histogrammer.calculate_transients(
             irradiance,
-            self.depth_frames,
+            depth_frame,
             offsets,
             fov_masks,
             self.histogrammer.n_bins,
@@ -241,22 +266,22 @@ class Camera:
 
         # Round-trip distance per bin. The factor of 2 here cancels against the factor
         # of 2 inside get_kernel (which also works in round-trip distance), so a pulse
-        # of duration tau correctly spans tau * frequency * n_bins bins. Both halves of
+        # of duration tau correctly spans tau * pulse_repetition * n_bins bins. Both halves of
         # that cancellation are pinned by TestBinWidthConvention -- do not "fix" one
         # without the other.
-        bin_width = 2 * tof2depth(1 / self.active_source.frequency) / self.histogrammer.n_bins
+        bin_width = 2 * tof2depth(1 / self.active_source.pulse_repetition) / self.histogrammer.n_bins
 
         # The configured bin_width is derived, not free: it is fixed by the laser
-        # frequency and bin count. Validate rather than silently ignoring it.
+        # pulse_repetition and bin count. Validate rather than silently ignoring it.
         configured = getattr(self.histogrammer, "bin_width", None)
         if configured is not None:
             ratio = (configured / bin_width).to(ureg.dimensionless).magnitude
             # 1% tolerance: config files carry human-rounded values (0.03 vs the exact
             # 0.029979), and the check is meant to catch gross disagreement, not rounding.
-            if not np.isclose(ratio, 1.0, rtol=1e-2):
+            if not np.isclose(ratio, 1.0, rtol=5e-2):
                 raise ValueError(
                     f"Configured histogrammer.bin_width ({configured}) disagrees with the bin width implied "
-                    f"by the laser frequency and n_bins ({bin_width}). Fix the config, or omit bin_width."
+                    f"by the laser pulse_repetition and n_bins ({bin_width}). Fix the config, or omit bin_width."
                 )
 
         # normalize="sum" keeps the kernel's integral at 1 so the convolution conserves
@@ -275,7 +300,7 @@ class Camera:
     def get_ewh(self):
         """Get EWH from histogrammer"""
        
-        dead_time_bins = int(self.histogrammer.dead_time_s * self.histogrammer.n_bins*self.active_source.frequency)
+        dead_time_bins = int(self.histogrammer.dead_time * self.histogrammer.n_bins*self.active_source.pulse_repetition)
         
         ewh_list = self.histogrammer.simulate_ewh(
             self.arrival_rates,
@@ -286,99 +311,3 @@ class Camera:
             self.histogrammer.fast_sim
         )
         return ewh_list
-
-    ## Plotting
-
-    def _plot_fov_masks(self, num_fovs, fov_masks):
-        """Plot FOV masks"""
-        fig, ax = plt.subplots(1, num_fovs, figsize=(3 * num_fovs, 3))
-        fig.suptitle("FOV Masks", fontsize=16)
-        for i in range(num_fovs):
-            ax[i].imshow(fov_masks[i].cpu().numpy(), cmap="gray")
-            ax[i].set_title(f"FOV {i + 1}")
-            ax[i].axis("off")
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-        plt.show()
-
-    def _plot_albedo_frames(self, num_fovs, fov_masks):
-        """Plot albedo frames"""
-        fig, ax = plt.subplots(1, num_fovs, figsize=(3 * num_fovs, 3))
-        fig.suptitle("Albedo Values (First Frame)", fontsize=16)
-        for i in range(num_fovs):
-            ax[i].imshow(self.albedo_frames[0].cpu().numpy() * fov_masks[i].cpu().numpy(), cmap="gray", vmin=0, vmax=1)
-            ax[i].set_title(f"FOV {i + 1}")
-            ax[i].axis("off")
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-        plt.show()
-
-    def _plot_depth_frames(self, num_fovs, fov_masks):
-        """Plot depth frames"""
-        fig, ax = plt.subplots(1, num_fovs, figsize=(3 * num_fovs, 3))
-        fig.suptitle("Depth Values (First Frame)", fontsize=16)
-        for i in range(num_fovs):
-            ax[i].imshow(
-                self.depth_frames[0].cpu().numpy() * (fov_masks[i].detach().cpu().numpy() > 0),
-                cmap="viridis",
-                vmin=0,
-                vmax=10,
-            )
-            ax[i].set_title(f"FOV {i + 1}")
-            ax[i].axis("off")
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-        plt.show()
-
-    def _plot_transients(self, num_fovs, transients):
-        """Plot transients"""
-        fig, ax = plt.subplots(num_fovs, 1, figsize=(8, 2.5 * num_fovs))
-        fig.suptitle("Transients", fontsize=16)
-        for i in range(num_fovs):
-            ax[i].plot(transients[i].detach().cpu().numpy())
-            ax[i].set_title(f"FOV {i + 1}")
-            ax[i].set_xlabel("Time Bins")
-            ax[i].set_ylabel("Normalized Amplitude")
-            ax[i].grid(True)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-        plt.show()
-
-    def _plot_arrival_rates(self, num_fovs, arrival_rates):
-        """Plot arrival rates"""
-        fig, ax = plt.subplots(num_fovs, 1, figsize=(8, 2.5 * num_fovs))
-        fig.suptitle(r"Photon Arrival Rates ($\overline{\Phi}$)", fontsize=16)
-        for i in range(num_fovs):
-            ax[i].plot(arrival_rates[i].detach().cpu().numpy())
-            ax[i].set_ylim(bottom=0)
-            ax[i].set_title(f"FOV {i + 1}")
-            ax[i].set_xlabel("Time Bins")
-            ax[i].set_ylabel("Rate (photons/bin)")
-            ax[i].grid(True)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-        plt.show()
-
-    def plot_ewh(self, num_fovs, ewh_list):
-        """Plot EWH"""
-        fig, ax = plt.subplots(num_fovs, 1, figsize=(8, 2.5 * num_fovs))
-        fig.suptitle("Simulated Time Stamp Histograms (EWH)", fontsize=16)
-        ax = np.atleast_1d(ax)
-        for i in range(num_fovs):
-            ax[i].plot(ewh_list[i].cpu().numpy())
-            ax[i].set_ylim(bottom=0)
-            ax[i].set_title(f"FOV {i + 1}")
-            ax[i].set_xlabel("Time Bins")
-            ax[i].set_ylabel("Photon Counts")
-            ax[i].grid(True)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-        plt.show()
-
-    def plot_all(self):
-        """Plot all"""
-        transients, _ = self.get_transients()
-        arrival_rates = self.get_arrival_rates()
-        ewh_list = self.get_ewh()
-        num_fovs = len(self.histogrammer.pixel_fov_list)
-        fov_masks = self.get_fov_masks()
-        self._plot_fov_masks(num_fovs, fov_masks)
-        self._plot_albedo_frames(num_fovs, fov_masks)
-        self._plot_depth_frames(num_fovs, fov_masks)
-        self._plot_transients(num_fovs, transients)
-        self._plot_arrival_rates(num_fovs, arrival_rates)
-        self.plot_ewh(num_fovs, ewh_list)

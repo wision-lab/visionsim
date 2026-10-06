@@ -1,15 +1,11 @@
 import textwrap
 from collections import OrderedDict
-from typing import Tuple, Union
+from typing import Tuple
 
 import numpy as np
 from pint import Quantity
 
-# from scipy.constants import c, h, k, sigma
-from visionsim.emulate.aspc.units import validate_units
 from visionsim.emulate.aspc.utils import (
-    focal_length_from_fov,
-    fov_from_focal_length,
     irradiance_photons,
     pyramid_solid_angle,
     radiance_photons,
@@ -17,114 +13,99 @@ from visionsim.emulate.aspc.utils import (
 )
 
 
-class SensorBase:
-    """Base class for all sensors"""
+def _ensure_quantity(val, default_unit):
+    """Ensure value is wrapped in a Pint Quantity with default_unit if unitless."""
+    if isinstance(val, Quantity):
+        return val
+    return val * default_unit
 
-    @validate_units()
+
+class SensorBase:
+    """Base class for camera sensors with unit-aware perspective projections."""
+
     def __init__(
         self,
         *,
-        size: Union[int, Tuple] = (5400, 3600),
-        aspect: float = None,
-        f: Union[float, Tuple] = None,
-        fov=(66 * ureg.degree, 44 * ureg.degree),
-        aperture: float = None,
-        f_number: float = 1.4,
-        pixel_pitch=6.6667 * ureg.micrometer,
+        size: Tuple[int, int] = (1080, 1920),
+        pixel_pitch=10 * ureg.micrometer,
+        fov=(90.5 * ureg.degree, 90.5 * ureg.degree),
+        f_number=1.4,
     ):
-        """Class that represents a sensor with perspective camera functionality. It builds the intrinsic
-        camera matrix using the following parameters.
-
-        Parameters that aren't supplied will be computed.
-        One of (f, fov) and one of (aperture, f_number) are required.
-
-        Note: Skew is currently not supported.
-
-        Args:
-            size: Sensor dimensions. If not specified, then assume 1x1.
-            aspect: Aspect ration (w/h) of sensor, computed if not given.
-            f: Focal length of Lenses per pixel (in meters)
-            fov: Field of view of camera (in radians)
-            aperture: This is the "clear aperture", the the diameter of the entrance pupil
-                of the camera. This is not the lens diameter.
-            f_number: F-Number of the camera, this is equal to f/aperture.
-        """
-        self._param_names = []
-
-        self.size = size
-        self.aspect = aspect
-        self.f = f
-        self.fov = fov
-        self.aperture = aperture
-        self.f_number = f_number
-        self.pixel_pitch = pixel_pitch
-
-        if self.size is None:
-            self.size = 1
-        if isinstance(self.size, int):
-            if self.aspect:
-                self.size = (int(self.size / self.aspect), self.size)
-            else:
-                self.size = (self.size, self.size)
-        self.h, self.w = self.size
-        self.aspect = aspect or self.w / self.h
+        self.h, self.w = size
         self.num_pixels = self.h * self.w
-        self.diagonal = np.sqrt(self.h**2 + self.w**2)
-        self.pixel_pitch = pixel_pitch
+        self.pixel_pitch = _ensure_quantity(pixel_pitch, ureg.micrometer)
+        self.f_number = _ensure_quantity(f_number, ureg.dimensionless)
+        self.fov = fov
+        # 1. Physical sensor dimensions & aspect ratio
+        self.sensor_w = (self.w * self.pixel_pitch).to(ureg.millimeter)
+        self.sensor_h = (self.h * self.pixel_pitch).to(ureg.millimeter)
+        self.diagonal = np.sqrt(self.sensor_w**2 + self.sensor_h**2).to(ureg.millimeter)
+        self.aspect = float(self.w / self.h)
 
-        if not (f is not None) ^ (fov is not None):
-            raise ValueError("Only one of focal length or FOV is required.")
-        if f is None:
-            if isinstance(fov, (int, float, Quantity)):
-                # Assume FOV is diagonal FOV
-                self.fov_x, self.fov_y = fov * self.w / self.diagonal, fov * self.h / self.diagonal
+        # 2. Extract or unpack FOV across all input formats
+        fov_x_raw, fov_y_raw = None, None
+
+        if isinstance(fov, Quantity):
+            # Quantity array (YAML !Quantity [.5 degree, .5 degree]) or scalar Quantity
+            if getattr(fov, "ndim", 0) > 0 and len(fov) >= 2:
+                fov_x_raw, fov_y_raw = fov[0], fov[1]
+            elif isinstance(getattr(fov, "magnitude", None), (list, tuple, np.ndarray)) and len(fov.magnitude) >= 2:
+                fov_x_raw, fov_y_raw = fov[0], fov[1]
             else:
-                self.fov_x, self.fov_y = fov
-            self.f_x = focal_length_from_fov(self.fov_x, self.w * self.pixel_pitch)
-            self.f_y = focal_length_from_fov(self.fov_y, self.h * self.pixel_pitch)
-        if fov is None:
-            if isinstance(f, (int, float)):
-                self.f_x, self.f_y = f * self.h / self.diagonal, f * self.w / self.diagonal
-            else:
-                self.f_x, self.f_y = f
-            self.fov_x = fov_from_focal_length(self.f_x, self.w)
-            self.fov_y = fov_from_focal_length(self.f_y, self.h)
-        self.f_x, self.f_y = self.f_x.to(ureg.millimeter), self.f_y.to(ureg.millimeter)
-        self.fov_x, self.fov_y = self.fov_x.to(ureg.degree), self.fov_y.to(ureg.degree)
-        self.f_diag = np.sqrt(self.f_x**2 + self.f_y**2).to(ureg.millimeter)
-        self.fov_diag = np.sqrt(self.fov_x**2 + self.fov_y**2).to(ureg.degree)
+                fov_x_raw = fov
+        elif isinstance(fov, (list, tuple)):
+            # Python list/tuple of Quantities or numbers
+            fov_x_raw = fov[0]
+            if len(fov) > 1:
+                fov_y_raw = fov[1]
+        else:
+            # Raw scalar
+            fov_x_raw = fov
 
-        if not (aperture is not None) ^ (f_number is not None):
-            raise ValueError("Only one of aperture or f_number is required.")
-        if aperture is None:
-            self.f_number = f_number
-            self.aperture = self.f_diag / self.f_number
-        elif f_number is None:
-            self.aperture = aperture
-            self.f_number = self.f_diag / self.aperture
-        self.aperture.ito(ureg.centimeter)
+        self.fov_x = _ensure_quantity(fov_x_raw, ureg.degree).to(ureg.degree)
 
-        # Build up the camera intrinsics
-        self.c_x, self.c_y = self.w / 2, self.h / 2
+        if fov_y_raw is not None:
+            self.fov_y = _ensure_quantity(fov_y_raw, ureg.degree).to(ureg.degree)
+        else:
+            # Derive fov_y using sensor aspect ratio if only scalar FOV provided
+            tan_half_y = np.tan(self.fov_x.to(ureg.rad).magnitude / 2.0) / self.aspect
+            self.fov_y = (2.0 * np.arctan(tan_half_y) * ureg.rad).to(ureg.degree)
 
-        # TODO: Add support for near and far plane see:
-        #   https://www.khronos.org/registry/glTF/specs/2.0/glTF-2.0.html#projection-matrices
-        self.intrinsics = np.array(
-            [
-                [self.f_x.to(ureg.meters).magnitude, 0, self.c_x, 0],
-                [0, self.f_y.to(ureg.meters).magnitude, self.c_y, 0],
-                [0, 0, 1, 0],
-            ]
-        )
+        # 3. Calculate diagonal FOV
+        tan_x2 = np.tan(self.fov_x.to(ureg.rad).magnitude / 2.0)
+        tan_y2 = np.tan(self.fov_y.to(ureg.rad).magnitude / 2.0)
+        self.fov_diag = (2.0 * np.arctan(np.sqrt(tan_x2**2 + tan_y2**2)) * ureg.rad).to(ureg.degree)
 
-        # Solid angle per pixel
-        self.omega = pyramid_solid_angle(self.fov_x, self.fov_y)
-        self.omega = self.omega / (self.w * self.h)
+        # 4. Compute physical focal lengths
+        self.f_x = (self.sensor_w / (2.0 * tan_x2)).to(ureg.millimeter)
+        self.f_y = (self.sensor_h / (2.0 * tan_y2)).to(ureg.millimeter)
+        self.f_diag = ((self.f_x + self.f_y) / 2.0).to(ureg.millimeter)
 
-        # Set _param_names
+        # 5. Focal lengths in PIXELS for intrinsics K matrix
+        self.f_x_px = float(self.w / (2.0 * tan_x2))
+        self.f_y_px = float(self.h / (2.0 * tan_y2))
+
+        # 6. Compute aperture diameter
+        self.aperture = (self.f_diag / self.f_number).to(ureg.millimeter)
+
+        # 7. Intrinsics matrix (K)
+        self.c_x = self.w / 2.0
+        self.c_y = self.h / 2.0
+        self.intrinsics = np.array([
+            [self.f_x_px, 0.0, self.c_x, 0.0],
+            [0.0, self.f_y_px, self.c_y, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ], dtype=float)
+
+        # 8. Solid angle per pixel
+        total_solid_angle = pyramid_solid_angle(self.fov_x, self.fov_y)
+        self.omega = total_solid_angle / self.num_pixels
+
+        # Parameter names list
         self._param_names = [
             "w",
             "h",
+            "aspect",
             "diagonal",
             "f_x",
             "f_y",
@@ -135,8 +116,6 @@ class SensorBase:
             "omega",
             "f_number",
             "aperture",
-            "aspect",
-            "diagonal",
         ]
 
     @property
@@ -170,46 +149,28 @@ class SensorBase:
         return f"{self.__class__.__name__}(\n{params}\n)"
 
     def map_camera2image(self, camera_points):
-        """Map a point in the camera's coordinate frame to the image's
-        coordinate frame.
-
-        The camera's frame is right handed, centered on the optical axis with
-        Z pointing out of the camera. The image's frame is centered at the upper
-        left corner of the sensor with X going to the right, and Y down.
-
-        Args:
-            camera_points: an (3 or 4, N) dimensional array of points in 3D (or homogeneous 3D)
-
-        Returns:
-            image_points: an (2, N) array of projected points
-        """
+        """Map a point in the camera's coordinate frame to the image frame."""
         if camera_points.shape[0] not in (3, 4):
             raise ValueError(
                 f"Expected an array of 3D points with first dimension 3 or "
                 f"4 (homogeneous), instead got {camera_points.shape[0]}."
             )
         if camera_points.shape[0] == 3:
-            camera_points = np.pad(camera_points, ((0, 1),), mode="constant", constant_values=1)
+            camera_points = np.pad(
+                camera_points,
+                ((0, 1), (0, 0)) if camera_points.ndim == 2 else ((0, 1),),
+                mode="constant",
+                constant_values=1,
+            )
         image_points = np.einsum("j..., ij->i...", camera_points, self.intrinsics)
         return image_points[:-1, ...] / image_points[-1, ...]
 
     @ureg.wraps(irradiance_photons, (None, radiance_photons))
     def get_irradiance(self, surface_radiance):
-        r"""Let $E$ be the image irradiance and $L$ the surface radiance, then we have:
-        $$E = L \frac{\pi}{4} \left(\frac{d}{f}\right)^2 cos^4(\alpha)$$
-        With:
-        - $d$: diameter of lenses
-        - $f$: effective focal length
-            - $\left(\frac{d}{f}\right)$: 1/f-number
-        - $cos^4(\alpha)$: brightness falloff term, $\alpha$ assumed to be small enough"""
         return surface_radiance * np.pi / 4 * (1 / self.f_number) ** 2
 
 
 class SPADSensor(SensorBase):
-    @validate_units()
-    def __init__(
-        self,
-        **sensor_base_kwargs,
-    ):
+    def __init__(self, **sensor_base_kwargs):
         super().__init__(**sensor_base_kwargs)
         self._sensor_base_kwargs = sensor_base_kwargs

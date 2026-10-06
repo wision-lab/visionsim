@@ -207,25 +207,30 @@ def fig_convergence(free_running, label, slug, outdir: Path):
     ax1.scatter([len(depths) - 1], [est], color="#0b6e73", zorder=5, s=28)
     ax1.annotate(f"  fit {est:.3f} m\n  err {est-DEMO_DEPTH:+.4f} m",
                  (len(depths) - 1, est), fontsize=8.5, va="center", family="monospace")
-    ax1.set_xlabel("Adam iteration"); ax1.set_ylabel("depth estimate  [m]")
+    ax1.set_xlabel("Adam iteration") 
+    ax1.set_ylabel("depth estimate  [m]")
     ax1.set_title("Gradient descent walks off the biased init", fontsize=10.5)
-    ax1.legend(fontsize=8); ax1.grid(alpha=.25, lw=.6)
+    ax1.legend(fontsize=8)
+    ax1.grid(alpha=.25, lw=.6)
 
     ax2.plot(loss, color="#2f6f9f", lw=1.8, label="multinomial NLL")
-    ax2.set_xlabel("Adam iteration"); ax2.set_ylabel("loss")
+    ax2.set_xlabel("Adam iteration") 
+    ax2.set_ylabel("loss")
     ax2b = ax2.twinx()
     ax2b.semilogy(grads, color="#9aa4ad", lw=1.1, ls="--", label=r"$|\partial L/\partial d|$")
     ax2b.set_ylabel(r"$|\partial \mathrm{loss}/\partial \mathrm{depth}|$", color="#6b7883")
     ax2.set_title(f"Loss and depth gradient  ({elapsed:.1f} s, {N_STEPS} steps)", fontsize=10.5)
     ax2.grid(alpha=.25, lw=.6)
-    h1, l1 = ax2.get_legend_handles_labels(); h2, l2 = ax2b.get_legend_handles_labels()
+    h1, l1 = ax2.get_legend_handles_labels()
+    h2, l2 = ax2b.get_legend_handles_labels()
     ax2.legend(h1 + h2, l1 + l2, fontsize=8)
 
     fig.suptitle(f"{label}  |  fitting depth through the differentiable forward model",
                  fontsize=11.5)
     fig.tight_layout()
     path = outdir / f"diffdepth_convergence_{slug}.png"
-    fig.savefig(path, dpi=150); plt.close(fig)
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
     print(f"    wrote {path.name}  ({elapsed:.1f} s)")
 
     check(f"{label} — fit beats argmax at {DEMO_DEPTH:.0f} m",
@@ -260,8 +265,11 @@ def fig_sweep(free_running, label, slug, outdir: Path):
     ax1.plot(true, arg, "o--", color="#e0a458", lw=1.4, ms=6, label="argmax of raw histogram")
     ax1.plot(true, fit, "o-", color="#0b6e73", lw=2, ms=6,
              label="grid init + gradient refine, through the model")
-    ax1.set_ylabel("estimated depth  [m]"); ax1.set_xlim(*lim); ax1.set_ylim(*lim)
-    ax1.legend(fontsize=8.5); ax1.grid(alpha=.25, lw=.6)
+    ax1.set_ylabel("estimated depth  [m]")
+    ax1.set_xlim(*lim) 
+    ax1.set_ylim(*lim)
+    ax1.legend(fontsize=8.5)
+    ax1.grid(alpha=.25, lw=.6)
     ax1.set_title(f"{label}  |  depth recovery over the unambiguous range", fontsize=11)
 
     ax2.axhline(0, color="#9aa4ad", lw=1)
@@ -270,12 +278,15 @@ def fig_sweep(free_running, label, slug, outdir: Path):
                 label=f"argmax quantisation, ±½ bin (±{half_bin*100:.1f} cm)")
     ax2.plot(true, arg - true, "o--", color="#e0a458", lw=1.4, ms=5)
     ax2.plot(true, fit - true, "o-", color="#0b6e73", lw=2, ms=5)
-    ax2.set_xlabel("true depth  [m]"); ax2.set_ylabel("error  [m]")
-    ax2.legend(fontsize=8); ax2.grid(alpha=.25, lw=.6)
+    ax2.set_xlabel("true depth  [m]")
+    ax2.set_ylabel("error  [m]")
+    ax2.legend(fontsize=8)
+    ax2.grid(alpha=.25, lw=.6)
 
     fig.tight_layout()
     path = outdir / f"diffdepth_sweep_{slug}.png"
-    fig.savefig(path, dpi=150); plt.close(fig)
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
 
     bias_arg, bias_fit = float(np.mean(arg - true)), float(np.mean(fit - true))
     rms_arg = float(np.sqrt(np.mean((arg - true) ** 2)))

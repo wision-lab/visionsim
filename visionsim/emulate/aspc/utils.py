@@ -118,7 +118,7 @@ def preproc_albedo_intensity_depth_frames(
 
     # Get config parameters
     Nr, Nc = config["sensor"]["size"]
-    tmax = (1.0 / config["active_source"]["pulsed_laser"]["frequency"]).to(ureg.second)
+    tmax = (1.0 / config["active_source"]["pulsed_laser"]["pulse_repetition"]).to(ureg.second)
 
     # Two distinct quantities that were previously conflated:
     #   * max_resolvable_depth -- the unambiguous range set by the laser period. A

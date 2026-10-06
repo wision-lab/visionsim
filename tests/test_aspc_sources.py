@@ -19,7 +19,7 @@ REL = 1e-9
 def _laser(**kw):
     defaults = dict(
         wavelength=550 * ureg.nanometer,
-        frequency=10e6 * ureg.hertz,
+        pulse_repetition=10e6 * ureg.hertz,
         pulse_width=1 * ureg.nanosecond,
         avg_watts=1 * ureg.milliwatt,
         pulse_shape="gaussian",
@@ -115,17 +115,17 @@ class TestPulsedLaserRadiance:
 class TestPulsedLaserDerivedQuantities:
     def test_max_resolvable_depth(self):
         f = 10e6 * ureg.hertz
-        laser = _laser(frequency=f)
+        laser = _laser(pulse_repetition=f)
         expected = tof2depth(1 / f).to(ureg.meter).magnitude
         assert laser.max_resolvable_depth.to(ureg.meter).magnitude == pytest.approx(expected, rel=REL)
 
     def test_num_photons_per_cycle(self):
         f, lam, watts = 10e6 * ureg.hertz, 550 * ureg.nanometer, 1 * ureg.milliwatt
-        laser = _laser(frequency=f, wavelength=lam, avg_watts=watts)
+        laser = _laser(pulse_repetition=f, wavelength=lam, avg_watts=watts)
         expected = watts2photons(watts, 1 / f, lam).to(ureg.count).magnitude
         assert laser.num_photons_per_cycle.to(ureg.count).magnitude == pytest.approx(expected, rel=REL)
 
-    def test_higher_frequency_shrinks_max_depth(self):
-        slow = _laser(frequency=5e6 * ureg.hertz).max_resolvable_depth.to(ureg.meter).magnitude
-        fast = _laser(frequency=20e6 * ureg.hertz).max_resolvable_depth.to(ureg.meter).magnitude
+    def test_higher_pulse_repetition_shrinks_max_depth(self):
+        slow = _laser(pulse_repetition=5e6 * ureg.hertz).max_resolvable_depth.to(ureg.meter).magnitude
+        fast = _laser(pulse_repetition=20e6 * ureg.hertz).max_resolvable_depth.to(ureg.meter).magnitude
         assert fast < slow

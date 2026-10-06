@@ -353,7 +353,7 @@ class TestResolutionDecoupling:
 
         laser = PulsedLaser(
             wavelength=550 * ureg.nanometer,
-            frequency=10e6 * ureg.hertz,
+            pulse_repetition=10e6 * ureg.hertz,
             pulse_width=1 * ureg.nanosecond,
             avg_watts=1 * ureg.milliwatt,
             pulse_shape="gaussian",

@@ -156,13 +156,6 @@ class DynamicSource(LightSource):
         kernel = kernel.magnitude if isinstance(kernel, Quantity) else kernel
         return x, kernel
 
-    def plot_kernel(self, bin_width, normalize="sum"):
-        x, k = self.get_kernel(bin_width, normalize)
-        plt.plot(x, k)
-        plt.title("Pulse kernel")
-        plt.xlabel("Depth (m)")
-        plt.ylabel("Amplitude")
-        plt.show()
 
     @property
     def params(self):
@@ -293,7 +286,7 @@ class PulsedLaser(DynamicSource, CoherentSource):
     def __init__(
         self,
         wavelength=550 * ureg.nanometer,
-        frequency=10e6 * ureg.hertz,  # Repetition rate at which to flash light source
+        pulse_repetition=10e6 * ureg.hertz,  # Repetition rate at which to flash light source
         pulse_width=5e-9 * ureg.second,  # Duration (in seconds) of pulse that is sent out
         avg_watts=1.0 * ureg.watt,
         pulse_shape: str = "gaussian",
@@ -305,18 +298,18 @@ class PulsedLaser(DynamicSource, CoherentSource):
         )
         CoherentSource.__init__(self, wavelength=wavelength, avg_watts=avg_watts)
 
-        self.frequency = frequency
+        self.pulse_repetition = pulse_repetition
         self.pulse_width = pulse_width
-        self.max_resolvable_depth = tof2depth(1 / self.frequency)
+        self.max_resolvable_depth = tof2depth(1 / self.pulse_repetition)
         self.gaussian = pulse_shape.lower() == "gaussian"
-        self.peak_watts = (self.avg_watts / (pulse_width * frequency)).to_reduced_units().to_compact()
+        self.peak_watts = (self.avg_watts / (pulse_width * pulse_repetition)).to_reduced_units().to_compact()
         self.peak_watts = 2 * np.sqrt(np.log(2) / np.pi) * self.peak_watts if self.gaussian else self.peak_watts
-        self.num_photons_per_cycle = watts2photons(self.avg_watts, 1 / self.frequency, self.wavelength)
+        self.num_photons_per_cycle = watts2photons(self.avg_watts, 1 / self.pulse_repetition, self.wavelength)
 
     @ureg.check(None, None, ureg.meter, None, ureg.steradian, ureg.meter)
     def get_scene_radiance(self, rho_hat, depth_map, num_pixels, omega, epsilon=1e-12 * ureg.meters):
         # Instead of returning the radiance in units of W/m^2, this factors in the pulse width
-        # and light source frequency and thus returns the radiance per cycle in units of #photons/m^2
+        # and light source pulse_repetition and thus returns the radiance per cycle in units of #photons/m^2
         # Note: this assumes a lambertian BRDF as we have rho/pi.
         num_photons_per_solid_angle = self.num_photons_per_cycle / (num_pixels * omega)
         radiance = rho_hat / np.pi * num_photons_per_solid_angle / (depth_map + epsilon) ** 2
@@ -330,10 +323,10 @@ class PulsedLaser(DynamicSource, CoherentSource):
 
     @property
     def params(self):
-        return self.wavelength, self.frequency, self.pulse_width, self.avg_watts, self.pulse_shape
+        return self.wavelength, self.pulse_repetition, self.pulse_width, self.avg_watts, self.pulse_shape
 
     def __repr__(self):
-        return f"PulsedLaser(wavelength={self.wavelength.to(ureg.nanometer)}, frequency={self.frequency.to(ureg.hertz)}, pulse_width={self.pulse_width.to(ureg.nanosecond)}, avg_watts={self.avg_watts}, pulse_shape={self.pulse_shape})"
+        return f"PulsedLaser(wavelength={self.wavelength.to(ureg.nanometer)}, pulse_repetition={self.pulse_repetition.to(ureg.hertz)}, pulse_width={self.pulse_width.to(ureg.nanosecond)}, avg_watts={self.avg_watts}, pulse_shape={self.pulse_shape})"
 
 
 class Sun(ConstantSource, BlackBodySource):
@@ -384,13 +377,13 @@ class Sun(ConstantSource, BlackBodySource):
         self.c_eff = self.c_eff.magnitude * ureg.dimensionless
 
     @ureg.check(None, ureg.steradian, None, ureg.hertz)
-    def get_scene_radiance(self, omega, rho_hat, frequency):
+    def get_scene_radiance(self, omega, rho_hat, pulse_repetition):
         # Get scene radiance due to ambient source
         # For sunlight the conversion from lux to watts is 0.0079 [Source?]
         # Note: this assumes a lambertian BRDF as we have rho/pi.
         watts_eff_per_area = 0.0079 * self.lux.to(ureg.lux).magnitude * self.c_eff * ureg.watt
         photons_eff_per_area_per_cycle = (
-            watts2photons(watts_eff_per_area, 1 / frequency, self.lambda_pass) / ureg.meter**2
+            watts2photons(watts_eff_per_area, 1 / pulse_repetition, self.lambda_pass) / ureg.meter**2
         )
         radiance = photons_eff_per_area_per_cycle.to(ureg.count / ureg.meter**2) * (omega * rho_hat) / np.pi
 

@@ -20,8 +20,8 @@ from visionsim.emulate.aspc.utils import (
     pyramid_solid_angle,
     tof2depth,
     ureg,
+    watts2photons,
 )
-from visionsim.emulate.aspc.utils import watts2photons
 
 REL = 1e-9
 

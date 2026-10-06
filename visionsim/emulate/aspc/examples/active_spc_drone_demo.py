@@ -7,9 +7,9 @@ Camera pipeline, and saves a reconstruction plot.
 import os
 from pathlib import Path
 
-import OpenEXR
 import cv2
 import numpy as np
+import OpenEXR
 import torch
 from natsort import natsorted
 

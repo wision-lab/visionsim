@@ -9,13 +9,13 @@ visionsim.interpolate.pose module
 
 .. automodule:: visionsim.interpolate.pose
    :members:
-   :show-inheritance:
    :undoc-members:
+   :show-inheritance:
 
 Module contents
 ---------------
 
 .. automodule:: visionsim.interpolate
    :members:
-   :show-inheritance:
    :undoc-members:
+   :show-inheritance:

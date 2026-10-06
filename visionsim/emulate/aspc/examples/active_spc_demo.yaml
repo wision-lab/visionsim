@@ -16,7 +16,7 @@ active_source:
   pulsed_laser:
     enabled: true
     wavelength: !Quantity 940.0 nanometers            # nanometers
-    frequency: !Quantity 10.0 megahertz               # hertz
+    pulse_rate: !Quantity 10.0 megahertz               # hertz
     pulse_width: !Quantity 1.5 nanoseconds            # seconds
     avg_watts: !Quantity 0.001 watts                    # watts
     pulse_shape: "gaussian"         # "gaussian", "square", or "custom" 

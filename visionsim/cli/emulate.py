@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -416,3 +416,314 @@ def imu(
                     d["t"], *d["acc_reading"], *d["gyro_reading"], *d["acc_bias"], *d["gyro_bias"]
                 )
             )
+
+
+
+
+
+
+
+def aspc(
+    input_dir: Path,
+    output_dir: Path,
+    config_file: Path | None = None,
+    min_depth: float | None = None,
+    max_depth: float | None = None,
+    n_bins: int | None = None,
+    bin_width: float | None = None,
+    pixel_fov_list: Path | None = None,
+    vignette: bool | None = None,
+    n_pulses: int | None = None,
+    dead_time: float | None = None,
+    free_running: bool | None = None,
+    fast_sim: bool | None = None,
+    active_enabled: bool | None = None,
+    active_wavelength: float | None = None,
+    active_pulse_repetition: float | None = None,
+    active_pulse_width: float | None = None,
+    active_avg_watts: float | None = None,
+    active_pulse_shape: Literal["gaussian", "square"] | Path | None = None,
+    ambient_enabled: bool | None = None,
+    ambient_temperature: float | None = None,
+    ambient_light_conditions: (
+        Literal[
+            "BRIGHTEST_SUNLIGHT",
+            "BRIGHT_SUNLIGHT",
+            "AVERAGE_SUNLIGHT",
+            "BRIGHT_SHADE",
+            "OVERCAST",
+            "SUNSET",
+            "SUNRISE",
+            "STORM_OVERCAST",
+            "OVERCAST_SUNSET",
+            "OVERCAST_SUNRISE",
+            "FULL_MOON",
+            "QUARTER_MOON",
+            "STARLIGHT_WITH_AIRGLOW",
+            "STARLIGHT_WITHOUT_AIRGLOW",
+        ]
+        | None
+    ) = None,
+    ambient_lambda_pass: float | None = None,
+    ambient_delta_lambda: float | None = None,
+    ambient_intensity: float | None = None,
+    sensor_size: tuple | None = None,
+    sensor_pixel_pitch: float | None = None,
+    sensor_f_number: float | None = None,
+    sensor_fov: tuple | None = None,
+    force: bool | None = None,
+    pattern: str | None = None,
+) -> None:
+    """Simulate Single-Photon (SP) LiDAR data from rendered frames and depth maps.
+
+    Args:
+        input_dir: directory containing the input rendered frames and depth maps.
+        output_dir: directory in which to save the simulated SP LiDAR data.
+        config_file: path to an optional YAML configuration file for the simulation parameters.
+        min_depth: minimum resolvable depth for the histogram. Given in meters.
+        max_depth: maximum resolvable depth for the histogram. Given in meters.
+        n_bins: total number of temporal bins in the histogram.
+        bin_width: spatial width of each individual histogram bin. Given in meters.
+        pixel_fov_list: path to specific field of view configurations for individual pixels or macro-pixels.
+        vignette: vignetting effect applied to the sensor's optical system.
+        n_pulses: number of laser pulses integrated per measurement/histogram.
+        dead_time: recovery time required by the SPAD after detecting a photon before it can detect another. Given in nanoseconds.
+        free_running: if true, indicates the SPAD operates in a free-running mode rather than a gated mode.
+        fast_sim: if true, enables a computationally faster, approximate simulation mode.
+        active_enabled: if true, toggles the active pulsed laser source on.
+        active_wavelength: center wavelength of the emitted laser pulse. Given in nanometers.
+        active_pulse_repetition: repetition rate of the laser pulses. Given in megahertz.
+        active_pulse_width: temporal duration (often FWHM) of a single laser pulse. Given in nanoseconds.
+        active_avg_watts: average power output of the pulsed laser. Given in watts.
+        active_pulse_shape: the temporal profile of the laser pulse (e.g., "gaussian", "square") or path to a custom shape.
+        ambient_enabled: if true, toggles the ambient light source (e.g., the sun) on.
+        ambient_temperature: blackbody color temperature of the ambient light source. Given in kelvin.
+        ambient_light_conditions: descriptor for the environment's lighting (e.g., "BRIGHT_SUNLIGHT", "OVERCAST").
+        ambient_lambda_pass: center wavelength of the receiver's optical bandpass filter. Given in nanometers.
+        ambient_delta_lambda: bandwidth of the receiver's optical bandpass filter. Given in nanometers.
+        ambient_intensity: irradiance of the ambient light source. Given in watts / meter**2.
+        sensor_size: pixel dimensions of the SPAD array (e.g., [height, width]).
+        sensor_pixel_pitch: physical distance between the centers of adjacent pixels. Given in micrometer.
+        sensor_f_number: the F-number (focal ratio) determining the optical aperture of the sensor.
+        sensor_fov: the angular field of view of the camera sensor. Given in degree.
+        force: if true, overwrite output file(s) or directory if present.
+        pattern: glob pattern to filter which files to process in the input directory.
+    """
+    user_args = locals().copy()
+
+    from visionsim.dataset import Dataset
+    from visionsim.emulate.aspc import ASPCEmulator
+    from visionsim.emulate.aspc.utils import ureg
+
+    # Built-in default configuration initialized with proper Pint Quantity objects
+    DEFAULT_CONFIG = {
+        "histogrammer": {
+            "min_depth": 0 * ureg.meters,
+            "max_depth": 10 * ureg.meters,
+            "n_bins": 672,
+            "bin_width": 0.044 * ureg.meters,
+            "pixel_fov_list": [[0, 0.4, 0.3, 0.6], [0.2, 0.6, 0.6, 0.9]],
+            "vignette": False,
+            "n_pulses": 10000,
+            "dead_time": 10 * ureg.nanoseconds,
+            "free_running": True,
+            "fast_sim": False,
+        },
+        "active_source": {
+            "pulsed_laser": {
+                "enabled": True,
+                "wavelength": 940 * ureg.nanometers,
+                "pulse_repetition": 10 * ureg.megahertz,
+                "pulse_width": 6 * ureg.nanoseconds,
+                "avg_watts": 0.000000007 * ureg.watts,
+                "pulse_shape": "gaussian",
+            }
+        },
+        "ambient_source": {
+            "sun": {
+                "enabled": True,
+                "temperature": 5778 * ureg.kelvin,
+                "light_conditions": "BRIGHT_SUNLIGHT",
+                "lambda_pass": 550 * ureg.nanometers,
+                "delta_lambda": 10 * ureg.nanometers,
+                "intensity": 3.828e26 * ureg("watts / meter**2"),
+            }
+        },
+        "sensor": {
+            "size": (1080, 1920),
+            "pixel_pitch": 10 * ureg.micrometer,
+            "f_number": 1.4 * ureg.dimensionless,
+            "fov": [90.5 * ureg.degree, 59.14 * ureg.degree],
+        },
+    }
+
+    # 1. Map CLI parameter names to their nested YAML config hierarchy
+    cli_mapping = {
+        "min_depth": ("histogrammer", "min_depth"),
+        "max_depth": ("histogrammer", "max_depth"),
+        "n_bins": ("histogrammer", "n_bins"),
+        "bin_width": ("histogrammer", "bin_width"),
+        "pixel_fov_list": ("histogrammer", "pixel_fov_list"),
+        "vignette": ("histogrammer", "vignette"),
+        "n_pulses": ("histogrammer", "n_pulses"),
+        "dead_time": ("histogrammer", "dead_time"),
+        "free_running": ("histogrammer", "free_running"),
+        "fast_sim": ("histogrammer", "fast_sim"),
+        "active_enabled": ("active_source", "pulsed_laser", "enabled"),
+        "active_wavelength": ("active_source", "pulsed_laser", "wavelength"),
+        "active_pulse_repetition": ("active_source", "pulsed_laser", "pulse_repetition"),
+        "active_pulse_width": ("active_source", "pulsed_laser", "pulse_width"),
+        "active_avg_watts": ("active_source", "pulsed_laser", "avg_watts"),
+        "active_pulse_shape": ("active_source", "pulsed_laser", "pulse_shape"),
+        "ambient_enabled": ("ambient_source", "sun", "enabled"),
+        "ambient_temperature": ("ambient_source", "sun", "temperature"),
+        "ambient_light_conditions": ("ambient_source", "sun", "light_conditions"),
+        "ambient_lambda_pass": ("ambient_source", "sun", "lambda_pass"),
+        "ambient_delta_lambda": ("ambient_source", "sun", "delta_lambda"),
+        "ambient_intensity": ("ambient_source", "sun", "intensity"),
+        "sensor_size": ("sensor", "size"),
+        "sensor_pixel_pitch": ("sensor", "pixel_pitch"),
+        "sensor_f_number": ("sensor", "f_number"),
+        "sensor_fov": ("sensor", "fov"),
+    }
+
+    # 2. Map CLI parameters to their default Pint unit strings
+    cli_param_units = {
+        "min_depth": "meters",
+        "max_depth": "meters",
+        "bin_width": "meters",
+        "dead_time": "nanoseconds",
+        "active_wavelength": "nanometers",
+        "active_pulse_repetition": "megahertz",
+        "active_pulse_width": "nanoseconds",
+        "active_avg_watts": "watts",
+        "ambient_temperature": "kelvin",
+        "ambient_lambda_pass": "nanometers",
+        "ambient_delta_lambda": "nanometers",
+        "ambient_intensity": "watts / meter**2",
+        "sensor_pixel_pitch": "micrometer",
+        "sensor_fov": "degree",
+    }
+
+    def _to_quantity(val, unit_str):
+        if val is None:
+            return None
+
+        if isinstance(val, ureg.Quantity):
+            # If a single Quantity wraps an array/tuple, convert it to a list of Quantities
+            if hasattr(val.magnitude, "__len__"):
+                return [ureg.Quantity(x, val.units) for x in val.magnitude]
+            return val
+
+        if isinstance(val, (tuple, list)):
+            return [
+                x if isinstance(x, ureg.Quantity) else ureg.Quantity(x, unit_str)
+                for x in val
+            ]
+
+        if isinstance(val, (int, float)):
+            return ureg.Quantity(val, unit_str)
+
+        if isinstance(val, str):
+            try:
+                q = ureg.Quantity(val)
+                if q.dimensionless:
+                    return ureg.Quantity(q.magnitude, unit_str)
+                return q
+            except Exception:
+                return ureg.Quantity(float(val), unit_str)
+
+        return val
+
+    # 3. Build overrides dict ONLY for parameters explicitly passed by caller
+    config_overrides = {}
+
+    for param_name, key_path in cli_mapping.items():
+        val = user_args.get(param_name)
+        if val is not None:
+            if param_name in cli_param_units:
+                val = _to_quantity(val, cli_param_units[param_name])
+
+            d = config_overrides
+            for step in key_path[:-1]:
+                d = d.setdefault(step, {})
+            d[key_path[-1]] = val
+    
+    # 4. Output directory setup
+    if input_dir.resolve() == output_dir.resolve():
+        raise RuntimeError("Input and output directory cannot be the same!")
+
+    if output_dir.exists():
+        if not force:
+            raise FileExistsError(
+                f"Output directory '{output_dir}' already exists. Use force=True to overwrite."
+            )
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+    (output_dir / "frames").mkdir(parents=True, exist_ok=True)
+
+    # 5. Load Dataset
+    if pattern:
+        depths = Dataset.from_pattern(input_dir / "depths" / pattern)
+        albedo = Dataset.from_pattern(input_dir / "frames" / pattern)
+    else:
+        depths = Dataset.from_path(input_dir / "depths")
+        albedo = Dataset.from_path(input_dir / "frames")
+
+
+    
+    # 6. Fallback: use config_file if given, otherwise use DEFAULT_CONFIG
+    base_config = config_file if config_file is not None else DEFAULT_CONFIG
+
+    emulator = ASPCEmulator(
+        base_cfg=base_config,
+        config_overrides=config_overrides,
+    )
+
+    total_frames = len(depths)
+
+    # 7. Frame processing loop
+    import torch
+
+    from visionsim.utils.progress import ElapsedProgress
+    def _prepare_frame_quantity(frame, default_unit):
+        """Converts PyTorch Tensors or arrays to 2D NumPy arrays with Pint units."""
+        # 1. Convert PyTorch tensor or generic sequence to NumPy
+
+        if hasattr(frame, "detach"):
+            frame = frame.detach().cpu().numpy()
+
+        # 2. Ensure (H, W) 2D format
+        if frame.ndim != 2:
+            raise ValueError(f"Expected frame shape (H, W) 2D array, got shape {frame.shape}")
+        # Conver to torch tensor
+        frame = torch.from_numpy(frame.copy()).to(device="cpu",dtype=torch.float64)
+
+        # 3. Attach Pint units if not already attached
+        if not hasattr(frame, "units"):
+            frame = ureg.Quantity(frame, default_unit)
+
+        return frame
+    with ElapsedProgress() as progress:
+        task = progress.add_task(
+            "[cyan]Generating ASPC histograms...", total=total_frames
+        )
+
+        for frame_idx, (depth_frame, albedo_frame) in enumerate(
+            zip(depths, albedo)
+        ):
+            depth_frame = depth_frame[0].squeeze()
+
+            albedo_frame = albedo_frame[0][:,:,0]
+            
+            # Format frames as 2D NumPy arrays wrapped in Pint Quantities
+            depth_qty = _prepare_frame_quantity(depth_frame, "meter")
+            albedo_qty = _prepare_frame_quantity(albedo_frame, "dimensionless")
+           
+
+            histogram_data = emulator.process_frame(depth_qty, albedo_qty)
+
+            output_file = output_dir / "frames" / f"histogram_{frame_idx:04d}.npy"
+            np.save(output_file, histogram_data)
+
+            progress.advance(task, 1)

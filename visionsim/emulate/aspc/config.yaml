@@ -8,7 +8,6 @@ histogrammer:
   pixel_fov_list: !file "visionsim/emulate/aspc/pixel_fov_list.txt"
   n_pulses: 100   # number of laser pulses
   dead_time_s: !Quantity 10e-9 seconds # Dead time in seconds
-  # dead_time_s: !Quantity 0 seconds # Dead time in seconds
   free_running: False # Free-running mode (True) or gated mode (False) 
 
 # Active Light Source 
@@ -16,7 +15,7 @@ active_source:
   pulsed_laser:
     enabled: true
     wavelength: !Quantity 550.0 nanometer            # nanometers
-    frequency: !Quantity 10.0 megahertz               # hertz
+    pulse_rate: !Quantity 10.0 megahertz               # hertz
     pulse_width: !Quantity 0.01 nanosecond            # seconds
     avg_watts: !Quantity 2.0 milliwatts                    # watts
     pulse_shape: "square"                             # "gaussian", "square", or "custom" 

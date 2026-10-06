@@ -585,7 +585,8 @@ def fig_depth_bias(outdir: Path) -> None:
     n_pulses = 40_000
     scales = np.logspace(-1.3, 0.8, 12)
     d = depth_axis()
-    centroid = lambda h: float((d * h).sum() / h.sum())
+    def centroid(h):
+        return float((d * h).sum() / h.sum())
 
     def scene(s):
         return make_phi(peak_bin=true_bin, signal_total=0.25 * s, ambient_per_bin=6e-3 * s)

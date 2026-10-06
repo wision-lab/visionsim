@@ -16,11 +16,10 @@ active_source:
   pulsed_laser:
     enabled: true
     wavelength: !Quantity 940.0 nanometers
-    frequency: !Quantity 0.2 megahertz      # 200 kHz → ~750 m unambiguous range
+    pulse_repition_rate: !Quantity 0.2 megahertz      # 200 kHz → ~750 m unambiguous range
     pulse_width: !Quantity 100 nanoseconds
     avg_watts: !Quantity 0.000000007 watts
     pulse_shape: "gaussian"
-    pulse_shape_custom: [0,1,2,3,4,5,6,5,4,3,2,1,0]
 
 # Ambient Light Sources
 ambient_source:

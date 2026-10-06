@@ -42,14 +42,14 @@ def plot_spad_sensor_grid(
         save_path_recon = parent / f"{base_name}_reconstruction.svg"
         save_path_overlay = parent / f"{base_name}_overlay.svg"
         save_path_waveforms = parent / f"{base_name}_waveforms.svg"
-        save_fullres_depth = parent / f"fullres_true_depth.svg"
+        save_fullres_depth = parent / "fullres_true_depth.svg"
         save_combined_fov_img = parent / f"{base_name}_combined_fov_vignette.svg"
         save_combined_fov_overlay_img = parent / f"{base_name}_combined_fov_overlay_vignette.svg"
-        save_quantized_gt_depth = parent / f"quantized_true_depth.svg"
+        
 
 
 
-    num_fovs = fov_masks.shape[0]
+    
     master_grid = torch.max(fov_masks, dim=0)[0].detach().cpu().numpy()
 
     # Derive figure width/height from the image shape so landscape images fill the frame.
