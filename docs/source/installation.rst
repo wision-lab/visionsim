@@ -24,6 +24,41 @@ urged to upgrade.
 
 |
 
+Using a Custom Blender Version
+------------------------------
+
+By default, visionsim looks for a ``blender`` executable on your ``PATH``. If
+you have several Blender versions installed, or Blender isn't on your ``PATH``
+(for instance when installed via Flatpak or as a standalone tarball), point
+visionsim at a specific install instead.
+
+Every command that spawns Blender takes a ``--config.executable`` option with
+the path to the Blender binary to use::
+
+    $ visionsim blender.render-animation scene.blend output/ \
+        --config.executable=/opt/blender-4.2/blender
+
+When Blender comes from a package manager, the value can be the full invocation
+command. For Flatpak::
+
+    $ visionsim blender.render-animation scene.blend output/ \
+        --config.executable="flatpak run --die-with-parent org.blender.Blender"
+
+``post-install`` takes the same path via ``--executable``::
+
+    $ visionsim post-install --executable=/opt/blender-4.2/blender
+
+Each Blender version ships its own Python interpreter and site-packages, so
+dependencies must be installed into every version you render with. Run
+``post-install`` once per custom executable.
+
+In Python, set the ``executable`` field of
+:class:`RenderConfig <visionsim.simulate.config.RenderConfig>`, or pass
+``executable`` to :class:`BlenderServer <visionsim.simulate.blender.BlenderServer>`
+and :class:`BlenderClient <visionsim.simulate.blender.BlenderClient>`.
+
+|
+
 Autocompletion
 --------------
 
