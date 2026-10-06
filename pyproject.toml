@@ -16,7 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Operating System :: OS Independent"
 ]
 dependencies = [
@@ -39,7 +39,7 @@ dependencies = [
     "pydantic",
     "typing-extensions",
 ]
-license = "MIT"
+license = "GPL-3.0-or-later"
 license-files = ["LICEN[CS]E*"]
 
 [project.urls]
@@ -51,6 +51,9 @@ vsim = "visionsim.cli:main"
 
 [tool.hatch.version]
 path = "visionsim/__init__.py"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 121

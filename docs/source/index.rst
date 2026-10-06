@@ -43,3 +43,4 @@ VisionSIM is a modular and extensible framework for distributed simulations with
    API Documentation <apidocs/visionsim>
    CLI Usage <apidocs/visionsim.cli>
    development
+   license

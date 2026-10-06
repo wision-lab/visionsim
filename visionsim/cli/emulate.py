@@ -148,7 +148,7 @@ def events(
         preview_step: accumulate events over this many frames before saving a visualization preview. If the
             number of input frames is not a multiple of the preview step, the last few frames will be dropped.
             If None, preview is disabled.
-        only_preview: if true, only generate the preview and do not generate the full event file, if `preview_step` is not set, assume 1.
+        only_preview: if true, only generate the preview and do not generate the full event file, if ``preview_step`` is not set, assume 1.
         force: if true, overwrite output file(s) if present, else throw error
     """
     import json
