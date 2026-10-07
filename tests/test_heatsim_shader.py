@@ -475,7 +475,8 @@ frames = sorted((root / 'frames').rglob('*.exr'))
 assert len(frames) == 3, frames
 baseline = pixels(frames[0])
 for path in frames[1:]:
-    np.testing.assert_allclose(pixels(path), baseline, rtol=0, atol=1e-6)
+    # Allow float32 render accumulation differences across CPU builds.
+    np.testing.assert_allclose(pixels(path), baseline, rtol=1e-5, atol=1e-6)
 radiance = sorted((root / 'thermal_radiance').rglob('*.exr'))
 assert len(radiance) == 2, radiance
 assert np.isfinite(pixels(radiance[0])).all()
