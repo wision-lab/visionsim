@@ -6,6 +6,7 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10"]
         blender-version: ["3.6", "4.5", "latest"]
@@ -30,6 +31,8 @@ jobs:
           # Packages needed for blender
           sudo apt-get install -y lsb-release
           sudo apt-get install -y tar xz-utils git ffmpeg wget nano bzip2 
+          # xvfb (plus its mesa/libgl deps) provides the virtual display used to run viewport tests
+          sudo apt-get install -y xvfb
           sudo apt-get install -y --no-install-recommends --fix-missing libxi6 libxkbcommon-x11-0 libglfw3-dev libgles2-mesa-dev libsm6
 
           # Install ffmpeg directly as the setup-ffmpeg needs to interact with the gh cli and have access to gh tokens
@@ -38,6 +41,15 @@ jobs:
       - name: Install ffmpeg
         if: ${{ !env.ACT }}
         uses: AnimMouse/setup-ffmpeg@v1
+
+      - name: Install virtual display
+        if: ${{ runner.os == 'Linux' && !env.ACT }}
+        run: |
+          # Blender's viewport renderer needs an X display, which hosted linux runners lack. xvfb
+          # provides one, along with its mesa/libgl dependencies (which pull in the software
+          # llvmpipe driver Xvfb uses as its GLX implementation).
+          sudo apt-get update
+          sudo apt-get install -y xvfb
 
       - name: Install Blender
         uses: bradyajohnston/setup-blender@v5
@@ -72,5 +84,11 @@ jobs:
           ffmpeg -version 
 
       - name: Run Tests
+        shell: bash
         run: |
-          pytest --durations=0 -s
+          # Viewport/playblast tests need an X display with a GL context; fake one on linux.
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            DISPLAY="" WAYLAND_DISPLAY="" xvfb-run -a --server-args="-screen 0 1920x1080x24" pytest --durations=0 -s
+          else
+            pytest --durations=0 -s
+          fi

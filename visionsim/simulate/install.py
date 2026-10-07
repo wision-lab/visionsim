@@ -53,6 +53,8 @@ if __name__ == "__main__":
     torch_cmd = base_cmd + ["pip", "install", "torch"]
     if args.torch_index_url:
         torch_cmd += ["--index-url", args.torch_index_url]
+    # robust-laplacian 1.1.0 crashes on import inside Windows Blender.
+    laplacian_spec = "robust_laplacian!=1.1.0" if sys.platform == "win32" else "robust_laplacian"
 
     # NOTE: the core visionsim install precedes the torch/scipy/robust_laplacian
     # step so that a torch/index hiccup can never block the base package setup
@@ -65,7 +67,7 @@ if __name__ == "__main__":
         + ["pip", "install", "--no-warn-script-location", "--force-reinstall", "--no-dependencies", "--verbose"]
         + module_spec,
         torch_cmd,
-        base_cmd + ["pip", "install", "scipy", "robust_laplacian"],
+        base_cmd + ["pip", "install", "scipy", laplacian_spec],
     ]
 
     try:

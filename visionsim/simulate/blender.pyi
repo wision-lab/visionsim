@@ -63,8 +63,52 @@ class BlenderServer(rpyc.utils.server.Server):
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        background: bool = True,
     ) -> Generator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:
-        ...
+        """Spawn one or more blender instances and start a :class:`BlenderServer` in each.
+
+        This is roughly equivalent to calling ``blender -b --python blender.py`` in many subprocesses,
+        where ``blender.py`` initializes and ``start``\\s a server instance. Proper logging and termination of
+        these processes is also taken care of.
+
+        Note:
+            The returned processes and connection settings are not guaranteed to be in the same order.
+
+        Warning:
+            If ``log`` is a file handle or descriptor, such as redirecting Blender logs to subprocess.STDOUT,
+            the writing process might get overwhelmed which can cause silent errors, dropped logs and locked
+            processes. It is thus not recommended for long render jobs to set ``log`` to anything but DEVNULL
+            or a directory.
+
+        Args:
+            jobs (int, optional): number of jobs to spawn. Defaults to 1.
+            timeout (float, optional): try to discover spawned instances for ``timeout``
+                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
+                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
+                this context manager will immediately yield, even if the server is not yet ready to accept
+                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
+                descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
+                Defaults to subprocess.DEVNULL for both stdout/stderr.
+            autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
+                For more, see blender's CLI documentation. Defaults to False.
+            executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
+                for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
+                via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
+                might be required when using flatpaks. Defaults to None (system PATH).
+            background (bool, optional): if true, spawn blender in background mode (``-b``). This is faster
+                and does not require a display, but has no OpenGL context, so viewport renders (playblasts)
+                are unavailable. Set to false to keep a window/GL context open (requires a display).
+                Defaults to True.
+
+        Raises:
+            TimeoutError: raise if unable to discover spawned servers in ``timeout`` seconds and kill any spawned processes.
+
+        Yields:
+            Generator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:  A tuple containing:
+                - list[subprocess.Popen]: List of ``subprocess.Popen`` corresponding to all spawned servers.
+                - list[tuple[str, int]]: List of connection setting for each server, where each element is a (hostname, port) tuple.
+        """
 
     @staticmethod
     def spawn_registry() -> tuple[Process, rpyc.utils.registry.UDPRegistryClient]:
@@ -378,9 +422,6 @@ class BlenderService(rpyc.Service):
     ) -> None:
         ...
 
-    def _thermal_write_frame(self, frame_number: int) -> None:
-        ...
-
     @require_initialized_service
     def exposed_heatsim_solve(
         self,
@@ -559,6 +600,49 @@ class BlenderService(rpyc.Service):
         ...
 
     @require_initialized_service
+    def exposed_render_playblast(
+        self,
+        frame_start: int | None = None,
+        frame_end: int | None = None,
+        frame_step: int | None = None,
+        video: bool = True,
+        allow_skips: bool = True,
+        dry_run: bool = False,
+        update_fn: UpdateFn | None = None,
+    ) -> None:
+        """Render a fast preview of the animation using Blender's viewport/OpenGL renderer.
+
+        This uses :meth:`bpy.ops.render.opengl <bpy.ops.render.opengl>` in animation mode, which reuses
+        whatever viewport engine, shading and anti-aliasing settings are configured in the blend-file
+        (these are NOT affected by :class:`RenderConfig <visionsim.simulate.config.RenderConfig>`).
+        Output is written to a dedicated ``playblast/`` directory, separate from any ground truth outputs.
+
+        Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
+              By default the whole animation will render when no start/end and step values are set.
+        Note: This does NOT restore the context it was called in. Like the other render methods, the scene
+              is mutated in place (frame range, render filepath, image/file format and registered outputs).
+              Reopen the blend-file if you need to reset these attributes.
+
+        Args:
+            frame_start (int, optional): Starting index (inclusive) of frames to render as seen in blender.
+                Defaults to None, meaning value from ``.blend`` file.
+            frame_end (int, optional): Ending index (inclusive) of frames to render as seen in blender.
+                Defaults to None, meaning value from ``.blend`` file.
+            frame_step (int, optional): Skip every nth frame. Defaults to None, meaning value from ``.blend`` file.
+            video (bool, optional): If true, encode the preview as a single video file (``playblast/playblast.mp4``).
+                If false, save a sequence of PNG images (``playblast/0001.png``, ...) along with a ``playblast/transforms.db``
+                metadata database. Defaults to True.
+            allow_skips (bool, optional): If true, skip rendering when the output already exists. Defaults to True.
+            dry_run (bool, optional): If true, nothing will be rendered at all. Defaults to False.
+            update_fn (UpdateFn, optional): Same as :meth:`render_frames <exposed_render_frames>`.
+
+        Raises:
+            RuntimeError: raised if the running Blender version is too old to support this feature, or if
+                there is no window/3D-viewport context available (eg: Blender is running in background mode).
+            ValueError: raised if scene and camera are entirely static.
+        """
+
+    @require_initialized_service
     def exposed_save_file(self, path: str | os.PathLike) -> None:
         ...
 
@@ -585,8 +669,33 @@ class BlenderClient:
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        background: bool = True,
     ) -> Generator[Self]:
-        ...
+        """Spawn and connect to a blender server.
+        The spawned process is accessible through the client's ``process`` attribute.
+
+        Args:
+            timeout (float, optional): try to discover spawned instances for ``timeout``
+                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
+                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
+                this context manager will immediately yield, even if the server is not yet ready to accept
+                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
+                descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
+                Defaults to subprocess.DEVNULL for both stdout/stderr.
+            autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
+                For more, see blender's CLI documentation. Defaults to False.
+            executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
+                for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
+                via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
+                might be required when using flatpaks. Defaults to None (system PATH).
+            background (bool, optional): if true, spawn blender in background mode (``-b``). Background mode
+                has no OpenGL context, so viewport renders (playblasts) require ``background=False``, which
+                also requires a display. Defaults to True.
+
+        Yields:
+            Generator[Self]: the connected client
+        """
 
     @require_connected_client
     def render_animation_async(self, *args, **kwargs) -> rpyc.AsyncResult:
@@ -595,6 +704,21 @@ class BlenderClient:
     @require_connected_client
     def render_frames_async(self, *args, **kwargs) -> rpyc.AsyncResult:
         ...
+
+    @require_connected_client
+    def render_playblast_async(self, *args, **kwargs) -> rpyc.AsyncResult:
+        """Asynchronously call :meth:`render_playblast <BlenderService.exposed_render_playblast>`
+        and return an rpyc.AsyncResult.
+
+        Args:
+            *args: Same as :meth:`BlendService.exposed_render_playblast`
+            *kwargs: Same as :meth:`BlendService.exposed_render_playblast`
+
+        Returns:
+            rpyc.AsyncResult: Result encapsulating the return value of ``render_playblast``.
+                After ``wait``ing for the render to finish, it can be accessed using
+                the ``.value`` attribute.
+        """
 
     def wait(self) -> None:
         ...
@@ -815,9 +939,11 @@ class BlenderClient:
     def configure_thermal(self, config: dict[str, Any]) -> None:
         ...
 
+    @type_check_only
     def heatsim_solve_config(self, config: dict[str, Any]) -> None:
         ...
 
+    @type_check_only
     def load_addons(self, *addons: str) -> None:
         ...
 
@@ -926,6 +1052,49 @@ class BlenderClient:
         ...
 
     @type_check_only
+    def render_playblast(
+        self,
+        frame_start: int | None = None,
+        frame_end: int | None = None,
+        frame_step: int | None = None,
+        video: bool = True,
+        allow_skips: bool = True,
+        dry_run: bool = False,
+        update_fn: UpdateFn | None = None,
+    ) -> None:
+        """Render a fast preview of the animation using Blender's viewport/OpenGL renderer.
+
+        This uses :meth:`bpy.ops.render.opengl <bpy.ops.render.opengl>` in animation mode, which reuses
+        whatever viewport engine, shading and anti-aliasing settings are configured in the blend-file
+        (these are NOT affected by :class:`RenderConfig <visionsim.simulate.config.RenderConfig>`).
+        Output is written to a dedicated ``playblast/`` directory, separate from any ground truth outputs.
+
+        Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
+              By default the whole animation will render when no start/end and step values are set.
+        Note: This does NOT restore the context it was called in. Like the other render methods, the scene
+              is mutated in place (frame range, render filepath, image/file format and registered outputs).
+              Reopen the blend-file if you need to reset these attributes.
+
+        Args:
+            frame_start (int, optional): Starting index (inclusive) of frames to render as seen in blender.
+                Defaults to None, meaning value from ``.blend`` file.
+            frame_end (int, optional): Ending index (inclusive) of frames to render as seen in blender.
+                Defaults to None, meaning value from ``.blend`` file.
+            frame_step (int, optional): Skip every nth frame. Defaults to None, meaning value from ``.blend`` file.
+            video (bool, optional): If true, encode the preview as a single video file (``playblast/playblast.mp4``).
+                If false, save a sequence of PNG images (``playblast/0001.png``, ...) along with a ``playblast/transforms.db``
+                metadata database. Defaults to True.
+            allow_skips (bool, optional): If true, skip rendering when the output already exists. Defaults to True.
+            dry_run (bool, optional): If true, nothing will be rendered at all. Defaults to False.
+            update_fn (UpdateFn, optional): Same as :meth:`render_frames <exposed_render_frames>`.
+
+        Raises:
+            RuntimeError: raised if the running Blender version is too old to support this feature, or if
+                there is no window/3D-viewport context available (eg: Blender is running in background mode).
+            ValueError: raised if scene and camera are entirely static.
+        """
+
+    @type_check_only
     def save_file(self, path: str | os.PathLike) -> None:
         ...
 
@@ -959,8 +1128,34 @@ class BlenderClients(tuple):
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        background: bool = True,
     ) -> Generator[Self]:
-        ...
+        """Spawn and connect to one or more blender servers.
+        The spawned processes are accessible through the client's ``process`` attribute.
+
+        Args:
+            jobs (int, optional): number of jobs to spawn. Defaults to 1.
+            timeout (float, optional): try to discover spawned instances for ``timeout``
+                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
+                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
+                this context manager will immediately yield, even if the server is not yet ready to accept
+                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
+                descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
+                Defaults to subprocess.DEVNULL for both stdout/stderr.
+            autoexec (bool, optional): if true, allow execution of any embedded python scripts within blender.
+                For more, see blender's CLI documentation. Defaults to False.
+            executable (str | os.PathLike | None, optional): path to Blender's executable. Defaults to looking
+                for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
+                via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
+                might be required when using flatpaks. Defaults to None (system PATH).
+            background (bool, optional): if true, spawn blender instances in background mode (``-b``). Background
+                mode has no OpenGL context, so viewport renders (playblasts) require ``background=False``, which
+                also requires a display. Defaults to True.
+
+        Yields:
+            Generator[Self]: the connected clients
+        """
 
     @contextmanager
     @staticmethod
@@ -1216,9 +1411,11 @@ class BlenderClients(tuple):
     def configure_thermal(self, config: dict[str, Any]) -> None:
         ...
 
+    @type_check_only
     def heatsim_solve_config(self, config: dict[str, Any]) -> None:
         ...
 
+    @type_check_only
     def load_addons(self, *addons: str) -> None:
         ...
 
@@ -1302,4 +1499,57 @@ class BlenderClients(tuple):
 
     @type_check_only
     def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> None:
-        ...
+        """Same as first setting current frame then rendering it.
+
+        Warning:
+            Calling this has the side-effect of changing the current frame.
+
+        Args:
+            frame_number (int): frame to render
+            allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
+                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+            dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
+        """
+
+    @type_check_only
+    def render_playblast(
+        self,
+        frame_start: int | None = None,
+        frame_end: int | None = None,
+        frame_step: int | None = None,
+        video: bool = True,
+        allow_skips: bool = True,
+        dry_run: bool = False,
+        update_fn: UpdateFn | None = None,
+    ) -> None:
+        """Render a fast preview of the animation using Blender's viewport/OpenGL renderer.
+
+        This uses :meth:`bpy.ops.render.opengl <bpy.ops.render.opengl>` in animation mode, which reuses
+        whatever viewport engine, shading and anti-aliasing settings are configured in the blend-file
+        (these are NOT affected by :class:`RenderConfig <visionsim.simulate.config.RenderConfig>`).
+        Output is written to a dedicated ``playblast/`` directory, separate from any ground truth outputs.
+
+        Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
+              By default the whole animation will render when no start/end and step values are set.
+        Note: This does NOT restore the context it was called in. Like the other render methods, the scene
+              is mutated in place (frame range, render filepath, image/file format and registered outputs).
+              Reopen the blend-file if you need to reset these attributes.
+
+        Args:
+            frame_start (int, optional): Starting index (inclusive) of frames to render as seen in blender.
+                Defaults to None, meaning value from ``.blend`` file.
+            frame_end (int, optional): Ending index (inclusive) of frames to render as seen in blender.
+                Defaults to None, meaning value from ``.blend`` file.
+            frame_step (int, optional): Skip every nth frame. Defaults to None, meaning value from ``.blend`` file.
+            video (bool, optional): If true, encode the preview as a single video file (``playblast/playblast.mp4``).
+                If false, save a sequence of PNG images (``playblast/0001.png``, ...) along with a ``playblast/transforms.db``
+                metadata database. Defaults to True.
+            allow_skips (bool, optional): If true, skip rendering when the output already exists. Defaults to True.
+            dry_run (bool, optional): If true, nothing will be rendered at all. Defaults to False.
+            update_fn (UpdateFn, optional): Same as :meth:`render_frames <exposed_render_frames>`.
+
+        Raises:
+            RuntimeError: raised if the running Blender version is too old to support this feature, or if
+                there is no window/3D-viewport context available (eg: Blender is running in background mode).
+            ValueError: raised if scene and camera are entirely static.
+        """

@@ -34,6 +34,7 @@ VisionSIM is a modular and extensible framework for distributed simulations with
    tutorials/extending 
    tutorials/hdr
    tutorials/stereo
+   tutorials/playblast
    tutorials/large-dataset
    tutorials/thermal-assignments
 
@@ -44,3 +45,4 @@ VisionSIM is a modular and extensible framework for distributed simulations with
    API Documentation <apidocs/visionsim>
    CLI Usage <apidocs/visionsim.cli>
    development
+   license

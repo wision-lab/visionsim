@@ -12,6 +12,7 @@ import fnmatch
 import glob
 import os
 import platform
+import shlex
 import shutil
 import sys
 import webbrowser
@@ -84,9 +85,15 @@ def lint(c):
 
 
 @task
-def test(c):
-    """Run tests"""
-    _run(c, "pytest -s")
+def test(c, executable=None):
+    """Run tests
+
+    :param executable: Path to Blender executable. Defaults to one found on $PATH.
+    """
+    command = f"pytest -s -c {shlex.quote(str(ROOT_DIR / 'pyproject.toml'))} {shlex.quote(str(TEST_DIR))}"
+    if executable:
+        command += f" --executable {shlex.quote(executable)}"
+    _run(c, command)
 
 
 @task
