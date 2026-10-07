@@ -18,107 +18,49 @@ render:
 
 from __future__ import annotations
 
-import subprocess
+from tests.heatsim_test_service import SERVICE_PATH, call_service
+from visionsim.simulate.blender import BlenderClient
 
 
 def test_irradiance_bake_is_indexed_against_the_evaluated_mesh(executable):
     """vertex_flux must be sized to the mesh the solver uses, not the pre-modifier one."""
-    code = r"""
-import bpy
-from visionsim.simulate.heatsim import irradiance
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        call_service(client, "build_scene", "plane", "Plane", lit=False)
+        modified = call_service(client, "add_subsurf", levels=2)
+        baked = call_service(client, "bake_irradiance")
 
-for o in list(bpy.data.objects):
-    bpy.data.objects.remove(o, do_unlink=True)
-
-bpy.ops.mesh.primitive_plane_add(size=2)
-obj = bpy.context.active_object
-obj.modifiers.new("Subsurf", "SUBSURF").levels = 2   # changes the vertex count
-
-base_n = len(obj.data.vertices)
-dg = bpy.context.evaluated_depsgraph_get()
-eval_n = len(obj.evaluated_get(dg).data.vertices)
-assert eval_n != base_n, "modifier did not change the vertex count; test is vacuous"
-
-bpy.context.scene.cycles.device = 'CPU'
-bpy.context.scene.cycles.samples = 4
-baked = irradiance.bake_irradiance_map(bpy.context.scene, obj, 64, samples=4)
-assert baked is not None, "bake returned None"
-
-n = len(baked.vertex_flux)
-assert n == eval_n, f"vertex_flux has {n} entries, evaluated mesh has {eval_n} (base has {base_n})"
-print("EVALUATED_MESH_ALIGNMENT_OK")
-"""
-    out = subprocess.run([str(executable), "-b", "--python-expr", code], capture_output=True, text=True, check=False)
-    assert "EVALUATED_MESH_ALIGNMENT_OK" in out.stdout, out.stdout + out.stderr
+    assert modified["eval_n"] != modified["base_n"], "modifier did not change the vertex count; test is vacuous"
+    assert baked["flux_n"] is not None, "bake returned None"
+    assert baked["flux_n"] == baked["eval_n"], (
+        f"vertex_flux has {baked['flux_n']} entries, evaluated mesh has {baked['eval_n']} (base has {baked['base_n']})"
+    )
 
 
 def test_albedo_and_irradiance_bakes_agree_on_the_mesh(executable):
     """The two bakes feed one multiply, so they must return the same length.
 
     They are produced by separate code paths (``bake_vertex_albedo`` vs
-    ``bake_irradiance_map``), and the
-    evaluated-mesh fix was originally applied to only one of them. A mismatch is not
-    loud: the caller discards the albedo and assumes full absorption, overestimating
-    absorbed flux by up to ~4x on a light surface.
+    ``bake_irradiance_map``), and the evaluated-mesh fix was originally applied to only
+    one of them. A mismatch is not loud: the caller discards the albedo and assumes full
+    absorption, overestimating absorbed flux by up to ~4x on a light surface.
     """
-    code = r"""
-import bpy
-from visionsim.simulate.heatsim import irradiance
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        call_service(client, "build_scene", "plane", "Plane", material="plain", lit=False)
+        call_service(client, "add_subsurf", levels=2)
+        result = call_service(client, "bake_irradiance", with_albedo=True)
 
-for o in list(bpy.data.objects):
-    bpy.data.objects.remove(o, do_unlink=True)
-
-bpy.ops.mesh.primitive_plane_add(size=2)
-obj = bpy.context.active_object
-obj.data.materials.append(bpy.data.materials.new("m"))
-obj.modifiers.new("Subsurf", "SUBSURF").levels = 2
-
-bpy.context.scene.cycles.device = 'CPU'
-bpy.context.scene.cycles.samples = 4
-
-flux = irradiance.bake_irradiance_map(bpy.context.scene, obj, 64, samples=4)
-a = irradiance.bake_vertex_albedo(bpy.context.scene, obj, texture_size=64)
-assert flux is not None and a is not None, "one of the bakes returned nothing"
-dg = bpy.context.evaluated_depsgraph_get()
-eval_n = len(obj.evaluated_get(dg).data.vertices)
-assert eval_n != len(obj.data.vertices), "modifier did not change the count; test is vacuous"
-assert len(flux.vertex_flux) == eval_n, f"irradiance has {len(flux.vertex_flux)}, evaluated has {eval_n}"
-assert len(a) == eval_n, f"albedo has {len(a)}, evaluated has {eval_n}"
-print("BAKE_LENGTHS_AGREE_OK")
-"""
-    out = subprocess.run([str(executable), "-b", "--python-expr", code], capture_output=True, text=True, check=False)
-    assert "BAKE_LENGTHS_AGREE_OK" in out.stdout, out.stdout + out.stderr
+    assert result["flux_n"] is not None and result["albedo_n"] is not None, "one of the bakes returned nothing"
+    assert result["eval_n"] != result["base_n"], "modifier did not change the count; test is vacuous"
+    assert result["flux_n"] == result["eval_n"], f"irradiance has {result['flux_n']}, evaluated has {result['eval_n']}"
+    assert result["albedo_n"] == result["eval_n"], f"albedo has {result['albedo_n']}, evaluated has {result['eval_n']}"
 
 
 def test_bake_uv_is_created_on_a_mesh_with_no_authored_uvs(executable):
     """A mesh with zero UV layers must still get a bake UV, and still reach the atlas."""
-    code = r"""
-import bpy
-from visionsim.simulate.heatsim import adapter, atlas, irradiance
-from visionsim.simulate.heatsim.names import BAKE_UV_LAYER_NAME
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        call_service(client, "build_scene", "plane", "Plane", size=8.0, lit=False)
+        result = call_service(client, "prepare_bake_uv")
 
-for o in list(bpy.data.objects):
-    bpy.data.objects.remove(o, do_unlink=True)
-
-bpy.ops.mesh.primitive_plane_add(size=8)   # large + few verts => wants the atlas
-obj = bpy.context.active_object
-while obj.data.uv_layers:
-    obj.data.uv_layers.remove(obj.data.uv_layers[0])
-assert len(obj.data.uv_layers) == 0, "failed to strip UVs; test is vacuous"
-
-irradiance.prepare_object_bake_uv(obj)
-assert BAKE_UV_LAYER_NAME in obj.data.uv_layers, (
-    "prepare_object_bake_uv left a UV-less mesh without a bake UV"
-)
-
-# ... and the object must actually survive into the atlas rather than being demoted.
-plan = adapter.build_atlas_plan(
-    bpy.context.scene, [obj],
-    {"atlas_texel_density": 1500.0, "atlas_tile_min": 16, "atlas_tile_max": 512,
-     "atlas_texel_soft_max": 500000},
-)
-assert obj.name in plan.texels, f"object demoted from the atlas; texels={list(plan.texels)}"
-print("UVLESS_MESH_REACHES_ATLAS_OK")
-"""
-    out = subprocess.run([str(executable), "-b", "--python-expr", code], capture_output=True, text=True, check=False)
-    assert "UVLESS_MESH_REACHES_ATLAS_OK" in out.stdout, out.stdout + out.stderr
+    assert result["uv_before"] == 0, "failed to strip UVs; test is vacuous"
+    assert result["has_bake_uv"], "prepare_object_bake_uv left a UV-less mesh without a bake UV"
+    assert result["in_plan"], f"object demoted from the atlas; texels={result['texels']}"

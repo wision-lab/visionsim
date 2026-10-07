@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import collections
 import functools
+import importlib
 import inspect
 import itertools
 import logging
@@ -273,6 +274,7 @@ class BlenderServer(rpyc.utils.server.Server):
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        service: str | None = None,
     ) -> Generator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:
         """Spawn one or more blender instances and start a :class:`BlenderServer` in each.
 
@@ -305,6 +307,9 @@ class BlenderServer(rpyc.utils.server.Server):
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
+            service (str | None, optional): dotted ``module:ClassName`` path of the
+                :class:`BlenderService` subclass the spawned server should expose. Defaults to None
+                (the base :class:`BlenderService`).
 
         Raises:
             TimeoutError: raise if unable to discover spawned servers in ``timeout`` seconds and kill any spawned processes.
@@ -348,9 +353,10 @@ class BlenderServer(rpyc.utils.server.Server):
             for i in range(jobs):
                 port = port_reserve("localhost") if timeout < 0 else 0
                 autoexec_cmd = "--enable-autoexec" if autoexec else "--disable-autoexec"
+                service_cmd = f"--service {service} " if service else ""
                 cmd = shlex.split(
                     f"{executable or 'blender'} -b {autoexec_cmd} --python-use-system-env "
-                    f"--python {Path(__file__).as_posix()} -- --port {port}"
+                    f"--python {Path(__file__).as_posix()} -- {service_cmd}--port {port}"
                 )
 
                 if log_dir_path:
@@ -2621,6 +2627,7 @@ class BlenderClient:
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        service: str | None = None,
     ) -> Generator[Self]:
         """Spawn and connect to a blender server.
         The spawned process is accessible through the client's ``process`` attribute.
@@ -2640,12 +2647,17 @@ class BlenderClient:
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
+            service (str | None, optional): dotted ``module:ClassName`` path of the
+                :class:`BlenderService` subclass the spawned server should expose. Defaults to None
+                (the base :class:`BlenderService`).
 
         Yields:
             Generator[Self]: the connected client
         """
         with (
-            BlenderServer.spawn(jobs=1, timeout=timeout, log=log, autoexec=autoexec, executable=executable) as (
+            BlenderServer.spawn(
+                jobs=1, timeout=timeout, log=log, autoexec=autoexec, executable=executable, service=service
+            ) as (
                 procs,
                 conns,
             ),
@@ -2849,6 +2861,7 @@ class BlenderClients(tuple):
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        service: str | None = None,
     ) -> Generator[Self]:
         """Spawn and connect to one or more blender servers.
         The spawned processes are accessible through the client's ``process`` attribute.
@@ -2869,11 +2882,16 @@ class BlenderClients(tuple):
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
+            service (str | None, optional): dotted ``module:ClassName`` path of the
+                :class:`BlenderService` subclass the spawned server should expose. Defaults to None
+                (the base :class:`BlenderService`).
 
         Yields:
             Generator[Self]: the connected clients
         """
-        with BlenderServer.spawn(jobs=jobs, timeout=timeout, log=log, autoexec=autoexec, executable=executable) as (  # noqa: SIM117
+        with BlenderServer.spawn(  # noqa: SIM117
+            jobs=jobs, timeout=timeout, log=log, autoexec=autoexec, executable=executable, service=service
+        ) as (
             procs,
             conns,
         ):
@@ -3145,7 +3163,24 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser("Startup a BlenderServer on a given port.")
     parser.add_argument("-p", "--port", type=int, default=0)
+    parser.add_argument(
+        "-s",
+        "--service",
+        type=str,
+        default="visionsim.simulate.blender:BlenderService",
+        help="Dotted 'module:ClassName' path of the BlenderService subclass to expose.",
+    )
     args, unknown = parser.parse_known_args(sys.argv[index:])
 
-    server = BlenderServer(port=args.port)
+    # Executed as a script, this module is "__main__"; importing it again by its canonical
+    # name would define a second, distinct BlenderService, so a subclass defined against
+    # the canonical module would fail the issubclass check below. Alias the running module
+    # unconditionally (not setdefault: if something already imported the canonical name,
+    # setdefault is a no-op and the dual-class failure returns).
+    sys.modules["visionsim.simulate.blender"] = sys.modules["__main__"]
+
+    module_name, _, class_name = args.service.partition(":")
+    service_cls = getattr(importlib.import_module(module_name), class_name)
+
+    server = BlenderServer(service=service_cls, port=args.port)
     server.start()

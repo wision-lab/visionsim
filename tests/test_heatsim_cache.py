@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from types import SimpleNamespace
 
 import numpy as np
 
+from tests.heatsim_test_service import SERVICE_PATH, call_service
+from visionsim.simulate.blender import BlenderClient
 from visionsim.simulate.heatsim import cache
 
 
@@ -27,12 +28,8 @@ def test_cache_roundtrip_and_miss(tmp_path):
 
 def test_solver_settings_change_cache_key(tmp_path):
     blend = tmp_path / "scene.blend"
-    assert cache.cache_key(blend, {"dt": 0.05}, "source") != cache.cache_key(
-        blend, {"dt": 0.1}, "source"
-    )
-    assert cache.cache_key(blend, {"dt": 0.05}, "source") != cache.cache_key(
-        blend, {"dt": 0.05}, "changed"
-    )
+    assert cache.cache_key(blend, {"dt": 0.05}, "source") != cache.cache_key(blend, {"dt": 0.1}, "source")
+    assert cache.cache_key(blend, {"dt": 0.05}, "source") != cache.cache_key(blend, {"dt": 0.05}, "changed")
 
 
 def test_cache_rejects_wrong_shape_and_corruption(tmp_path):
@@ -57,8 +54,10 @@ def test_source_identity_requires_clean_saved_inputs(tmp_path):
     blend.write_bytes(b"room A")
     image.write_bytes(b"image A")
     data = SimpleNamespace(
-        filepath=str(blend), is_dirty=False,
-        images=[SimpleNamespace(filepath=str(image), packed_file=None)], libraries=[],
+        filepath=str(blend),
+        is_dirty=False,
+        images=[SimpleNamespace(filepath=str(image), packed_file=None)],
+        libraries=[],
     )
     original = cache.source_identity(data)
     assert original == cache.source_identity(data)
@@ -72,56 +71,18 @@ def test_source_identity_requires_clean_saved_inputs(tmp_path):
 
 
 def test_saved_blend_cache_hit_and_explicit_recompute(executable, tmp_path):
-    scene_path = tmp_path / "cached.blend"
-    common = f"""
-from pathlib import Path
-import bpy
-from visionsim.simulate.heatsim import adapter, cache, register
-register()
-defaults = dict(initial_temperature_K=295.0, thermal_diffusivity_mm2_s=0.17,
-                density_kg_m3=1330.0, specific_heat_J_kgK=880.0, emissivity=0.9,
-                irradiance_scale=100.0)
-settings = dict(sim_time_s=0.1, timestep_s=0.05, device='cpu', bake_samples=4,
-                irradiance_texture_size=64)
-root = Path(r'{tmp_path}') / 'cache'
-"""
-    create = common + f"""
-bpy.ops.object.select_all(action='SELECT')
-bpy.ops.object.delete()
-bpy.ops.mesh.primitive_grid_add(x_subdivisions=12, y_subdivisions=12, size=2)
-bpy.ops.object.light_add(type='SUN')
-bpy.context.active_object.data.energy = 10.0
-bpy.ops.wm.save_as_mainfile(filepath=r'{scene_path}')
-source = cache.source_identity(bpy.data)
-assert source is not None
-adapter.solve_scene(bpy.context.scene, defaults=defaults, solver_cfg=settings,
-                    cache_root=root, source_digest=source)
-print('CACHE_WRITTEN')
-"""
-    first = subprocess.run([str(executable), "-b", "--python-expr", create], capture_output=True, text=True,
-                           check=False)
-    assert "CACHE_WRITTEN" in first.stdout, first.stdout + "\n" + first.stderr
+    scene_path = str(tmp_path / "cached.blend")
 
-    reuse = common + """
-source = cache.source_identity(bpy.data)
-assert source is not None
-def forbid_bake(*args, **kwargs):
-    raise RuntimeError('bake was reached')
-adapter._compute_irradiance = forbid_bake
-history = adapter.solve_scene(bpy.context.scene, defaults=defaults, solver_cfg=settings,
-                              cache_root=root, source_digest=source)
-assert 'Grid' in history
-try:
-    adapter.solve_scene(bpy.context.scene, defaults=defaults, solver_cfg=settings,
-                        cache_root=root, source_digest=source, recompute=True)
-except RuntimeError as exc:
-    assert str(exc) == 'bake was reached'
-else:
-    raise AssertionError('recompute reused the old cache')
-print('CACHE_HIT_AND_RECOMPUTE_OK')
-"""
-    second = subprocess.run(
-        [str(executable), "-b", str(scene_path), "--python-expr", reuse], capture_output=True, text=True,
-        check=False,
-    )
-    assert "CACHE_HIT_AND_RECOMPUTE_OK" in second.stdout, second.stdout + "\n" + second.stderr
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        call_service(client, "build_scene", "grid", "Grid")
+        saved = call_service(client, "save_scene", scene_path)
+        created = call_service(client, "cache_solve", str(tmp_path))
+    assert saved["source_is_none"] is False, "source identity unavailable for a clean saved blend"
+    assert created["source_is_none"] is False
+    assert created["solved"], "cache-priming solve did not produce the Grid object"
+
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        reused = call_service(client, "cache_solve", str(tmp_path), scene_path=scene_path, forbid_bake=True)
+    assert reused["source_is_none"] is False
+    assert reused["solved"], "cache hit did not return the solved Grid object"
+    assert reused["recompute_reached_bake"], "recompute reused the old cache"
