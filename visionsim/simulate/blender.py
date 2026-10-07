@@ -275,6 +275,7 @@ class BlenderServer(rpyc.utils.server.Server):
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
         service: str | None = None,
+        background: bool = True,
     ) -> Generator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:
         """Spawn one or more blender instances and start a :class:`BlenderServer` in each.
 
@@ -310,6 +311,10 @@ class BlenderServer(rpyc.utils.server.Server):
             service (str | None, optional): dotted ``module:ClassName`` path of the
                 :class:`BlenderService` subclass the spawned server should expose. Defaults to None
                 (the base :class:`BlenderService`).
+            background (bool, optional): if true, spawn blender in background mode (``-b``). This is faster
+                and does not require a display, but has no OpenGL context, so viewport renders (playblasts)
+                are unavailable. Set to false to keep a window/GL context open (requires a display).
+                Defaults to True.
 
         Raises:
             TimeoutError: raise if unable to discover spawned servers in ``timeout`` seconds and kill any spawned processes.
@@ -336,8 +341,23 @@ class BlenderServer(rpyc.utils.server.Server):
                         p.send_signal(signal.SIGINT)
 
                 for p in procs:
-                    # Ensure process is killed if CTRL+C failed
+                    # Ensure process is killed if CTRL+C failed. On windows this is a hard
+                    # TerminateProcess, elsewhere it is SIGTERM.
                     p.terminate()
+
+                # Blender can get stuck in a software/HANGDEAD event loop (eg: no working GL
+                # context) where it ignores SIGINT/SIGTERM, leaving it orphaned and holding a
+                # window open. Give them one shared grace period, then kill whatever survived.
+                # Note: kill() maps to TerminateProcess on windows, where it is equivalent to
+                # terminate(), so this escalation is a no-op there.
+                time.sleep(0.5)
+                for p in procs:
+                    if p.poll() is None:
+                        p.kill()
+
+                # Reap so nothing is left as a zombie holding its window and fds open.
+                for p in procs:
+                    p.wait()
 
         BlenderServer.spawn_registry()
         existing = BlenderServer.discover() if timeout > 0 else []
@@ -353,11 +373,17 @@ class BlenderServer(rpyc.utils.server.Server):
             for i in range(jobs):
                 port = port_reserve("localhost") if timeout < 0 else 0
                 autoexec_cmd = "--enable-autoexec" if autoexec else "--disable-autoexec"
-                service_cmd = f"--service {service} " if service else ""
-                cmd = shlex.split(
-                    f"{executable or 'blender'} -b {autoexec_cmd} --python-use-system-env "
-                    f"--python {Path(__file__).as_posix()} -- {service_cmd}--port {port}"
-                )
+                # Preserve executable paths; command strings also support launchers such as flatpak.
+                if executable and Path(executable).is_file():
+                    cmd = [os.fspath(executable)]
+                else:
+                    cmd = shlex.split(str(executable or "blender"))
+                if background:
+                    cmd.append("-b")
+                cmd += [autoexec_cmd, "--python-use-system-env", "--python", str(Path(__file__)), "--"]
+                if service:
+                    cmd += ["--service", service]
+                cmd += ["--port", str(port)]
 
                 if log_dir_path:
                     (log_dir_path / f"job{i:03}").mkdir(parents=True, exist_ok=True)
@@ -1839,7 +1865,7 @@ class BlenderService(rpyc.Service):
             self.render_layers.outputs["temperature"],
             label="Temperature Output",
             file_format="OPEN_EXR",
-            color_mode="BW",
+            color_mode="RGB" if bpy.app.version < (4, 3, 0) else "BW",
             exr_codec=exr_codec,
             bit_depth=bit_depth,
             c=1,
@@ -2528,6 +2554,150 @@ class BlenderService(rpyc.Service):
         self.exposed_render_frames(frame_range, allow_skips=allow_skips, dry_run=dry_run, update_fn=update_fn)
 
     @require_initialized_service
+    def exposed_render_playblast(
+        self,
+        frame_start: int | None = None,
+        frame_end: int | None = None,
+        frame_step: int | None = None,
+        video: bool = True,
+        allow_skips=True,
+        dry_run=False,
+        update_fn: UpdateFn | None = None,
+    ) -> None:
+        """Render a fast preview of the animation using Blender's viewport/OpenGL renderer.
+
+        This uses :meth:`bpy.ops.render.opengl <bpy.ops.render.opengl>` in animation mode, which reuses
+        whatever viewport engine, shading and anti-aliasing settings are configured in the blend-file
+        (these are NOT affected by :class:`RenderConfig <visionsim.simulate.config.RenderConfig>`).
+        Output is written to a dedicated ``playblast/`` directory, separate from any ground truth outputs.
+
+        Note: All frame start/end/step arguments are absolute quantities, applied after any keyframe moves.
+              By default the whole animation will render when no start/end and step values are set.
+        Note: This does NOT restore the context it was called in. Like the other render methods, the scene
+              is mutated in place (frame range, render filepath, image/file format and registered outputs).
+              Reopen the blend-file if you need to reset these attributes.
+
+        Args:
+            frame_start (int, optional): Starting index (inclusive) of frames to render as seen in blender.
+                Defaults to None, meaning value from ``.blend`` file.
+            frame_end (int, optional): Ending index (inclusive) of frames to render as seen in blender.
+                Defaults to None, meaning value from ``.blend`` file.
+            frame_step (int, optional): Skip every nth frame. Defaults to None, meaning value from ``.blend`` file.
+            video (bool, optional): If true, encode the preview as a single video file (``playblast/playblast.mp4``).
+                If false, save a sequence of PNG images (``playblast/0001.png``, ...) along with a ``playblast/transforms.db``
+                metadata database. Defaults to True.
+            allow_skips (bool, optional): If true, skip rendering when the output already exists. Defaults to True.
+            dry_run (bool, optional): If true, nothing will be rendered at all. Defaults to False.
+            update_fn (UpdateFn, optional): Same as :meth:`render_frames <exposed_render_frames>`.
+
+        Raises:
+            RuntimeError: raised if the running Blender version is too old to support this feature, or if
+                there is no window/3D-viewport context available (eg: Blender is running in background mode).
+            ValueError: raised if scene and camera are entirely static.
+        """
+        if bpy.app.version < (4, 2, 0):
+            raise RuntimeError(
+                f"Playblast rendering requires Blender >= 4.2, found {'.'.join(map(str, bpy.app.version))}."
+            )
+
+        frame_start = self.scene.frame_start if frame_start is None else frame_start
+        frame_end = self.scene.frame_end if frame_end is None else frame_end
+        frame_step = self.scene.frame_step if frame_step is None else frame_step
+        frames = range(frame_start, frame_end + 1, frame_step)
+
+        if not self._use_animation:
+            raise ValueError(
+                "Animations are disabled, scene will be entirely static. "
+                "To instead render a single frame, use `render_frame`."
+            )
+        elif all(p.animation_data is None for p in self.get_parents(self.camera)) and self.camera.animation_data is None:
+            self.log.warning("Active camera nor it's parents are animated, camera will be static.")
+
+        # Viewport rendering has no notion of ground truth output nodes, reset any registered outputs.
+        self._outputs = {}
+
+        blasts = self.root_path / "playblast"
+        blasts.mkdir(parents=True, exist_ok=True)
+        # Narrow the scene range to the frames actually rendered: when `frame_step` doesn't evenly
+        # divide the range, the last rendered frame is before `frame_end` (eg: range(1, 101, 7)[-1] is 99).
+        self.scene.frame_start, self.scene.frame_end, self.scene.frame_step = min(frames), max(frames), frame_step
+
+        if video:
+            output_path = (blasts / "playblast").with_suffix(".mp4")
+            # Blender 5 gates video output behind `media_type`: `file_format` rejects "FFMPEG"
+            #   until the media type is switched to "VIDEO". Older versions have no such property.
+            if bpy.app.version >= (5, 0, 0):
+                self.scene.render.image_settings.media_type = "VIDEO"
+            self.scene.render.image_settings.file_format = "FFMPEG"
+            self.scene.render.ffmpeg.format = "MPEG4"
+            # Note: keep the `.mp4` extension in the filepath, otherwise Blender appends the
+            #   frame range to the filename (eg: `playblast0010-0014.mp4`).
+            self.scene.render.filepath = str(output_path)
+            skip = allow_skips and output_path.exists()
+        else:
+            if bpy.app.version >= (5, 0, 0):
+                self.scene.render.image_settings.media_type = "IMAGE"
+            self.scene.render.image_settings.file_format = "PNG"
+            self.scene.render.filepath = str(blasts / ("#" * INDEX_PADDING))
+            skip = allow_skips and all((blasts / f"{f:0{INDEX_PADDING}}.png").exists() for f in frames)
+
+            # Register a database-only output (no compositor node is involved in viewport renders),
+            # mirroring `register_output_type` so `_save_metadata` can persist camera info.
+            if (db_path := blasts / "transforms.db").exists():
+                self.log.info(f"Database at {db_path} already exists, overwriting...")
+                db_path.unlink()
+            self._outputs["playblast"] = (None, None, SqliteDatabase(db_path, pragmas=_DEFAULT_PRAGMAS), {})
+
+        # Render, letting any error (e.g. no GL context, missing ffmpeg) propagate from Blender itself.
+        # Viewport rendering needs a live window/3D-viewport context, which is invalidated by loading
+        # the blend-file; supply it explicitly.
+        if not (dry_run or skip):
+            windows = bpy.context.window_manager.windows
+            if bpy.app.background or not windows:
+                raise RuntimeError(
+                    "Playblast rendering requires a headful (non-background) Blender instance with a window."
+                )
+
+            # Search every window/area/region for a 3D viewport; any one of them will do.
+            window = area = region = None
+            for w in windows:
+                for a in w.screen.areas:
+                    if a.type != "VIEW_3D":
+                        continue
+                    for r in a.regions:
+                        if r.type == "WINDOW":
+                            window, area, region = w, a, r
+                            break
+                    if region:
+                        break
+                if region:
+                    break
+
+            if region is None:
+                raise RuntimeError(
+                    "Playblast rendering requires a 3D viewport (VIEW_3D area with a WINDOW region) "
+                    "in one of the open windows, but none was found."
+                )
+
+            with bpy.context.temp_override(window=window, screen=window.screen, area=area, region=region):
+                bpy.ops.render.opengl(animation=True, view_context=False)
+
+        if not video:
+            for frame in frames:
+                self.exposed_set_current_frame(frame)
+                self._save_metadata(
+                    paths={"playblast": Path(f"{frame:0{INDEX_PADDING}}.png")},
+                    transform_matrix=self.exposed_camera_extrinsics().tolist(),
+                    camera_info=self.exposed_camera_info(),
+                    index=frame,
+                )
+
+        if update_fn is not None:
+            update_fn(total=len(frames))
+            for _ in frames:
+                update_fn(advance=1)
+
+    @require_initialized_service
     def exposed_save_file(self, path: str | os.PathLike) -> None:
         """Save the opened blender file. This is useful for introspecting the state of the compositor/scene/etc.
 
@@ -2628,6 +2798,7 @@ class BlenderClient:
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
         service: str | None = None,
+        background: bool = True,
     ) -> Generator[Self]:
         """Spawn and connect to a blender server.
         The spawned process is accessible through the client's ``process`` attribute.
@@ -2650,13 +2821,22 @@ class BlenderClient:
             service (str | None, optional): dotted ``module:ClassName`` path of the
                 :class:`BlenderService` subclass the spawned server should expose. Defaults to None
                 (the base :class:`BlenderService`).
+            background (bool, optional): if true, spawn blender in background mode (``-b``). Background mode
+                has no OpenGL context, so viewport renders (playblasts) require ``background=False``, which
+                also requires a display. Defaults to True.
 
         Yields:
             Generator[Self]: the connected client
         """
         with (
             BlenderServer.spawn(
-                jobs=1, timeout=timeout, log=log, autoexec=autoexec, executable=executable, service=service
+                jobs=1,
+                timeout=timeout,
+                log=log,
+                autoexec=autoexec,
+                executable=executable,
+                service=service,
+                background=background,
             ) as (
                 procs,
                 conns,
@@ -2705,6 +2885,27 @@ class BlenderClient:
         self.conn = cast(rpyc.Connection, self.conn)
         render_frames_async = rpyc.async_(self.conn.root.render_frames)
         async_result = render_frames_async(*args, **kwargs)
+        self.awaitable = async_result
+        async_result.add_callback(lambda _: setattr(self, "awaitables", None))
+        return async_result
+
+    @require_connected_client
+    def render_playblast_async(self, *args, **kwargs) -> rpyc.AsyncResult:
+        """Asynchronously call :meth:`render_playblast <BlenderService.exposed_render_playblast>`
+        and return an rpyc.AsyncResult.
+
+        Args:
+            *args: Same as :meth:`BlendService.exposed_render_playblast`
+            *kwargs: Same as :meth:`BlendService.exposed_render_playblast`
+
+        Returns:
+            rpyc.AsyncResult: Result encapsulating the return value of ``render_playblast``.
+                After ``wait``ing for the render to finish, it can be accessed using
+                the ``.value`` attribute.
+        """
+        self.conn = cast(rpyc.Connection, self.conn)
+        render_playblast_async = rpyc.async_(self.conn.root.render_playblast)
+        async_result = render_playblast_async(*args, **kwargs)
         self.awaitable = async_result
         async_result.add_callback(lambda _: setattr(self, "awaitables", None))
         return async_result
@@ -2819,6 +3020,7 @@ class BlenderClients(tuple):
         return inner
 
     def __getattr__(self, name: str) -> Callable[..., Any]:
+        """Dispatch a remote service method across the connected clients."""
         method = getattr(BlenderService, EXPOSED_PREFIX + name, None)
         if method is None:
             raise AttributeError(name)
@@ -2862,6 +3064,7 @@ class BlenderClients(tuple):
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
         service: str | None = None,
+        background: bool = True,
     ) -> Generator[Self]:
         """Spawn and connect to one or more blender servers.
         The spawned processes are accessible through the client's ``process`` attribute.
@@ -2885,24 +3088,32 @@ class BlenderClients(tuple):
             service (str | None, optional): dotted ``module:ClassName`` path of the
                 :class:`BlenderService` subclass the spawned server should expose. Defaults to None
                 (the base :class:`BlenderService`).
+            background (bool, optional): if true, spawn blender instances in background mode (``-b``). Background
+                mode has no OpenGL context, so viewport renders (playblasts) require ``background=False``, which
+                also requires a display. Defaults to True.
 
         Yields:
             Generator[Self]: the connected clients
         """
-        with BlenderServer.spawn(  # noqa: SIM117
-            jobs=jobs, timeout=timeout, log=log, autoexec=autoexec, executable=executable, service=service
-        ) as (
-            procs,
-            conns,
+        with (
+            BlenderServer.spawn(
+                jobs=jobs,
+                timeout=timeout,
+                log=log,
+                autoexec=autoexec,
+                executable=executable,
+                service=service,
+                background=background,
+            ) as (procs, conns),
+            cls(*conns) as clients,
         ):
-            with cls(*conns) as clients:
-                for client, p in zip(clients, procs):
-                    client.process = p
+            for client, p in zip(clients, procs):
+                client.process = p
 
-                yield clients
+            yield clients
 
-                for client in clients:
-                    client.process = None
+            for client in clients:
+                client.process = None
 
     @contextmanager
     @staticmethod

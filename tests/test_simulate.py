@@ -159,9 +159,14 @@ def test_database_threading(tmp_path_factory, executable):
 def test_metadata_roundtrip_from_db(cube_dataset):
     for path in cube_dataset.glob("**/*.db"):
         meta = Metadata.load(path)
-        meta.save(path.parent / "transforms.json")
+        json_path = path.parent / "transforms.json"
+        meta.save(json_path)
 
-        assert Metadata.load(path.parent / "transforms.json").model_dump() == meta.model_dump()
+        assert Metadata.load(json_path).model_dump() == meta.model_dump()
+
+        # Note: Other tests (eg: `test_dataset_merge`) glob this directory and expect a
+        #   single metadata source, so clean up after ourselves.
+        json_path.unlink()
 
 
 def test_render_thermal(tmp_path_factory, executable):
@@ -203,7 +208,7 @@ def test_render_thermal(tmp_path_factory, executable):
         # laplacian backend now clamps n_neighbors to len(points)-1 (-> 7 here), so
         # the solve runs. An 8-point solve is physically degenerate, but this gate
         # only checks the solve -> temperature-AOV -> radiance render plumbing.
-        client.prepare_thermal(device="cpu")
+        client.prepare_thermal(device="cpu", bake_samples=4, irradiance_texture_size=64)
         client.include_thermal(radiance=True, preview=True)
         client.render_animation()
 
