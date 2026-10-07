@@ -208,7 +208,7 @@ def test_render_thermal(tmp_path_factory, executable):
         # laplacian backend now clamps n_neighbors to len(points)-1 (-> 7 here), so
         # the solve runs. An 8-point solve is physically degenerate, but this gate
         # only checks the solve -> temperature-AOV -> radiance render plumbing.
-        client.prepare_thermal(device="cpu")
+        client.prepare_thermal(device="cpu", bake_samples=4, irradiance_texture_size=64)
         client.include_thermal(radiance=True, preview=True)
         client.render_animation()
 

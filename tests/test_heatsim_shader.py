@@ -169,16 +169,22 @@ scene = bpy.context.scene
 scene.camera = camera
 scene.render.engine = 'CYCLES'
 scene.cycles.samples = 1
+if hasattr(scene.render, 'compositor_device'):
+    scene.render.compositor_device = 'CPU'
 scene.render.resolution_x = 16
 scene.render.resolution_y = 16
 scene.render.resolution_percentage = 100
 thermal_shader.stamp_default_temperatures(scene, default_K=295.0)
 thermal_shader.setup_temperature_aov(scene, bpy.context.view_layer)
 
-bpy.ops.node.new_compositing_node_group(name='Compositor Nodes')
-scene.compositing_node_group = bpy.data.node_groups['Compositor Nodes']
+if bpy.app.version >= (5, 0, 0):
+    bpy.ops.node.new_compositing_node_group(name='Compositor Nodes')
+    scene.compositing_node_group = bpy.data.node_groups['Compositor Nodes']
+    tree = scene.compositing_node_group
+else:
+    scene.use_nodes = True
+    tree = scene.node_tree
 scene.render.use_compositing = True
-tree = scene.compositing_node_group
 tree.nodes.clear()
 layers = tree.nodes.new('CompositorNodeRLayers')
 output, sockets, _ = file_output_node(tree, root, slot_names=(('temp', 'RGBA'),))
@@ -188,7 +194,7 @@ output.format.color_depth = '32'
 tree.links.new(layers.outputs['temperature'], sockets[0])
 bpy.ops.render.render()
 
-loaded = bpy.data.images.load(str(root / 'temp.exr'))
+loaded = bpy.data.images.load(str(next(root.glob('temp*.exr'))))
 pixels = np.empty(16 * 16 * 4, dtype=np.float32)
 loaded.pixels.foreach_get(pixels)
 temperature = pixels.reshape(-1, 4)[:, 0]
@@ -441,6 +447,8 @@ scene = service.scene
 scene.render.engine = 'CYCLES'
 scene.cycles.device = 'CPU'
 scene.cycles.samples = 8
+if hasattr(scene.render, 'compositor_device'):
+    scene.render.compositor_device = 'CPU'
 scene.cycles.seed = 0
 scene.cycles.use_animated_seed = False
 scene.render.use_persistent_data = False

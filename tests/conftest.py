@@ -89,7 +89,7 @@ def cube_dataset(tmp_path_factory, executable) -> Path:
         client.include_diffuse_pass()
         client.include_specular_pass()
         client.include_points()
-        client.prepare_thermal(device="cpu")
+        client.prepare_thermal(device="cpu", bake_samples=4, irradiance_texture_size=64)
         client.include_thermal(radiance=True, preview=True)
         client.render_animation()
         client.save_file(tmpdir / "cube_out.blend")

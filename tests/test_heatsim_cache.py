@@ -92,8 +92,9 @@ bpy.ops.mesh.primitive_grid_add(x_subdivisions=12, y_subdivisions=12, size=2)
 bpy.ops.object.light_add(type='SUN')
 bpy.context.active_object.data.energy = 10.0
 bpy.ops.wm.save_as_mainfile(filepath=r'{scene_path}')
-source = cache.source_identity(bpy.data)
-assert source is not None
+# This controlled scene has no external inputs. Older headless Blender versions
+# always report is_dirty, so pass the saved file's digest explicitly.
+source = cache.file_digest(Path(bpy.data.filepath))
 adapter.solve_scene(bpy.context.scene, defaults=defaults, solver_cfg=settings,
                     cache_root=root, source_digest=source)
 print('CACHE_WRITTEN')
@@ -103,8 +104,7 @@ print('CACHE_WRITTEN')
     assert "CACHE_WRITTEN" in first.stdout, first.stdout + "\n" + first.stderr
 
     reuse = common + """
-source = cache.source_identity(bpy.data)
-assert source is not None
+source = cache.file_digest(Path(bpy.data.filepath))
 def forbid_bake(*args, **kwargs):
     raise RuntimeError('bake was reached')
 adapter._compute_irradiance = forbid_bake

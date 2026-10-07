@@ -77,8 +77,8 @@ bg.inputs['Strength'].default_value = 1.0
 defaults = dict(initial_temperature_K=295.0, thermal_diffusivity_mm2_s=0.17,
                 density_kg_m3=1330.0, specific_heat_J_kgK=880.0, emissivity=0.9,
                 irradiance_scale=100.0)
-solver_cfg = dict(sim_time_s=0.1, timestep_s=0.05, 
-                  device='cpu')
+solver_cfg = dict(sim_time_s=0.1, timestep_s=0.05, device='cpu',
+                  bake_samples=32, irradiance_texture_size=64)
 flux = adapter._compute_irradiance_cycles(bpy.context.scene, [obj], solver_cfg, defaults)[obj]
 assert flux.shape == (len(obj.data.vertices),)
 assert float(flux.std()) > 0.01, f'absorbed flux did not vary with checker albedo: {{flux.std()}}'

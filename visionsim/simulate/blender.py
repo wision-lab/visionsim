@@ -1857,7 +1857,7 @@ class BlenderService(rpyc.Service):
             self.render_layers.outputs["temperature"],
             label="Temperature Output",
             file_format="OPEN_EXR",
-            color_mode="BW",
+            color_mode="RGB" if bpy.app.version < (4, 3, 0) else "BW",
             exr_codec=exr_codec,
             bit_depth=bit_depth,
             c=1,
