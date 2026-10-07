@@ -7,6 +7,8 @@ from typing import Any
 
 import numpy as np
 
+from visionsim.emulate.itof.coding import CodingScheme, unambiguous_range
+
 
 def spad(
     input_dir: Path,
@@ -416,3 +418,229 @@ def imu(
                     d["t"], *d["acc_reading"], *d["gyro_reading"], *d["acc_bias"], *d["gyro_bias"]
                 )
             )
+
+
+def itof(
+    input_dir: Path,
+    output_dir: Path,
+    depth_dir: Path | None = None,
+    pattern: str | None = None,
+    depth_pattern: str | None = None,
+    scheme: CodingScheme = "convSin",
+    n_captures: int = 3,
+    freq: float = 120e6,
+    num_bins: int = 1000,
+    hilbert_order: int = 1,
+    hilbert_delta: float = 0.25,
+    freq_vec: list[float] | None = None,
+    shifts_vec: list[float] | None = None,
+    exposure_time: float = 1.0,
+    ambient_power: float = 0.0,
+    light_power: float = 1.0,
+    force: bool = False,
+    preview: bool = False,
+) -> None:
+    """Emulate an iToF sensor given a dataset of depth and albedo frames
+
+    Args:
+        input_dir: directory in which to look for albedo frames (or transforms.json)
+        output_dir: directory in which to save iToF measurement frames
+        depth_dir: Optional directory containing depth files. If None, assumes depths are in input_dir or read from transforms.json.
+        pattern: pattern to match albedo frames (if not using transforms.json)
+        depth_pattern: pattern for depth files, used if depth_dir is provided and pattern is in use.
+        scheme: iToF coding scheme to use.
+        n_captures: Number of measurements (taps).
+        freq: Modulation frequency in Hz.
+        num_bins: Number of bins to use for simulating the correlation function.
+        hilbert_order: Hilbert curve recursion order, only used by the deltaHilbertDim schemes.
+        hilbert_delta: Hilbert curve normalization margin in [0, 0.5), only used by the deltaHilbertDim schemes.
+        freq_vec: Required for 'multFreqSin' scheme, frequency multipliers per tap.
+        shifts_vec: Required for 'multFreqSin' scheme, phase shifts in radians per tap.
+        exposure_time: Camera exposure time in seconds.
+        ambient_power: Average ambient irradiance, in the same arbitrary units as light_power.
+        light_power: Peak active light intensity.
+        force: overwrite output directory if it exists.
+        preview: If True, generate image previews of the taps and save them to output_dir/preview.
+    """
+    import json
+
+    import imageio.v3 as iio
+
+    from visionsim.cli import _log
+    from visionsim.dataset import Dataset, Metadata
+    from visionsim.emulate.itof.coding import make_coding_functions
+    from visionsim.emulate.itof.simulation import simulate_measurements
+    from visionsim.utils.color import srgb_to_linearrgb
+    from visionsim.utils.progress import ElapsedProgress
+
+    if input_dir.resolve() == output_dir.resolve():
+        raise RuntimeError("Input and output directory cannot be the same!")
+    if output_dir.exists() and not force:
+        raise FileExistsError("Output directory already exists.")
+    shutil.rmtree(output_dir, ignore_errors=True)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if preview:
+        (output_dir / "preview").mkdir(parents=True, exist_ok=True)
+
+    dataset_albedo = None
+    dataset_depth = None
+
+    if pattern:
+        dataset_albedo = Dataset.from_pattern(input_dir, pattern)
+        if depth_dir:
+            dataset_depth = Dataset.from_pattern(depth_dir, depth_pattern or pattern)
+        else:
+            raise ValueError("When using patterns, you must specify a depth_dir for the depth frames.")
+    else:
+        dataset_albedo = Dataset.from_path(input_dir)
+        if depth_dir:
+            dataset_depth = Dataset.from_path(depth_dir)
+
+    # The modulation codes span one period, 1 / f. The ramp codes span two of
+    # them, so the range they recover without folding is only half the c / 2f
+    # that the simulator wraps depths into.
+    period = 1.0 / freq
+    unambiguous_depth = unambiguous_range(scheme, freq)
+
+    if dataset_depth is not None and len(dataset_albedo) != len(dataset_depth):
+        raise ValueError(
+            f"Albedo and Depth datasets have different lengths: {len(dataset_albedo)} vs {len(dataset_depth)}"
+        )
+
+    freqs = np.array(freq_vec) if freq_vec is not None else np.array([freq])
+    shifts = np.array(shifts_vec) if shifts_vec is not None else None
+    modulation_codes, reference_codes = make_coding_functions(
+        scheme,
+        n_captures,
+        num_bins + 1,
+        hilbert_order=hilbert_order,
+        hilbert_delta=hilbert_delta,
+        freq_vec=freqs,
+        shifts_vec=shifts,
+    )
+    # Acquisition parameters live outside the transforms schema, which describes
+    # camera trajectory. Record them once alongside the measurements, mirroring
+    # the events simulator's params.json.
+    params: dict[str, Any] = {
+        "scheme": scheme,
+        "n_captures": n_captures,
+        "freq_hz": freq,
+        "num_bins": num_bins,
+        "hilbert_order": hilbert_order,
+        "hilbert_delta": hilbert_delta,
+        "unambiguous_range_m": unambiguous_depth,
+        "exposure_time": exposure_time,
+        "ambient_power": ambient_power,
+        "light_power": light_power,
+    }
+    if freq_vec is not None:
+        params["freq_vec"] = list(freq_vec)
+    if shifts_vec is not None:
+        params["shifts_vec"] = list(shifts_vec)
+
+    with open(output_dir / "params.json", "w") as f:
+        json.dump(params, f, indent=2)
+
+    clipped_range_warned = False
+    transforms: list[dict[str, Any]] = []
+
+    with ElapsedProgress() as progress:
+        task = progress.add_task("Writing iToF measurements", total=len(dataset_albedo))
+
+        for i in range(len(dataset_albedo)):
+            albedo, transform = dataset_albedo[i]
+            assert isinstance(albedo, np.ndarray)
+            assert isinstance(transform, dict)
+
+            file_path = Path(str(transform["file_path"]))
+            if file_path.suffix.lower() not in (".exr", ".hdr"):
+                albedo = srgb_to_linearrgb((albedo / 255.0).astype(float))
+            elif albedo.dtype == np.uint8:
+                # 8-bit container holding linear data, rescale to [0, 1] only.
+                albedo = albedo.astype(float) / 255.0
+
+            # iToF sensors are monochromatic, so we convert RGB albedo to grayscale (luma)
+            # This ensures we get true scalar measurements/correlations per pixel
+            if albedo.ndim == 3 and albedo.shape[-1] >= 3:
+                r, g, b, *_ = np.transpose(albedo, (2, 0, 1))
+                albedo = 0.0722 * b + 0.7152 * g + 0.2126 * r
+
+            if dataset_depth is not None:
+                depth, _ = dataset_depth[i]
+                assert isinstance(depth, np.ndarray)
+            else:
+                depth_val = transform.get("depth_file_path")
+                if not depth_val:
+                    raise ValueError(f"Frame {i} has no depth_file_path in metadata and no depth_dir was provided.")
+                depth_path_abs = (dataset_albedo.root or Path("")) / depth_val
+                # Frames stored inside a single .npy are indexed by their offset,
+                # mirroring Dataset.__getitem__.
+                offset = transform.get("offset")
+                depth = Dataset.load_data(depth_path_abs, idx=(offset,) if offset is not None else ())
+                assert isinstance(depth, np.ndarray)
+
+            # Depth maps are often stored with a singleton channel/leading axis.
+            depth = np.squeeze(depth)
+
+            if albedo.shape[:2] != depth.shape[:2]:
+                raise ValueError(f"Shape mismatch: albedo {albedo.shape} vs depth {depth.shape}")
+
+            # Sky and missed rays carry the renderer's sentinel (see the preview
+            # mask below), which is not scene geometry and must not drive the
+            # range warning.
+            valid_depth = depth[np.isfinite(depth) & (depth < 1e10)]
+            if not clipped_range_warned and valid_depth.size and np.max(valid_depth) > unambiguous_depth:
+                clipped_range_warned = True
+                _log.warning(
+                    f"Depths up to {np.max(valid_depth):.3f} m exceed the unambiguous range of scheme "
+                    f"'{scheme}' ({unambiguous_depth:.3f} m); those pixels will fold back into the recovered range."
+                )
+
+            # simulate_measurements works in metres
+            measurements = simulate_measurements(
+                depths=depth,
+                albedos=albedo,
+                modulation_codes=modulation_codes,
+                reference_codes=reference_codes,
+                period=period,
+                exposure_time=exposure_time,
+                ambient_power=ambient_power,
+                light_power=light_power,
+            )
+
+            out_file_path = output_dir / f"{i:04}.npy"
+            np.save(out_file_path, measurements.astype(np.float32))
+
+            if preview:
+                import matplotlib.pyplot as plt
+
+                # Depth sentinel used by the simulator for sky / rays that miss
+                # all geometry.
+                invalid_depth = depth >= 1e10
+
+                cmap = plt.get_cmap("twilight_shifted")
+                # Normalize over finite samples only: an inf/nan depth leaves NaN
+                # in the measurements, and a plain max() would then blank every
+                # pixel in the frame rather than just the sky.
+                finite = np.isfinite(measurements)
+                peak = measurements[finite].max() if finite.any() else 0.0
+                meas_norm = measurements / (peak + 1e-9)
+
+                for m in meas_norm:
+                    m[invalid_depth] = np.nan
+
+                for tap_idx in range(measurements.shape[0]):
+                    tap_dir = output_dir / "preview" / f"tap_{tap_idx}"
+                    tap_dir.mkdir(parents=True, exist_ok=True)
+                    colored_img = (cmap(meas_norm[tap_idx])[..., :3] * 255).astype(np.uint8)
+                    iio.imwrite(tap_dir / f"{i:04}.png", colored_img)
+
+            out_transform = transform.copy()
+            out_transform["file_path"] = out_file_path.name
+            transforms.append(out_transform)
+
+            progress.update(task, advance=1)
+
+    if not pattern:
+        Metadata.from_dense_transforms(transforms).save(output_dir / "transforms.json")

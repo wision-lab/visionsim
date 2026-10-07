@@ -12,7 +12,7 @@ This sensor modeling is incorporated into :func:`emulate_rgb_from_sequence <visi
 
 Using the interpolated frames from the :doc:`../../quick-start` guide, we can easily generate conventional RGB frames with varying levels of noise and blur::
 
-    $ visionsim emulate.rgb --input-dir=quickstart/lego-interp/ --output-dir=quickstart/rgb/ --chunk-size=160 --readout-std=0
+    visionsim emulate.rgb --input-dir=quickstart/lego-interp/ --output-dir=quickstart/rgb/ --chunk-size=160 --readout-std=0
 
 Similarly, we can emulate an RGB camera using the API like so:
 

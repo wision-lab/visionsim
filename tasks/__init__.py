@@ -18,25 +18,33 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from invoke import task
+from invoke import Collection, Task, task
 from rich.console import Console
 
 console = Console()
-ROOT_DIR = Path(__file__).parent.resolve()
+ROOT_DIR = Path(__file__).parent.parent.resolve()
 TEST_DIR = ROOT_DIR / "tests"
 SOURCE_DIR = ROOT_DIR / "visionsim"
 EXAMPLE_DIR = ROOT_DIR / "examples"
 SCRIPTS_DIR = ROOT_DIR / "scripts"
+TASKS_DIR = ROOT_DIR / "tasks"
 COVERAGE_FILE = ROOT_DIR / ".coverage"
 COVERAGE_DIR = ROOT_DIR / "htmlcov"
 COVERAGE_REPORT = COVERAGE_DIR / "index.html"
 DOCS_DIR = ROOT_DIR / "docs"
 DOCS_INDEX = DOCS_DIR / "build" / "html" / "index.html"
-DOCS_STATIC = DOCS_DIR / "source" / "_static"
-PYTHON_DIRS = [str(d) for d in [SOURCE_DIR, TEST_DIR, EXAMPLE_DIR, SCRIPTS_DIR, DOCS_DIR]]
+PYTHON_DIRS = [str(d) for d in [SOURCE_DIR, TEST_DIR, EXAMPLE_DIR, SCRIPTS_DIR, DOCS_DIR, TASKS_DIR]]
 
 
 def _delete_file(file, except_patterns=None):
+    """Delete a file, or a directory tree, printing what is removed.
+
+    Args:
+        file: Path to remove. Files are unlinked, directories are removed
+            recursively.
+        except_patterns: If given, prune directories in place instead of removing
+            them, keeping any file matching one of these glob patterns.
+    """
     if os.path.isfile(file):
         console.print(f"Removing file {file}.")
         os.remove(file)
@@ -62,17 +70,36 @@ def _delete_file(file, except_patterns=None):
 
 
 def _delete_pattern(pattern):
+    """Delete every file whose path matches ``pattern``, recursively.
+
+    Args:
+        pattern: Glob passed to :func:`glob.glob` with ``recursive=True``.
+    """
     for file in glob.glob(os.path.join("**", pattern), recursive=True):
         _delete_file(file)
 
 
 def _run(c, command, **kwargs):
+    """Run a shell command through invoke, allocating a pty where supported.
+
+    Args:
+        c: The invoke context.
+        command: Shell command to run.
+        **kwargs: Forwarded to ``c.run``.
+
+    Returns:
+        The invoke ``Result``.
+    """
     return c.run(command, pty=platform.system() != "Windows", **kwargs)
 
 
 @task
 def format(c):
-    """Format code (and sort imports)"""
+    """Format code and sort imports with ruff.
+
+    Checks ``visionsim/``, ``tests/``, ``examples/``, ``scripts/``, ``docs/`` and
+    ``tasks/``, plus any top-level ``*.py`` files.
+    """
     python_dirs_string = " ".join(PYTHON_DIRS + glob.glob(os.path.join(ROOT_DIR, "*.py")) + [__file__])
     _run(c, f"ruff check --select I --fix {python_dirs_string}")
     _run(c, f"ruff format {python_dirs_string}")
@@ -80,15 +107,23 @@ def format(c):
 
 @task
 def lint(c):
-    """Lint code with ruff"""
+    """Lint the code with ruff, including import order.
+
+    Reports issues without modifying any files, so it is safe to run in CI. Use
+    ``format`` to fix what it finds.
+    """
     _run(c, f"ruff check --extend-select I {' '.join(PYTHON_DIRS)} {__file__}")
 
 
 @task
 def test(c, executable=None):
-    """Run tests
+    """Run the test suite with pytest.
 
-    :param executable: Path to Blender executable. Defaults to one found on $PATH.
+    Passes ``-s`` so test output, including anything printed by a failing test,
+    goes straight to the terminal instead of being captured.
+
+    Args:
+        executable: Path to Blender executable. Defaults to one found on $PATH.
     """
     command = f"pytest -s -c {shlex.quote(str(ROOT_DIR / 'pyproject.toml'))} {shlex.quote(str(TEST_DIR))}"
     if executable:
@@ -98,24 +133,38 @@ def test(c, executable=None):
 
 @task
 def test_stubs(c):
+    """Check the generated blender type stubs against the real module with stubtest.
+
+    Catches drift between ``visionsim/simulate/blender.pyi`` and the attributes
+    the process actually exposes; regenerate with ``generate-stubs`` when it fails.
+    """
     _run(c, "stubtest visionsim.simulate.blender --concise --ignore-disjoint-bases")
 
 
 @task
 def type_check(c):
+    """Type-check the package and the development tasks with mypy.
+
+    Covers ``visionsim/`` and everything under ``tasks/``. The tests and the
+    dashboards are not checked.
+    """
     flags = "--follow-untyped-imports" if sys.version_info < (3, 10, 0) else ""
-    _run(c, f"mypy {SOURCE_DIR} {__file__} {flags}")
+    _run(c, f"mypy {SOURCE_DIR} {TASKS_DIR} {flags}")
 
 
 @task
 def precommit(c):
-    """Run pre-commit hooks"""
+    """Run every pre-commit hook against all files, not just staged ones."""
     _run(c, "pre-commit run --all-files")
 
 
 @task
 def coverage(c):
-    """Create coverage report"""
+    """Run the test suite under coverage and open the HTML report.
+
+    Measures ``visionsim/`` only, prints the terminal summary, writes
+    ``htmlcov/`` and opens ``htmlcov/index.html`` in the browser.
+    """
     _run(c, f"coverage run --source {SOURCE_DIR} -m pytest")
     _run(c, "coverage report")
 
@@ -125,39 +174,13 @@ def coverage(c):
 
 
 @task
-def build_docs(c, preview=False, full=False):
-    """Confirm docs can be built"""
-    if full:
-        if not (ROOT_DIR / "cache" / "lego.blend").exists():
-            console.print("File `cache/lego.blend` not found, you can get it by running the command:")
-            console.print(
-                "gdown https://drive.google.com/file/d/1CQVxGvPLLUYUpkBpATgSd63wgJIzfc6m/view?usp=sharing --fuzzy"
-            )
-            return
+def build_docs(c, preview=False):
+    """Build the Sphinx documentation, regenerating the API and CLI stubs first.
 
-        with c.cd(ROOT_DIR / "cache"):
-            # Create examples from the quick start guide
-            with open(ROOT_DIR / "examples/quickstart.sh", "r") as f:
-                cmds = [line for line in f if line.strip() and not line.startswith("#")]
-
-            cmds += [
-                f"gifski $(ls -1a quickstart/lego-gt/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-gt-preview.gif --width=320 --height=320",
-                f"gifski quickstart/lego-rgb25fps/frames/*.png --fps 25 -o {DOCS_STATIC}/lego-rgb25fps-preview.gif --width=320 --height=320",
-                f"gifski $(ls -1a quickstart/lego-spc4kHz/frames/*.png | sed -n '1~160p') --fps 25 -o {DOCS_STATIC}/lego-spc4kHz-preview.gif --width=320 --height=320",
-                f"gifski $(ls -1a quickstart/lego-dvs125fps/frames/*.png | sed -n '1~5p') --fps 25 -o {DOCS_STATIC}/lego-dvs125fps-preview.gif --width=320 --height=320",
-            ]
-            for cmd in cmds:
-                _run(c, cmd, echo=True, warn=True)
-
-            # Create interpolation examples
-            for i, n in enumerate((25, 50, 100, 200)):
-                for cmd in (
-                    f"visionsim blender.render-animation lego.blend interpolation/lego-{n:04}/ --keyframe-multiplier={n / 100} --width=320 --height=320",
-                    f"visionsim interpolate.frames interpolation/lego-{n:04}/ -o interpolation/lego{n:04}-interp/ -n={int(64 / 2**i)}",
-                    f"gifski $(ls -1a interpolation/lego{n:04}-interp/frames/*.png | sed -n '1~8p') --fps 25 -o {DOCS_STATIC}/lego{n:04}-interp.gif",
-                ):
-                    _run(c, cmd, echo=True, warn=True)
-
+    Run ``pip install -e .[dev]`` (or equivalent) beforehand, otherwise docstring
+    edits will not show up in the generated pages. Pass ``--preview`` to open the
+    result in the browser when the build succeeds.
+    """
     # Run autodocs
     with c.cd(ROOT_DIR):
         # TODO: Make this a project configuration
@@ -179,7 +202,13 @@ def build_docs(c, preview=False, full=False):
 
 @task
 def generate_stubs(c):
-    """Generate .pyi files to enable autocomplete of dynamic attributes (eg for BlenderClients)."""
+    """Regenerate ``visionsim/simulate/blender.pyi`` from the blender module.
+
+    Writes a stub with stubgen, rewrites it so ``BlenderClient`` methods mirror the
+    ``exposed_*`` methods on ``BlenderService`` (with per-client return types), and
+    formats the result. The stubs give autocomplete for attributes that only exist
+    inside a running blender process; ``test-stubs`` checks them against it.
+    """
     # Stubgen/stubtest is provided by mypy
     source_path = "visionsim/simulate/blender.py"
     stub_path = "visionsim/simulate/blender.pyi"
@@ -282,7 +311,7 @@ def generate_stubs(c):
 
 @task
 def clean_build(c):
-    """Clean up files from package building"""
+    """Remove build artifacts: ``build/``, ``dist/``, ``.eggs/`` and ``*.egg-info``."""
     _delete_file("build/")
     _delete_file("dist/")
     _delete_file(".eggs/")
@@ -292,7 +321,7 @@ def clean_build(c):
 
 @task
 def clean_python(c):
-    """Clean up python file artifacts"""
+    """Remove compiled Python: ``__pycache__``, ``*.pyc``, ``*.pyo`` and editor backups."""
     _delete_pattern("__pycache__")
     _delete_pattern("*.pyc")
     _delete_pattern("*.pyo")
@@ -301,7 +330,7 @@ def clean_python(c):
 
 @task
 def clean_tests(c):
-    """Clean up files from testing"""
+    """Remove test artifacts: ``.coverage``, ``htmlcov/`` and ``.pytest_cache``."""
     _delete_file(COVERAGE_FILE)
     _delete_file(COVERAGE_DIR)
     _delete_pattern(".pytest_cache")
@@ -309,12 +338,27 @@ def clean_tests(c):
 
 @task
 def clean_docs(c):
-    """Clean up docs build"""
+    """Remove the built documentation by running ``make clean`` in ``docs/``."""
     with c.cd(DOCS_DIR):
         _run(c, "make clean")
 
 
 @task(pre=[clean_build, clean_python, clean_tests, clean_docs])
 def clean(c):
-    """Runs all clean sub-tasks"""
+    """Remove build, Python, test and docs artifacts, then clear the ruff cache.
+
+    Runs ``clean-build``, ``clean-python``, ``clean-tests`` and ``clean-docs``
+    first.
+    """
     _run(c, "ruff clean")
+
+
+from . import figures
+
+# Re-register every top-level task so that defining `ns` does not hide any of
+# them, then hang the documentation-figure tasks off it.
+ns = Collection()
+for _obj in list(globals().values()):
+    if isinstance(_obj, Task):
+        ns.add_task(_obj)
+ns.add_collection(Collection.from_module(figures, name="figures"))

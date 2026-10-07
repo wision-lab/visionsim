@@ -92,4 +92,5 @@ docs = [
     "sphinxcontrib-video",
     "sphinxcontrib-napoleon",
     "furo",
+    "scienceplots",
 ]
