@@ -300,7 +300,7 @@ class Camera:
     def get_ewh(self):
         """Get EWH from histogrammer"""
        
-        dead_time_bins = int(self.histogrammer.dead_time * self.histogrammer.n_bins*self.active_source.pulse_repetition)
+        dead_time_bins = np.round(self.histogrammer.dead_time * self.histogrammer.n_bins*self.active_source.pulse_repetition)
         
         ewh_list = self.histogrammer.simulate_ewh(
             self.arrival_rates,
