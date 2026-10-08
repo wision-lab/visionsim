@@ -98,20 +98,13 @@ def _require_blender(executable: str | os.PathLike | None = None) -> None:
 
 
 @contextmanager
-def _spawn_clients(
-    *,
-    config: RenderConfig,
-    background: bool = True,
-) -> Generator[tuple[BlenderClients, ElapsedProgress]]:
+def _spawn_clients(*, config: RenderConfig) -> Generator[tuple[BlenderClients, ElapsedProgress]]:
     """Spawn connected blender clients along with a progress bar.
 
-    The number of clients is driven by ``config.jobs``; callers that require a specific job count
-    (eg: playblasts) must set it on the config first.
+    The number of clients is driven by ``config.jobs``.
 
     Args:
         config: Render configuration.
-        background: If true, spawn blender in background mode. Viewport renders (playblasts) require
-            a GL context, so they must spawn with ``background=False`` (and a display). Defaults to True.
 
     Yields:
         tuple[BlenderClients, ElapsedProgress]: Connected clients and a progress instance.
@@ -126,7 +119,6 @@ def _spawn_clients(
             timeout=config.timeout,
             executable=config.executable,
             autoexec=config.autoexec,
-            background=background,
         ) as clients,
         ElapsedProgress() as progress,
     ):
@@ -182,6 +174,68 @@ def render_animation(
         )
 
 
+def render_frame(
+    blend_file: Path,
+    output_dir: Path,
+    /,
+    config: RenderConfig,
+    frame: int,
+    output_file: Path | None = None,
+    dry_run: bool = False,
+) -> None:
+    """Render a single frame from a single blend-file into a dataset folder.
+
+    Unlike ``blender.render-animation``, which renders a whole frame range, this renders exactly one
+    frame index, writing the same output layout and metadata as the animation path would for that
+    frame. Animations stay enabled, so the rendered frame matches what ``render-animation`` would
+    produce at the same index.
+
+    This always runs in a single render job, ignoring ``config.jobs`` and ``config.autoscale``.
+
+    Args:
+        blend_file: Path to blend file.
+        output_dir: Dataset output folder.
+        config: Render configuration. ``jobs`` and ``autoscale`` are ignored.
+        frame: Index of the frame to render.
+        output_file: If set, write the modified blend file to
+            this path. Helpful for troubleshooting. Defaults to not saving.
+        dry_run: if true, nothing will be rendered at all. Defaults to False.
+
+    Raises:
+        RuntimeError: raised if no blender installation is found on path.
+        FileNotFoundError: raised if the blend file does not exist.
+    """
+    from visionsim.cli import _log
+    from visionsim.simulate.blender import BlenderClient
+    from visionsim.simulate.job import frame_job
+
+    blend_file, output_dir, output_file = _validate_inputs(blend_file, output_dir, output_file)
+
+    # A single frame is rendered by one client, so any job fan-out is meaningless here.
+    if config.autoscale or config.jobs != 1:
+        _log.warning(
+            f"Rendering a single frame always uses a single render job, ignoring "
+            f"`config.autoscale={config.autoscale}` and `config.jobs={config.jobs}`."
+        )
+    _require_blender(config.executable)
+
+    with BlenderClient.spawn(
+        timeout=config.timeout,
+        log=config.log_dir,
+        executable=config.executable,
+        autoexec=config.autoexec,
+    ) as client:
+        frame_job(
+            client,
+            blend_file,
+            output_dir,
+            config,
+            frame_number=frame,
+            output_blend_file=output_file,
+            dry_run=dry_run,
+        )
+
+
 def render_playblast(
     blend_file: Path,
     output_dir: Path,
@@ -226,7 +280,9 @@ def render_playblast(
         FileNotFoundError: raised if the blend file does not exist.
     """
     from visionsim.cli import _log
+    from visionsim.simulate.blender import BlenderClient
     from visionsim.simulate.job import playblast_job
+    from visionsim.utils.progress import ElapsedProgress
 
     blend_file, output_dir, output_file = _validate_inputs(blend_file, output_dir, output_file)
 
@@ -246,10 +302,19 @@ def render_playblast(
     config.jobs = 1
     _require_blender(config.executable)
 
-    with _spawn_clients(config=config, background=False) as (clients, progress):
+    with (
+        BlenderClient.spawn(
+            timeout=config.timeout,
+            log=config.log_dir,
+            executable=config.executable,
+            autoexec=config.autoexec,
+            background=False,
+        ) as client,
+        ElapsedProgress() as progress,
+    ):
         task = progress.add_task(f"Playblasting {blend_file.stem}...")
         playblast_job(
-            clients,
+            client,
             blend_file,
             output_dir,
             frame_start=frame_start,

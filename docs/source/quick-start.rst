@@ -55,6 +55,14 @@ To create the lego dataset, we'll slow down the camera movement by a factor of 5
 
 All the rendered frames will be in ``quickstart/lego-gt/frames``. Each data directory holds its own ``transforms.db`` metadata file describing the camera trajectory and intrinsics, and ``--config.include-depths`` adds a sibling ``quickstart/lego-gt/depths`` directory holding an aligned depth map for every frame. See :doc:`sections/datasets` for what these metadata files carry. The :func:`dataset.convert <visionsim.cli.dataset.convert>` CLI turns any of these ``.db`` files into a Nerfstudio-style ``transforms.json`` if you prefer to work with JSON, and :func:`dataset.merge <visionsim.cli.dataset.merge>` combines them when the frames, depths and other annotations share a camera.
 
+If you need a single frame instead of a sequence, :func:`blender.render-frame <visionsim.cli.blender.render_frame>` takes the same positional arguments and render options as ``render-animation``, plus a ``--frame`` index:
+
+.. code-block:: bash
+
+    visionsim blender.render-frame scene.blend output/ --frame 42 --config.include-depths
+
+The output layout matches ``render-animation``, so the frame lands in ``output/frames/`` with a ``transforms.db`` holding that frame's camera pose. Animations stay enabled, so the result is identical to what ``render-animation`` produces for the same index.
+
 Let's create a quick preview of this dataset by animating every 5th frame into a video, so it plays back in realtime:
 
 .. literalinclude:: ../../examples/quickstart.sh

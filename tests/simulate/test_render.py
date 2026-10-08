@@ -130,7 +130,7 @@ def test_data_paths_exist(cube_dataset):
 def test_database_threading(tmp_path_factory, executable):
     tmpdir = tmp_path_factory.mktemp("renders")
     log_dir = tmp_path_factory.mktemp("logs")
-    scene = Path(__file__).parent / "test_files" / "scenes" / "cube.blend"
+    scene = Path(__file__).parent.parent / "test_files" / "scenes" / "cube.blend"
 
     # Spoof frames to bypass render, only save metadata, from a bunch of blender instances.
     # This forces a lot of database writes, which helps test for any potential "Database is locked" errors.

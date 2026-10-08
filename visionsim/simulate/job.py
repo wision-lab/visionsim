@@ -42,6 +42,59 @@ def _prepare_render(
     client.move_keyframes(scale=config.keyframe_multiplier)
 
 
+def _prepare_render_job(
+    client: BlenderClient | BlenderClients,
+    blend_file: str | os.PathLike,
+    root: str | os.PathLike,
+    config: RenderConfig,
+    *,
+    output_blend_file: str | os.PathLike | None = None,
+) -> None:
+    """Load the blend-file and apply the configuration shared by all render jobs.
+
+    Args:
+        client (BlenderClient | BlenderClients): The blender client(s) to configure.
+        blend_file (str | os.PathLike): Path to blender file to use.
+        root (str | os.PathLike): Location at which to save all outputs.
+        config (RenderConfig): Render configuration.
+        output_blend_file (str | os.PathLike | None, optional): If set, write the modified blend file to
+            this path. Defaults to not saving.
+    """
+    _prepare_render(client, blend_file, root, config)
+
+    client.cycles_settings(
+        device_type=config.device_type,
+        adaptive_threshold=config.adaptive_threshold,
+        use_denoising=config.use_denoising,
+        max_samples=config.max_samples,
+        use_cpu=True,
+    )
+
+    if config.include_composites:
+        client.include_composites(**asdict(config.composites))
+    if config.include_frames:
+        client.include_frames(**asdict(config.frames))
+    if config.include_depths:
+        client.include_depths(**asdict(config.depths))
+    if config.include_normals:
+        client.include_normals(**asdict(config.normals))
+    if config.include_flows:
+        client.include_flows(**asdict(config.flows))
+    if config.include_segmentations:
+        client.include_segmentations(**asdict(config.segmentations))
+    if config.include_materials:
+        client.include_materials(**asdict(config.materials))
+    if config.include_diffuse_pass:
+        client.include_diffuse_pass(**asdict(config.diffuse_pass))
+    if config.include_specular_pass:
+        client.include_specular_pass(**asdict(config.specular_pass))
+    if config.include_points:
+        client.include_points(**asdict(config.points))
+
+    if output_blend_file is not None:
+        client.save_file(output_blend_file)
+
+
 def render_job(
     client: BlenderClient | BlenderClients,
     blend_file: str | os.PathLike,
@@ -78,39 +131,7 @@ def render_job(
             then will be called with ``advance=1`` at every step. Closely mirrors the `rich.Progress
             API <https://rich.readthedocs.io/en/stable/reference/progress.html#rich.progress.Progress.update>`_.
     """
-    _prepare_render(client, blend_file, root, config)
-
-    client.cycles_settings(
-        device_type=config.device_type,
-        adaptive_threshold=config.adaptive_threshold,
-        use_denoising=config.use_denoising,
-        max_samples=config.max_samples,
-        use_cpu=True,
-    )
-
-    if config.include_composites:
-        client.include_composites(**asdict(config.composites))
-    if config.include_frames:
-        client.include_frames(**asdict(config.frames))
-    if config.include_depths:
-        client.include_depths(**asdict(config.depths))
-    if config.include_normals:
-        client.include_normals(**asdict(config.normals))
-    if config.include_flows:
-        client.include_flows(**asdict(config.flows))
-    if config.include_segmentations:
-        client.include_segmentations(**asdict(config.segmentations))
-    if config.include_materials:
-        client.include_materials(**asdict(config.materials))
-    if config.include_diffuse_pass:
-        client.include_diffuse_pass(**asdict(config.diffuse_pass))
-    if config.include_specular_pass:
-        client.include_specular_pass(**asdict(config.specular_pass))
-    if config.include_points:
-        client.include_points(**asdict(config.points))
-
-    if output_blend_file is not None:
-        client.save_file(output_blend_file)
+    _prepare_render_job(client, blend_file, root, config, output_blend_file=output_blend_file)
 
     client.render_animation(
         frame_start=frame_start,
@@ -122,8 +143,36 @@ def render_job(
     )
 
 
+def frame_job(
+    client: BlenderClient,
+    blend_file: str | os.PathLike,
+    root: str | os.PathLike,
+    config: RenderConfig,
+    *,
+    frame_number: int,
+    output_blend_file: str | os.PathLike | None = None,
+    dry_run: bool = False,
+) -> None:
+    """Render a single frame from a given blender-file.
+
+    Args:
+        client (BlenderClient): The blender client which will be used for rendering. It should already be
+            connected to a ``BlenderServer``.
+        blend_file (str | os.PathLike): Path to blender file to use.
+        root (str | os.PathLike): Location at which to save all outputs.
+        config (RenderConfig): Render configuration.
+        frame_number (int): Index of the frame to render.
+        output_blend_file (str | os.PathLike | None, optional): If set, write the modified blend file to
+            this path. Helpful for troubleshooting. Defaults to not saving.
+        dry_run (bool, optional): If enabled, do not render the frame or ground truth annotations.
+    """
+    _prepare_render_job(client, blend_file, root, config, output_blend_file=output_blend_file)
+
+    client.render_frame(frame_number, allow_skips=config.allow_skips, dry_run=dry_run)
+
+
 def playblast_job(
-    client: BlenderClient | BlenderClients,
+    client: BlenderClient,
     blend_file: str | os.PathLike,
     root: str | os.PathLike,
     config: RenderConfig,
@@ -143,9 +192,8 @@ def playblast_job(
     PNG frame sequence (see :meth:`render_playblast <visionsim.simulate.blender.BlenderService.exposed_render_playblast>`).
 
     Args:
-        client (BlenderClient | BlenderClients): The blender client(s) which will be used for rendering.
-            These should already be connected to a ``BlenderServer``, and will get automagically passed
-            in when using this function with ``BlenderClients.pool`` or similar.
+        client (BlenderClient): The blender client which will be used for rendering. It should already
+            be connected to a ``BlenderServer``, and must not be running in background mode.
         blend_file (str | os.PathLike): Path to blender file to use.
         root (str | os.PathLike): Location at which to save all outputs.
         config (RenderConfig): Render configuration.
