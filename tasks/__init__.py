@@ -1,8 +1,4 @@
-"""
-Tasks for maintaining the project.
-
-Execute 'inv[oke] --list' for a list of dev tasks.
-"""
+"""Tasks for maintaining the project."""
 
 from __future__ import annotations
 
@@ -55,7 +51,6 @@ def _delete_file(file, except_patterns=None):
         else:
             console.print(f"Purging directory {file}.")
             for dirpath, dirnames, filenames in os.walk(file):
-                # Remove regular files, ignore directories
                 for filename in filenames:
                     file = os.path.join(dirpath, filename)
                     if any(fnmatch.fnmatch(file, pattern) for pattern in except_patterns):
@@ -63,7 +58,6 @@ def _delete_file(file, except_patterns=None):
                     else:
                         console.print(f"\tRemoving file {file}.")
                         os.remove(file)
-                # Remove empty directories
                 if not dirnames and not filenames:
                     console.print(f"\tRemoving directory {file}.")
                     shutil.rmtree(dirpath, ignore_errors=True)
@@ -167,8 +161,6 @@ def coverage(c):
     """
     _run(c, f"coverage run --source {SOURCE_DIR} -m pytest")
     _run(c, "coverage report")
-
-    # Build a local report
     _run(c, "coverage html")
     webbrowser.open(COVERAGE_REPORT.as_uri())
 
@@ -181,9 +173,7 @@ def build_docs(c, preview=False):
     edits will not show up in the generated pages. Pass ``--preview`` to open the
     result in the browser when the build succeeds.
     """
-    # Run autodocs
     with c.cd(ROOT_DIR):
-        # TODO: Make this a project configuration
         api_exclude = ["visionsim/interpolate/rife", "visionsim/simulate/compat.py", "visionsim/simulate/nodes"]
         # We have to do this for all the new changes in the docs to be reflected
         console.print(
@@ -209,7 +199,6 @@ def generate_stubs(c):
     formats the result. The stubs give autocomplete for attributes that only exist
     inside a running blender process; ``test-stubs`` checks them against it.
     """
-    # Stubgen/stubtest is provided by mypy
     source_path = "visionsim/simulate/blender.py"
     stub_path = "visionsim/simulate/blender.pyi"
     _run(c, f"stubgen {source_path} --include-docstrings --include-private -o .")
@@ -262,7 +251,7 @@ def generate_stubs(c):
         def visit_ClassDef(self, node):
             self.generic_visit(node)
 
-            # Note: Relies on BlenderService being defined before BlenderClient(s)
+            # Requires BlenderService to precede every BlenderClient(s) in source order
             if "BlenderClient" in node.name and "BlenderService" in self.classes:
                 methods = {n.name for n in ast.walk(node) if isinstance(n, ast.FunctionDef)}
 
@@ -280,7 +269,7 @@ def generate_stubs(c):
                                 and child.returns is not None
                                 and not (isinstance(child.returns, ast.Constant) and child.returns.value is None)
                             ):
-                                # Switch out returntype to tuple[returntype] iff rettype != None
+                                # BlenderClients wraps every return type in tuple[...], skipping None
                                 child.returns = ast.Subscript(
                                     value=ast.Name(id="tuple", ctx=ast.Load()),
                                     slice=ast.Tuple(elts=[child.returns]),
@@ -355,8 +344,8 @@ def clean(c):
 
 from . import figures
 
-# Re-register every top-level task so that defining `ns` does not hide any of
-# them, then hang the documentation-figure tasks off it.
+# Defining `ns` at module scope would otherwise shadow the top-level tasks, so every
+# Task defined above is re-registered by name first.
 ns = Collection()
 for _obj in list(globals().values()):
     if isinstance(_obj, Task):

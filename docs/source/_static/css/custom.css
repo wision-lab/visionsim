@@ -7,6 +7,26 @@ table.borderless th {
     box-shadow: none
 }
 
+/* A figure that switches artwork with `only-light` / `only-dark` wraps the image
+   in an anchor carrying that class, so Sphinx's `img.align-center` rule does not
+   apply and the image sits at the left edge. Keep the anchor a full-width block
+   with the table-layout trick (a `width: min-content` box still stretches to the
+   column, unlike `display: block` on a shrink-to-fit box), then center the image
+   inside it with auto margins. The image keeps its own percentage width. */
+.align-center > .only-light,
+.align-center > .only-dark {
+    display: table !important;
+    table-layout: fixed;
+    width: 100%;
+}
+
+.align-center > .only-light > img,
+.align-center > .only-dark > img {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+
 /* For ANSI Colors, assume green is new diff so add underline, strikethrough for red */
 .-C-Green {
     color: #00A000 !important; 

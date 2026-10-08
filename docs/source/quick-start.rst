@@ -81,7 +81,9 @@ Let's create a quick preview of this dataset by animating every 5th frame into a
 
     .. code-block:: bash
 
-        visionsim transforms.colorize-depths --input-dir=quickstart/lego-gt/depths --output-dir=quickstart/lego-gt/depths-colorized
+        visionsim transforms.colorize-depths \
+            --input-dir=quickstart/lego-gt/depths \
+            --output-dir=quickstart/lego-gt/depths-colorized
 
 |
 

@@ -44,9 +44,15 @@ As you can see, *for this scene*, we need to render at a minimum of 50fps for ar
 This effect can be shown quantitatively too. In the figure below, which was computed for a different scene, we rendered a test trajectory at many different frame rates and in each case interpolated the resulting data up to a common frame rate of 6400fps, either using RIFE or simple frame duplication. We plot the average perceptual similarity between these interpolated frames and ground truth data (lower is better), as well as the total wall time to render and interpolate these different datasets as measured using a single rendering job, on an Nvidia RTX 3080. 
 
 .. figure:: ../_static/interpolation-error-vs-rendertime.svg
-   :width: 65% 
+   :width: 65%
+   :align: center
+   :class: only-light
+
+.. figure:: ../_static/interpolation-error-vs-rendertime-dark.svg
+   :width: 65%
+   :align: center
+   :class: only-dark
 
    Rendering/Interpolation Tradeoff
-   
 
 Notice that the time it takes to interpolate the frames is dwarfed by rendering time. The overall quality of the data improves with higher frame rates and lower interpolation factors, hitting an inflection point around 200fps, after which there are diminishing returns as rendering time explodes. From this, we can see that *for this specific scene* the native frame rate is around two to four hundred frames per second when using RIFE as the interpolation method, and below this rate we incur significant interpolation artifacts as shown. It takes just under 20 minutes to render this scene at 400fps and interpolate it 16x to 6.4kHz, as compared to over four hours if we rendered every frame. 

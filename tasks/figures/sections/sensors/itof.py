@@ -1,9 +1,4 @@
-"""iToF coding-scheme waveforms: ``docs/source/sections/sensors/itof.rst``.
-
-The figure is pure library code (no blender, no rendered dataset): every scheme
-is drawn as a row of modulation, demodulation and correlation functions, and the
-only-light/only-dark pair is written together.
-"""
+"""iToF coding-scheme waveforms: ``docs/source/sections/sensors/itof.rst``."""
 
 from __future__ import annotations
 
@@ -203,7 +198,7 @@ NODES = (
         # model it imports are not tracked, so pass --force to rebuild after
         # changing them.
         is_figure=True,
-        recipe=lambda executable: plot_codes(),
+        recipe=lambda executable, force=False: plot_codes(),  # type: ignore[misc]
     ),
 )
 

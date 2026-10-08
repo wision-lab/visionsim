@@ -1,27 +1,13 @@
 """Shared helpers for per-page documentation figure tasks.
 
-Every documentation page that has generated figures gets a module under this
-package whose path mirrors the page's path below ``docs/source``.  Each such
-module defines a tuple of :class:`Node` objects and exposes them through a
-single default ``build`` task, so a page's figures regenerate with e.g.::
+Every documentation page with generated figures gets a module under this package
+whose path mirrors the page's path below ``docs/source``.
 
-    inv figures.sections.sensors.itof
-
-A node either produces a deliverable figure (``is_figure`` set) or an
-intermediate artifact that other nodes require; the two live in the same graph
-and differ only in log phrasing, and every node lists the ``files`` its recipe
-writes.  Intermediates shared between pages live in :data:`INTERMEDIATES`, so a
-page only lists the figures it owns and names whatever it needs through
-``requires``.
-
-Figures are rebuilt only when one of their files is missing, so re-running a page
-task is cheap.  ``--force`` rebuilds a page's figures even when their files are
-present, but no flag re-runs a dataset whose output directory already holds
-something: delete that directory to pick up a change to the dataset itself, since
-filesystem presence is the only signal.  ``--dry-run`` only reports what would
-happen.  A node whose upstream failed is skipped with a single line naming that
-upstream, so a broken intermediate is reported once at its root instead of
-re-provisioned once per dependent.
+Figures and datasets are rebuilt only when the files a node declares are missing.
+A page task walks up from its leaf figures to see what has to be re-provisioned
+and then runs those nodes back down the graph.  ``--force`` rebuilds every figure
+and whatever it requires even when their files are present.  ``--dry-run`` only
+reports what would happen.
 """
 
 from __future__ import annotations
@@ -53,8 +39,8 @@ class Node:
     name: str
     """Unique within a page. Other nodes refer to this node by it through ``requires``, and it is how the node appears in log output."""
 
-    recipe: Callable[[str | None], None]
-    """Performs the work, and is the only thing that ever runs. Takes the blender executable for the current run, or ``None`` to use whichever blender is on ``$PATH``."""
+    recipe: Callable[..., None]
+    """Performs the work, and is the only thing that ever runs. Takes the blender executable for the current run, or ``None`` to use whichever blender is on ``$PATH``, and whether the run is forced."""
 
     files: tuple[Path, ...] = ()
     """The paths the recipe writes. The node is stale when any of them is missing or empty, and each is checked after the run. Order matters only for log output, which reports the first."""
@@ -64,6 +50,21 @@ class Node:
 
     is_figure: bool = False
     """Marks a deliverable figure rather than an intermediate, which only selects log phrasing: figures report ``would build``/``built``, and intermediates report ``would run``/``provisioning``."""
+
+    check: Callable[[], bool] | None = None
+    """Optional extra staleness test, run in addition to the presence test on ``files``.
+
+    Presence alone cannot tell a run that finished from one that died partway with its
+    outputs already created: a render that was interrupted leaves a populated frame folder
+    and a short metadata database behind, and neither the missing-``files`` test nor the
+    non-empty test notices. A node may supply a ``check`` for such outputs, which is given
+    no arguments and returns whether the output is genuinely complete, e.g. that a
+    ``transforms.db`` holds one row per rendered file.
+
+    Both tests must pass for a node to count as satisfied: any absent ``files`` entry
+    makes it stale on its own, and a present-but-failing ``check`` does too. A node
+    without a ``check`` behaves exactly as before, so only outputs whose completeness is
+    not implied by existence need one."""
 
 
 def _command_recipe(name: str, *commands: str) -> Callable[[str | None], None]:
@@ -80,14 +81,23 @@ def _command_recipe(name: str, *commands: str) -> Callable[[str | None], None]:
         *commands: Shell commands to run in order. Each may contain the
             ``{executable}`` placeholder, which is filled with
             ``--config.executable=<path>`` when the caller supplies a blender
-            executable and with an empty string otherwise.
+            executable and with an empty string otherwise, and the ``{force}``
+            placeholder, which is filled with ``--config.no-allow-skips`` when
+            the node is being forced and with an empty string otherwise.
 
     Returns:
-        A recipe taking the blender executable path, or ``None``.
+        A recipe taking the blender executable path and whether to force, or
+        ``None`` for the latter.
     """
 
-    def recipe(executable: str | None) -> None:
-        rendered = [c.format(executable=f" --config.executable={executable}" if executable else "") for c in commands]
+    def recipe(executable: str | None, force: bool = False) -> None:
+        rendered = [
+            c.format(
+                executable=f" --config.executable={executable}" if executable else "",
+                force=" --config.no-allow-skips" if force else "",
+            )
+            for c in commands
+        ]
         for i, cmd in enumerate(rendered, start=1):
             step = f" ({i}/{len(rendered)})" if len(rendered) > 1 else ""
             console.print(f"[yellow]provisioning {name}{step}:[/yellow] {cmd}")
@@ -103,6 +113,7 @@ def _command_recipe(name: str, *commands: str) -> Callable[[str | None], None]:
 # no owning figure and is reachable only through :attr:`Node.requires`, which is
 # why it lives here.
 INTERMEDIATES: dict[str, Node] = {
+    # Used in quick-start
     "lego-gt": Node(
         name="lego-gt",
         files=(CACHE / "quickstart" / "lego-gt",),
@@ -166,6 +177,24 @@ INTERMEDIATES: dict[str, Node] = {
             " --scheme=convSin --n-captures=4 --freq=120e6 --preview --force",
         ),
     ),
+    # Used for the playblast tutorial
+    "playblast-full": Node(
+        name="playblast-full",
+        files=(CACHE / "playblast" / "full" / "frames",),
+        recipe=_command_recipe(
+            "playblast-full",
+            "visionsim blender.render-animation loft.blend playblast/full/{executable}{force}",
+        ),
+    ),
+    "playblast": Node(
+        name="playblast",
+        files=(CACHE / "playblast" / "playblast",),
+        recipe=_command_recipe(
+            "playblast",
+            "visionsim blender.render-playblast loft.blend playblast/ --no-video{executable}{force}",
+        ),
+    ),
+    # Used in the interpolation docs
     "lego-0025": Node(
         name="lego-0025",
         files=(CACHE / "interpolation" / "lego0025-interp",),
@@ -255,8 +284,8 @@ def resolve_nodes(nodes: tuple[Node, ...]) -> dict[str, Node]:
     return resolved
 
 
-def _satisfied(path: Path) -> bool:
-    """Return whether ``path`` counts as produced.
+def _present(path: Path) -> bool:
+    """Return whether ``path`` exists and counts as produced.
 
     A directory only counts if it holds something; an empty directory is what a
     previous run leaves behind when it got as far as creating the output but
@@ -274,12 +303,82 @@ def _satisfied(path: Path) -> bool:
     return not path.is_dir() or any(path.iterdir())
 
 
+def _satisfied(node: Node) -> bool:
+    """Return whether every output a node declares is present and complete.
+
+    This is the presence test on :attr:`Node.files` plus the node's own
+    :attr:`Node.check`, both of which must pass. Short-circuiting on absence keeps a
+    node that was never run from paying for a check that would only re-discover that
+    its inputs are missing, and a check is only meaningful when the file it inspects
+    is there to begin with.
+
+    Args:
+        node: The node whose outputs to test.
+
+    Returns:
+        ``True`` if all of the node's files are present and its check, if it has one,
+        reports the output as complete.
+    """
+    if not all(_present(p) for p in node.files):
+        return False
+    return node.check is None or node.check()
+
+
+def select_nodes(
+    nodes: tuple[Node, ...],
+    by_name: dict[str, Node],
+    force: bool,
+) -> set[str]:
+    """Return the nodes a run has to attempt.
+
+    A node is stale when any of its files is missing, or its ``check`` reports the
+    output incomplete, or any node it requires is itself stale -- staleness
+    propagates downstream, so a figure whose dataset was re-rendered is rebuilt even
+    though its own file is present and complete. Requirements are evaluated first,
+    which is what lets the walk stop at a satisfied leaf: nothing above it changes,
+    so nothing above it is attempted.
+
+    ``--force`` seeds the figures as stale, so it re-provisions their requirements
+    too, as far up as the graph reaches.
+
+    Args:
+        nodes: The page's own nodes, typically its figures.
+        by_name: The page's closed node set, used to look requirements up.
+        force: Rebuild every figure and whatever it requires, even when the files
+            they declare exist.
+
+    Returns:
+        The names of the nodes to attempt, in no particular order; callers run them
+        in topological order.
+    """
+    stale: set[str] = set()
+    seen: set[str] = set()
+
+    def walk(node: Node) -> bool:
+        """Return whether ``node`` is stale, recording it and its requirements."""
+        if node.name in seen:
+            return node.name in stale
+        seen.add(node.name)
+
+        # Requirements first: a node whose output exists but whose input is stale has
+        # to be rebuilt, and a check that reports an output complete says nothing
+        # about what that output was built from.
+        upstream = any(walk(by_name[req]) for req in node.requires)
+        if upstream or (node.is_figure and force) or not node.files or not _satisfied(node):
+            stale.add(node.name)
+        return node.name in stale
+
+    for node in nodes:
+        walk(node)
+    return stale
+
+
 def run_node(
     node: Node,
     ledger: dict[str, str],
     executable: str | None,
+    selected: bool,
     force: bool,
-    dry_run: bool,
 ) -> str | None:
     """Ensure ``node`` is satisfied, caching the outcome in ``ledger``.
 
@@ -294,16 +393,14 @@ def run_node(
             whole invocation, and read for each requirement.
         executable: Path to the blender binary, or ``None`` to use whichever one is
             on ``$PATH``.
-        force: Rebuild figures even when they are not stale.
-        dry_run: Report what would happen without running any recipe.
+        selected: Whether :func:`select_nodes` picked this node to be attempted.
+        force: Whether the run is forced, which recipes that render pass on so
+            Blender re-renders frames it would otherwise keep.
 
     Returns:
         ``None`` when the node is satisfied, otherwise the reason it was skipped.
     """
-    # Presence is the only staleness signal: a node is done once every file it
-    # declares exists and is non-empty. ``--force`` opts figures out so a change
-    # the filesystem cannot see can still be picked up.
-    if node.files and all(_satisfied(p) for p in node.files) and not (node.is_figure and force):
+    if not selected:
         if node.is_figure:
             console.print(f"{node.name}: up to date")
         ledger[node.name] = "ok"
@@ -317,26 +414,21 @@ def run_node(
             ledger[node.name] = f"upstream {req} failed"
             return ledger[node.name]
 
-    if dry_run:
-        if node.is_figure:
-            console.print(f"would build {node.name} -> {node.files[0] if node.files else node.name}")
-        else:
-            console.print(f"would run {node.name}")
-        ledger[node.name] = "ok"
-        return None
-
     for p in node.files:
         p.parent.mkdir(parents=True, exist_ok=True)
     try:
-        node.recipe(executable)
+        node.recipe(executable, force)
     except subprocess.CalledProcessError as exc:  # other nodes may still be fine
         ledger[node.name] = str(exc)
         return ledger[node.name]
 
     for p in node.files:
-        if not _satisfied(p):
+        if not _present(p):
             ledger[node.name] = f"missing output {p}"
             return ledger[node.name]
+    if node.check is not None and not node.check():
+        ledger[node.name] = f"incomplete output {node.files[0]}"
+        return ledger[node.name]
     if node.is_figure:
         console.print(f"[green]built {node.name} -> {node.files[0]}[/green]")
     ledger[node.name] = "ok"
@@ -346,9 +438,12 @@ def run_node(
 def run_nodes(nodes: tuple[Node, ...], force: bool, dry_run: bool, executable: str | None = None) -> int:
     """Provision the intermediates and build the figures of a page's graph.
 
-    Nodes run in topological order, so a requirement is always attempted before
-    the node that needs it, and each node is attempted at most once. A node whose
-    requirement failed is skipped with one line naming that requirement.
+    Nodes are attempted in topological order, so a requirement is always built
+    before the node that needs it, and each node is attempted at most once. Which
+    ones are attempted is decided the other way around, by walking up from the
+    leaf figures (see :func:`select_nodes`), so only the lowest nodes necessary
+    run. A node whose requirement failed is skipped with one line naming that
+    requirement.
 
     Args:
         nodes: The page's own nodes, typically its figures.
@@ -361,11 +456,19 @@ def run_nodes(nodes: tuple[Node, ...], force: bool, dry_run: bool, executable: s
         ``1`` if any node was skipped or failed, otherwise ``0``.
     """
     by_name = resolve_nodes(nodes)
+    selected = select_nodes(nodes, by_name, force)
     ledger: dict[str, str] = {}
     failed = False
     for name in TopologicalSorter({n: set(nd.requires) for n, nd in by_name.items()}).static_order():
         node = by_name[name]
-        reason = run_node(node, ledger, executable, force, dry_run)
+        if dry_run:
+            if node.is_figure:
+                console.print(f"would build {node.name} -> {node.files[0] if node.files else node.name}")
+            else:
+                console.print(f"would run {node.name}")
+            ledger[node.name] = "ok"
+            continue
+        reason = run_node(node, ledger, executable, name in selected, force)
         if reason is None:
             continue
         failed = True
@@ -391,10 +494,7 @@ def gifski(pattern: str, step: int, out: Path, width: int = 320, height: int = 3
         height: Output height in pixels.
         fps: Playback rate of the gif.
     """
-    cmd = (
-        f"gifski $(ls -1a {pattern} | sed -n '1~{step}p') --fps {fps} "
-        f"-o {out} --width={width} --height={height}"
-    )
+    cmd = f"gifski $(ls -1a {pattern} | sed -n '1~{step}p') --fps {fps} -o {out} --width={width} --height={height}"
     subprocess.run(cmd, shell=True, check=True, cwd=CACHE)
 
 
@@ -426,7 +526,7 @@ def page_task(nodes: tuple[Node, ...], name: str, doc: str):
     build.__doc__ = (
         f"{doc}\n\n"
         "    Args:\n"
-        "        force: Rebuild every figure on the page, even if its files already exist. It does not re-provision a dataset whose output directory is already populated, so delete that directory to pick up a change to the dataset itself, since staleness is presence-only.\n"
+        "        force: Rebuild every figure and dataset on the page, even if the files they declare already exist.\n"
         "        dry_run: Report what would happen without writing anything.\n"
         "        executable: Path to the blender executable to render with. Defaults to whichever blender is on $PATH."
     )
@@ -445,7 +545,7 @@ def gif_recipe(pattern: str, step: int, name: str) -> Callable[[str | None], Non
         A recipe that ignores the blender executable it is handed.
     """
 
-    def recipe(executable: str | None) -> None:
+    def recipe(executable: str | None, force: bool = False) -> None:
         gifski(pattern, step, STATIC / f"{name}.gif")
 
     return recipe
@@ -461,6 +561,58 @@ def cached(*parts: str) -> Path:
         The joined path.
     """
     return CACHE.joinpath(*parts)
+
+
+def dataset_check(root: Path, expected: int | None = None) -> Callable[[], bool]:
+    """Build a :attr:`Node.check` for a rendered dataset directory.
+
+    A render writes its frames and its ``transforms.db`` together, one metadata row
+    per frame, so an interrupted run leaves the two consistent with each other while
+    both fall short of the frame range that was asked for. Comparing the two against
+    each other catches the case where they diverge; passing ``expected`` additionally
+    catches the case where they agree on a truncated range.
+
+    The rows are counted from the database rather than assumed, and the files are
+    counted on disk under ``root``, which is where Blender shards them (``0000/``,
+    ``0001/``, ...). Counts must match exactly: a dataset is only complete if every
+    row has its file and every file has its row.
+
+    Args:
+        root: Dataset directory holding ``transforms.db`` and the sharded frames.
+        expected: Number of frames the render was asked for. When given, the
+            database must hold exactly this many rows, which is what distinguishes a
+            finished render from one that stopped early and left a consistent but
+            short dataset behind.
+
+    Returns:
+        A predicate returning whether the dataset at ``root`` is complete.
+    """
+
+    def check() -> bool:
+        db = root / "transforms.db"
+        if not db.exists():
+            return False
+
+        # Imported here rather than at module scope: this package is imported by
+        # ``inv --list``, which should not have to pay for the dataset stack.
+        import peewee
+        from pydantic import ValidationError
+
+        from visionsim.dataset import Metadata
+
+        try:
+            frames = len(Metadata.load(db).frames)
+        # A truncated file, a table the schema did not get to create or a malformed
+        # row are all what this check exists to catch; anything else is a real bug
+        # and should surface rather than be reported as stale.
+        except (peewee.DatabaseError, ValidationError):
+            return False
+
+        if expected is not None and frames != expected:
+            return False
+        return frames == sum(1 for p in root.rglob("*") if p.is_file() and p.suffix != ".db")
+
+    return check
 
 
 def static(name: str) -> Path:
