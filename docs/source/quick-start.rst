@@ -71,14 +71,18 @@ Let's create a quick preview of this dataset by animating every 5th frame into a
 
 ``preview.mp4`` animates a turntable-style loop of a lego truck (shown here as a GIF made with `gifski <https://gif.ski/>`_, yours will look better). ``preview-depths.mp4`` previews the same depth annotation that the iToF emulation later reads, colorized per frame:
 
-.. list-table::
-    :class: borderless
+.. grid:: 2
+    :gutter: 2
 
-    * - .. figure:: _static/lego-gt-preview.gif
+    .. grid-item::
+
+        .. figure:: _static/lego-gt-preview.gif
 
             Rendered RGB
 
-      - .. figure:: _static/lego-depth-preview.gif
+    .. grid-item::
+
+        .. figure:: _static/lego-depth-preview.gif
 
             Ground truth depth
 
@@ -171,23 +175,30 @@ Results
 
 Four seconds of the same lego truck, as seen by each sensor:
 
-.. list-table::
-    :class: borderless
-    :widths: 50 50
+.. grid:: 2
+    :gutter: 2
 
-    * - .. figure:: _static/lego-rgb25fps-preview.gif
+    .. grid-item::
+
+        .. figure:: _static/lego-rgb25fps-preview.gif
 
             Conventional Camera
 
-      - .. figure:: _static/lego-spc4kHz-preview.gif
+    .. grid-item::
+
+        .. figure:: _static/lego-spc4kHz-preview.gif
 
             Single Photon Camera
 
-    * - .. figure:: _static/lego-dvs125fps-preview.gif
+    .. grid-item::
+
+        .. figure:: _static/lego-dvs125fps-preview.gif
 
             Event Camera
 
-      - .. figure:: _static/lego-itof-preview.gif
+    .. grid-item::
+
+        .. figure:: _static/lego-itof-preview.gif
 
             iToF, first tap
 

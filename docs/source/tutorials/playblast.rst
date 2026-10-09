@@ -10,14 +10,18 @@ Playblast vs. Full Render
 
 The two modes side by side, both rendered from ``loft.blend``:
 
-.. list-table::
-    :class: borderless
+.. grid:: 2
+    :gutter: 2
 
-    * - .. figure:: ../_static/playblast-preview.gif
+    .. grid-item::
+
+        .. figure:: ../_static/playblast-preview.gif
 
             Playblast (viewport render)
 
-      - .. figure:: ../_static/playblast-full-preview.gif
+    .. grid-item::
+
+        .. figure:: ../_static/playblast-full-preview.gif
 
             Full render (Cycles)
 

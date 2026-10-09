@@ -20,22 +20,30 @@ Video interpolation is an inherently ambiguous task -- it is inconceivable to re
 
 What framerate to render at depends entirely on the scene, it's geometry and textures and how fast the relative motion is. To illustrate this point, we've taken the scene for the :doc:`quickstart guide <../quick-start>` and rendered it at different framerates and interpolated it to 400 fps:
 
-.. list-table::
-    :class: borderless
+.. grid:: 2
+    :gutter: 2
 
-    * - .. figure:: ../_static/lego0025-interp.gif
+    .. grid-item::
+
+        .. figure:: ../_static/lego0025-interp.gif
 
             6.25 fps interpolated 64x
 
-      - .. figure:: ../_static/lego0050-interp.gif
+    .. grid-item::
+
+        .. figure:: ../_static/lego0050-interp.gif
 
             12.5 fps interpolated 32x
 
-    * - .. figure:: ../_static/lego0100-interp.gif
-                
+    .. grid-item::
+
+        .. figure:: ../_static/lego0100-interp.gif
+
             25 fps interpolated 16x
 
-      - .. figure:: ../_static/lego0200-interp.gif
+    .. grid-item::
+
+        .. figure:: ../_static/lego0200-interp.gif
 
             50 fps interpolated 8x
 
