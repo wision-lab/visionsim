@@ -75,6 +75,33 @@ Some tests (``tests/simulate/test_playblast.py``) exercise Blender's viewport re
 
 | 
 
+Environment Variables
+---------------------
+
+These are read at runtime; none of them are required.
+
+``VSIM_BLENDER``
+    Path to the Blender executable used by ``inv test``. Setting it is equivalent to passing
+    ``--executable`` and takes precedence over a Blender found on ``$PATH``. The pre-commit
+    ``inv-tests`` hook (which runs on ``pre-push``) reads it through the task, so pin a build
+    there if Blender is not on your path::
+
+        export VSIM_BLENDER=/opt/blender-4.2/blender
+
+``VSIM_LOG_LEVEL``
+    Log level for the CLI, passed to ``logging.basicConfig``. Defaults to ``INFO``; set it to
+    ``DEBUG`` for verbose output or ``WARNING`` to quiet the renderers.
+
+``CI``
+    Set to ``true`` to send Blender's output to stdout instead of a per-test log directory.
+    CI sets this automatically; the value is only compared against the string ``true``.
+
+``DISPLAY``
+    Unset means the viewport/playblast tests are skipped, since they need a real GL context.
+    See `Running Tests`_ for the ``xvfb`` recipe that supplies one.
+
+| 
+
 Running CI Locally
 ------------------
 

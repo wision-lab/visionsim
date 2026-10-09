@@ -33,6 +33,7 @@ repos:
     pass_filenames: False
     language: system
     # The suite renders through Blender and takes minutes; keep it off the commit path.
+    # Set $VSIM_BLENDER to pin a specific build (otherwise Blender must be on $PATH).
     stages: [pre-push]
 
   - id: inv-docs

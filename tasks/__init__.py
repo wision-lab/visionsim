@@ -124,11 +124,14 @@ def test(c, executable=None, paths=None):
     slowest tests since the Blender fixtures dominate the runtime.
 
     Args:
-        executable: Path to Blender executable. Defaults to one found on $PATH.
+        executable: Path to Blender executable. Defaults to ``$VSIM_BLENDER`` if
+            set, otherwise to a Blender found on $PATH. The environment variable
+            exists so the pre-commit hook can pin a specific build without a shell.
         paths: Optional test files or directories to run, relative to the repo
             root. May be given more than once. Defaults to the whole ``tests/``
             tree.
     """
+    executable = executable or os.environ.get("VSIM_BLENDER")
     targets = [shlex.quote(str(ROOT_DIR / path)) for path in paths or []] or [shlex.quote(str(TEST_DIR))]
     command = f"pytest -s --durations=0 -c {shlex.quote(str(ROOT_DIR / 'pyproject.toml'))} {' '.join(targets)}"
     if executable:
