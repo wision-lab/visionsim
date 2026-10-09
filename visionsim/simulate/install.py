@@ -27,8 +27,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Install dependencies into blender's runtime.")
     parser.add_argument("--version", type=str)
     parser.add_argument("--editable", action="store_true")
-    parser.add_argument("--torch-index-url", type=str, default=None,
-                        help="Optional PyTorch wheel index matching this machine's accelerator")
+    parser.add_argument(
+        "--torch-index-url",
+        type=str,
+        default=None,
+        help="Optional PyTorch wheel index matching this machine's accelerator",
+    )
     parser.add_argument("path", type=str, nargs="?")
     args, unknown = parser.parse_known_args(sys.argv[index:])
 

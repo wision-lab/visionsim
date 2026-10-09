@@ -35,7 +35,7 @@ _log = logging.getLogger("rich")
 # Unit conversions (everything the solver sees is in mm-based units).
 _M_TO_MM = 1000.0
 _KGM3_TO_KGMM3 = 1.0e9  # divide: kg/m^3 -> kg/mm^3  (1000**3)
-_WM2_TO_WMM2 = 1.0e6    # divide: W/m^2 -> W/mm^2     (1000**2)
+_WM2_TO_WMM2 = 1.0e6  # divide: W/m^2 -> W/mm^2     (1000**2)
 
 
 # ---------------------------------------------------------------------------
@@ -81,7 +81,8 @@ def _ensure_single_user_meshes(sim_objects: list) -> None:
         _log.info(
             "[heatsim.adapter] un-shared %d mesh datablock(s) referenced by multiple "
             "simulated objects (linked duplicates) so each object's solved field/atlas "
-            "UVs write independently instead of colliding.", unshared,
+            "UVs write independently instead of colliding.",
+            unshared,
         )
 
 
@@ -103,7 +104,7 @@ def _is_set(mat: Any, attr: str) -> bool:
         return False
     try:
         return bool(checker(attr))
-    except Exception:   # noqa: BLE001
+    except Exception:  # noqa: BLE001
         return False
 
 
@@ -311,12 +312,8 @@ def _atlas_digest(
         "tile_max": int(tile_max),
         "soft_max": int(soft_max),
         "atlas_size": list(layout.atlas_size),
-        "tiles": sorted(
-            (name, list(spec.size), list(spec.offset)) for name, spec in layout.tiles.items()
-        ),
-        "texel_counts": sorted(
-            (name, int(obj_texels["xy"].shape[0])) for name, obj_texels in texels.items()
-        ),
+        "tiles": sorted((name, list(spec.size), list(spec.offset)) for name, spec in layout.tiles.items()),
+        "texel_counts": sorted((name, int(obj_texels["xy"].shape[0])) for name, obj_texels in texels.items()),
     }
     return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
 
@@ -447,7 +444,7 @@ def _write_atlas_uv_layer(obj: Any, tile: atlas.TileSpec, atlas_size: tuple, src
         # sees it instead of a stale cached evaluation from before this write.
         if bpy is not None:
             bpy.context.view_layer.update()
-    except Exception as exc:   # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         _log.warning("[heatsim.adapter] '%s': failed to write %s: %s", obj.name, ATLAS_UV_LAYER_NAME, exc)
 
 
@@ -478,18 +475,26 @@ def build_atlas_plan(scene: Any, sim_objects: list, cfg: dict) -> AtlasPlan:
             retained_vertex_count += n
             continue
         triangles = verts[faces]
-        triangle_areas = 0.5 * np.linalg.norm(
-            np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0]), axis=1
-        ) / 1e6
+        triangle_areas = (
+            0.5
+            * np.linalg.norm(np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0]), axis=1)
+            / 1e6
+        )
         coarse_face = bool(np.max(triangle_areas) * density > 4.0)
-        use_atlas = mode == "TEXEL" or coarse_face or atlas.select_for_atlas(
-            n, area_m2, density, writeback_possible=writeback_possible
+        use_atlas = (
+            mode == "TEXEL"
+            or coarse_face
+            or atlas.select_for_atlas(n, area_m2, density, writeback_possible=writeback_possible)
         )
         _log.info(
             "thermal: %s uses %s samples (area %.3g m², %d evaluated vertices, "
             "vertex write-back %s, largest triangle %.3g m²)",
-            obj.name, "TEXEL" if use_atlas else "VERTEX", area_m2, n,
-            "safe" if writeback_possible else "unsafe", float(np.max(triangle_areas)),
+            obj.name,
+            "TEXEL" if use_atlas else "VERTEX",
+            area_m2,
+            n,
+            "safe" if writeback_possible else "unsafe",
+            float(np.max(triangle_areas)),
         )
         if use_atlas:
             areas[obj.name] = area_m2
@@ -497,8 +502,13 @@ def build_atlas_plan(scene: Any, sim_objects: list, cfg: dict) -> AtlasPlan:
             retained_vertex_count += n
 
     layout = atlas.allocate(
-        areas, density, tile_min=tile_min, tile_max=tile_max, soft_max=soft_max,
-        retained_vertex_count=retained_vertex_count, padding=_ATLAS_PACKING_PADDING,
+        areas,
+        density,
+        tile_min=tile_min,
+        tile_max=tile_max,
+        soft_max=soft_max,
+        retained_vertex_count=retained_vertex_count,
+        padding=_ATLAS_PACKING_PADDING,
     )
 
     texels: dict[str, dict[str, np.ndarray]] = {}
@@ -552,8 +562,13 @@ def build_atlas_plan(scene: Any, sim_objects: list, cfg: dict) -> AtlasPlan:
 
     digest = _atlas_digest(layout, tile_min, tile_max, soft_max, texels)
     return AtlasPlan(
-        layout=layout, texels=texels, density=layout.effective_density,
-        tile_min=tile_min, tile_max=tile_max, soft_max=soft_max, digest=digest,
+        layout=layout,
+        texels=texels,
+        density=layout.effective_density,
+        tile_min=tile_min,
+        tile_max=tile_max,
+        soft_max=soft_max,
+        digest=digest,
     )
 
 
@@ -590,7 +605,9 @@ def _scatter_atlas_arrays(history: dict, atlas_plan: AtlasPlan) -> tuple[np.ndar
                 "[heatsim.adapter] write_atlas: '%s' history shape %s does not match its "
                 "texel table (%s); skipped -- that object's tile stays unsolved (dilated "
                 "from neighbours, or zero/invalid if isolated).",
-                name, arr.shape, None if xy is None else xy.shape,
+                name,
+                arr.shape,
+                None if xy is None else xy.shape,
             )
             continue
 
@@ -614,8 +631,11 @@ def _scatter_atlas_arrays(history: dict, atlas_plan: AtlasPlan) -> tuple[np.ndar
 
 
 def write_atlas(
-    history: dict, atlas_plan: AtlasPlan, cache_root: Path,
-    defaults: dict | None = None, assignment: Any | None = None,
+    history: dict,
+    atlas_plan: AtlasPlan,
+    cache_root: Path,
+    defaults: dict | None = None,
+    assignment: Any | None = None,
 ) -> Path:
     """Write the final-timestep texel temperatures to a 32-bit float EXR atlas image.
 
@@ -671,7 +691,8 @@ def write_atlas(
         emissivity_history[name] = eps[None, :]
     emissivity = (
         _scatter_atlas_arrays(emissivity_history, atlas_plan)[0]
-        if emissivity_history else np.zeros((height, width), dtype=np.float64)
+        if emissivity_history
+        else np.zeros((height, width), dtype=np.float64)
     )
 
     rgba: np.ndarray = np.zeros((height, width, 4), dtype=np.float32)
@@ -707,7 +728,10 @@ def write_atlas(
 
     _log.debug(
         "[heatsim.adapter] write_atlas: wrote %s (%dx%d, %d object(s))",
-        out_path, width, height, len(atlas_plan.texels),
+        out_path,
+        width,
+        height,
+        len(atlas_plan.texels),
     )
     return out_path
 
@@ -976,8 +1000,22 @@ def _combine(
         tex = atlas_texels.get(obj.name)
         if tex is not None:
             offset = _combine_texel_object(
-                obj, tex, flux_by_obj, defaults, assignment, irradiance_scale,
-                verts_l, irr_l, t0_l, alpha_l, rho_l, c_l, eps_l, bmask_l, layout, offset,
+                obj,
+                tex,
+                flux_by_obj,
+                defaults,
+                assignment,
+                irradiance_scale,
+                verts_l,
+                irr_l,
+                t0_l,
+                alpha_l,
+                rho_l,
+                c_l,
+                eps_l,
+                bmask_l,
+                layout,
+                offset,
             )
             continue
 
@@ -1002,7 +1040,9 @@ def _combine(
                 _log.warning(
                     "[heatsim.adapter] '%s': base mesh has %d verts but evaluated geometry has %d "
                     "(topology-changing modifier); per-slot thermal materials skipped, using object-level values.",
-                    obj.name, int(per_vertex["alpha"].shape[0]), n,
+                    obj.name,
+                    int(per_vertex["alpha"].shape[0]),
+                    n,
                 )
                 per_vertex = None
 
@@ -1121,9 +1161,7 @@ def _split_history(history: np.ndarray, combined: SimpleNamespace) -> dict:
     """Trim interior points and split ``(T, N_total)`` into per-object ``(T, N)``."""
     u = history
     if u.ndim != 2 or u.shape[1] < combined.surface_count or not np.isfinite(u).all():
-        raise RuntimeError(
-            "Thermal solver returned an invalid field for the scene sampling layout"
-        )
+        raise RuntimeError("Thermal solver returned an invalid field for the scene sampling layout")
     out: dict = {}
     for name, off, n, _kind in combined.layout:
         out[name] = np.ascontiguousarray(u[:, off : off + n])
@@ -1181,15 +1219,20 @@ def solve_scene(
         }
     key = cache.cache_key(blend_path, key_cfg, source_digest or "")
 
-    expected_counts = {
-        obj.name: len(atlas_plan.texels[obj.name]["xy"])
-        if atlas_plan is not None and obj.name in atlas_plan.texels
-        else len(obj.evaluated_get(bpy.context.evaluated_depsgraph_get()).data.vertices)
-        for obj in sim_objects
-    } if source_digest is not None else None
+    expected_counts = (
+        {
+            obj.name: len(atlas_plan.texels[obj.name]["xy"])
+            if atlas_plan is not None and obj.name in atlas_plan.texels
+            else len(obj.evaluated_get(bpy.context.evaluated_depsgraph_get()).data.vertices)
+            for obj in sim_objects
+        }
+        if source_digest is not None
+        else None
+    )
     cached = (
         cache.read_temperatures(cache_root, key, expected_counts)
-        if source_digest is not None and not recompute else None
+        if source_digest is not None and not recompute
+        else None
     )
     if cached is not None:
         _log.debug("[heatsim.adapter] cache hit: %s", key)
@@ -1270,9 +1313,7 @@ def _write_emissivity_attr(obj: Any, mesh: Any, defaults: dict, assignment: Any 
     _write_point_float_attr(mesh, "emissivity", eps_vec)
 
 
-def _write_constant_fill_attributes(
-    obj: Any, mesh: Any, defaults: dict, assignment: Any | None, fill_T: float
-) -> None:
+def _write_constant_fill_attributes(obj: Any, mesh: Any, defaults: dict, assignment: Any | None, fill_T: float) -> None:
     """Constant-fill ``sim_temperature`` (and ``emissivity``) for a vertex-path object
     whose per-vertex write-back is impossible this frame (topology mismatch or missing
     history) -- called instead of leaving both attributes absent.
@@ -1379,7 +1420,9 @@ def write_frame_attributes(
             obj["heatsim_default_temperature"] = fallback_T
             _log.warning(
                 "[heatsim.adapter] '%s': no solve history for this object; sim_temperature "
-                "constant-filled at %.2f K instead of left absent.", obj.name, fallback_T,
+                "constant-filled at %.2f K instead of left absent.",
+                obj.name,
+                fallback_T,
             )
             _write_constant_fill_attributes(obj, mesh, defaults, assignment, fallback_T)
             continue

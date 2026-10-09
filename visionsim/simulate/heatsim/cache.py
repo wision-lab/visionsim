@@ -89,8 +89,12 @@ def write_temperatures(cache_root: Path, key: str, per_object: dict[str, np.ndar
     out_dir = Path(cache_root) / key
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / "temperatures.npz"
-    meta = {**meta, "schema": CACHE_SCHEMA_VERSION, "objects": sorted(per_object),
-            "timesteps": next(iter(per_object.values())).shape[0] if per_object else 0}
+    meta = {
+        **meta,
+        "schema": CACHE_SCHEMA_VERSION,
+        "objects": sorted(per_object),
+        "timesteps": next(iter(per_object.values())).shape[0] if per_object else 0,
+    }
     save_data: dict[str, Any] = {"__meta__": np.frombuffer(json.dumps(meta).encode(), dtype=np.uint8)}
     save_data.update(per_object)
     with tempfile.NamedTemporaryFile(dir=out_dir, suffix=".npz", delete=False) as temp:
@@ -104,7 +108,9 @@ def write_temperatures(cache_root: Path, key: str, per_object: dict[str, np.ndar
 
 
 def read_temperatures(
-    cache_root: Path, key: str, expected_counts: dict[str, int] | None = None,
+    cache_root: Path,
+    key: str,
+    expected_counts: dict[str, int] | None = None,
 ) -> dict[str, np.ndarray] | None:
     """Read per-object temperature histories, or return ``None`` on a cache miss.
 

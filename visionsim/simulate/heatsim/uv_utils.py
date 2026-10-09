@@ -44,6 +44,8 @@ def _set_active_uv(mesh: bpy.types.Mesh, uv_name: str | None) -> None:
             mesh.uv_layers.active_index = list(mesh.uv_layers).index(mesh.uv_layers[uv_name])
         except Exception:
             logging.getLogger(__name__).debug("Blender thermal operation failed", exc_info=True)
+
+
 def _set_render_uv(mesh: bpy.types.Mesh, uv_name: str | None) -> None:
     if not mesh or not getattr(mesh, "uv_layers", None) or not uv_name:
         return

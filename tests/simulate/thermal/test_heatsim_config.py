@@ -9,16 +9,20 @@ from visionsim.simulate.blender import BlenderService
 from visionsim.simulate.config import ThermalConfig
 
 
-@pytest.mark.parametrize("field,value", [
-    ("sim_time_s", 0.0),
-    ("timestep_s", -1.0),
-    ("atlas_texel_density", float("nan")),
-    ("emissivity", 1.1),
-    ("render_domain", "MESH"),
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("sim_time_s", 0.0),
+        ("timestep_s", -1.0),
+        ("atlas_texel_density", float("nan")),
+        ("emissivity", 1.1),
+        ("render_domain", "MESH"),
+    ],
+)
 def test_thermal_config_rejects_invalid_inputs(field, value):
     with pytest.raises(ValueError):
         ThermalConfig(**{field: value})
+
 
 _ATLAS_FIELDS = (
     "render_domain",

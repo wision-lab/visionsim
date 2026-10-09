@@ -14,9 +14,7 @@ from visionsim.simulate.heatsim import atlas
 
 def test_surface_area_of_unit_quad():
     # A 1000mm x 1000mm quad (two triangles) is exactly 1 m^2.
-    verts_mm = np.array(
-        [[0.0, 0.0, 0.0], [1000.0, 0.0, 0.0], [1000.0, 1000.0, 0.0], [0.0, 1000.0, 0.0]]
-    )
+    verts_mm = np.array([[0.0, 0.0, 0.0], [1000.0, 0.0, 0.0], [1000.0, 1000.0, 0.0], [0.0, 1000.0, 0.0]])
     faces = np.array([[0, 1, 2], [0, 2, 3]])
     assert atlas.surface_area_m2(verts_mm, faces) == pytest.approx(1.0)
 
@@ -192,9 +190,7 @@ def test_allocate_empty_areas():
 
 
 def _quad_mesh(size_mm=80.0):
-    verts_mm = np.array(
-        [[0.0, 0.0, 0.0], [size_mm, 0.0, 0.0], [size_mm, size_mm, 0.0], [0.0, size_mm, 0.0]]
-    )
+    verts_mm = np.array([[0.0, 0.0, 0.0], [size_mm, 0.0, 0.0], [size_mm, size_mm, 0.0], [0.0, size_mm, 0.0]])
     faces = np.array([[0, 1, 2], [0, 2, 3]])
     loop_uv = np.array(
         [
@@ -289,9 +285,7 @@ def test_rasterize_degenerate_triangle_skipped():
 def test_rasterize_degenerate_triangle_mixed_with_valid_no_nan():
     # A degenerate triangle followed by a valid one: the degenerate one must not poison the rest.
     tile = (8, 8)
-    verts_mm = np.array(
-        [[0.0, 0.0, 0.0], [80.0, 0.0, 0.0], [40.0, 0.0, 0.0], [80.0, 80.0, 0.0], [0.0, 80.0, 0.0]]
-    )
+    verts_mm = np.array([[0.0, 0.0, 0.0], [80.0, 0.0, 0.0], [40.0, 0.0, 0.0], [80.0, 80.0, 0.0], [0.0, 80.0, 0.0]])
     faces = np.array([[0, 1, 2], [0, 1, 3], [0, 3, 4]])
     loop_uv = np.array(
         [
@@ -348,9 +342,7 @@ def test_rasterize_mirrored_uv_triangle_interpolates_correctly():
     size_mm = 80.0
     tile = (8, 8)
     w, h = tile
-    verts_mm = np.array(
-        [[0.0, 0.0, 0.0], [size_mm, 0.0, 0.0], [size_mm, size_mm, 0.0], [0.0, size_mm, 0.0]]
-    )
+    verts_mm = np.array([[0.0, 0.0, 0.0], [size_mm, 0.0, 0.0], [size_mm, size_mm, 0.0], [0.0, size_mm, 0.0]])
     faces = np.array([[0, 1, 2], [0, 2, 3]])
     loop_uv = np.array(
         [

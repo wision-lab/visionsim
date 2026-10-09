@@ -80,7 +80,11 @@ if _BPY_AVAILABLE:
             ),
             items=[
                 ("FEM_PARTICIPANT", "FEM Participant", "Full transient simulation; stable topology required"),
-                ("DIRICHLET_SOURCE", "Dirichlet Source (constant T)", "Vertex temperatures pinned; topology may change per frame"),
+                (
+                    "DIRICHLET_SOURCE",
+                    "Dirichlet Source (constant T)",
+                    "Vertex temperatures pinned; topology may change per frame",
+                ),
             ],
             default="FEM_PARTICIPANT",
         )

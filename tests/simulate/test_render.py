@@ -142,7 +142,9 @@ def test_database_threading(tmp_path_factory, executable):
 
     # Spoof frames to bypass render, only save metadata, from a bunch of blender instances.
     # This forces a lot of database writes, which helps test for any potential "Database is locked" errors.
-    with BlenderClients.spawn(jobs=min(os.cpu_count() or 5, 5), executable=executable, timeout=30, log=log_dir) as clients:
+    with BlenderClients.spawn(
+        jobs=min(os.cpu_count() or 5, 5), executable=executable, timeout=30, log=log_dir
+    ) as clients:
         clients.initialize(scene.resolve(), tmpdir.resolve())
         clients.include_frames()
         clients.move_keyframes(scale=5)

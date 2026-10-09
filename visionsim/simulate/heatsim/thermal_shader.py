@@ -55,7 +55,9 @@ _KEY_CLAMP: str = "orig_sample_clamp"
 # ---------------------------------------------------------------------------
 
 
-def _build_temperature_source_chain(nodes: Any, links: Any, new_node: Any = None, x0: float = -800.0, y0: float = 300.0) -> Any:
+def _build_temperature_source_chain(
+    nodes: Any, links: Any, new_node: Any = None, x0: float = -800.0, y0: float = 300.0
+) -> Any:
     """Return a temperature socket shared by the AOV and radiance shaders.
 
     A valid vertex attribute overrides the object default. For atlas objects,
@@ -465,7 +467,7 @@ def _ensure_temperature_material_slots(obj: Any) -> int:
                 slot.material = _get_default_surface_material()
                 filled += 1
         return filled
-    except Exception as exc:   # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         _log.warning("thermal: could not assign a default surface to %r: %s", obj.name, exc)
         return 0
 
@@ -526,7 +528,9 @@ def setup_temperature_aov(scene: Any, view_layer: Any) -> str:
 
     _log.debug(
         "setup_temperature_aov: AOV %r registered; %d material slot(s) patched, %d filled with the default surface",
-        aov_name, patched, filled,
+        aov_name,
+        patched,
+        filled,
     )
     return aov_name
 
@@ -579,7 +583,6 @@ def enter_thermal_scene(scene: Any, *, radiance_scale: float) -> dict:
                 obj.hide_render = True
                 obj.hide_viewport = True
 
-
         # RGB scene clamps can truncate the larger radiometric values in this pass.
         # Save both clamp settings for restoration after rendering.
         cy = getattr(scene, "cycles", None)
@@ -590,12 +593,14 @@ def enter_thermal_scene(scene: Any, *, radiance_scale: float) -> dict:
                     saved_clamp[attr] = getattr(cy, attr)
                     try:
                         setattr(cy, attr, 0.0)  # 0 == disabled in Cycles
-                    except Exception as exc:   # noqa: BLE001
+                    except Exception as exc:  # noqa: BLE001
                         _log.debug("Could not clear cycles.%s: %s", attr, exc)
                         saved_clamp.pop(attr, None)
             if saved_clamp:
-                _log.info("thermal: cleared Cycles sample clamps for the radiance pass (%s)",
-                          ", ".join(f"{k}={v}" for k, v in saved_clamp.items()))
+                _log.info(
+                    "thermal: cleared Cycles sample clamps for the radiance pass (%s)",
+                    ", ".join(f"{k}={v}" for k, v in saved_clamp.items()),
+                )
             state[_KEY_CLAMP] = saved_clamp
 
         # -- Save world and replace with a uniform gray thermal world -----------
@@ -648,7 +653,7 @@ def restore_scene(scene: Any, state: dict) -> None:
         for attr, value in (state.get(_KEY_CLAMP, {}) or {}).items():
             try:
                 setattr(cy, attr, value)
-            except Exception as exc:   # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 _log.debug("Could not restore cycles.%s: %s", attr, exc)
 
     # -- Restore light visibility -----------------------------------------------

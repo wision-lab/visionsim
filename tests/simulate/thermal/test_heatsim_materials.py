@@ -58,19 +58,27 @@ def test_presets_are_immutable():
 
 def _write(tmp_path, block, default_preset="plaster", name="scene.thermal.json"):
     path = tmp_path / name
-    path.write_text(json.dumps({
-        "schema_version": 1,
-        "scene": "kitchen1.blend",
-        "defaults": {"preset": default_preset},
-        "materials": block,
-    }), encoding="utf-8")
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "scene": "kitchen1.blend",
+                "defaults": {"preset": default_preset},
+                "materials": block,
+            }
+        ),
+        encoding="utf-8",
+    )
     return path
 
 
 def test_loads_a_well_formed_sidecar(tmp_path):
-    path = _write(tmp_path, {
-        "MADERA ESTANTES": {"preset": "wood", "role": "FEM_PARTICIPANT", "confidence": 0.95, "reason": "madera"},
-    })
+    path = _write(
+        tmp_path,
+        {
+            "MADERA ESTANTES": {"preset": "wood", "role": "FEM_PARTICIPANT", "confidence": 0.95, "reason": "madera"},
+        },
+    )
     sa = materials.load_assignments(path)
     assert sa.scene == "kitchen1.blend"
     assert sa.default_preset is not None and sa.default_preset.key == "plaster"
@@ -99,9 +107,17 @@ def test_null_scene_does_not_become_the_literal_string_none(tmp_path):
     field, which reaches the solve cache key - a stray "None" there would be a silently
     wrong (but stable-looking) cache key component."""
     path = tmp_path / "scene.thermal.json"
-    path.write_text(json.dumps({
-        "schema_version": 1, "scene": None, "defaults": {}, "materials": {},
-    }), encoding="utf-8")
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "scene": None,
+                "defaults": {},
+                "materials": {},
+            }
+        ),
+        encoding="utf-8",
+    )
     sa = materials.load_assignments(path)
     assert sa.scene == path.name
 
@@ -170,18 +186,34 @@ def test_non_numeric_dirichlet_k_raises_naming_the_sidecar(tmp_path):
 
 def test_null_defaults_block_raises_naming_the_sidecar(tmp_path):
     path = tmp_path / "scene.thermal.json"
-    path.write_text(json.dumps({
-        "schema_version": 1, "scene": "kitchen1.blend", "defaults": None, "materials": {},
-    }), encoding="utf-8")
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "scene": "kitchen1.blend",
+                "defaults": None,
+                "materials": {},
+            }
+        ),
+        encoding="utf-8",
+    )
     with pytest.raises(ValueError, match="scene.thermal.json"):
         materials.load_assignments(path)
 
 
 def test_null_materials_block_raises_naming_the_sidecar(tmp_path):
     path = tmp_path / "scene.thermal.json"
-    path.write_text(json.dumps({
-        "schema_version": 1, "scene": "kitchen1.blend", "defaults": {}, "materials": None,
-    }), encoding="utf-8")
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "scene": "kitchen1.blend",
+                "defaults": {},
+                "materials": None,
+            }
+        ),
+        encoding="utf-8",
+    )
     with pytest.raises(ValueError, match="scene.thermal.json"):
         materials.load_assignments(path)
 
@@ -242,7 +274,7 @@ class _Obj:
 def _stool():
     """Verts 0,1 pure wood; verts 4,5 pure steel; verts 2,3 on the seam.
 
-       0---1---(2---3)---4---5    wood area 6 on the left, steel area 2 on the right
+    0---1---(2---3)---4---5    wood area 6 on the left, steel area 2 on the right
     """
     polys = [_Poly([0, 1, 2, 3], 0, area=6.0), _Poly([2, 3, 4, 5], 1, area=2.0)]
     return _Obj("stool", _Mesh(6, polys), ["MADERA BANQUETAS", "METALBANQUETAS"])
@@ -278,10 +310,13 @@ def test_seam_vertices_get_the_area_weighted_mean(tmp_path):
 
 def test_categorical_role_is_dominant_not_blended(tmp_path):
     """A vertex is pinned or it is not - a 75/25 split must not make it 'partly pinned'."""
-    sa = _sidecar(tmp_path, {
-        "MADERA BANQUETAS": {"preset": "wood"},
-        "METALBANQUETAS": {"preset": "steel", "role": "DIRICHLET_SOURCE", "dirichlet_K": 345.0},
-    })
+    sa = _sidecar(
+        tmp_path,
+        {
+            "MADERA BANQUETAS": {"preset": "wood"},
+            "METALBANQUETAS": {"preset": "steel", "role": "DIRICHLET_SOURCE", "dirichlet_K": 345.0},
+        },
+    )
     out = materials.resolve_vertex_materials(_stool(), sa, _FALLBACK)
     assert out is not None
     assert not out["dirichlet_mask"][2] and not out["dirichlet_mask"][3]  # wood dominates the seam
@@ -290,10 +325,13 @@ def test_categorical_role_is_dominant_not_blended(tmp_path):
 
 
 def test_dominant_flips_when_the_area_split_flips(tmp_path):
-    sa = _sidecar(tmp_path, {
-        "A": {"preset": "wood"},
-        "B": {"preset": "steel", "role": "DIRICHLET_SOURCE", "dirichlet_K": 350.0},
-    })
+    sa = _sidecar(
+        tmp_path,
+        {
+            "A": {"preset": "wood"},
+            "B": {"preset": "steel", "role": "DIRICHLET_SOURCE", "dirichlet_K": 350.0},
+        },
+    )
     obj = _Obj("o", _Mesh(6, [_Poly([0, 1, 2, 3], 0, 1.0), _Poly([2, 3, 4, 5], 1, 9.0)]), ["A", "B"])
     out = materials.resolve_vertex_materials(obj, sa, _FALLBACK)
     assert out is not None
@@ -360,10 +398,13 @@ def test_returns_none_when_slots_cannot_drive_resolution(tmp_path, slot_names, n
 
 
 def test_shapes_dtypes_and_emissivity_range(tmp_path):
-    sa = _sidecar(tmp_path, {
-        "MADERA BANQUETAS": {"preset": "aluminium_polished"},
-        "METALBANQUETAS": {"preset": "skin"},
-    })
+    sa = _sidecar(
+        tmp_path,
+        {
+            "MADERA BANQUETAS": {"preset": "aluminium_polished"},
+            "METALBANQUETAS": {"preset": "skin"},
+        },
+    )
     out = materials.resolve_vertex_materials(_stool(), sa, _FALLBACK)
     assert out is not None
     for key in ("t0", "alpha", "rho", "c", "eps"):

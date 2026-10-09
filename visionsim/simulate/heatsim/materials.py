@@ -297,8 +297,11 @@ def load_assignments(path: Path) -> SceneAssignment:
 
         role = str(spec.get("role") or "FEM_PARTICIPANT").upper()
         if role not in _ROLES:
-            warnings.warn(f"thermal assignment {where}: unknown role {spec.get('role')!r}; "
-                          "treating as FEM_PARTICIPANT", UserWarning, stacklevel=2)
+            warnings.warn(
+                f"thermal assignment {where}: unknown role {spec.get('role')!r}; treating as FEM_PARTICIPANT",
+                UserWarning,
+                stacklevel=2,
+            )
             role = "FEM_PARTICIPANT"
 
         dirichlet_K: float | None = None
@@ -323,12 +326,18 @@ def load_assignments(path: Path) -> SceneAssignment:
                     f"thermal assignment {where}: dirichlet_K={value} outside "
                     f"[{MIN_DIRICHLET_K}, {MAX_DIRICHLET_K}] K; dropping it and degrading role "
                     "DIRICHLET_SOURCE -> FEM_PARTICIPANT (an out-of-band source pinned at ambient "
-                    "would otherwise silently act as a heat sink)", UserWarning, stacklevel=2,
+                    "would otherwise silently act as a heat sink)",
+                    UserWarning,
+                    stacklevel=2,
                 )
                 role = "FEM_PARTICIPANT"
             else:
-                warnings.warn(f"thermal assignment {where}: dirichlet_K={value} outside "
-                              f"[{MIN_DIRICHLET_K}, {MAX_DIRICHLET_K}] K; ignoring it", UserWarning, stacklevel=2)
+                warnings.warn(
+                    f"thermal assignment {where}: dirichlet_K={value} outside "
+                    f"[{MIN_DIRICHLET_K}, {MAX_DIRICHLET_K}] K; ignoring it",
+                    UserWarning,
+                    stacklevel=2,
+                )
 
         entries[str(name)] = MaterialEntry(
             preset=preset,

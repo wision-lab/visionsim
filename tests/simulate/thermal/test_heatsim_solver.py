@@ -31,13 +31,13 @@ def _make_params(n: int):
     gen_params = SimpleNamespace(
         device="cpu",
         RHO=1330.0 / 1e9,  # kg/mm^3  (fallback scalar; per-vertex maps override)
-        C=880.0,            # J/(kg·K)
-        K=0.17,             # mm^2/s
+        C=880.0,  # J/(kg·K)
+        K=0.17,  # mm^2/s
         NUM_FRAME_DELTA=_DT * 60.0,  # → dt = NUM_FRAME_DELTA / 60 = _DT
     )
     sim_params = SimpleNamespace(
         sim_radiation=True,
-        sim_convection=False,   # CONVECTION_COEFF is 0 anyway
+        sim_convection=False,  # CONVECTION_COEFF is 0 anyway
         add_tikhonov_reg=False,
         sim_time=_SIM_TIME,
         record_time=_SIM_TIME,  # record_attimestep = 0 → record all steps
@@ -52,13 +52,13 @@ def test_solver_produces_finite_physical_temperatures():
     """
     n = 64
     rng = np.random.default_rng(0)
-    points = rng.uniform(-10.0, 10.0, size=(n, 3)).astype(np.float64)   # mm
-    irradiance = np.full(n, 1e-4, dtype=np.float64)                     # W/mm^2
+    points = rng.uniform(-10.0, 10.0, size=(n, 3)).astype(np.float64)  # mm
+    irradiance = np.full(n, 1e-4, dtype=np.float64)  # W/mm^2
 
     # Per-vertex material maps (PVC-like)
-    density = np.full(n, 1330.0 / 1e9, dtype=np.float64)    # kg/mm^3
-    specific_heat = np.full(n, 880.0, dtype=np.float64)      # J/(kg·K)
-    tdiff = np.full(n, 0.17, dtype=np.float64)               # mm^2/s
+    density = np.full(n, 1330.0 / 1e9, dtype=np.float64)  # kg/mm^3
+    specific_heat = np.full(n, 880.0, dtype=np.float64)  # J/(kg·K)
+    tdiff = np.full(n, 0.17, dtype=np.float64)  # mm^2/s
     emissivity = np.full(n, 0.9, dtype=np.float64)
 
     # Initial temperature (slightly above ambient)

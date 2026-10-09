@@ -69,15 +69,24 @@ def _square(name="square"):
 
 def _sidecar(tmp_path, block, name="s.thermal.json"):
     path = tmp_path / name
-    path.write_text(json.dumps({
-        "schema_version": 1, "scene": "s.blend", "defaults": {"preset": None}, "materials": block,
-    }), encoding="utf-8")
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "scene": "s.blend",
+                "defaults": {"preset": None},
+                "materials": block,
+            }
+        ),
+        encoding="utf-8",
+    )
     return materials.load_assignments(path)
 
 
 @pytest.fixture(autouse=True)
 def _stub_geometry(monkeypatch):
     """_extract_geometry needs bpy/mathutils; feed it straight from the fake mesh."""
+
     def fake(obj):
         verts = np.asarray(obj.data._xyz, dtype=np.float64) * 1000.0  # m -> mm
         faces = np.asarray([list(p.vertices) for p in obj.data.polygons], dtype=np.int32)
@@ -92,10 +101,13 @@ def _stub_geometry(monkeypatch):
 
 
 def test_resolve_face_materials_exact_per_face(tmp_path):
-    sa = _sidecar(tmp_path, {
-        "WOODY": {"preset": "wood"},
-        "STEELY": {"preset": "steel", "role": "DIRICHLET_SOURCE", "dirichlet_K": 350.0},
-    })
+    sa = _sidecar(
+        tmp_path,
+        {
+            "WOODY": {"preset": "wood"},
+            "STEELY": {"preset": "steel", "role": "DIRICHLET_SOURCE", "dirichlet_K": 350.0},
+        },
+    )
     obj = _square()
     face_slots = np.array([0, 1], dtype=np.int32)  # face 0 -> WOODY, face 1 -> STEELY
 
@@ -152,9 +164,11 @@ def test_combine_texel_mode_mixes_texel_and_vertex_objects():
     sparse_obj = _NS(name="sparse", heat_sim_material=None)
     dense_obj = _square("dense")
 
-    atlas_plan = SimpleNamespace(texels={
-        "sparse": _texel_table(k, face=np.zeros(k, dtype=np.int64), face_material_index=[0]),
-    })
+    atlas_plan = SimpleNamespace(
+        texels={
+            "sparse": _texel_table(k, face=np.zeros(k, dtype=np.int64), face_material_index=[0]),
+        }
+    )
 
     combined = adapter._combine([sparse_obj, dense_obj], {}, _DEFAULTS, _SOLVER_CFG, atlas_plan=atlas_plan)
 
@@ -175,9 +189,11 @@ def test_combine_texel_mode_object_level_materials_when_no_assignment():
     """No sidecar: a TEXEL object still gets the object-level constant, broadcast per-texel."""
     k = 3
     obj = _NS(name="sparse", heat_sim_material=None)
-    atlas_plan = SimpleNamespace(texels={
-        "sparse": _texel_table(k, face=np.zeros(k, dtype=np.int64), face_material_index=[0]),
-    })
+    atlas_plan = SimpleNamespace(
+        texels={
+            "sparse": _texel_table(k, face=np.zeros(k, dtype=np.int64), face_material_index=[0]),
+        }
+    )
 
     combined = adapter._combine([obj], {}, _DEFAULTS, _SOLVER_CFG, atlas_plan=atlas_plan)
 
@@ -189,10 +205,13 @@ def test_combine_texel_mode_object_level_materials_when_no_assignment():
 
 
 def test_combine_texel_dirichlet_pinning_per_texel(tmp_path):
-    sa = _sidecar(tmp_path, {
-        "WOODY": {"preset": "wood"},
-        "STEELY": {"preset": "steel", "role": "DIRICHLET_SOURCE", "dirichlet_K": 350.0},
-    })
+    sa = _sidecar(
+        tmp_path,
+        {
+            "WOODY": {"preset": "wood"},
+            "STEELY": {"preset": "steel", "role": "DIRICHLET_SOURCE", "dirichlet_K": 350.0},
+        },
+    )
     obj = _square()  # name "square", slots WOODY (face 0), STEELY (face 1)
     tex = _texel_table(4, face=[0, 0, 1, 1], face_material_index=[0, 1])
     atlas_plan = SimpleNamespace(texels={"square": tex})
@@ -249,9 +268,14 @@ class _AtlasObj:
 def _big_plane_geom(side_mm=10_000.0):
     """4 verts spanning a 10m x 10m plane => 100 m^2 for ~0.04 verts/m^2 (well under any
     reasonable atlas_texel_density, so select_for_atlas admits it)."""
-    verts = np.array([
-        [0.0, 0.0, 0.0], [side_mm, 0.0, 0.0], [side_mm, side_mm, 0.0], [0.0, side_mm, 0.0],
-    ])
+    verts = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [side_mm, 0.0, 0.0],
+            [side_mm, side_mm, 0.0],
+            [0.0, side_mm, 0.0],
+        ]
+    )
     faces = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int32)
     return verts, faces, 4
 
@@ -274,10 +298,12 @@ def test_uv_failure_stops_atlas_solve(monkeypatch):
 
     monkeypatch.setattr(adapter, "_write_atlas_uv_layer", spy_write)
 
-    raw_uv = np.array([
-        [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
-        [[0.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
-    ])
+    raw_uv = np.array(
+        [
+            [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+            [[0.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        ]
+    )
 
     def fake_uv(obj, layer_name):
         if obj.name == "bad":
@@ -331,10 +357,12 @@ def test_build_atlas_plan_vertex_count_mismatch_no_longer_demotes(monkeypatch):
 
     monkeypatch.setattr(adapter, "_write_atlas_uv_layer", spy_write)
 
-    raw_uv = np.array([
-        [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
-        [[0.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
-    ])
+    raw_uv = np.array(
+        [
+            [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+            [[0.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        ]
+    )
 
     def fake_evaluated_uv(o, layer_name):
         tile = captured["tile"]
@@ -359,8 +387,11 @@ def test_build_atlas_plan_vertex_count_mismatch_no_longer_demotes(monkeypatch):
 def test_build_atlas_plan_excludes_dense_objects(monkeypatch):
     """An object whose native vertex density already exceeds the target keeps the vertex path."""
     dense = _AtlasObj("dense", n_verts=50_000)
-    dense_geom = (np.random.default_rng(0).uniform(0, 10, size=(50_000, 3)),
-                  np.array([[0, 1, 2]], dtype=np.int32), 50_000)
+    dense_geom = (
+        np.random.default_rng(0).uniform(0, 10, size=(50_000, 3)),
+        np.array([[0, 1, 2]], dtype=np.int32),
+        50_000,
+    )
 
     monkeypatch.setattr(adapter, "_extract_geometry", lambda o: dense_geom)
 
@@ -388,10 +419,12 @@ def _build_two_object_plan(monkeypatch, *, drop_second: bool):
 
     monkeypatch.setattr(adapter, "_write_atlas_uv_layer", spy_write)
 
-    raw_uv = np.array([
-        [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
-        [[0.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
-    ])
+    raw_uv = np.array(
+        [
+            [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+            [[0.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        ]
+    )
 
     def fake_uv(obj, layer_name):
         if drop_second and obj.name == "obj_b":
@@ -453,16 +486,29 @@ def test_cache_key_gains_atlas_digest(tmp_path, monkeypatch):
     adapter.solve_scene(scene, defaults=_DEFAULTS, solver_cfg=_SOLVER_CFG, cache_root=tmp_path)
 
     fake_plan = SimpleNamespace(
-        texels={}, density=50.0, tile_min=16, tile_max=512, soft_max=500_000, digest="deadbeef",
+        texels={},
+        density=50.0,
+        tile_min=16,
+        tile_max=512,
+        soft_max=500_000,
+        digest="deadbeef",
     )
     adapter.solve_scene(
-        scene, defaults=_DEFAULTS, solver_cfg=_SOLVER_CFG, cache_root=tmp_path, atlas_plan=fake_plan,
+        scene,
+        defaults=_DEFAULTS,
+        solver_cfg=_SOLVER_CFG,
+        cache_root=tmp_path,
+        atlas_plan=fake_plan,
     )
 
     assert len(captured) == 2
     assert "atlas" not in captured[0]
     assert captured[1]["atlas"] == {
-        "density": 50.0, "tile_min": 16, "tile_max": 512, "soft_max": 500_000, "layout_digest": "deadbeef",
+        "density": 50.0,
+        "tile_min": 16,
+        "tile_max": 512,
+        "soft_max": 500_000,
+        "layout_digest": "deadbeef",
     }
 
 
@@ -472,7 +518,9 @@ def test_cache_key_is_byte_identical_to_pre_atlas_baseline(tmp_path, monkeypatch
     exactly, so an existing .heatsim cache from before the atlas feature is not busted."""
     captured = []
     monkeypatch.setattr(adapter, "gather_meshes", lambda scene: [])
-    monkeypatch.setattr(adapter.cache, "cache_key", lambda blend_path, key_cfg, source_digest="": captured.append(key_cfg) or "k")
+    monkeypatch.setattr(
+        adapter.cache, "cache_key", lambda blend_path, key_cfg, source_digest="": captured.append(key_cfg) or "k"
+    )
 
     scene = _FakeScene()
     adapter.solve_scene(scene, defaults=_DEFAULTS, solver_cfg=_SOLVER_CFG, cache_root=tmp_path)
@@ -518,12 +566,20 @@ def test_solve_scene_only_computes_vertex_irradiance_for_non_atlas_objects(tmp_p
 
     atlas_plan = SimpleNamespace(
         texels={"atlas_obj": _texel_table(3, face=np.zeros(3, dtype=np.int64), face_material_index=[0])},
-        density=50.0, tile_min=16, tile_max=512, soft_max=500_000, digest="abc123",
+        density=50.0,
+        tile_min=16,
+        tile_max=512,
+        soft_max=500_000,
+        digest="abc123",
     )
 
     scene = _FakeScene()
     adapter.solve_scene(
-        scene, defaults=_DEFAULTS, solver_cfg=_SOLVER_CFG, cache_root=tmp_path, atlas_plan=atlas_plan,
+        scene,
+        defaults=_DEFAULTS,
+        solver_cfg=_SOLVER_CFG,
+        cache_root=tmp_path,
+        atlas_plan=atlas_plan,
     )
 
     # Only the object NOT covered by the atlas plan reaches the per-vertex kernel...
@@ -541,8 +597,9 @@ def test_solve_scene_runs_vertex_irradiance_for_all_objects_without_an_atlas_pla
 
     vertex_call_objects: list = []
     monkeypatch.setattr(
-        adapter, "_compute_irradiance",
-        lambda scene, sim_objects, solver_cfg, defaults: (vertex_call_objects.extend(sim_objects) or {}),
+        adapter,
+        "_compute_irradiance",
+        lambda scene, sim_objects, solver_cfg, defaults: vertex_call_objects.extend(sim_objects) or {},
     )
     monkeypatch.setattr(adapter, "_combine", lambda *a, **kw: None)
 

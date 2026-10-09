@@ -65,14 +65,16 @@ def collect_materials(scene: Any, bpy_data: Any) -> dict[str, Any]:
         nodes = tree.nodes if tree else []
         textures = sorted({node.image.name for node in nodes if node.type == "TEX_IMAGE" and node.image})
         emission_nodes = [node.type for node in nodes if node.type == "EMISSION"]
-        entries.append({
-            "name": name,
-            "objects": sorted(objects[name]),
-            "textures": textures,
-            "diffuse_color": [round(float(x), 4) for x in material.diffuse_color[:3]],
-            "emission_nodes": emission_nodes,
-            "face_area_share": area.get(name, 0.0) / total_area if total_area else 0.0,
-        })
+        entries.append(
+            {
+                "name": name,
+                "objects": sorted(objects[name]),
+                "textures": textures,
+                "diffuse_color": [round(float(x), 4) for x in material.diffuse_color[:3]],
+                "emission_nodes": emission_nodes,
+                "face_area_share": area.get(name, 0.0) / total_area if total_area else 0.0,
+            }
+        )
     entries.sort(key=lambda entry: (-entry["face_area_share"], entry["name"]))
     return {"schema_version": 1, "materials": entries}
 
@@ -161,7 +163,7 @@ def check_assignments(inventory: dict[str, Any], sidecar: dict[str, Any]) -> tup
 
 def main(argv: list[str] | None = None) -> int:
     if argv is None:
-        argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else sys.argv[1:]
+        argv = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else sys.argv[1:]
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
     dump = commands.add_parser("dump", help="inventory the open Blender scene")

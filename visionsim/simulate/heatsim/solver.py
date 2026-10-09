@@ -14,6 +14,7 @@ from visionsim.simulate.heatsim.physics import AMBIENT_TEMPERATURE_K, STEFAN_BOL
 
 _log = logging.getLogger("rich")
 
+
 def scipy_to_torch_sparse(mat, device, dtype=torch.float32):
     """
     Convert a SciPy sparse matrix to a torch.sparse_coo_tensor on a given device.
@@ -147,9 +148,7 @@ class HeatSimFEM:
         reg_value = 1e-8 if self.sim_params.add_tikhonov_reg else 0.0
 
         # Initial condition
-        u_prev = torch.from_numpy(u0_np.reshape(-1).astype(np.float32)).to(
-            self.device
-        )
+        u_prev = torch.from_numpy(u0_np.reshape(-1).astype(np.float32)).to(self.device)
         u_prev = u_prev.unsqueeze(1)  # (N,1)
 
         # ------------------------------------------------------------------
@@ -215,6 +214,7 @@ class HeatSimFEM:
             )
         except Exception:
             logging.getLogger(__name__).debug("Blender thermal operation failed", exc_info=True)
+
         # Pre-define matrix-free operator A(u)
         def mv(x):
             # x: (N,1)
@@ -234,10 +234,10 @@ class HeatSimFEM:
 
             # Radiation / convection on A side
             if vec_rad_A is not None:
-                tmp = (vec_rad_A.unsqueeze(1) * x)
+                tmp = vec_rad_A.unsqueeze(1) * x
                 out = out + torch.sparse.mm(M_boundary_t, tmp)
             if vec_conv_A is not None:
-                tmp = (vec_conv_A.unsqueeze(1) * x)
+                tmp = vec_conv_A.unsqueeze(1) * x
                 out = out + torch.sparse.mm(M_boundary_t, tmp)
 
             if reg_value > 0.0:
@@ -333,11 +333,7 @@ class HeatSimFEM:
                             rate_K_per_s,
                         )
                         break
-                if (
-                    not nonmonotonic_warned
-                    and len(recent_changes) == WINDOW
-                    and recent_changes[-1] > recent_changes[0]
-                ):
+                if not nonmonotonic_warned and len(recent_changes) == WINDOW and recent_changes[-1] > recent_changes[0]:
                     _log.debug(
                         "[HeatSim:FEM] WARNING: convergence rate not decreasing over "
                         "%d steps (latest %.6f K/s, "
@@ -478,9 +474,7 @@ class HeatSimFEM:
 
         # Time stepping info
         dt = self.gen_params.NUM_FRAME_DELTA / 60.0
-        record_attimestep = int(
-            (self.sim_params.sim_time - self.sim_params.record_time) / dt
-        )
+        record_attimestep = int((self.sim_params.sim_time - self.sim_params.record_time) / dt)
         sim_steps = int(self.sim_params.sim_time / dt)
 
         timesteps = [0, record_attimestep, sim_steps]
@@ -536,7 +530,7 @@ class HeatSimFEM:
                         u_real_arr.append(u_real_np_tmp[1:])
                     else:
                         # Skip some initial results
-                        u_real_arr.append(u_real_np_tmp[start_offset + 1:])
+                        u_real_arr.append(u_real_np_tmp[start_offset + 1 :])
 
         if len(u_real_arr) == 0:
             # No timesteps were recorded, just return initial condition

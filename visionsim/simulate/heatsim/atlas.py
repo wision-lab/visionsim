@@ -62,9 +62,7 @@ def surface_area_m2(verts_mm: np.ndarray, faces: np.ndarray) -> float:
     return float(np.sum(area_mm2)) / 1.0e6
 
 
-def select_for_atlas(
-    n_verts: int, area_m2: float, density: float, *, writeback_possible: bool = True
-) -> bool:
+def select_for_atlas(n_verts: int, area_m2: float, density: float, *, writeback_possible: bool = True) -> bool:
     """True iff this object should join the atlas rather than keep the per-vertex path.
 
     Normally that's a density call: native vertex density below the atlas target means
@@ -93,9 +91,7 @@ def _tile_side(area_m2: float, density: float, tile_min: int, tile_max: int) -> 
     return min(max(side, tile_min), tile_max)
 
 
-def _sides_for_density(
-    areas: dict[str, float], density: float, tile_min: int, tile_max: int
-) -> dict[str, int]:
+def _sides_for_density(areas: dict[str, float], density: float, tile_min: int, tile_max: int) -> dict[str, int]:
     return {name: _tile_side(area, density, tile_min, tile_max) for name, area in areas.items()}
 
 
@@ -171,10 +167,7 @@ def allocate(
         )
 
     positions, atlas_size = _shelf_pack(sides, padding)
-    tiles = {
-        name: TileSpec(obj_name=name, size=(side, side), offset=positions[name])
-        for name, side in sides.items()
-    }
+    tiles = {name: TileSpec(obj_name=name, size=(side, side), offset=positions[name]) for name, side in sides.items()}
     return AtlasLayout(atlas_size=atlas_size, tiles=tiles, effective_density=effective_density, rescaled=rescaled)
 
 

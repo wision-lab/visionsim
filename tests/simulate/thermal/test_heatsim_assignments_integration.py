@@ -88,15 +88,24 @@ def _square():
 
 def _sidecar(tmp_path, block):
     path = tmp_path / "s.thermal.json"
-    path.write_text(json.dumps({
-        "schema_version": 1, "scene": "s.blend", "defaults": {"preset": None}, "materials": block,
-    }), encoding="utf-8")
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "scene": "s.blend",
+                "defaults": {"preset": None},
+                "materials": block,
+            }
+        ),
+        encoding="utf-8",
+    )
     return materials.load_assignments(path)
 
 
 @pytest.fixture(autouse=True)
 def _stub_geometry(monkeypatch):
     """_extract_geometry needs bpy/mathutils; feed it straight from the fake mesh."""
+
     def fake(obj):
         verts = np.asarray(obj.data._xyz, dtype=np.float64) * 1000.0  # m -> mm
         faces = np.asarray([list(p.vertices) for p in obj.data.polygons], dtype=np.int32)
@@ -137,10 +146,13 @@ def test_density_is_converted_to_kg_per_mm3(tmp_path):
 
 
 def test_per_vertex_dirichlet_pins_only_the_source_vertices(tmp_path):
-    sa = _sidecar(tmp_path, {
-        "WOODY": {"preset": "wood"},
-        "STEELY": {"preset": "steel", "role": "DIRICHLET_SOURCE", "dirichlet_K": 350.0},
-    })
+    sa = _sidecar(
+        tmp_path,
+        {
+            "WOODY": {"preset": "wood"},
+            "STEELY": {"preset": "steel", "role": "DIRICHLET_SOURCE", "dirichlet_K": 350.0},
+        },
+    )
     obj = _square()
     combined = adapter._combine([obj], {obj: np.full(4, 10.0)}, _DEFAULTS, _SOLVER_CFG, assignment=sa)
     assert combined is not None
@@ -173,8 +185,10 @@ def test_topology_changing_modifier_falls_back_to_object_level(tmp_path, monkeyp
     crash on kitchen1's modifier-carrying 'Circle' lamp: dmask (6018,) vs irr (6870,)).
     """
     # Evaluated geometry has 6 verts / 2 tris while the base _square() mesh has 4.
-    ev_xyz = np.array([(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0),
-                       (0.0, 1.0, 0.0), (0.5, 0.5, 0.0), (0.5, 0.0, 0.0)], dtype=np.float64)
+    ev_xyz = np.array(
+        [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0), (0.5, 0.5, 0.0), (0.5, 0.0, 0.0)],
+        dtype=np.float64,
+    )
     ev_faces = np.array([[0, 1, 4], [2, 3, 5]], dtype=np.int32)
     monkeypatch.setattr(adapter, "_extract_geometry", lambda obj: (ev_xyz * 1000.0, ev_faces, 6))
 
@@ -207,10 +221,13 @@ def test_without_assignment_emissivity_is_constant():
 
 def test_with_assignment_emissivity_varies_per_slot(tmp_path):
     """The single largest lever on how a thermal frame looks - spec section 4b."""
-    sa = _sidecar(tmp_path, {
-        "WOODY": {"preset": "aluminium_polished"},
-        "STEELY": {"preset": "metal_painted"},
-    })
+    sa = _sidecar(
+        tmp_path,
+        {
+            "WOODY": {"preset": "aluminium_polished"},
+            "STEELY": {"preset": "metal_painted"},
+        },
+    )
     obj = _square()
     scene = type("S", (), {"objects": [obj]})()
     adapter.write_frame_attributes(scene, {"square": np.full((2, 4), 305.0)}, -1, _DEFAULTS, assignment=sa)

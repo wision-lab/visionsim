@@ -43,7 +43,7 @@ def _ensure_uv_layer(obj):
             # Using 1.6% island margin to prevent texture bleeding artifacts
             bpy.ops.uv.smart_project(island_margin=0.016)
             bpy.ops.object.mode_set(mode="OBJECT")
-        except Exception as exc:   # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             warnings.warn(f"HeatSim: Failed to auto-unwrap UVs for {obj.name}: {exc}")
         finally:
             # Restore selection and active object/mode. Force OBJECT mode FIRST and
@@ -167,6 +167,8 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
                 view_layer.objects.active = prev_active
             except Exception:
                 logging.getLogger(__name__).debug("Blender thermal operation failed", exc_info=True)
+
+
 def _ensure_bake_image(base_name: str, name_suffix: str, size: int):
     """Create or reuse a float image that receives baked data."""
     size = max(16, int(size))
@@ -240,7 +242,9 @@ class _BakeMaterialUVOverride:
     patched_tex_nodes: list[tuple[bpy.types.Material, str]]
 
 
-def _pick_source_uv_for_object(obj: bpy.types.Object, uv_snapshot_map: dict[int, tuple[str | None, str | None]]) -> str | None:
+def _pick_source_uv_for_object(
+    obj: bpy.types.Object, uv_snapshot_map: dict[int, tuple[str | None, str | None]]
+) -> str | None:
     """
     Choose the UV map name that represents the object's 'real' texturing UVs.
     Prefer the snapshot's active_render, then active, then any non-bake UV layer.
@@ -422,6 +426,8 @@ def _restore_bake_uv_material_overrides(state: _BakeMaterialUVOverride | None) -
                 logging.getLogger(__name__).debug("Blender thermal operation failed", exc_info=True)
         except Exception:
             logging.getLogger(__name__).debug("Blender thermal operation failed", exc_info=True)
+
+
 def _image_pixels_to_rgb(image) -> np.ndarray | None:
     """Convert a Blender image to (H, W, 3) numpy array."""
     w, h = image.size
@@ -592,7 +598,9 @@ def bake_albedo_map(scene, obj, texture_size: int) -> BakedFluxMap | None:
         view_layer.objects.active = obj
 
         with bpy.context.temp_override(scene=scene, view_layer=view_layer, active_object=obj, selected_objects=[obj]):
-            bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"}, target="IMAGE_TEXTURES", margin=8, margin_type='EXTEND')
+            bpy.ops.object.bake(
+                type="DIFFUSE", pass_filter={"COLOR"}, target="IMAGE_TEXTURES", margin=8, margin_type="EXTEND"
+            )
 
     except Exception as exc:  # noqa: BLE001
         warnings.warn(f"HeatSim albedo bake failed for {obj.name}: {exc}")
@@ -758,7 +766,13 @@ def bake_irradiance_map(scene, obj, texture_size: int, samples: int | None = Non
         view_layer.objects.active = obj
 
         with bpy.context.temp_override(scene=scene, view_layer=view_layer, active_object=obj, selected_objects=[obj]):
-            bpy.ops.object.bake(type="DIFFUSE", pass_filter={"DIRECT", "INDIRECT"}, target="IMAGE_TEXTURES", margin=8, margin_type='EXTEND')
+            bpy.ops.object.bake(
+                type="DIFFUSE",
+                pass_filter={"DIRECT", "INDIRECT"},
+                target="IMAGE_TEXTURES",
+                margin=8,
+                margin_type="EXTEND",
+            )
 
     except Exception as exc:  # noqa: BLE001
         warnings.warn(f"HeatSim irradiance bake failed for {obj.name}: {exc}")

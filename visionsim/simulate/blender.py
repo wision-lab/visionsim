@@ -1571,7 +1571,8 @@ class BlenderService(rpyc.Service):
             scene_assignment = materials.load_assignments(assignment_path)
             server_log.info(
                 "thermal: loaded %d material assignments from %s",
-                len(scene_assignment.materials), assignment_path,
+                len(scene_assignment.materials),
+                assignment_path,
             )
         cache_root = Path(str(self.blend_file) + ".heatsim")
         return defaults, solver_cfg, cache_root, scene_assignment
@@ -1658,11 +1659,17 @@ class BlenderService(rpyc.Service):
         existing = bpy.data.images.get(ATLAS_IMAGE_NAME)
         if existing is not None and not existing.get("heatsim_generated", False):
             raise RuntimeError(f"Image {ATLAS_IMAGE_NAME!r} is user-owned; cannot replace it with a thermal atlas")
-        bound_nodes = [
-            node for mat in bpy.data.materials if mat.use_nodes and mat.node_tree is not None
-            for node in mat.node_tree.nodes
-            if node.bl_idname == "ShaderNodeTexImage" and node.image == existing
-        ] if existing is not None else []
+        bound_nodes = (
+            [
+                node
+                for mat in bpy.data.materials
+                if mat.use_nodes and mat.node_tree is not None
+                for node in mat.node_tree.nodes
+                if node.bl_idname == "ShaderNodeTexImage" and node.image == existing
+            ]
+            if existing is not None
+            else []
+        )
         if existing is not None:
             bpy.data.images.remove(existing)
         image = bpy.data.images.load(str(atlas_path))
@@ -1766,7 +1773,9 @@ class BlenderService(rpyc.Service):
 
         if atlas_plan is not None and atlas_plan.texels:
             atlas_path = adapter.write_atlas(
-                history, atlas_plan, cache_root,
+                history,
+                atlas_plan,
+                cache_root,
                 defaults={
                     "initial_temperature_K": initial_temperature_K,
                     "thermal_diffusivity_mm2_s": thermal_diffusivity_mm2_s,
@@ -1881,9 +1890,7 @@ class BlenderService(rpyc.Service):
             group = self.tree.nodes.new("CompositorNodeGroup")
             group.label = "Thermal Preview"
             group.node_tree = (
-                thermal_preview_node_group(tmin=rng[0], tmax=rng[1])
-                if rng is not None
-                else thermal_preview_node_group()
+                thermal_preview_node_group(tmin=rng[0], tmax=rng[1]) if rng is not None else thermal_preview_node_group()
             )
             self.tree.links.new(self.render_layers.outputs["temperature"], group.inputs["Temperature"])
             # heat-sim writes srgb_encode(inferno_lut) as its PNG; the compositor

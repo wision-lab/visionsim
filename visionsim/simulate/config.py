@@ -217,8 +217,14 @@ class ThermalConfig:
     """Bit depth for temperature/radiance EXRs"""
 
     def __post_init__(self) -> None:
-        positive = ("thermal_diffusivity_mm2_s", "density_kg_m3", "specific_heat_J_kgK",
-                    "sim_time_s", "timestep_s", "atlas_texel_density")
+        positive = (
+            "thermal_diffusivity_mm2_s",
+            "density_kg_m3",
+            "specific_heat_J_kgK",
+            "sim_time_s",
+            "timestep_s",
+            "atlas_texel_density",
+        )
         for name in positive:
             value = getattr(self, name)
             if not math.isfinite(value) or value <= 0:

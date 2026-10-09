@@ -12,7 +12,7 @@ try:
 
     HAS_ROBUST_LAPLACIAN = True
     ROBUST_IMPORT_ERROR: str | None = None
-except Exception as e:   # noqa: BLE001
+except Exception as e:  # noqa: BLE001
     robust_laplacian = None
     HAS_ROBUST_LAPLACIAN = False
     ROBUST_IMPORT_ERROR = str(e)
@@ -30,17 +30,12 @@ def point_cloud_laplacian_and_mass(
         (L, M) as SciPy sparse matrices.
     """
     if not HAS_ROBUST_LAPLACIAN:  # pragma: no cover
-        raise ImportError(
-            "robust_laplacian is not available. "
-            f"Import error: {ROBUST_IMPORT_ERROR or 'unknown'}"
-        )
+        raise ImportError(f"robust_laplacian is not available. Import error: {ROBUST_IMPORT_ERROR or 'unknown'}")
 
     points = np.asarray(points, dtype=np.float64)
     # The library requires fewer neighbours than points.
     n_neighbors = max(1, min(int(n_neighbors), len(points) - 1))
-    L, M = robust_laplacian.point_cloud_laplacian(
-        points, mollify_factor=mollify_factor, n_neighbors=int(n_neighbors)
-    )
+    L, M = robust_laplacian.point_cloud_laplacian(points, mollify_factor=mollify_factor, n_neighbors=int(n_neighbors))
 
     # Sanitize: robust_laplacian can emit non-finite entries for degenerate local
     # neighbourhoods (coincident or near-coincident points, where the local tangent

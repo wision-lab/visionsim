@@ -52,21 +52,21 @@ visionsim.simulate.heatsim.materials module
    :show-inheritance:
    :undoc-members:
 
-visionsim.simulate.heatsim.physics module
------------------------------------------
-
-.. automodule:: visionsim.simulate.heatsim.physics
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 visionsim.simulate.heatsim.names module
 ---------------------------------------
 
 .. automodule:: visionsim.simulate.heatsim.names
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:
+
+visionsim.simulate.heatsim.physics module
+-----------------------------------------
+
+.. automodule:: visionsim.simulate.heatsim.physics
+   :members:
+   :show-inheritance:
+   :undoc-members:
 
 visionsim.simulate.heatsim.properties module
 --------------------------------------------

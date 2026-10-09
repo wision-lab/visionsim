@@ -49,10 +49,10 @@ def thermal_preview_node_group(tmin: float = 295.0, tmax: float = 400.0) -> bpy.
     map_range = ng.nodes.new(MAPRANGE_NODE)
     map_range.name = "TempNormalize"
     set_clamp(map_range, True)
-    map_range.inputs[1].default_value = float(tmin)   # From Min
-    map_range.inputs[2].default_value = float(tmax)   # From Max
-    map_range.inputs[3].default_value = 0.0           # To Min
-    map_range.inputs[4].default_value = 1.0           # To Max
+    map_range.inputs[1].default_value = float(tmin)  # From Min
+    map_range.inputs[2].default_value = float(tmax)  # From Max
+    map_range.inputs[3].default_value = 0.0  # To Min
+    map_range.inputs[4].default_value = 1.0  # To Max
 
     ramp_type = "ShaderNodeValToRGB" if bpy.app.version >= (5, 0, 0) else "CompositorNodeValToRGB"
     color_ramp = ng.nodes.new(ramp_type)
