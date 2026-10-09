@@ -6,6 +6,7 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10"]
         blender-version: ["3.6", "4.5", "latest"]

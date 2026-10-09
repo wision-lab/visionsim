@@ -130,6 +130,7 @@ class BlenderServer(rpyc.utils.server.Server):
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        service: str | None = None,
         background: bool = True,
     ) -> Generator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:
         """Spawn one or more blender instances and start a :class:`BlenderServer` in each.
@@ -163,6 +164,9 @@ class BlenderServer(rpyc.utils.server.Server):
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
+            service (str | None, optional): dotted ``module:ClassName`` path of the
+                :class:`BlenderService` subclass the spawned server should expose. Defaults to None
+                (the base :class:`BlenderService`).
             background (bool, optional): if true, spawn blender in background mode (``-b``). This is faster
                 and does not require a display, but has no OpenGL context, so viewport renders (playblasts)
                 are unavailable. Set to false to keep a window/GL context open (requires a display).
@@ -218,6 +222,11 @@ class BlenderService(rpyc.Service):
     _warned_no_outputs: bool
     _outputs: dict[str, Any]
     _camera: bpy.types.Camera | None
+    _thermal_radiance: dict[str, Any] | None
+    _thermal_assignment: Any | None
+    _loaded_persistent_data: bool | None
+    _persistent_data_before_thermal: bool | None
+    _thermal_atlas_plan: Any | None
 
     def __init__(self) -> None:
         """Initialize render service.
@@ -289,6 +298,7 @@ class BlenderService(rpyc.Service):
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: int = 32,
         preview: bool = False,
+        preview_view_transform: str | None = None,
         c: int | None = None,
         denoise: bool = False,
     ) -> None:
@@ -303,6 +313,9 @@ class BlenderService(rpyc.Service):
             exr_codec (str, optional): EXR codec to use. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth to use. Defaults to 32.
             preview (bool, optional): If true, output node will be configured for preview. Defaults to False.
+            preview_view_transform (str, optional): When set on a preview output, overrides the preview
+                default "Raw" view transform (e.g. "Standard" to sRGB-encode a colormapped image).
+                Ignored for non-preview outputs. Defaults to None (leave the preview default "Raw").
             c (int, optional): Number of channels for registration. Defaults to None (inferred from color_mode).
             denoise (bool, optional): If true, insert a denoise compositor node before the file output.
                 This enables the Cycles denoising data view layer passes (albedo and normal) and connects
@@ -696,6 +709,155 @@ class BlenderService(rpyc.Service):
         .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
         """
 
+    def _thermal_config(
+        self,
+        *,
+        initial_temperature_K: float,
+        thermal_diffusivity_mm2_s: float,
+        density_kg_m3: float,
+        specific_heat_J_kgK: float,
+        emissivity: float,
+        irradiance_scale: float,
+        sim_time_s: float,
+        timestep_s: float,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"],
+        assignments: str | None = None,
+    ) -> tuple[dict, dict, Path, Any]:
+        """Resolve thermal material defaults, solver settings, cache root and sidecar."""
+
+    def _thermal_solve(
+        self,
+        *,
+        initial_temperature_K: float,
+        thermal_diffusivity_mm2_s: float,
+        density_kg_m3: float,
+        specific_heat_J_kgK: float,
+        emissivity: float,
+        irradiance_scale: float,
+        sim_time_s: float,
+        timestep_s: float,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"],
+        assignments: str | None = None,
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+    ) -> tuple[dict, Any, Path]:
+        """Build the requested sampling plan and solve a fixed scene snapshot."""
+
+    def _thermal_load_pack_atlas_image(self, atlas_path: Path) -> None:
+        """Load the EXR :func:`adapter.write_atlas` wrote and (re)register it as the
+        ``HeatSim_Temperature_Atlas`` Blender image, packed so the shader (built right
+        after this call, by ``thermal_shader.setup_temperature_aov``, and later at render
+        time by ``thermal_shader.enter_thermal_scene``) can find it by name -- and so it
+        keeps working even if the source EXR under the ``.heatsim`` cache directory later
+        moves or is cleaned up.
+        """
+    _thermal_temp_range: Incomplete
+
+    @require_initialized_service
+    def exposed_prepare_thermal(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Solve a fixed thermal field, write attributes or atlas, and set up the AOV."""
+
+    @require_initialized_service
+    def exposed_heatsim_solve(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Solve and cache a fixed thermal field without adding render outputs."""
+
+    @require_initialized_service
+    def exposed_include_thermal(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Add the temperature AOV and optional preview and radiance outputs."""
+
+    @staticmethod
+    def _thermal_values(config: dict[str, Any]) -> dict[str, Any]: ...
+    @require_initialized_service
+    def exposed_configure_thermal(self, config: dict[str, Any]) -> None:
+        """Validate one serialized ThermalConfig and prepare both thermal outputs."""
+
+    @require_initialized_service
+    def exposed_heatsim_solve_config(self, config: dict[str, Any]) -> None:
+        """Validate one serialized ThermalConfig and solve without render outputs."""
+
     @require_initialized_service
     def exposed_load_addons(self, *addons: str) -> None:
         """Load blender addons by name (case-insensitive).
@@ -906,17 +1068,7 @@ class BlenderService(rpyc.Service):
 
     @require_initialized_service
     def exposed_render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> None:
-        """Same as first setting current frame then rendering it.
-
-        Warning:
-            Calling this has the side-effect of changing the current frame.
-
-        Args:
-            frame_number (int): frame to render
-            allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
-            dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-        """
+        """Render one camera frame using the current scene state."""
 
     @require_initialized_service
     def exposed_render_frames(
@@ -1093,6 +1245,7 @@ class BlenderClient:
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        service: str | None = None,
         background: bool = True,
     ) -> Generator[Self]:
         """Spawn and connect to a blender server.
@@ -1113,6 +1266,9 @@ class BlenderClient:
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
+            service (str | None, optional): dotted ``module:ClassName`` path of the
+                :class:`BlenderService` subclass the spawned server should expose. Defaults to None
+                (the base :class:`BlenderService`).
             background (bool, optional): if true, spawn blender in background mode (``-b``). Background mode
                 has no OpenGL context, so viewport renders (playblasts) require ``background=False``, which
                 also requires a display. Defaults to True.
@@ -1520,6 +1676,101 @@ class BlenderClient:
         """
 
     @type_check_only
+    def prepare_thermal(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Solve a fixed thermal field, write attributes or atlas, and set up the AOV."""
+
+    @type_check_only
+    def heatsim_solve(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Solve and cache a fixed thermal field without adding render outputs."""
+
+    @type_check_only
+    def include_thermal(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Add the temperature AOV and optional preview and radiance outputs."""
+
+    @type_check_only
+    def configure_thermal(self, config: dict[str, Any]) -> None:
+        """Validate one serialized ThermalConfig and prepare both thermal outputs."""
+
+    @type_check_only
+    def heatsim_solve_config(self, config: dict[str, Any]) -> None:
+        """Validate one serialized ThermalConfig and solve without render outputs."""
+
+    @type_check_only
     def load_addons(self, *addons: str) -> None:
         """Load blender addons by name (case-insensitive).
 
@@ -1724,17 +1975,7 @@ class BlenderClient:
 
     @type_check_only
     def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> None:
-        """Same as first setting current frame then rendering it.
-
-        Warning:
-            Calling this has the side-effect of changing the current frame.
-
-        Args:
-            frame_number (int): frame to render
-            allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
-            dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-        """
+        """Render one camera frame using the current scene state."""
 
     @type_check_only
     def render_frames(
@@ -1874,6 +2115,9 @@ class BlenderClients(tuple):
         """
 
     def _method_dispatch_factory(self, name: str, method: Callable) -> Callable: ...
+    def __getattr__(self, name: str) -> Callable[..., Any]:
+        """Dispatch a remote service method across the connected clients."""
+
     def __enter__(self) -> Self:
         """Connect all clients to their render servers via a context manager.
 
@@ -1901,6 +2145,7 @@ class BlenderClients(tuple):
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        service: str | None = None,
         background: bool = True,
     ) -> Generator[Self]:
         """Spawn and connect to one or more blender servers.
@@ -1922,6 +2167,9 @@ class BlenderClients(tuple):
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
+            service (str | None, optional): dotted ``module:ClassName`` path of the
+                :class:`BlenderService` subclass the spawned server should expose. Defaults to None
+                (the base :class:`BlenderService`).
             background (bool, optional): if true, spawn blender instances in background mode (``-b``). Background
                 mode has no OpenGL context, so viewport renders (playblasts) require ``background=False``, which
                 also requires a display. Defaults to True.
@@ -2401,6 +2649,101 @@ class BlenderClients(tuple):
         """
 
     @type_check_only
+    def prepare_thermal(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Solve a fixed thermal field, write attributes or atlas, and set up the AOV."""
+
+    @type_check_only
+    def heatsim_solve(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Solve and cache a fixed thermal field without adding render outputs."""
+
+    @type_check_only
+    def include_thermal(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Add the temperature AOV and optional preview and radiance outputs."""
+
+    @type_check_only
+    def configure_thermal(self, config: dict[str, Any]) -> None:
+        """Validate one serialized ThermalConfig and prepare both thermal outputs."""
+
+    @type_check_only
+    def heatsim_solve_config(self, config: dict[str, Any]) -> None:
+        """Validate one serialized ThermalConfig and solve without render outputs."""
+
+    @type_check_only
     def load_addons(self, *addons: str) -> None:
         """Load blender addons by name (case-insensitive).
 
@@ -2605,17 +2948,7 @@ class BlenderClients(tuple):
 
     @type_check_only
     def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> None:
-        """Same as first setting current frame then rendering it.
-
-        Warning:
-            Calling this has the side-effect of changing the current frame.
-
-        Args:
-            frame_number (int): frame to render
-            allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
-            dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-        """
+        """Render one camera frame using the current scene state."""
 
     @type_check_only
     def render_playblast(

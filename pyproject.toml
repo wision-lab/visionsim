@@ -26,6 +26,8 @@ dependencies = [
     "torch",
     "matplotlib",
     "scipy",
+    "robust-laplacian; sys_platform != 'win32'",
+    "robust-laplacian!=1.1.0; sys_platform == 'win32'",  # 1.1.0 crashes inside Windows Blender.
     "invoke",
     "natsort",
     "rich",
@@ -57,13 +59,15 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 121
+force-exclude = true
 exclude = ["visionsim/interpolate/rife/*"]
 
+[tool.ruff.lint.per-file-ignores]
+"visionsim/simulate/heatsim/materials.py" = ["TRY004"]
+
 [tool.mypy]
-exclude = [
-    "visionsim/interpolate/rife/*",
-]
-follow_imports="skip"
+exclude = ["visionsim/interpolate/rife/*"]
+follow_imports = "skip"
 
 [dependency-groups]
 dev = [

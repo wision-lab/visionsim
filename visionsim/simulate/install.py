@@ -27,6 +27,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Install dependencies into blender's runtime.")
     parser.add_argument("--version", type=str)
     parser.add_argument("--editable", action="store_true")
+    parser.add_argument(
+        "--torch-index-url",
+        type=str,
+        default=None,
+        help="Optional PyTorch wheel index matching this machine's accelerator",
+    )
     parser.add_argument("path", type=str, nargs="?")
     args, unknown = parser.parse_known_args(sys.argv[index:])
 
@@ -48,6 +54,17 @@ if __name__ == "__main__":
     print(f"Blender Python executable: {sys.executable}", flush=True)
     print(f"Blender Python path: {sys.path}", flush=True)
 
+    # Older Windows Blender runtimes cannot initialize c10.dll from newer Torch wheels.
+    torch_spec = "torch<2.9" if sys.platform == "win32" and bpy.app.version < (5, 0, 0) else "torch"
+    torch_cmd = base_cmd + ["pip", "install", torch_spec]
+    if args.torch_index_url:
+        torch_cmd += ["--index-url", args.torch_index_url]
+    # robust-laplacian 1.1.0 crashes on import inside Windows Blender.
+    laplacian_spec = "robust_laplacian!=1.1.0" if sys.platform == "win32" else "robust_laplacian"
+
+    # NOTE: the core visionsim install precedes the torch/scipy/robust_laplacian
+    # step so that a torch/index hiccup can never block the base package setup
+    # (scipy/robust_laplacian are not on the PyTorch index, so they go via PyPI).
     commands = [
         base_cmd + ["ensurepip"],
         base_cmd + ["pip", "install", "-U", "pip"],
@@ -55,6 +72,8 @@ if __name__ == "__main__":
         base_cmd
         + ["pip", "install", "--no-warn-script-location", "--force-reinstall", "--no-dependencies", "--verbose"]
         + module_spec,
+        torch_cmd,
+        base_cmd + ["pip", "install", "scipy", laplacian_spec],
     ]
 
     try:
