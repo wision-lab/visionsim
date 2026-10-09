@@ -184,15 +184,19 @@ Diffuse Passes
 Diffuse passes capture the light that is reflected uniformly in all directions. When enabled, multiple passes are captured depending on the render engine.
 
 For CYCLES:
+
 - **Diffuse Direct:** Light from sources that hits surfaces directly.
 - **Diffuse Indirect:** Light that has bounced off other surfaces before hitting the current surface.
 - **Diffuse Color:** The base color of the surfaces.
 
 For EEVEE:
+
 - **Diffuse Light:** The combined direct and indirect diffuse lighting.
 - **Diffuse Color:** The base color of the surfaces.
 
 See :meth:`include_diffuse_pass <visionsim.simulate.blender.BlenderService.exposed_include_diffuse_pass>` and the `Blender documentation <https://docs.blender.org/manual/en/latest/render/layers/passes.html#light>`_ for more.
+
+See :doc:`Light Passes <../../tutorials/light-passes>` for rendered examples of each pass.
 
 |
 
@@ -202,15 +206,19 @@ Specular Passes
 Specular passes capture the directional reflection of light, often seen as "highlights" or "shininess". When enabled, multiple passes are captured depending on the render engine.
 
 For CYCLES (these are called "Glossy" passes):
+
 - **Glossy Direct:** Directional light from sources.
 - **Glossy Indirect:** Directional light from other surfaces (reflections).
 - **Glossy Color:** The color of the specular reflection.
 
 For EEVEE:
+
 - **Specular Light:** The combined specular lighting.
 - **Specular Color:** The color of the specular reflection.
 
 See :meth:`include_specular_pass <visionsim.simulate.blender.BlenderService.exposed_include_specular_pass>` and the `Blender documentation <https://docs.blender.org/manual/en/latest/render/layers/passes.html#light>`_ for more.
+
+See :doc:`Light Passes <../../tutorials/light-passes>` for rendered examples of each pass.
 
 |
 

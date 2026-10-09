@@ -26,6 +26,7 @@ extensions = [
     "click_extra.sphinx",
     "sphinxcontrib.video",
     "sphinx.ext.autosectionlabel",
+    "sphinx_design",
 ]
 templates_path = ["_templates"]
 exclude_patterns = []
