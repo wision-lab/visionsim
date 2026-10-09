@@ -155,7 +155,7 @@ An event camera (emulated using :func:`emulate.events <visionsim.cli.emulate.eve
    :language: bash
    :lines: 21-23
 
-Each event is a tuple of ``(x, y, t, p)``: the pixel location, the timestamp in microseconds and the polarity, where ``p = 1`` marks a brightness increase and ``p = -1`` a decrease. Events are written one per line to ``events.txt``. The ``--preview-step`` flag additionally accumulates events into visualization frames, with ON events in blue and OFF events in red; previews are off unless it is set, and the command above passes 1 to render one per input frame.
+Each event is a tuple of ``(t, x, y, p)``: the timestamp in microseconds, the pixel location and the polarity, where ``p = 1`` marks a brightness increase and ``p = -1`` a decrease. Events are written one per line to ``events.txt``. The ``--preview-step`` flag additionally accumulates events into visualization frames, with ON events in blue and OFF events in red; previews are off unless it is set, and the command above passes 1 to render one per input frame.
 
 Indirect Time-of-Flight Camera
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

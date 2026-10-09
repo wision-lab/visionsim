@@ -6,9 +6,10 @@ nodes as ``NODES`` so :func:`all_task` can merge every page into one graph.
 
 Figures and datasets are rebuilt only when the files a node declares are missing.
 A page task walks up from its leaf figures to see what has to be re-provisioned
-and then runs those nodes back down the graph.  ``--force`` rebuilds every figure
-and whatever it requires even when their files are present.  ``--dry-run`` only
-reports what would happen.
+and then runs those nodes back down the graph.  ``--force`` marks every figure
+stale, so its requirements are re-evaluated and re-run only when their own
+outputs are missing or their check fails; intermediates already present are not
+rebuilt.  ``--dry-run`` only reports what would happen.
 """
 
 from __future__ import annotations
@@ -142,7 +143,7 @@ INTERMEDIATES: dict[str, Node] = {
         recipe=_command_recipe(
             "lego-rgb25fps",
             "visionsim emulate.rgb --input-dir=quickstart/lego-interp/"
-            " --output-dir=quickstart/lego-rgb25fps/ --chunk-size=160 --readout-std=0",
+            " --output-dir=quickstart/lego-rgb25fps/ --chunk-size=160 --readout-std=0{force}",
         ),
     ),
     "lego-spc4kHz": Node(
@@ -333,21 +334,20 @@ def select_nodes(
 ) -> set[str]:
     """Return the nodes a run has to attempt.
 
-    A node is stale when any of its files is missing, or its ``check`` reports the
-    output incomplete, or any node it requires is itself stale -- staleness
-    propagates downstream, so a figure whose dataset was re-rendered is rebuilt even
-    though its own file is present and complete. Requirements are evaluated first,
-    which is what lets the walk stop at a satisfied leaf: nothing above it changes,
-    so nothing above it is attempted.
+    Figures are the leaves of the graph and requirements point up the chain to them.
+    A figure whose own output is present and complete is final: nothing is done for
+    it and its chain is not walked, because its inputs were already consumed into it.
+    Only when a figure is missing or the run is forced does the chain get climbed,
+    and the climb stops at the first requirement that is itself satisfied -- from
+    there down to the figure, every unsatisfied node is re-provisioned.
 
-    ``--force`` seeds the figures as stale, so it re-provisions their requirements
-    too, as far up as the graph reaches.
+    ``--force`` treats every figure as stale, which is what re-provisions a chain
+    whose outputs are all present.
 
     Args:
         nodes: The page's own nodes, typically its figures.
         by_name: The page's closed node set, used to look requirements up.
-        force: Rebuild every figure and whatever it requires, even when the files
-            they declare exist.
+        force: Treat every figure as stale, even when the file it declares exists.
 
     Returns:
         The names of the nodes to attempt, in no particular order; callers run them
@@ -356,22 +356,31 @@ def select_nodes(
     stale: set[str] = set()
     seen: set[str] = set()
 
-    def walk(node: Node) -> bool:
-        """Return whether ``node`` is stale, recording it and its requirements."""
+    def visit(node: Node) -> bool:
+        """Return whether ``node`` has to be rebuilt, recording it and its stale requirements."""
         if node.name in seen:
             return node.name in stale
         seen.add(node.name)
 
-        # Requirements first: a node whose output exists but whose input is stale has
-        # to be rebuilt, and a check that reports an output complete says nothing
-        # about what that output was built from.
-        upstream = any(walk(by_name[req]) for req in node.requires)
-        if upstream or (node.is_figure and force) or not node.files or not _satisfied(node):
+        # A satisfied figure is the deliverable, so it and everything above it are left
+        # alone; a missing requirement does not make it stale. --force is the way to
+        # re-provision a chain whose outputs are all present.
+        if node.is_figure and not force and _satisfied(node):
+            return False
+
+        # A node is rebuilt when it is a forced figure, or when its own output is
+        # missing or incomplete. A satisfied requirement stops the climb: it is what
+        # the stale node below it will be built from, so its own chain is not visited.
+        if (node.is_figure and force) or not node.files or not _satisfied(node):
             stale.add(node.name)
-        return node.name in stale
+            for req in node.requires:
+                visit(by_name[req])
+            return True
+        return False
 
     for node in nodes:
-        walk(node)
+        if node.is_figure:
+            visit(node)
     return stale
 
 
@@ -464,11 +473,14 @@ def run_nodes(nodes: tuple[Node, ...], force: bool, dry_run: bool, executable: s
     for name in TopologicalSorter({n: set(nd.requires) for n, nd in by_name.items()}).static_order():
         node = by_name[name]
         if dry_run:
+            if name not in selected:
+                if node.is_figure:
+                    console.print(f"{node.name}: up to date")
+                continue
             if node.is_figure:
                 console.print(f"would build {node.name} -> {node.files[0] if node.files else node.name}")
             else:
                 console.print(f"would run {node.name}")
-            ledger[node.name] = "ok"
             continue
         reason = run_node(node, ledger, executable, name in selected, force)
         if reason is None:

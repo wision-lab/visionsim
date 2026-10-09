@@ -5,11 +5,9 @@ from pathlib import Path
 import numpy as np
 import OpenEXR
 import pytest
-from peewee import SqliteDatabase
 
 from visionsim.dataset import Dataset, Metadata
 from visionsim.simulate.blender import INDEX_PADDING, ITEMS_PER_SUBFOLDER, BlenderClients
-from visionsim.simulate.schema import _MODELS, _Data
 
 
 @pytest.mark.parametrize(
@@ -121,10 +119,11 @@ def test_transforms_schema(cube_dataset):
 
 def test_data_paths_exist(cube_dataset):
     for db_path in cube_dataset.glob("**/*.db"):
-        db = SqliteDatabase(db_path)
-        with db.connection_context(), db.bind_ctx(_MODELS):
-            for data in _Data.select():
-                assert (db_path.parent / data.path).exists()
+        meta = Metadata.load(db_path)
+        assert meta.frames, f"{db_path} has no frames"
+        for frame in meta.frames:
+            assert frame.file_path is not None, f"{db_path} has a frame with no data path"
+            assert (db_path.parent / frame.file_path).exists(), f"{db_path}: {frame.file_path} missing"
 
 
 def test_database_threading(tmp_path_factory, executable):
