@@ -38,7 +38,7 @@ repos:
 
   - id: inv-docs
     name: Build Docs
-    entry: uv run --all-groups invoke build-docs
+    entry: uv run --all-groups invoke clean-docs build-docs
     pass_filenames: False
     language: system
     files: ^(docs/|tasks/figures/)
