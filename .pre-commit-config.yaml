@@ -13,6 +13,13 @@ repos:
     pass_filenames: False
     language: system
 
+  - id: inv-format
+    name: Format Check (with Ruff)
+    entry: uv run --all-groups invoke format --check
+    pass_filenames: False
+    language: system
+    files: \.py$
+
   - id: inv-type-check
     name: Type Check (with Mypy)
     entry: uv run --all-groups invoke type-check

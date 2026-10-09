@@ -88,15 +88,21 @@ def _run(c, command, **kwargs):
 
 
 @task
-def format(c):
+def format(c, check=False):
     """Format code and sort imports with ruff.
 
     Checks ``visionsim/``, ``tests/``, ``examples/``, ``scripts/``, ``docs/`` and
     ``tasks/``, plus any top-level ``*.py`` files.
+
+    Args:
+        check: Report what would change without writing anything, exiting non-zero
+            if any file is unformatted or has unsorted imports. Used by the
+            ``inv-format`` pre-commit hook; omit it to actually rewrite the files.
     """
     python_dirs_string = " ".join(PYTHON_DIRS + glob.glob(os.path.join(ROOT_DIR, "*.py")) + [__file__])
-    _run(c, f"ruff check --select I --fix {python_dirs_string}")
-    _run(c, f"ruff format {python_dirs_string}")
+    fix = "" if check else "--fix"
+    _run(c, f"ruff check --select I {fix} {python_dirs_string}")
+    _run(c, f"ruff format {'--check' if check else ''} {python_dirs_string}")
 
 
 @task
@@ -124,9 +130,7 @@ def test(c, executable=None, paths=None):
             tree.
     """
     targets = [shlex.quote(str(ROOT_DIR / path)) for path in paths or []] or [shlex.quote(str(TEST_DIR))]
-    command = (
-        f"pytest -s --durations=0 -c {shlex.quote(str(ROOT_DIR / 'pyproject.toml'))} {' '.join(targets)}"
-    )
+    command = f"pytest -s --durations=0 -c {shlex.quote(str(ROOT_DIR / 'pyproject.toml'))} {' '.join(targets)}"
     if executable:
         command += f" --executable {shlex.quote(executable)}"
     _run(c, command)
