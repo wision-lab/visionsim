@@ -105,12 +105,12 @@ The modulation and reference waveforms determine how well a sensor separates dep
 
 The figure below shows each scheme as a row, with the emitter waveform, the demodulation waveform of each tap, and the correlation function that tap measures over depth:
 
-.. figure:: ../../_static/itof-codes-all.svg
+.. figure:: ../../_static/sensors/itof-codes-all.svg
     :alt: Modulation, demodulation and correlation functions for every coding scheme
     :align: center
     :class: only-light
 
-.. figure:: ../../_static/itof-codes-all-dark.svg
+.. figure:: ../../_static/sensors/itof-codes-all-dark.svg
     :alt: Modulation, demodulation and correlation functions for every coding scheme
     :align: center
     :class: only-dark

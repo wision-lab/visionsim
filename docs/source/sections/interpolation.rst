@@ -25,25 +25,25 @@ What framerate to render at depends entirely on the scene, it's geometry and tex
 
     .. grid-item::
 
-        .. figure:: ../_static/lego0025-interp.gif
+        .. figure:: ../_static/interpolation/lego0025-interp.gif
 
             6.25 fps interpolated 64x
 
     .. grid-item::
 
-        .. figure:: ../_static/lego0050-interp.gif
+        .. figure:: ../_static/interpolation/lego0050-interp.gif
 
             12.5 fps interpolated 32x
 
     .. grid-item::
 
-        .. figure:: ../_static/lego0100-interp.gif
+        .. figure:: ../_static/interpolation/lego0100-interp.gif
 
             25 fps interpolated 16x
 
     .. grid-item::
 
-        .. figure:: ../_static/lego0200-interp.gif
+        .. figure:: ../_static/interpolation/lego0200-interp.gif
 
             50 fps interpolated 8x
 
@@ -51,12 +51,12 @@ As you can see, *for this scene*, we need to render at a minimum of 50fps for ar
 
 This effect can be shown quantitatively too. In the figure below, which was computed for a different scene, we rendered a test trajectory at many different frame rates and in each case interpolated the resulting data up to a common frame rate of 6400fps, either using RIFE or simple frame duplication. We plot the average perceptual similarity between these interpolated frames and ground truth data (lower is better), as well as the total wall time to render and interpolate these different datasets as measured using a single rendering job, on an Nvidia RTX 3080. 
 
-.. figure:: ../_static/interpolation-error-vs-rendertime.svg
+.. figure:: ../_static/interpolation/interpolation-error-vs-rendertime.svg
    :width: 65%
    :align: center
    :class: only-light
 
-.. figure:: ../_static/interpolation-error-vs-rendertime-dark.svg
+.. figure:: ../_static/interpolation/interpolation-error-vs-rendertime-dark.svg
    :width: 65%
    :align: center
    :class: only-dark

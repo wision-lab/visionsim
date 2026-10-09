@@ -76,13 +76,13 @@ Let's create a quick preview of this dataset by animating every 5th frame into a
 
     .. grid-item::
 
-        .. figure:: _static/lego-gt-preview.gif
+        .. figure:: _static/quick-start/lego-gt-preview.gif
 
             Rendered RGB
 
     .. grid-item::
 
-        .. figure:: _static/lego-depth-preview.gif
+        .. figure:: _static/quick-start/lego-depth-preview.gif
 
             Ground truth depth
 
@@ -180,25 +180,25 @@ Four seconds of the same lego truck, as seen by each sensor:
 
     .. grid-item::
 
-        .. figure:: _static/lego-rgb25fps-preview.gif
+        .. figure:: _static/quick-start/lego-rgb25fps-preview.gif
 
             Conventional Camera
 
     .. grid-item::
 
-        .. figure:: _static/lego-spc4kHz-preview.gif
+        .. figure:: _static/quick-start/lego-spc4kHz-preview.gif
 
             Single Photon Camera
 
     .. grid-item::
 
-        .. figure:: _static/lego-dvs125fps-preview.gif
+        .. figure:: _static/quick-start/lego-dvs125fps-preview.gif
 
             Event Camera
 
     .. grid-item::
 
-        .. figure:: _static/lego-itof-preview.gif
+        .. figure:: _static/quick-start/lego-itof-preview.gif
 
             iToF, first tap
 

@@ -1,7 +1,8 @@
 """Shared helpers for per-page documentation figure tasks.
 
 Every documentation page with generated figures gets a module under this package
-whose path mirrors the page's path below ``docs/source``.
+whose path mirrors the page's path below ``docs/source``. Each page exposes its
+nodes as ``NODES`` so :func:`all_task` can merge every page into one graph.
 
 Figures and datasets are rebuilt only when the files a node declares are missing.
 A page task walks up from its leaf figures to see what has to be re-provisioned
@@ -17,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
+from types import ModuleType
 
 from invoke import Exit, task
 from rich.console import Console
@@ -523,13 +525,31 @@ def page_task(nodes: tuple[Node, ...], name: str, doc: str):
         if run_nodes(nodes, force, dry_run, executable):
             raise Exit(1)
 
-    build.__doc__ = (
-        f"{doc}\n\n"
-        "    Args:\n"
-        "        force: Rebuild every figure and dataset on the page, even if the files they declare already exist.\n"
-        "        dry_run: Report what would happen without writing anything.\n"
-        "        executable: Path to the blender executable to render with. Defaults to whichever blender is on $PATH."
-    )
+    build.__doc__ = doc
+    return build
+
+
+def all_task(pages: tuple[ModuleType, ...]):
+    """Build the single ``figures.all`` task over every page's figures.
+
+    Each page module exposes its nodes as ``NODES``. They are merged into one
+    graph so shared intermediates are provisioned once instead of once per page.
+
+    Args:
+        pages: The page modules whose ``NODES`` make up the combined graph.
+
+    Returns:
+        The collection's default task.
+    """
+    nodes = tuple(node for page in pages for node in page.NODES)
+    resolve_nodes(nodes)  # reject unknown requirements and cycles at import time
+
+    @task(name="all")
+    def build(c, force=False, dry_run=False, executable=None):
+        """Regenerate the figures of every documentation page."""
+        if run_nodes(nodes, force, dry_run, executable):
+            raise Exit(1)
+
     return build
 
 
@@ -539,14 +559,17 @@ def gif_recipe(pattern: str, step: int, name: str) -> Callable[[str | None], Non
     Args:
         pattern: Glob, relative to ``cache/``, matching the source frames.
         step: Keep every ``step``-th frame.
-        name: Output file name, without the directory or the ``.gif`` suffix.
+        name: Output file path relative to ``docs/source/_static``, without the
+            ``.gif`` suffix.
 
     Returns:
         A recipe that ignores the blender executable it is handed.
     """
 
     def recipe(executable: str | None, force: bool = False) -> None:
-        gifski(pattern, step, STATIC / f"{name}.gif")
+        out = STATIC / f"{name}.gif"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        gifski(pattern, step, out)
 
     return recipe
 

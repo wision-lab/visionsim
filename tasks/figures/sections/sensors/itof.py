@@ -179,21 +179,22 @@ def make_grid(schemes: list[tuple[CodingScheme, int, dict]]):
 
 
 def plot_codes() -> None:
-    """Write the light and dark iToF coding-scheme figures into ``_static``."""
-    STATIC.mkdir(parents=True, exist_ok=True)
+    """Write the light and dark iToF coding-scheme figures into ``_static/sensors``."""
+    out = STATIC / "sensors"
+    out.mkdir(parents=True, exist_ok=True)
 
     # The docs pick between the two with the only-light / only-dark classes.
     for dark, suffix in ((False, ""), (True, "-dark")):
         _apply_theme(dark)
         fig = make_grid(SCHEMES)
-        fig.savefig(STATIC / f"itof-codes-all{suffix}.svg", dpi=200, bbox_inches="tight")
+        fig.savefig(out / f"itof-codes-all{suffix}.svg", dpi=200, bbox_inches="tight")
         plt.close(fig)
 
 
 NODES = (
     Node(
         name="itof-codes-all",
-        files=(STATIC / "itof-codes-all.svg", STATIC / "itof-codes-all-dark.svg"),
+        files=(STATIC / "sensors" / "itof-codes-all.svg", STATIC / "sensors" / "itof-codes-all-dark.svg"),
         # The recipe writes both files above; the coding schemes and correlation
         # model it imports are not tracked, so pass --force to rebuild after
         # changing them.
