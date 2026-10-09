@@ -31,7 +31,10 @@ NON_CODE_DIRECTIVES = (
 
 
 def doctree(path):
-    return publish_doctree(path.read_text(), settings_overrides={"report_level": 5, "halt_level": 5})
+    # The docs are UTF-8; read them as such, or the platform default (cp1252 on
+    # Windows) fails to decode the non-ASCII prose before docutils ever runs.
+    text = path.read_text(encoding="utf-8")
+    return publish_doctree(text, settings_overrides={"report_level": 5, "halt_level": 5})
 
 
 def code_blocks(path):
