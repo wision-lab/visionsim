@@ -10,14 +10,18 @@ Playblast vs. Full Render
 
 The two modes side by side, both rendered from ``loft.blend``:
 
-.. list-table::
-    :class: borderless
+.. grid:: 2
+    :gutter: 2
 
-    * - .. figure:: ../_static/playblast-preview.gif
+    .. grid-item::
+
+        .. figure:: ../_static/playblast-preview.gif
 
             Playblast (viewport render)
 
-      - .. figure:: ../_static/playblast-full-preview.gif
+    .. grid-item::
+
+        .. figure:: ../_static/playblast-full-preview.gif
 
             Full render (Cycles)
 
@@ -34,7 +38,7 @@ The CLI mirrors :doc:`render-animation <../quick-start>`, with the same position
 
 .. code-block:: bash
 
-    $ visionsim blender.render-playblast scene.blend output/
+    visionsim blender.render-playblast scene.blend output/
 
 By default the preview is encoded to ``output/playblast/playblast.mp4``. Pass ``--no-video`` to instead get a PNG sequence (``output/playblast/0001.png``, ...) along with a ``transforms.db`` metadata database.
 
@@ -60,7 +64,7 @@ A playblast is a preview, not a dataset. Keep these constraints in mind:
 
 Playblast rendering needs a GL context. Viewport rendering runs in a live window, so Blender cannot run in background mode. ``render-playblast`` forces ``background=False``, which means a display is required. On a headless machine, start a virtual X server first::
 
-    $ DISPLAY="" WAYLAND_DISPLAY="" xvfb-run -a --server-args="-screen 0 1920x1080x24" \
+    DISPLAY="" WAYLAND_DISPLAY="" xvfb-run -a --server-args="-screen 0 1920x1080x24" \
         visionsim blender.render-playblast scene.blend output/
 
 Blender 4.2 or newer is required. The viewport renderer used here is unavailable on older versions, and the command raises a ``RuntimeError`` if yours is too old.

@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="790px" height="460px" viewBox="0 0 580 460">
+
+<!-- <path fill="none" stroke="#A0A0A0" stroke-width="2" d="M90,35V95M90,155V215M90,275V335M260,35V65M260,155V185M260,275V305M90,65H360V425H90M90,185H360M90,305H360M90,385H360M360,245H490"/> -->
+<path fill="none" stroke="#A0A0A0" stroke-width="2" d="
+	M90,35V65
+	M90,155V185
+	M260,35V65
+	M260,155V185
+	M90,65H360V300H90
+	M90,185H360
+	M90,250H360
+	M360,100H490V300
+	M490,143H550
+	"/>
+
+<g fill="#E9AFAF">
+	<rect x="20" y="20" width="140" height="30" rx="6"/>
+	<rect x="190" y="20" width="140" height="30" rx="6"/>
+</g>
+
+<g fill="#DDE9AF">
+	<rect x="20" y="140" width="140" height="30" rx="6"/>
+	<rect x="190" y="140" width="140" height="30" rx="6"/>
+</g>
+
+<g fill="#AFC6E9">
+	<rect x="530" y="130" width="140" height="30" rx="6"/>
+</g>
+<rect fill="#FFE680" x="20" y="235" width="140" height="30" rx="6"/>
+<rect fill="#E9AFDD" x="20" y="285" width="140" height="30" rx="6"/>
+<rect fill="#C8C8C8" x="420" y="280" width="140" height="30" rx="6"/>
+
+<g fill="#C8C8C8">
+	<circle cx="260" cy="65" r="10"/>
+	<circle cx="260" cy="185" r="10"/>
+	<circle cx="390" cy="100" r="10"/>
+
+	<circle cx="490" cy="143" r="10"/>
+</g>
+
+<g font-size="12px" font-family="Tahoma, sans-serif" text-anchor="middle">
+
+	<g font-size="18px">
+		<text x="260" y="70">×</text>
+		<text x="260" y="190">×</text>
+		<text x="390" y="106">+</text>
+
+		<text x="490" y="149">+</text>
+	</g>
+
+	<text x="90" y="39">Diffuse Light</text>
+	<text x="260" y="39">Diffuse Color</text>
+
+	<text x="90" y="159">Specular Light</text>
+	<text x="260" y="159">Specular Color</text>
+
+	<text x="90" y="255">Emission</text>
+	<text x="90" y="304">Environment</text>
+	<text x="600" y="150">Volume Light</text>
+	<text x="490" y="300">Combined</text>
+
+</g>
+
+</svg>

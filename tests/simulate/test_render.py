@@ -138,7 +138,7 @@ def test_data_paths_exist(cube_dataset):
 def test_database_threading(tmp_path_factory, executable):
     tmpdir = tmp_path_factory.mktemp("renders")
     log_dir = tmp_path_factory.mktemp("logs")
-    scene = Path(__file__).parent / "test_files" / "scenes" / "cube.blend"
+    scene = Path(__file__).parent.parent / "test_files" / "scenes" / "cube.blend"
 
     # Spoof frames to bypass render, only save metadata, from a bunch of blender instances.
     # This forces a lot of database writes, which helps test for any potential "Database is locked" errors.
@@ -185,7 +185,7 @@ def test_render_thermal(tmp_path_factory, executable):
 
     out = tmp_path_factory.mktemp("renders")
     log_dir = tmp_path_factory.mktemp("logs")
-    repo_scene = Path(__file__).parent / "test_files" / "scenes" / "cube.blend"
+    repo_scene = Path(__file__).parent.parent / "test_files" / "scenes" / "cube.blend"
 
     # Cache isolation: `prepare_thermal` derives its FEM solve-cache dir from the
     # *source* blend path (`<blend>.heatsim/`). Initialize from a tmp copy so the
@@ -246,7 +246,7 @@ def test_render_thermal(tmp_path_factory, executable):
 
 
 def test_nonthermal_render_without_thermal_dependencies(tmp_path, executable):
-    scene = Path(__file__).parent / "test_files" / "scenes" / "cube.blend"
+    scene = Path(__file__).parent.parent / "test_files" / "scenes" / "cube.blend"
     (tmp_path / "logs").mkdir()
     with BlenderClient.spawn(executable=executable, timeout=60, log=tmp_path / "logs") as client:
         client.initialize(scene.resolve(), tmp_path.resolve())

@@ -11,12 +11,12 @@ Make sure Blender and ffmpeg are on your PATH.
 
 Then you can **install the latest stable release** via `pip <https://pip.pypa.io>`_::
     
-    $ pip install visionsim
+    pip install visionsim
 
 
 Finally, to install additional dependencies into Blender's runtime, you can run the following::
 
-    $ visionsim post-install
+    visionsim post-install
 
 
 We currently support **Python 3.9+**. Users still on Python 3.8 or older are
@@ -35,18 +35,18 @@ visionsim at a specific install instead.
 Every command that spawns Blender takes a ``--config.executable`` option with
 the path to the Blender binary to use::
 
-    $ visionsim blender.render-animation scene.blend output/ \
+    visionsim blender.render-animation scene.blend output/ \
         --config.executable=/opt/blender-4.2/blender
 
 When Blender comes from a package manager, the value can be the full invocation
 command. For Flatpak::
 
-    $ visionsim blender.render-animation scene.blend output/ \
+    visionsim blender.render-animation scene.blend output/ \
         --config.executable="flatpak run --die-with-parent org.blender.Blender"
 
 ``post-install`` takes the same path via ``--executable``::
 
-    $ visionsim post-install --executable=/opt/blender-4.2/blender
+    visionsim post-install --executable=/opt/blender-4.2/blender
 
 Each Blender version ships its own Python interpreter and site-packages, so
 dependencies must be installed into every version you render with. Run
@@ -71,12 +71,13 @@ Bash Support
 
 First, find and make directory for local completions::
 
-    $ completion_dir=${BASH_COMPLETION_USER_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion}/completions/
-    $ mkdir -p $completion_dir
+    completion_dir="${BASH_COMPLETION_USER_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion}"
+    completion_dir="$completion_dir/completions/"
+    mkdir -p "$completion_dir"
 
 Next, write completion script::
 
-    $ visionsim --tyro-write-completion bash ${completion_dir}/visionsim
+    visionsim --tyro-write-completion bash ${completion_dir}/visionsim
 
 |
 
@@ -85,13 +86,13 @@ ZSH Support
 
 First, make directory for local completions::
 
-$ mkdir -p ~/.zfunc
+    mkdir -p ~/.zfunc
 
 Next, write completion script::
 
-$ visionsim --tyro-write-completion zsh ~/.zfunc/_visionsim
+    visionsim --tyro-write-completion zsh ~/.zfunc/_visionsim
 
 Finally, add the following lines to `.zshrc` file to add `.zfunc` to the function search path::
 
-    $ fpath+=~/.zfunc
-    $ autoload -Uz compinit && compinit
+    fpath+=~/.zfunc
+    autoload -Uz compinit && compinit

@@ -6,7 +6,14 @@ We use `Blender <https://www.blender.org/>`_ to generate ground truth intensity 
 To orchestrate many rendering servers a registry server is spawned and listens for UDP-based broadcast messages from rendered servers that are available. This rendezvous server communicates with the main client to inform it about available workers, enabling the user to connect to the server instances and distribute work amongst the worker pool, or even use multiple render servers to render out a single animation. Servers manage their own logging and exception handling, and, in the event of some unexpected crash, we ensure that the dataset will not get corrupted and all process resources are freed. 
 
 .. figure:: ../../_static/rpc-architecture.svg
-   :width: 65% 
+   :width: 65%
+   :align: center
+   :class: only-light
+
+.. figure:: ../../_static/rpc-architecture-dark.svg
+   :width: 65%
+   :align: center
+   :class: only-dark
 
    Client/Server Rendering Architecture
 

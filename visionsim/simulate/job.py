@@ -42,41 +42,23 @@ def _prepare_render(
     client.move_keyframes(scale=config.keyframe_multiplier)
 
 
-def render_job(
+def _prepare_render_job(
     client: BlenderClient | BlenderClients,
     blend_file: str | os.PathLike,
     root: str | os.PathLike,
     config: RenderConfig,
     *,
-    frame_start: int | None = None,
-    frame_end: int | None = None,
-    frame_step: int | None = None,
     output_blend_file: str | os.PathLike | None = None,
-    dry_run: bool = False,
-    update_fn: UpdateFn | None = None,
 ) -> None:
-    """Render a sequence from a given blender-file.
+    """Load the blend-file and apply the configuration shared by all render jobs.
 
     Args:
-        client (BlenderClient | BlenderClients): The blender client(s) which will be used for rendering.
-            These should already be connected to a ``BlenderServer``, and will get automagically passed
-            in when using this function with ``BlenderClients.pool`` or similar.
+        client (BlenderClient | BlenderClients): The blender client(s) to configure.
         blend_file (str | os.PathLike): Path to blender file to use.
         root (str | os.PathLike): Location at which to save all outputs.
         config (RenderConfig): Render configuration.
-        frame_start (int | None, optional): Frame index to start capture at (inclusive).
-            If None, use start of animation range.
-        frame_end (int | None, optional): frame number to stop capture at (inclusive).
-            If None, use end of animation range.
-        frame_step (int | None, optional): Step with which to capture frames.
-            If None, use step of animation range.
         output_blend_file (str | os.PathLike | None, optional): If set, write the modified blend file to
-            this path. Helpful for troubleshooting. Defaults to not saving.
-        dry_run (bool, optional): If enabled, do not render any frames or ground truth annotations.
-        update_fn (UpdateFn | None, optional): callback function to track render progress.
-            Will first be called with ``total`` kwarg, indicating number of steps to be taken,
-            then will be called with ``advance=1`` at every step. Closely mirrors the `rich.Progress
-            API <https://rich.readthedocs.io/en/stable/reference/progress.html#rich.progress.Progress.update>`_.
+            this path. Defaults to not saving.
     """
     _prepare_render(client, blend_file, root, config)
 
@@ -114,6 +96,45 @@ def render_job(
     if output_blend_file is not None:
         client.save_file(output_blend_file)
 
+
+def render_job(
+    client: BlenderClient | BlenderClients,
+    blend_file: str | os.PathLike,
+    root: str | os.PathLike,
+    config: RenderConfig,
+    *,
+    frame_start: int | None = None,
+    frame_end: int | None = None,
+    frame_step: int | None = None,
+    output_blend_file: str | os.PathLike | None = None,
+    dry_run: bool = False,
+    update_fn: UpdateFn | None = None,
+) -> None:
+    """Render a sequence from a given blender-file.
+
+    Args:
+        client (BlenderClient | BlenderClients): The blender client(s) which will be used for rendering.
+            These should already be connected to a ``BlenderServer``, and will get automagically passed
+            in when using this function with ``BlenderClients.pool`` or similar.
+        blend_file (str | os.PathLike): Path to blender file to use.
+        root (str | os.PathLike): Location at which to save all outputs.
+        config (RenderConfig): Render configuration.
+        frame_start (int | None, optional): Frame index to start capture at (inclusive).
+            If None, use start of animation range.
+        frame_end (int | None, optional): frame number to stop capture at (inclusive).
+            If None, use end of animation range.
+        frame_step (int | None, optional): Step with which to capture frames.
+            If None, use step of animation range.
+        output_blend_file (str | os.PathLike | None, optional): If set, write the modified blend file to
+            this path. Helpful for troubleshooting. Defaults to not saving.
+        dry_run (bool, optional): If enabled, do not render any frames or ground truth annotations.
+        update_fn (UpdateFn | None, optional): callback function to track render progress.
+            Will first be called with ``total`` kwarg, indicating number of steps to be taken,
+            then will be called with ``advance=1`` at every step. Closely mirrors the `rich.Progress
+            API <https://rich.readthedocs.io/en/stable/reference/progress.html#rich.progress.Progress.update>`_.
+    """
+    _prepare_render_job(client, blend_file, root, config, output_blend_file=output_blend_file)
+
     client.render_animation(
         frame_start=frame_start,
         frame_end=frame_end,
@@ -124,8 +145,36 @@ def render_job(
     )
 
 
+def frame_job(
+    client: BlenderClient,
+    blend_file: str | os.PathLike,
+    root: str | os.PathLike,
+    config: RenderConfig,
+    *,
+    frame_number: int,
+    output_blend_file: str | os.PathLike | None = None,
+    dry_run: bool = False,
+) -> None:
+    """Render a single frame from a given blender-file.
+
+    Args:
+        client (BlenderClient): The blender client which will be used for rendering. It should already be
+            connected to a ``BlenderServer``.
+        blend_file (str | os.PathLike): Path to blender file to use.
+        root (str | os.PathLike): Location at which to save all outputs.
+        config (RenderConfig): Render configuration.
+        frame_number (int): Index of the frame to render.
+        output_blend_file (str | os.PathLike | None, optional): If set, write the modified blend file to
+            this path. Helpful for troubleshooting. Defaults to not saving.
+        dry_run (bool, optional): If enabled, do not render the frame or ground truth annotations.
+    """
+    _prepare_render_job(client, blend_file, root, config, output_blend_file=output_blend_file)
+
+    client.render_frame(frame_number, allow_skips=config.allow_skips, dry_run=dry_run)
+
+
 def playblast_job(
-    client: BlenderClient | BlenderClients,
+    client: BlenderClient,
     blend_file: str | os.PathLike,
     root: str | os.PathLike,
     config: RenderConfig,
@@ -145,9 +194,8 @@ def playblast_job(
     PNG frame sequence (see :meth:`render_playblast <visionsim.simulate.blender.BlenderService.exposed_render_playblast>`).
 
     Args:
-        client (BlenderClient | BlenderClients): The blender client(s) which will be used for rendering.
-            These should already be connected to a ``BlenderServer``, and will get automagically passed
-            in when using this function with ``BlenderClients.pool`` or similar.
+        client (BlenderClient): The blender client which will be used for rendering. It should already
+            be connected to a ``BlenderServer``, and must not be running in background mode.
         blend_file (str | os.PathLike): Path to blender file to use.
         root (str | os.PathLike): Location at which to save all outputs.
         config (RenderConfig): Render configuration.

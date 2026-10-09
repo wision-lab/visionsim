@@ -45,13 +45,13 @@ Emulation
 
 To emulate an event camera from a sequence of frames, you can use the CLI::
 
-    $ visionsim emulate.events --input-dir=path/to/frames --output-dir=output/dvs --fps=1000
+    visionsim emulate.events --input-dir=path/to/frames --output-dir=output/dvs --fps=1000
 
 Parameters such as thresholds and noise rates can be adjusted:
 
 .. code-block:: bash
 
-    $ visionsim emulate.events --input-dir=path/to/frames --output-dir=output/dvs --fps=1000 \
+    visionsim emulate.events --input-dir=path/to/frames --output-dir=output/dvs --fps=1000 \
         --pos-thres=0.2 --neg-thres=0.2 --sigma-thres=0.03 \
         --cutoff-hz=200 --leak-rate-hz=1.0 --shot-noise-rate-hz=10.0
 

@@ -8,6 +8,7 @@ Subpackages
    :maxdepth: 4
 
    visionsim.emulate.dvs
+   visionsim.emulate.itof
 
 Submodules
 ----------

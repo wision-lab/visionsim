@@ -19,9 +19,9 @@ The same ``service`` argument is available on :meth:`BlenderServer.spawn <vision
 
 To connect to a service you started yourself, launch it manually and use :meth:`BlenderClient.auto_connect <visionsim.simulate.blender.BlenderClient.auto_connect>`: 
 
-.. code-block:: console 
-    
-    $ blender --background --python-use-system-env --python examples/blender/extended_service.py
+.. code-block:: bash
+
+    blender --background --python-use-system-env --python examples/blender/extended_service.py
 
 .. code-block:: python 
 

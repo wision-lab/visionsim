@@ -93,7 +93,9 @@ docs = [
     "click_extra[sphinx,pygments]",
     "myst-parser",  # Should not be needed, but click_extra throws an error if it's not installed
     "sphinx-copybutton",
+    "sphinx-design",
     "sphinxcontrib-video",
     "sphinxcontrib-napoleon",
     "furo",
+    "scienceplots",
 ]

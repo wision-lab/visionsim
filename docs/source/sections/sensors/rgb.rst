@@ -12,7 +12,8 @@ This sensor modeling is incorporated into :func:`emulate_rgb_from_sequence <visi
 
 Using the interpolated frames from the :doc:`../../quick-start` guide, we can easily generate conventional RGB frames with varying levels of noise and blur::
 
-    $ visionsim emulate.rgb --input-dir=quickstart/lego-interp/ --output-dir=quickstart/rgb/ --chunk-size=160 --readout-std=0
+    visionsim emulate.rgb --input-dir=quickstart/lego-interp/ --output-dir=quickstart/rgb/ \
+        --chunk-size=160 --readout-std=0
 
 Similarly, we can emulate an RGB camera using the API like so:
 
@@ -23,24 +24,46 @@ Similarly, we can emulate an RGB camera using the API like so:
 
 Varying the sequence length, we emulate a longer exposure time, leading to more blur:
 
-.. list-table::
-    :class: borderless
+.. grid:: 4
+    :gutter: 2
 
-    * - .. image:: ../../_static/sensors/rgb/lego-exposure-1.png
-      - .. image:: ../../_static/sensors/rgb/lego-exposure-2.png
-      - .. image:: ../../_static/sensors/rgb/lego-exposure-3.png
-      - .. image:: ../../_static/sensors/rgb/lego-exposure-4.png
+    .. grid-item::
+
+        .. image:: ../../_static/sensors/rgb/lego-exposure-1.png
+
+    .. grid-item::
+
+        .. image:: ../../_static/sensors/rgb/lego-exposure-2.png
+
+    .. grid-item::
+
+        .. image:: ../../_static/sensors/rgb/lego-exposure-3.png
+
+    .. grid-item::
+
+        .. image:: ../../_static/sensors/rgb/lego-exposure-4.png
 
 
 The amount of read noise can also be changed, here it is lowered from left to right:
 
-.. list-table::
-    :class: borderless
-    
-    * - .. image:: ../../_static/sensors/rgb/lego-readnoise-1.png
-      - .. image:: ../../_static/sensors/rgb/lego-readnoise-2.png
-      - .. image:: ../../_static/sensors/rgb/lego-readnoise-3.png
-      - .. image:: ../../_static/sensors/rgb/lego-readnoise-4.png
+.. grid:: 4
+    :gutter: 2
+
+    .. grid-item::
+
+        .. image:: ../../_static/sensors/rgb/lego-readnoise-1.png
+
+    .. grid-item::
+
+        .. image:: ../../_static/sensors/rgb/lego-readnoise-2.png
+
+    .. grid-item::
+
+        .. image:: ../../_static/sensors/rgb/lego-readnoise-3.png
+
+    .. grid-item::
+
+        .. image:: ../../_static/sensors/rgb/lego-readnoise-4.png
 
 
 .. [1] `M.D. Grossberg and S.K. Nayar (2004), "Modeling the space of camera response functions" <https://cave.cs.columbia.edu/old/publications/pdfs/Grossberg_PAMI04.pdf>`_
