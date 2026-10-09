@@ -4,22 +4,65 @@ Development
 Editable Install
 ----------------
 
-To install visionsim locally in an editable state with all required development dependencies, clone the repository, navigate to it and run::
-    
+We recommend `uv <https://docs.astral.sh/uv/>`_ for development. It resolves against the
+committed ``uv.lock`` and runs every tool in the project environment, so you never have to
+activate a virtualenv or worry about which interpreter owns ``invoke``. Clone the repository,
+navigate to it and run::
+
+    uv sync --all-groups
+
+Then prefix every command with ``uv run --all-groups``, for example::
+
+    uv run --all-groups inv test
+
+``--all-groups`` is not optional: the toolchain (``invoke``, ruff, mypy, pytest) lives in the
+``dev`` group and the documentation build in ``docs``, so a bare ``uv run invoke`` may not find
+``invoke`` at all.
+
+If you would rather not type ``uv run --all-groups`` for every command, source the environment
+instead and drop the prefix::
+
+    source .venv/bin/activate
+    inv test
+
+``uv sync`` creates ``.venv`` in the project root, so activating it directly works the same way.
+The ``uv run`` form is preferable in scripts and CI because it needs no activation step and picks
+up the lockfile each time.
+
+If you cannot use uv, install into an environment you have activated yourself. The package must be
+installed **editable** either way, because Blender is told to install visionsim from this
+interpreter's import path::
+
     pip install -e . --group dev --group docs
 
 Similarly, to install visionsim in an editable manner within Blender's runtime, you can do the following::
 
-    visionsim post-install --editable
+    uv run --all-groups visionsim post-install --editable
+
+Each Blender version ships its own Python interpreter and site-packages, so ``post-install`` must
+be re-run for every version you want to render or test with. The tests do this automatically for
+the ``--executable`` they are given.
 
 | 
 
 Running Tests
 -------------
 
-We use pytest for testing, all tests can be ran directly using the pytest CLI from the project's root, or equivalently using `inv test`. When running the tests, you can optionally pass in the name of a specific test file/test function and path to a install of Blender to test with, like so:: 
+We use pytest for testing. The whole suite runs from the project root with ``inv test``; since
+the toolchain lives in the development group, invoke it through uv like so::
 
-    pytest tests/simulate/test_render.py --executable=<path-to-blender>
+    uv run --all-groups inv test --executable=<path-to-blender>
+
+To run only part of the suite, pass ``--paths`` after ``inv test`` (repeatable, resolved relative
+to the repo root) or call pytest directly::
+
+    uv run --all-groups inv test --paths tests/simulate/test_render.py --executable=<path-to-blender>
+    uv run --all-groups pytest tests/simulate/test_render.py -rP --executable=<path-to-blender>
+
+``inv test`` reports the slowest tests by default, which is useful because the Blender fixtures
+dominate the runtime. Prefer it over raw pytest when the Blender-side dependencies may be stale:
+the test fixtures re-run ``install_dependencies`` themselves, so raw ``pytest`` skips that repair
+and can fail on version skew between the client and Blender's Python.
 
 To ensure that there's no conflicts due to different versions of the libraries between the server/client sides, a editable ``post-install`` task is run when starting the tests.
 
@@ -28,7 +71,7 @@ The ``-rP`` option is also helpful for seeing any stdout messages that are other
 Some tests (``tests/simulate/test_playblast.py``) exercise Blender's viewport renderer, which opens a real window and needs a GL context, so they are skipped when no display is set. To run them headlessly, install ``xvfb`` and start a virtual display before the test command::
 
     DISPLAY="" WAYLAND_DISPLAY="" xvfb-run -a --server-args="-screen 0 1920x1080x24" \
-        pytest tests/simulate/test_playblast.py
+        uv run --all-groups pytest tests/simulate/test_playblast.py
 
 | 
 

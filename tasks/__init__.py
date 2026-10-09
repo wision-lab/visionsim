@@ -109,17 +109,24 @@ def lint(c):
     _run(c, f"ruff check --extend-select I {' '.join(PYTHON_DIRS)} {__file__}")
 
 
-@task
-def test(c, executable=None):
+@task(iterable=["paths"])
+def test(c, executable=None, paths=None):
     """Run the test suite with pytest.
 
     Passes ``-s`` so test output, including anything printed by a failing test,
-    goes straight to the terminal instead of being captured.
+    goes straight to the terminal instead of being captured, and reports the
+    slowest tests since the Blender fixtures dominate the runtime.
 
     Args:
         executable: Path to Blender executable. Defaults to one found on $PATH.
+        paths: Optional test files or directories to run, relative to the repo
+            root. May be given more than once. Defaults to the whole ``tests/``
+            tree.
     """
-    command = f"pytest -s -c {shlex.quote(str(ROOT_DIR / 'pyproject.toml'))} {shlex.quote(str(TEST_DIR))}"
+    targets = [shlex.quote(str(ROOT_DIR / path)) for path in paths or []] or [shlex.quote(str(TEST_DIR))]
+    command = (
+        f"pytest -s --durations=0 -c {shlex.quote(str(ROOT_DIR / 'pyproject.toml'))} {' '.join(targets)}"
+    )
     if executable:
         command += f" --executable {shlex.quote(executable)}"
     _run(c, command)

@@ -1,27 +1,36 @@
 fail_fast: false
+
+# pre-push is installed alongside pre-commit so the slower hooks below, which are
+# confined to that stage, actually run.
+default_install_hook_types: [pre-commit, pre-push]
+
 repos:
 - repo: local
   hooks:
   - id: inv-lint
     name: Lint (with Ruff)
-    entry: invoke lint
+    entry: uv run --all-groups invoke lint
     pass_filenames: False
     language: system
+
+  - id: inv-type-check
+    name: Type Check (with Mypy)
+    entry: uv run --all-groups invoke type-check
+    pass_filenames: False
+    language: system
+    files: ^(visionsim/|tasks/)
 
   - id: inv-tests
     name: Run Tests
-    entry: invoke test
+    entry: uv run --all-groups invoke test
     pass_filenames: False
     language: system
-
-  - id: inv-clean
-    name: Clean Caches
-    entry: invoke clean
-    pass_filenames: False
-    language: system
+    # The suite renders through Blender and takes minutes; keep it off the commit path.
+    stages: [pre-push]
 
   - id: inv-docs
     name: Build Docs
-    entry: invoke build-docs
+    entry: uv run --all-groups invoke build-docs
     pass_filenames: False
     language: system
+    files: ^(docs/|tasks/figures/)
