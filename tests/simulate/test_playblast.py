@@ -78,4 +78,3 @@ def test_playblast_video_contents(playblast_video_dataset):
     stream = json.loads(probe.stdout)["streams"][0]
     assert int(stream["nb_read_frames"]) == 5
     assert (stream["width"], stream["height"]) == (50, 50)
-

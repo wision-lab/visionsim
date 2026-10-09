@@ -300,6 +300,16 @@ def render_playblast(
     config.autoscale = False
     config.max_job_vram = None
     config.jobs = 1
+
+    # The viewport renderer only writes the color preview, so every other `include_*` is dropped.
+    # Detect them by exclusion rather than by name, so a new pass is caught without touching this.
+    ignored = [
+        name
+        for name in vars(config)
+        if name.startswith("include_") and name != "include_frames" and getattr(config, name)
+    ]
+    if ignored:
+        _log.warning(f"Playblast rendering produces no ground truth annotations, ignoring {', '.join(sorted(ignored))}.")
     _require_blender(config.executable)
 
     with (
