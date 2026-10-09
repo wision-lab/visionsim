@@ -20,7 +20,7 @@ _SOLVER_CFG = {"domain": "POINTS"}
 
 
 # ---------------------------------------------------------------------------
-# Fake-bpy fixtures (mirrors tests/test_heatsim_assignments_integration.py)
+# Fake-bpy fixtures (mirrors test_heatsim_assignments_integration.py)
 # ---------------------------------------------------------------------------
 
 

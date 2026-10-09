@@ -25,7 +25,7 @@ from typing import Any
 from visionsim.simulate.blender import BlenderService, bpy, np
 
 # Dotted ``module:ClassName`` path passed to ``BlenderClient.spawn(service=...)``.
-SERVICE_PATH = "tests.heatsim_test_service:HeatsimTestService"
+SERVICE_PATH = "tests.simulate.thermal.heatsim_test_service:HeatsimTestService"
 
 
 def call_service(client: Any, name: str, *args: Any, **kwargs: Any) -> Any:

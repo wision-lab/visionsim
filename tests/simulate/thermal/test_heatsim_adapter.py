@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from tests.heatsim_test_service import SERVICE_PATH, call_service
+from tests.simulate.thermal.heatsim_test_service import SERVICE_PATH, call_service
 from visionsim.simulate.blender import BlenderClient
 from visionsim.simulate.heatsim import adapter
 

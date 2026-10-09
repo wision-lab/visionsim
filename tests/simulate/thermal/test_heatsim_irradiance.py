@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tests.heatsim_test_service import SERVICE_PATH, call_service
+from tests.simulate.thermal.heatsim_test_service import SERVICE_PATH, call_service
 from visionsim.simulate.blender import BlenderClient
 
 

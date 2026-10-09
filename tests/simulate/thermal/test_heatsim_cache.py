@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from tests.heatsim_test_service import SERVICE_PATH, call_service
+from tests.simulate.thermal.heatsim_test_service import SERVICE_PATH, call_service
 from visionsim.simulate.blender import BlenderClient
 from visionsim.simulate.heatsim import cache
 

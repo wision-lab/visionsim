@@ -207,7 +207,7 @@ def test_digest_tracks_file_bytes(tmp_path):
 # ---------------------------------------------------------------------------
 
 # Distinctive globals: no value here can be confused with a preset or a
-# PropertyGroup default (mirrors tests/test_heatsim_adapter.py).
+# PropertyGroup default (mirrors test_heatsim_adapter.py).
 _FALLBACK = {
     "initial_temperature_K": 300.0,
     "thermal_diffusivity_mm2_s": 0.42,

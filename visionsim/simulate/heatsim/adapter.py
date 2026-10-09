@@ -1074,7 +1074,7 @@ def _combine(
 
 
 def _run_solver(combined: SimpleNamespace, solver_cfg: dict, defaults: dict) -> np.ndarray:
-    """Drive ``HeatSimFEM`` exactly like ``tests/test_heatsim_solver.py``.
+    """Drive ``HeatSimFEM`` exactly like ``tests/simulate/thermal/test_heatsim_solver.py``.
 
     ``NUM_FRAME_DELTA = timestep_s * 60`` so ``dt = NUM_FRAME_DELTA / 60 == timestep_s``;
     ``record_time == sim_time`` records every step => history shape ``(sim_steps+1, N)``.
