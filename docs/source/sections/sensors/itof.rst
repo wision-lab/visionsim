@@ -164,6 +164,8 @@ For an arbitrary number of uniformly shifted captures, the offset and the two qu
 
 Because the phase is only defined modulo :math:`2\pi`, the recovered depth is ambiguous beyond :math:`d_\text{max} = c/2f`. Multi-frequency coding removes that ambiguity: each frequency yields a wrapped phase, and unwrapping them coarse-to-fine extends the range to that of the widest multi-shift group (see :func:`decode_mult_freq_sinusoid <visionsim.emulate.itof.decoding.decode_mult_freq_sinusoid>`).
 
+A pixel whose taps are all equal carries no phase information -- no light returned (for example the renderer's sky sentinel, which the emulator resolves to the ambient term) or the surface is black. The decoders do not flag such pixels; the depth they return is an artefact of the least-squares or interval fit, so downstream code has to check the modulation amplitude itself.
+
 Decoding emulated frames
 ^^^^^^^^^^^^^^^^^^^^^^^^
 

@@ -66,12 +66,6 @@ def decode_sinusoid(measurements: npt.NDArray, freq: float) -> npt.NDArray:
     Returns:
         Recovered depth map of shape ``(n_pixels,)`` in metres.
 
-    Note:
-        The phase is taken with ``atan2``, so pixels with no modulation signal
-        (both quadrature coefficients zero) decode to exactly ``0`` m rather
-        than being flagged. Callers that need to detect signal-free pixels
-        should check the recovered amplitude themselves.
-
     See Also:
         :func:`decode` for the scheme-dispatching entry point, and
         :func:`visionsim.emulate.itof.coding.make_conv_sinusoidal_codes` or
@@ -584,7 +578,10 @@ def decode(
             ``"multFreqSin"``.
 
     Returns:
-        Recovered depth map of shape ``(n_pixels,)`` in metres.
+        Recovered depth map of shape ``(n_pixels,)`` in metres. Pixels with no
+        modulation signal are not flagged by any decoder: they decode to an
+        artefact of the per-scheme fit rather than a physical depth, so callers
+        must check the recovered amplitude themselves.
 
     Raises:
         NotImplementedError: If the coding scheme does not have a decoder.
