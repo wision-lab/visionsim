@@ -1,16 +1,9 @@
-"""Stage 2a/2b — Active light source: pulse kernels and scene radiance.
-
-2a: ``DynamicSource.get_kernel`` — the laser's temporal pulse (IRF). The whole
-    arrival-rate convolution assumes a sum-normalized (energy-conserving) kernel.
-2b: ``PulsedLaser.get_scene_radiance`` — the active-signal reference path
-    (correct units, inverse-square falloff, linearity). Stage 2c will contrast
-    this with the ambient ``Sun`` path (finding A1).
-"""
+"""Stage 2a/2b — Active light source: pulse kernels and scene radiance."""
 
 import numpy as np
 import pytest
 
-from visionsim.emulate.aspc.sources import DynamicSource, PulsedLaser
+from visionsim.emulate.aspc.emitter import DynamicSource, PulsedLaser
 from visionsim.emulate.aspc.utils import radiance_photons, tof2depth, ureg, watts2photons
 
 REL = 1e-9
@@ -79,17 +72,15 @@ class TestPulseKernelShape:
         _, kernel = ds.get_kernel(bin_width=1 * ureg.centimeter, normalize="sum")
         nonzero = kernel[kernel > 0]
         assert nonzero.size > 0
-        # all non-zero entries are equal (a box), so spread is ~0
         assert float(np.ptp(nonzero)) == pytest.approx(0.0, abs=1e-12)
 
 
 # =========================================================================== #
-# Stage 2b — active-source scene radiance (reference path)                     #
+# Stage 2b — active-source scene radiance                                     #
 # =========================================================================== #
 class TestPulsedLaserRadiance:
     def test_returns_photon_radiance_units(self):
         r = _laser().get_scene_radiance(0.5, 5.0 * ureg.meter, 1000, 1e-6 * ureg.steradian)
-        # convertible to count / sr / m**2 without raising, and positive
         assert r.to(radiance_photons).magnitude > 0
         assert r.dimensionality == radiance_photons.dimensionality
 

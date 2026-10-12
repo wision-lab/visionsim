@@ -4,10 +4,10 @@ visionsim.emulate.aspc package
 Submodules
 ----------
 
-visionsim.emulate.aspc.camera module
-------------------------------------
+visionsim.emulate.aspc.ambient module
+-------------------------------------
 
-.. automodule:: visionsim.emulate.aspc.camera
+.. automodule:: visionsim.emulate.aspc.ambient
    :members:
    :undoc-members:
    :show-inheritance:
@@ -16,6 +16,14 @@ visionsim.emulate.aspc.detector module
 --------------------------------------
 
 .. automodule:: visionsim.emulate.aspc.detector
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+visionsim.emulate.aspc.emitter module
+-------------------------------------
+
+.. automodule:: visionsim.emulate.aspc.emitter
    :members:
    :undoc-members:
    :show-inheritance:
@@ -40,22 +48,6 @@ visionsim.emulate.aspc.sensors module
 -------------------------------------
 
 .. automodule:: visionsim.emulate.aspc.sensors
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-visionsim.emulate.aspc.sources module
--------------------------------------
-
-.. automodule:: visionsim.emulate.aspc.sources
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-visionsim.emulate.aspc.units module
------------------------------------
-
-.. automodule:: visionsim.emulate.aspc.units
    :members:
    :undoc-members:
    :show-inheritance:

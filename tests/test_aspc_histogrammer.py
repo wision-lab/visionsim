@@ -1,13 +1,4 @@
-"""Stage 3 — Histogrammer dead-time / pile-up forward models.
-
-3a: distribution invariants (normalization, zero-flux robustness) — deterministic.
-
-Functions under test (histogrammers.py):
-  * batch_distorted_transient_sync  — batched single-hit Coates (first-photon-wins)
-  * batch_distorted_transient_async — batched free-running (power iteration)
-  * calculate_distorted_transient       — per-pixel free-running (eigendecomposition)
-  * calculate_distorted_transient_sync  — per-pixel synchronous multi/single-hit
-"""
+"""Stage 3 — Histogrammer dead-time / pile-up forward models."""
 
 import pytest
 import torch
@@ -22,22 +13,21 @@ from visionsim.emulate.aspc.histogrammers import (
     calculate_distorted_transient_sync,
 )
 
-B = 12  # histogram bins
+B = 12
 
 
 def _phi(shape, seed=0):
     g = torch.Generator().manual_seed(seed)
-    return torch.rand(shape, generator=g) + 0.1  # strictly positive arrival rates
+    return torch.rand(shape, generator=g) + 0.1
 
 
 def _com(x):
-    """Center of mass (mean bin index) of a 1-D distribution."""
     idx = torch.arange(x.shape[-1], dtype=x.dtype)
     return float((idx * x).sum() / x.sum())
 
 
 # =========================================================================== #
-# 3a-1 — closed-form outputs are proper probability distributions (sum to 1)   #
+# 3a-1 — closed-form outputs are proper probability distributions               #
 # =========================================================================== #
 class TestNormalization:
     def test_batch_sync_rows_sum_to_one(self):
@@ -66,7 +56,7 @@ class TestNormalization:
 
 
 # =========================================================================== #
-# 3a-2 — zero-flux robustness (all-zero input -> all-zero output, no NaN/Inf)  #
+# 3a-2 — zero-flux robustness                                                  #
 # =========================================================================== #
 class TestZeroFlux:
     def test_batch_sync_zero_flux(self):
@@ -81,7 +71,7 @@ class TestZeroFlux:
 
     def test_batch_sync_mixed_zero_and_nonzero_rows(self):
         phi = _phi((3, B))
-        phi[1] = 0.0  # middle row is a dead pixel
+        phi[1] = 0.0
         out = batch_distorted_transient_sync(phi, 0, B)
         assert torch.count_nonzero(out[1]) == 0
         assert torch.isclose(out[0].sum(), torch.tensor(1.0), atol=1e-5)
@@ -101,15 +91,12 @@ class TestZeroFlux:
 # =========================================================================== #
 class TestPileUpPhysics:
     def test_no_deadtime_preserves_shape(self):
-        # dt=0 => no pile-up distortion => measured distribution ∝ arrival rate.
         phi = _phi((1, B))
         out = batch_distorted_transient_async(phi, 0, B)
         ratio = out / phi
         assert float(ratio.std() / ratio.mean()) < 1e-5
 
     def test_deadtime_biases_toward_early_bins(self):
-        # Flat arrival rate + dead time => earlier bins win the first photon,
-        # so the distorted transient is monotonically decreasing.
         flat = torch.full((1, B), 0.5)
         s = batch_distorted_transient_sync(flat, 0, B)[0]
         assert torch.all(s[1:] <= s[:-1] + 1e-7)
@@ -125,23 +112,13 @@ class TestPileUpPhysics:
 # 3c — cross-checks between implementations                                    #
 # =========================================================================== #
 class TestImplementationCrossChecks:
-    @pytest.mark.xfail(
-        reason="batch_distorted_transient_async has NOT been migrated to the corrected "
-        "single-pixel kernel: it still re-arms one bin late and uses the inclusive "
-        "survival slice. calculate_distorted_transient is now MC-exact, so the two "
-        "legitimately disagree. Out of scope until the multi-pixel pass.",
-        strict=True,
-    )
     def test_batch_async_matches_eigendecomposition(self):
-        # The vectorized power-iteration must reproduce the original per-pixel
-        # eigendecomposition of the same free-running Markov model.
         phi = _phi((B,), seed=2)
         batched = batch_distorted_transient_async(phi.unsqueeze(0), 3, B, n_iterations=500)[0]
         eigen = calculate_distorted_transient(phi, 3, B)
         assert torch.allclose(batched, eigen, atol=1e-5)
 
     def test_sync_single_hit_matches_coates(self):
-        """Finding H1, now fixed: single-hit calc_sync reduces to Coates."""
         phi = _phi((B,), seed=2)
         coates = batch_distorted_transient_sync(phi.unsqueeze(0), B, B)[0]
         multihit = calculate_distorted_transient_sync(phi, B, B)
@@ -151,9 +128,6 @@ class TestImplementationCrossChecks:
 # =========================================================================== #
 # 3d — Monte-Carlo ground truth vs closed-form forward models                  #
 # =========================================================================== #
-# simulate_pixel_ewh is the sampled reference: it now delegates to the
-# timestamp simulator in detector.py (Poisson arrival *counts* per bin + a
-# dead-time walk). The closed-form fast paths must match it.
 MC_B = 10
 MC_PULSES = 20000
 
@@ -167,30 +141,24 @@ def _mc(phi, free_running, dead_time_bins, n_pulses=MC_PULSES, seed=0):
 
 class TestMonteCarloForwardModel:
     def test_gated_single_hit_matches_coates(self):
-        # Headline check: the fast single-hit path == sampled ground truth.
         phi = _phi((MC_B,), seed=3)
         mc = _mc(phi, free_running=False, dead_time_bins=MC_B)
         coates = batch_distorted_transient_sync(phi.unsqueeze(0), MC_B, MC_B)[0]
         assert torch.allclose(mc, coates, atol=0.02)
 
     def test_gated_single_hit_matches_calc_sync(self):
-        """Finding H1, now fixed: calc_sync single-hit matches sampled truth."""
         phi = _phi((MC_B,), seed=3)
         mc = _mc(phi, free_running=False, dead_time_bins=MC_B)
         calc_sync = calculate_distorted_transient_sync(phi, MC_B, MC_B)
         assert torch.allclose(mc, calc_sync, atol=0.02)
 
     def test_dt0_low_flux_matches_async(self):
-        # At low flux, 1 - e^{-phi} ~ phi, so async(dt=0) ~ MC.
         phi = torch.full((MC_B,), 0.02)
         mc = _mc(phi, free_running=True, dead_time_bins=0, n_pulses=40000)
         async_ = batch_distorted_transient_async(phi.unsqueeze(0), 0, MC_B)[0]
         assert torch.allclose(mc, async_, atol=0.02)
 
     def test_dt0_ground_truth_is_arrival_rate(self):
-        # With zero dead time every arriving photon is detected, so the sampled
-        # truth follows phi itself -- not the per-bin detection probability
-        # 1 - e^{-phi}, which is what a Bernoulli-per-bin sampler would give.
         phi = torch.rand(MC_B, generator=torch.Generator().manual_seed(5)) * 2.0 + 0.5
         mc = _mc(phi, free_running=True, dead_time_bins=0, n_pulses=40000)
         assert torch.allclose(mc, phi / phi.sum(), atol=0.02)
@@ -233,7 +201,7 @@ class TestSimulateEwhDispatch:
 
 
 # =========================================================================== #
-# 3f — EDH is a reduction of the EWH, not a separate detection model           #
+# 3f — EDH is a reduction of the EWH                                           #
 # =========================================================================== #
 EDH_PULSES = 4000
 
@@ -250,8 +218,6 @@ def _edh(n_edh_bins=4, phi=None, free_running=True, dt=0, seed=0, n_pulses=EDH_P
 class TestEdhFromEwh:
     @pytest.mark.parametrize("free_running,dt", [(True, 0), (True, 3), (False, 0), (False, 5)])
     def test_photon_hist_matches_ewh_at_same_seed(self, free_running, dt):
-        """EDH and EWH share one detection model, so a shared seed must give
-        bit-identical histograms -- the whole point of the migration."""
         phi = _phi((B,), seed=2)
         edh_h = HistogrammerEDH(HistConfig())
         ewh_h = Histogrammer(HistConfig())
@@ -266,7 +232,6 @@ class TestEdhFromEwh:
         assert torch.equal(hist_edh, hist_ewh)
 
     def test_photon_hist_is_at_full_tdc_resolution(self):
-        """n_hist_bins counts equi-depth bins; it must not rebin the transient."""
         hist, edh = _edh(n_edh_bins=4)
         assert hist.shape == (B,)
         assert edh.shape == (5,)
@@ -278,15 +243,8 @@ class TestEdhFromEwh:
         assert torch.all(edh[1:] >= edh[:-1]), edh
 
     def test_bins_carry_equal_photon_mass(self):
-        """The defining property: each equi-depth bin holds 1/N of the photons,
-        even though the transient is far from flat.
-
-        Boundaries are fractional -- photon_hist2edh interpolates within the bin
-        straddling each quantile -- so the mass has to be integrated against a
-        linearly interpolated CDF rather than by rounding to whole bins.
-        """
         n_edh = 4
-        phi = torch.linspace(0.05, 0.6, B)  # steep ramp, no single dominant bin
+        phi = torch.linspace(0.05, 0.6, B)
         hist, edh = _edh(n_edh_bins=n_edh, phi=phi, seed=4, n_pulses=20000)
 
         cum = torch.cat([torch.zeros(1), torch.cumsum(hist, 0)])
@@ -307,8 +265,6 @@ class TestEdhFromEwh:
         assert torch.allclose(edh, expected, atol=1.0), (edh, expected)
 
     def test_negative_arrival_rates_do_not_produce_nan(self):
-        """Convolution/offset math can emit small negatives; the old EDH loop fed
-        them straight to torch.poisson and propagated NaN into the boundaries."""
         phi = _phi((B,), seed=8)
         phi[2] = -0.05
         hist, edh = _edh(phi=phi, seed=8)

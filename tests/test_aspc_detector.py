@@ -3,8 +3,6 @@
 The central test is :class:`TestExhaustiveOracle`, which enumerates *every*
 possible photon-arrival pattern over a handful of bins and compares the
 production dead-time walk against an independently written per-photon reference.
-Because it enumerates rather than samples there is no Monte-Carlo error, so any
-disagreement is a real defect rather than noise.
 """
 
 from __future__ import annotations
@@ -16,7 +14,7 @@ import numpy as np
 import pytest
 import torch
 
-from visionsim.emulate.aspc.detector import (
+from visionsim.emulate.aspc.histogrammers import (
     _deadtime_walk,
     sample_photon_arrivals,
     simulate_photon_timestamps,
@@ -36,12 +34,7 @@ MODES = [
 
 
 def reference_detect(counts, n_tbins, dt, free_running, paralyzable, cap):
-    """Independent per-photon reference implementation of the detection rules.
-
-    Deliberately naive: it materialises every individual photon and walks them
-    one at a time, rather than using the "one detection per occupied bin"
-    shortcut the production code takes. Returns a list of ``(cycle, bin)``.
-    """
+    """Independent per-photon reference implementation of the detection rules."""
     n_cycles = counts.shape[0]
     detections = []
     t_armed = -(10**9)
@@ -94,7 +87,7 @@ class TestExhaustiveOracle:
     def test_dead_time_longer_than_cycle(self):
         """Dead time spanning multiple cycles must not saturate at one cycle (M3)."""
         n_tbins, n_cycles = 3, 4
-        dt = 2 * n_tbins + 1  # deliberately longer than one full cycle
+        dt = 2 * n_tbins + 1
         for counts in all_patterns(n_cycles, n_tbins, 1):
             cyc, bns = _deadtime_walk(counts, n_tbins, dt, True, False, 1 << 62)
             got = list(zip(cyc.tolist(), bns.tolist()))
@@ -129,7 +122,6 @@ class TestExpectedRates:
         """With no dead time every photon is detected, so E[counts] == phi exactly."""
         phi = [0.3, 0.7, 0.2]
         acc, total_w = self.expected_counts(phi, 1, 0, True, False, 1 << 62, max_count=8)
-        # Truncating the Poisson support at 8 leaves ~6e-8 of the mass unenumerated.
         assert total_w == pytest.approx(1.0, rel=1e-6)
         for b, p in enumerate(phi):
             assert acc[b] == pytest.approx(p, rel=1e-6), f"bin {b}"
@@ -146,12 +138,6 @@ class TestExpectedRates:
         torch.testing.assert_close(hist, phi, rtol=0.02, atol=1e-3)
 
     def test_bernoulli_model_would_undercount(self):
-        """Guard on the modelling choice: Poisson counts differ from Bernoulli.
-
-        At phi=0.5 per bin a Bernoulli-per-bin sampler registers 1-exp(-phi)
-        instead of phi -- a 21% undercount. This test pins the fact that we do
-        *not* do that, so a regression back to Bernoulli fails loudly.
-        """
         phi = torch.full((3,), 0.5)
         n_pulses = 200_000
         gen = torch.Generator().manual_seed(7)
@@ -177,7 +163,6 @@ class TestSparseSampler:
                 generator=torch.Generator().manual_seed(17),
             )
             hists[mode] = timestamps_to_histogram(ts, n_tbins=len(phi)) / n_pulses
-        # Independent draws, so compare both against phi rather than each other.
         torch.testing.assert_close(hists[True], phi, rtol=0.03, atol=1e-3)
         torch.testing.assert_close(hists[False], phi, rtol=0.03, atol=1e-3)
 
@@ -194,7 +179,6 @@ class TestSparseSampler:
         assert totals[True] == pytest.approx(totals[False], rel=0.03)
 
     def test_cycles_are_uniformly_distributed(self):
-        """Guards the superposition argument: cycle index must be uniform."""
         phi = torch.full((4,), 0.05)
         n_pulses = 20_000
         ts = simulate_photon_timestamps(
@@ -209,7 +193,7 @@ class TestSparseSampler:
         ts = simulate_photon_timestamps(
             phi, 5_000, generator=torch.Generator().manual_seed(1)
         )
-        assert ts.shape[1] == 2  # runs, and stays within the documented contract
+        assert ts.shape[1] == 2
 
     def test_zero_rate_yields_no_detections(self):
         for mode in (True, False):
@@ -219,17 +203,6 @@ class TestSparseSampler:
 
 
 class TestAnalyticRates:
-    """External oracles: closed-form dead-time rates that share no code with the walk.
-
-    The exhaustive oracle above checks the implementation against a reference that
-    encodes the *same* semantics, so it cannot catch a physics error common to
-    both. These formulas are derived independently from renewal theory and are the
-    discrete-bin analogues of the textbook counter dead-time results
-    (``lam/(1+lam*tau)`` and ``lam*exp(-lam*tau)``). The ``tau-1`` rather than
-    ``tau`` reflects that a detection in bin ``g`` blocks bins ``g+1 .. g+tau-1``,
-    leaving bin ``g+tau`` live.
-    """
-
     N_BINS = 64
     N_PULSES = 60_000
     N_SEEDS = 8
@@ -250,7 +223,6 @@ class TestAnalyticRates:
     @pytest.mark.parametrize("lam", [0.01, 0.05, 0.2, 0.5])
     @pytest.mark.parametrize("tau", [1, 3, 10])
     def test_non_paralyzable_rate(self, lam, tau):
-        """Renewal: mean interval is tau bins of dead time plus a Geometric(p) wait."""
         p = 1.0 - math.exp(-lam)
         predicted = 1.0 / (tau + (1.0 - p) / p)
         mean, sem = self._mean_rate(lam, tau, paralyzable=False)
@@ -260,7 +232,6 @@ class TestAnalyticRates:
     @pytest.mark.parametrize("lam", [0.01, 0.05, 0.2, 0.5])
     @pytest.mark.parametrize("tau", [1, 3, 10])
     def test_paralyzable_rate(self, lam, tau):
-        """A bin detects iff it is occupied and the preceding tau-1 bins are empty."""
         p = 1.0 - math.exp(-lam)
         predicted = p * math.exp(-lam * (tau - 1))
         mean, sem = self._mean_rate(lam, tau, paralyzable=True)
@@ -268,14 +239,8 @@ class TestAnalyticRates:
         assert abs(z) < 4.0, f"rate {mean:.6g} vs analytic {predicted:.6g} (z={z:+.2f})"
 
     def test_paralyzable_rate_is_non_monotonic_in_flux(self):
-        """Paralyzable counters peak then collapse; non-paralyzable saturate.
-
-        This is the qualitative signature that distinguishes the two devices, and
-        it must emerge from the simulation rather than being asserted anywhere.
-        """
         tau = 10
         lams = [0.01, 0.05, 0.2, 0.6, 1.5]
-        # A qualitative shape check, so a couple of seeds is plenty.
         par = [self._mean_rate(lam, tau, paralyzable=True, n_seeds=2)[0] for lam in lams]
         non_par = [self._mean_rate(lam, tau, paralyzable=False, n_seeds=2)[0] for lam in lams]
         assert par[-1] < par[2], "paralyzable rate must collapse at high flux"
@@ -287,19 +252,14 @@ class TestAnalyticRates:
 
 
 class TestCoatesRoundTrip:
-    """Gated single-hit is the regime the Coates estimator inverts exactly."""
-
     @staticmethod
     def coates(hist, n_pulses):
-        """Recover phi from a first-photon-wins histogram."""
-        # Cycles still "alive" entering bin b = those that had not yet detected.
         consumed = torch.cat([torch.zeros(1), torch.cumsum(hist, 0)[:-1]])
         alive = n_pulses - consumed
         return torch.log(alive / (alive - hist))
 
     @pytest.mark.parametrize("scale", [0.02, 0.1, 0.4])
     def test_recovers_phi(self, scale):
-        """Round-trip through pile-up: simulate gated single-hit, invert, recover phi."""
         n_bins, n_pulses = 12, 400_000
         phi = torch.linspace(0.5, 1.5, n_bins) * scale
         ts = simulate_photon_timestamps(
@@ -310,22 +270,18 @@ class TestCoatesRoundTrip:
         torch.testing.assert_close(recovered, phi, rtol=0.05, atol=2e-3)
 
     def test_raw_histogram_is_pile_up_distorted(self):
-        """The raw histogram must be visibly biased early -- that is what Coates fixes."""
         n_bins, n_pulses = 12, 200_000
         phi = torch.full((n_bins,), 0.4)
         ts = simulate_photon_timestamps(
             phi, n_pulses, free_running=False, generator=torch.Generator().manual_seed(78)
         )
         hist = timestamps_to_histogram(ts, n_bins)
-        # phi is flat, so any decay in the raw histogram is pure pile-up.
         assert float(hist[0]) > 2.0 * float(hist[-1])
         recovered = self.coates(hist, n_pulses)
         torch.testing.assert_close(recovered, phi, rtol=0.05, atol=2e-3)
 
 
 class TestDeadTimeInvariants:
-    """Properties that must hold on any timestamp stream, checked directly."""
-
     @pytest.mark.parametrize("dt", [1, 3, 7])
     def test_no_two_detections_closer_than_dead_time(self, dt):
         n_tbins = 16
@@ -334,23 +290,21 @@ class TestDeadTimeInvariants:
         ts = simulate_photon_timestamps(
             phi, 500, dead_time_bins=dt, free_running=True, generator=gen
         )
-        assert ts.shape[0] > 50, "test needs a non-trivial number of detections"
+        assert ts.shape[0] > 50
         g = ts[:, 0] * n_tbins + ts[:, 1]
         gaps = g[1:] - g[:-1]
         assert int(gaps.min()) >= dt, f"found a gap of {int(gaps.min())} < dead time {dt}"
 
     def test_gated_resets_at_cycle_boundary(self):
-        """A detection late in a cycle must not block the next cycle when gated."""
         n_tbins = 4
         counts = np.zeros((2, n_tbins), dtype=np.int64)
-        counts[0, 3] = 1  # last bin of cycle 0
-        counts[1, 0] = 1  # first bin of cycle 1
+        counts[0, 3] = 1
+        counts[1, 0] = 1
         dt = 3
 
         cyc, bns = _deadtime_walk(counts, n_tbins, dt, False, False, 1 << 62)
         assert list(zip(cyc.tolist(), bns.tolist())) == [(0, 3), (1, 0)]
 
-        # Free-running, by contrast, must suppress the second detection.
         cyc, bns = _deadtime_walk(counts, n_tbins, dt, True, False, 1 << 62)
         assert list(zip(cyc.tolist(), bns.tolist())) == [(0, 3)]
 
@@ -365,7 +319,6 @@ class TestDeadTimeInvariants:
         assert n_par < n_non_par, "at this flux paralyzable must lose detections"
 
     def test_paralyzable_equals_non_paralyzable_at_low_flux(self):
-        """The two models converge when coincident arrivals are rare."""
         n_tbins = 12
         phi = torch.full((n_tbins,), 0.002)
         counts = sample_photon_arrivals(phi, 2000, generator=torch.Generator().manual_seed(5))
@@ -377,8 +330,6 @@ class TestDeadTimeInvariants:
 
 
 class TestGatedSingleHit:
-    """The conventional synchronous setup, and its vectorised fast path."""
-
     def test_matches_first_occupied_bin(self):
         n_tbins = 8
         phi = torch.linspace(0.05, 0.5, n_tbins)
@@ -400,7 +351,6 @@ class TestGatedSingleHit:
 
     @pytest.mark.parametrize("dt", [0, 1, 5, 100])
     def test_dead_time_is_irrelevant(self, dt):
-        """Gated single-hit stops after the first photon, so dt cannot bind."""
         phi = torch.full((10,), 0.3)
         gen = torch.Generator().manual_seed(11)
         got = simulate_photon_timestamps(
@@ -413,7 +363,6 @@ class TestGatedSingleHit:
         torch.testing.assert_close(got, baseline)
 
     def test_fast_path_agrees_with_walk(self):
-        """The vectorised gated-single-hit path must equal the general scan."""
         n_tbins = 6
         phi = torch.full((n_tbins,), 0.25)
         counts = sample_photon_arrivals(phi, 500, generator=torch.Generator().manual_seed(8))
@@ -453,7 +402,6 @@ class TestHistogramReduction:
         torch.testing.assert_close(hist, torch.tensor([1.0, 0.0, 2.0, 1.0]))
 
     def test_rebins_to_coarser_histogram(self):
-        """n_hist_bins != n_tbins is supported by merging bins (M2)."""
         ts = torch.tensor([[0, 0], [0, 1], [0, 2], [0, 5]], dtype=torch.int64)
         hist = timestamps_to_histogram(ts, n_tbins=6, n_hist_bins=3)
         torch.testing.assert_close(hist, torch.tensor([2.0, 1.0, 1.0]))
@@ -501,7 +449,6 @@ class TestApiContract:
             sample_photon_arrivals(torch.zeros(3, 8), 10)
 
     def test_negative_rates_are_clamped(self):
-        """Convolution and offset arithmetic can produce small negative rates."""
         phi = torch.tensor([-0.5, 0.0, 0.3])
         counts = sample_photon_arrivals(phi, 100, generator=torch.Generator().manual_seed(2))
         assert int(counts[:, 0].sum()) == 0

@@ -1,12 +1,4 @@
-"""Stage 1 — Pure physics / unit-conversion functions in ``visionsim.emulate.aspc.utils``.
-
-These are the lowest-level building blocks (no torch tensors, no config, no data
-loader). Each test has a closed-form oracle so a failure localizes to one formula.
-
-Known-bug findings from the audit are encoded as ``xfail`` so they are documented
-and tracked without breaking the suite. When a bug is fixed the corresponding test
-flips to ``xpass`` and pytest flags it.
-"""
+"""Stage 1 — Pure physics / unit-conversion functions in ``visionsim.emulate.aspc.utils``."""
 
 import numpy as np
 import pytest
@@ -27,7 +19,7 @@ REL = 1e-9
 
 
 # --------------------------------------------------------------------------- #
-# tof2depth: depth = c * t / 2  (one-way distance from round-trip time)        #
+# tof2depth: depth = c * t / 2                                                 #
 # --------------------------------------------------------------------------- #
 class TestTof2Depth:
     def test_returns_length(self):
@@ -35,9 +27,8 @@ class TestTof2Depth:
         assert d.check("[length]")
 
     def test_matches_formula_with_module_constant(self):
-        # Validates the *formula* against whatever speed of light the module uses.
         t = 1e-6 * ureg.second
-        expected = aspc_utils.c * t.to(ureg.second).magnitude / 2.0  # meters
+        expected = aspc_utils.c * t.to(ureg.second).magnitude / 2.0
         assert tof2depth(t).to(ureg.meter).magnitude == pytest.approx(expected, rel=REL)
 
     def test_is_linear_in_time(self):
@@ -49,9 +40,8 @@ class TestTof2Depth:
         assert tof2depth(0.0 * ureg.second).to(ureg.meter).magnitude == pytest.approx(0.0)
 
     def test_uses_physical_speed_of_light(self):
-        # Finding A2 (fixed): utils.c now imports scipy.constants.c.
         t = 1e-6 * ureg.second
-        expected = C_SCIPY * 1e-6 / 2.0  # physically correct one-way depth
+        expected = C_SCIPY * 1e-6 / 2.0
         assert tof2depth(t).to(ureg.meter).magnitude == pytest.approx(expected, rel=1e-6)
 
 
@@ -80,7 +70,6 @@ class TestWatts2Photons:
         )
 
     def test_shorter_wavelength_fewer_photons(self):
-        # Higher-energy (shorter wavelength) photons => fewer of them for same energy.
         blue = watts2photons(1.0 * ureg.watt, 1.0 * ureg.second, 400 * ureg.nanometer).magnitude
         red = watts2photons(1.0 * ureg.watt, 1.0 * ureg.second, 700 * ureg.nanometer).magnitude
         assert blue < red
@@ -109,7 +98,6 @@ class TestPyramidSolidAngle:
         assert x == pytest.approx(y, rel=REL)
 
     def test_small_angle_limit_approaches_product(self):
-        # For small apex angles, Omega ~ a * b (in radians).
         a = b = 1.0 * ureg.degree
         ar = np.deg2rad(1.0)
         got = pyramid_solid_angle(a, b).to(ureg.steradian).magnitude
