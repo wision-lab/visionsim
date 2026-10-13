@@ -130,9 +130,9 @@ Using ``--dry-run`` reports what would happen without writing anything, and ``--
 
 A page is one dependency graph. Its module lists only the figures the page owns, and each figure names the intermediates it needs through ``requires``. Shared intermediates, such as the rendered and interpolated datasets several quick-start figures read, live in ``_page.INTERMEDIATES`` and are provisioned at most once per invocation. Each node is attempted once. A node whose requirement failed is skipped with one line naming that requirement, so a failed render is reported once at its root instead of failing again for every dependent. Cycles and unknown requirement names are rejected when the task loads, so ``inv --list`` fails instead of a run half-way through.
 
-Figures and intermediates that render need ``cache/lego.blend``, obtained manually or with `gdown <https://github.com/wkentaro/gdown>`_ using the ``--fuzzy --folder`` command in ``examples/README.md``; without it the blender command fails and the node is reported as skipped.
+Figures and intermediates that render need the scene blends in ``cache/`` (``lego.blend`` for the interpolation figures, ``ultramodern.blend`` for the quick start), obtained manually or with `gdown <https://github.com/wkentaro/gdown>`_ using the ``--fuzzy --folder`` command in ``examples/README.md``; without them the blender command fails and the node is reported as skipped.
 
-Some tasks use ``gifski`` to encode preview gif which is not a Python dependency. Install with ``cargo install gifski``, or a package from https://gif.ski.
+Some tasks use ``ffmpeg`` to encode preview videos, which is not a Python dependency. Install it with your system package manager, or a build from https://ffmpeg.org/download.html.
 
 Paths resolve from the repository root, so a linked worktree starts with an empty ``cache/`` and re-renders everything, even though the main checkout already holds the datasets. Sharing one cache avoids that::
 

@@ -21,3 +21,16 @@ And then connect to that render service, either directly using the appropriate c
         client.initialize("cube.blend", "renders/")
         print(client.scene_aabb())
 
+``examples/blender/imu_preview_service.py`` and ``examples/blender/imu_preview.py`` are a
+fuller example of the same split: the service exposes a method that draws camera
+trajectories into the loaded scene, and the script spawns it the way shown above, picks
+the port to connect on, and drives it as a client. The :doc:`IMU tutorial <imu>` walks
+through what it renders.
+
+|
+
+.. seealso::
+
+    - :doc:`../development` for the editable install and the test suite.
+    - :doc:`../sections/blender/architecture` for how the client/server split works.
+
