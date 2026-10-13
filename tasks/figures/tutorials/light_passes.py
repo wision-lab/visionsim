@@ -2,7 +2,32 @@
 
 from __future__ import annotations
 
-from .._page import Node, _command_recipe, cached, page_task, static
+from .._page import Node, _command_recipe, cached, encode_webp, page_task, static
+
+
+def _stills(executable: str | None, force: bool = False) -> None:
+    """Write the page's stills: the combined frame and each tonemapped pass.
+
+    Args:
+        executable: Ignored; this step needs no Blender.
+        force: Ignored; the copies and the tonemap overwrite unconditionally.
+    """
+    _command_recipe(
+        "light-passes-stills",
+        # Give each linear EXR pass a name of its own, since every pass shares the
+        # frame's filename and tonemap-frames flattens output to <output-dir>/<stem>.<ext>,
+        # which would collide all six onto one file.
+        "mkdir -p light-passes-named && for p in diffuse/direct diffuse/indirect diffuse/color"
+        " specular/direct specular/indirect specular/color; do"
+        " cp light-passes/$p/0000/090.exr light-passes-named/$(echo $p | tr / -).exr; done",
+        # One call tone-maps every pass; the names chosen above keep them distinct.
+        "visionsim transforms.tonemap-frames --input-dir light-passes-named"
+        " --output-dir ../docs/source/_static/blender/light-passes --pattern '*.exr' --ext .webp",
+    )(executable, force)
+
+    # The combined frame is already an sRGB PNG.
+    encode_webp(cached("light-passes", "frames", "0000", "090.png"), static("blender/light-passes/combined.webp"))
+
 
 NODES = (
     Node(
@@ -18,25 +43,12 @@ NODES = (
     Node(
         name="light-passes-stills",
         files=(
-            static("blender/light-passes/combined.png"),
-            static("blender/light-passes/diffuse-direct.png"),
+            static("blender/light-passes/combined.webp"),
+            static("blender/light-passes/diffuse-direct.webp"),
         ),
         is_figure=True,
         requires=("light-passes-render",),
-        recipe=_command_recipe(
-            "light-passes-stills",
-            # The combined frame is already an sRGB PNG.
-            "cp light-passes/frames/0000/090.png ../docs/source/_static/blender/light-passes/combined.png",
-            # Give each linear EXR pass a name of its own, since every pass shares the
-            # frame's filename and tonemap-frames flattens output to <output-dir>/<stem>.png,
-            # which would collide all six onto one file.
-            "mkdir -p light-passes-named && for p in diffuse/direct diffuse/indirect diffuse/color"
-            " specular/direct specular/indirect specular/color; do"
-            " cp light-passes/$p/0000/090.exr light-passes-named/$(echo $p | tr / -).exr; done",
-            # One call tone-maps every pass; the names chosen above keep them distinct.
-            "visionsim transforms.tonemap-frames --input-dir light-passes-named"
-            " --output-dir ../docs/source/_static/blender/light-passes --pattern '*.exr'",
-        ),
+        recipe=_stills,
     ),
 )
 
