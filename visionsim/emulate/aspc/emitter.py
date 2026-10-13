@@ -59,11 +59,11 @@ class DynamicSource:
             kernel = np.array([1.0])
 
         if normalize == "sum":
-            s = np.sum(kernel)
+            s: float = float(np.sum(kernel))
             if s > 0:
                 kernel = kernel / s
         elif normalize == "max":
-            m = np.max(kernel)
+            m: float = float(np.max(kernel))
             if m > 0:
                 kernel = kernel / m
 
