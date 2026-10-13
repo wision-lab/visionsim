@@ -27,9 +27,11 @@ extensions = [
     "sphinxcontrib.video",
     "sphinx.ext.autosectionlabel",
     "sphinx_design",
+    "visionsim.sphinx_ext",
 ]
 templates_path = ["_templates"]
-exclude_patterns = []
+# Kept locally for now, so it is not published and does not warn about being unlinked.
+exclude_patterns = ["roadmap.rst"]
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
@@ -38,6 +40,10 @@ html_theme = "furo"
 html_static_path = ["_static"]
 html_css_files = [
     "css/custom.css",
+]
+html_js_files = [
+    "js/sync-videos.js",
+    "js/node-graph.js",
 ]
 
 html_theme_options = {
@@ -69,3 +75,7 @@ autodoc_member_order = "bysource"
 # -- Options for autosectionlabel---------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/extensions/autosectionlabel.html
 autosectionlabel_prefix_document = True
+
+# The changelog repeats the Keep a Changelog headings (Added/Changed/Fixed) under
+# every release, which autosectionlabel reports as duplicate labels within the page.
+suppress_warnings = ["autosectionlabel.changelog"]
