@@ -14,21 +14,34 @@ rebuilt.  ``--dry-run`` only reports what would happen.
 
 from __future__ import annotations
 
+import os
 import subprocess
-from collections.abc import Callable
+import tempfile
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
 from types import ModuleType
+from typing import TYPE_CHECKING, Any
 
 from invoke import Exit, task
 from rich.console import Console
+
+if TYPE_CHECKING:
+    from visionsim.simulate.blender import BlenderClient
 
 console = Console()
 
 ROOT = Path(__file__).resolve().parents[2]
 CACHE = ROOT / "cache"
 STATIC = ROOT / "docs" / "source" / "_static"
+
+NODE_TREE_SERVICE = ROOT / "tasks" / "figures" / "export_node_trees.py"
+"""BlenderService subclass that exports node trees, spawned by :func:`export_node_trees`."""
+
+BLENDER_SERVICE = ROOT / "visionsim" / "simulate" / "blender.py"
+"""The library's own BlenderService, for figures that drive it through the client API."""
 
 
 @dataclass(frozen=True)
@@ -70,7 +83,7 @@ class Node:
     not implied by existence need one."""
 
 
-def _command_recipe(name: str, *commands: str) -> Callable[[str | None], None]:
+def _command_recipe(name: str, *commands: str) -> Callable[[str | None, bool], None]:
     """Build a recipe that runs shell ``commands`` in order from ``cache/``.
 
     Steps are separate strings rather than one ``&&``-joined command, so a failing
@@ -112,71 +125,73 @@ def _command_recipe(name: str, *commands: str) -> Callable[[str | None], None]:
 # Intermediate nodes shared across pages: name -> node.  Each recipe lists the
 # steps of ``examples/quickstart.sh`` or of the interpolation render/interpolate
 # pair, one command per step so a failure names the exact step; ``requires`` is
-# read off each command's ``--input-dir=``/``--depth-dir=``.  ``lego-interp`` has
-# no owning figure and is reachable only through :attr:`Node.requires`, which is
-# why it lives here.
+# read off each command's ``--input-dir=``/``--depth-dir=``.
 INTERMEDIATES: dict[str, Node] = {
     # Used in quick-start
-    "lego-gt": Node(
-        name="lego-gt",
-        files=(CACHE / "quickstart" / "lego-gt",),
+    "ultramodern-gt": Node(
+        name="ultramodern-gt",
+        files=(CACHE / "quickstart" / "ultramodern-gt",),
         recipe=_command_recipe(
-            "lego-gt",
-            "visionsim blender.render-animation lego.blend quickstart/lego-gt/"
-            " --config.keyframe-multiplier=5.0 --config.include-depths{executable}",
+            "ultramodern-gt",
+            "visionsim blender.render-animation ultramodern.blend quickstart/ultramodern-gt/"
+            " --frame-start=150 --frame-end=350"
+            " --config.keyframe-multiplier=1.0 --config.include-depths{executable}",
         ),
     ),
-    "lego-interp": Node(
-        name="lego-interp",
-        files=(CACHE / "quickstart" / "lego-interp",),
-        requires=("lego-gt",),
+    "ultramodern-interp": Node(
+        name="ultramodern-interp",
+        files=(CACHE / "quickstart" / "ultramodern-interp",),
+        requires=("ultramodern-gt",),
         recipe=_command_recipe(
-            "lego-interp",
-            "visionsim interpolate.dataset --input-dir=quickstart/lego-gt/frames"
-            " --output-dir=quickstart/lego-interp/ --n=32",
+            "ultramodern-interp",
+            "visionsim interpolate.dataset --input-dir=quickstart/ultramodern-gt/frames"
+            " --output-dir=quickstart/ultramodern-interp/ --n=32",
         ),
     ),
-    "lego-rgb25fps": Node(
-        name="lego-rgb25fps",
-        files=(CACHE / "quickstart" / "lego-rgb25fps",),
-        requires=("lego-interp",),
+    "ultramodern-rgb25fps": Node(
+        name="ultramodern-rgb25fps",
+        files=(CACHE / "quickstart" / "ultramodern-rgb25fps",),
+        requires=("ultramodern-interp",),
         recipe=_command_recipe(
-            "lego-rgb25fps",
-            "visionsim emulate.rgb --input-dir=quickstart/lego-interp/"
-            " --output-dir=quickstart/lego-rgb25fps/ --chunk-size=160 --readout-std=0{force}",
+            "ultramodern-rgb25fps",
+            "visionsim emulate.rgb --input-dir=quickstart/ultramodern-interp/"
+            " --output-dir=quickstart/ultramodern-rgb25fps/ --chunk-size=64 --readout-std=0{force}",
         ),
     ),
-    "lego-spc4kHz": Node(
-        name="lego-spc4kHz",
-        files=(CACHE / "quickstart" / "lego-spc4kHz" / "preview",),
-        requires=("lego-interp",),
+    "ultramodern-spc1600fps": Node(
+        name="ultramodern-spc1600fps",
+        files=(CACHE / "quickstart" / "ultramodern-spc1600fps" / "preview",),
+        requires=("ultramodern-interp",),
         recipe=_command_recipe(
-            "lego-spc4kHz",
-            "visionsim emulate.spad --input-dir=quickstart/lego-interp/ --output-dir=quickstart/lego-spc4kHz/ --force",
-            "visionsim ffmpeg.animate --input-dir=quickstart/lego-spc4kHz/ --outfile=quickstart/lego-spc4kHz/preview.mp4 --fps=25 --force",
-            "visionsim ffmpeg.extract --input-file=quickstart/lego-spc4kHz/preview.mp4 --output-dir=quickstart/lego-spc4kHz/preview/",
+            "ultramodern-spc1600fps",
+            "visionsim emulate.spad --input-dir=quickstart/ultramodern-interp/"
+            " --output-dir=quickstart/ultramodern-spc1600fps/ --force",
+            "visionsim ffmpeg.animate --input-dir=quickstart/ultramodern-spc1600fps/"
+            " --outfile=quickstart/ultramodern-spc1600fps/preview.mp4 --fps=25 --force",
+            "visionsim ffmpeg.extract --input-file=quickstart/ultramodern-spc1600fps/preview.mp4"
+            " --output-dir=quickstart/ultramodern-spc1600fps/preview/",
         ),
     ),
-    "lego-dvs125fps": Node(
-        name="lego-dvs125fps",
-        files=(CACHE / "quickstart" / "lego-dvs125fps" / "preview",),
-        requires=("lego-gt",),
+    "ultramodern-dvs50fps": Node(
+        name="ultramodern-dvs50fps",
+        files=(CACHE / "quickstart" / "ultramodern-dvs50fps" / "preview",),
+        requires=("ultramodern-gt",),
         recipe=_command_recipe(
-            "lego-dvs125fps",
-            "visionsim emulate.events --input-dir=quickstart/lego-gt/frames"
-            " --output-dir=quickstart/lego-dvs125fps/ --fps=125 --preview-step=1 --force",
+            "ultramodern-dvs50fps",
+            "visionsim emulate.events --input-dir=quickstart/ultramodern-gt/frames"
+            " --output-dir=quickstart/ultramodern-dvs50fps/ --fps=50 --preview-step=1 --force",
         ),
     ),
-    "lego-itof": Node(
-        name="lego-itof",
+    "ultramodern-itof": Node(
+        name="ultramodern-itof",
         # ``preview/`` alone is created even when the run produces nothing, so the
         # node is only done once a tap directory exists inside it.
-        files=(CACHE / "quickstart" / "lego-itof" / "preview" / "tap_0",),
-        requires=("lego-gt",),
+        files=(CACHE / "quickstart" / "ultramodern-itof" / "preview" / "tap_0",),
+        requires=("ultramodern-gt",),
         recipe=_command_recipe(
-            "lego-itof",
-            "visionsim emulate.itof --input-dir=quickstart/lego-gt/frames"
-            " --depth-dir=quickstart/lego-gt/depths --output-dir=quickstart/lego-itof/"
+            "ultramodern-itof",
+            "visionsim emulate.itof --input-dir=quickstart/ultramodern-gt/frames"
+            " --depth-dir=quickstart/ultramodern-gt/depths --output-dir=quickstart/ultramodern-itof/"
             " --scheme=convSin --n-captures=4 --freq=120e6 --preview --force",
         ),
     ),
@@ -417,9 +432,6 @@ def run_node(
         ledger[node.name] = "ok"
         return None
 
-    if node.name in ledger:
-        return None if ledger[node.name] == "ok" else ledger[node.name]
-
     for req in node.requires:
         if ledger.get(req) != "ok":
             ledger[node.name] = f"upstream {req} failed"
@@ -493,36 +505,167 @@ def run_nodes(nodes: tuple[Node, ...], force: bool, dry_run: bool, executable: s
     return 1 if failed else 0
 
 
-def gifski(pattern: str, step: int, out: Path, width: int = 320, height: int = 320, fps: int = 25) -> None:
-    """Animate frames matching ``pattern`` (relative to ``cache/``) into ``out``.
+def encode_video(pattern: str, step: int, out: Path, size: int = 320, fps: int = 25, crf: int = 23) -> None:
+    """Encode frames matching ``pattern`` (relative to ``cache/``) into ``out``.
 
-    Rendered frames are sharded into numbered subfolders, hence the ``$(ls ... |
-    sed ...)`` form: ``step`` keeps every n-th frame so a 400-frame render does not
-    become a 400-frame gif.
+    Rendered frames are sharded into numbered subfolders, hence the glob, and ``step``
+    keeps every n-th frame so a 6400-frame render does not become a 6400-frame clip.
+    The kept frames are re-timestamped to play at ``fps``, so a decimated sequence
+    still runs at the speed the scene was authored at.
+
+    H.264 rather than a gif: the same clip at the same resolution is an order of
+    magnitude smaller, which matters most on the pages that play six of them together.
 
     Args:
         pattern: Glob, relative to ``cache/``, matching the source frames.
         step: Keep every ``step``-th frame.
-        out: Destination path for the gif.
-        width: Output width in pixels.
-        height: Output height in pixels.
-        fps: Playback rate of the gif.
+        out: Destination path for the video.
+        size: Output edge length in pixels.
+        fps: Playback rate of the video.
+        crf: Quality, lower being better. The default is transparent at preview
+            resolutions; previews whose pixels are noise, like a photon or event
+            camera's, cost several megabytes a clip at that setting and are the ones
+            worth spending quality on.
     """
-    cmd = f"gifski $(ls -1a {pattern} | sed -n '1~{step}p') --fps {fps} -o {out} --width={width} --height={height}"
+    filters = f"select='not(mod(n\\,{step}))',setpts=N/({fps}*TB),scale={size}:{size}:flags=lanczos"
+    cmd = (
+        f"ffmpeg -y -loglevel error -pattern_type glob -i '{pattern}'"
+        f' -vf "{filters}" -r {fps} -fps_mode cfr'
+        f" -an -c:v libx264 -crf {crf} -tune animation -pix_fmt yuv420p -movflags +faststart {out}"
+    )
     subprocess.run(cmd, shell=True, check=True, cwd=CACHE)
 
 
-def page_task(nodes: tuple[Node, ...], name: str, doc: str):
-    """Build a page's single task, under the page's own name.
+@contextmanager
+def blender_service(
+    service: Path,
+    executable: str | None = None,
+    timeout: float = 300.0,
+) -> Iterator[BlenderClient]:
+    """Run a BlenderService subclass in its own blender and connect to it.
 
-    The task carries the page's name so it shows up in ``inv --list`` as
-    ``figures.<page>`` rather than as a ``build`` child of a collection named after
+    The service is started by hand, which is the documented way of running a service
+    subclass, and this checkout is prepended to ``PYTHONPATH`` so blender imports it
+    rather than whichever copy its installation points at. ``--factory-startup`` keeps
+    a run independent of the machine's blender preferences.
+
+    Args:
+        service: Script holding the ``BlenderService`` subclass to run.
+        executable: Blender to run, ``None`` for ``$VSIM_BLENDER``, or ``blender`` on ``$PATH``.
+        timeout: Seconds to wait for the spawned blender to accept connections.
+
+    Yields:
+        The connected :class:`BlenderClient <visionsim.simulate.blender.BlenderClient>`.
+    """
+    from ephemeral_port_reserve import reserve as port_reserve  # type: ignore
+
+    from visionsim.simulate.blender import BlenderClient
+
+    blender = executable or os.environ.get("VSIM_BLENDER") or "blender"
+    pythonpath = os.pathsep.join(part for part in (str(ROOT), os.environ.get("PYTHONPATH")) if part)
+    port = port_reserve("localhost")
+    log = CACHE / "logs" / f"{service.stem}.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+
+    # `--python-use-system-env` is what lets the PYTHONPATH below reach blender.
+    command = [
+        blender,
+        "--background",
+        "--factory-startup",
+        "--enable-autoexec",
+        "--python-use-system-env",
+        "--python",
+        str(service),
+        "--",
+        "--port",
+        str(port),
+    ]
+    console.print(f"Starting {blender} on port {port}, logging to {log.relative_to(ROOT)}")
+    with log.open("w") as handle:
+        process = subprocess.Popen(
+            command,
+            env=os.environ | {"PYTHONPATH": pythonpath},
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+        )
+        try:
+            with BlenderClient(("localhost", port), timeout=timeout) as client:
+                yield client
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+
+
+def encode_webp(source: str | Path, out: Path, quality: int = 90) -> None:
+    """Encode a rendered still into ``out`` as WebP.
+
+    Stills that are meant to be looked at rather than measured do not have to be
+    lossless: the same picture as a PNG is several times the bytes, and a page carries
+    half a dozen of them. Alpha survives the encode, which a JPEG would flatten to
+    black, and WebP needs nothing from a reader that these docs do not already require.
+
+    Args:
+        source: Image to encode.
+        out: Destination path for the WebP file.
+        quality: libwebp quality, higher being better.
+    """
+    cmd = f"ffmpeg -y -loglevel error -i {source} -c:v libwebp -quality {quality} {out}"
+    subprocess.run(cmd, shell=True, check=True, cwd=CACHE)
+
+
+def export_node_trees(
+    executable: str | None,
+    blend: Path,
+    output_dir: Path,
+    dataset: str,
+    passes: tuple[tuple[str, str | None, dict[str, Any]], ...],
+    timeout: float = 300.0,
+) -> None:
+    """Run :data:`NODE_TREE_SERVICE` in its own blender and export one tree per pass.
+
+    Each pass is a ``(figure, method, kwargs)`` triple: the service is initialized on
+    ``blend``, ``method`` (a call on the connected :class:`BlenderClient
+    <visionsim.simulate.blender.BlenderClient>`) sets a ground-truth pass up on it, and
+    the tree that leaves behind is written to ``output_dir`` as ``figure.json``. Nothing
+    is rendered, so ``dataset`` only names the directory those passes would write to,
+    which is what keeps their output paths out of the figures.
+
+    The layout in the files this overwrites is not reproduced: the committed exports are
+    arranged by hand, and what is written here is the tree as the service created it.
+
+    Args:
+        executable: Blender to run, ``None`` for ``$VSIM_BLENDER``, or ``blender`` on ``$PATH``.
+        blend: Blend file whose compositor trees are exported.
+        output_dir: Directory the JSON files are written to.
+        dataset: Name of the directory the exported passes would render into.
+        passes: ``(figure, client method, its arguments)`` per tree to write.
+        timeout: Seconds to wait for the spawned blender to accept connections.
+    """
+    root = Path(tempfile.gettempdir()) / "visionsim-node-trees" / dataset
+    with blender_service(NODE_TREE_SERVICE, executable, timeout) as client:
+        for figure, method, kwargs in passes:
+            client.initialize(blend, root)
+            if method is not None:
+                getattr(client, method)(**kwargs)
+            print(client.export_tree(figure, str(output_dir)))
+
+
+def page_task(nodes: tuple[Node, ...], name: str, doc: str):
+    """Build a task over a node graph, under the given name.
+
+    The task carries the graph's name so it shows up in ``inv --list`` as
+    ``figures.<name>`` rather than as a ``build`` child of a collection named after
     the module. Callers add it to their package's collection with
     :meth:`invoke.Collection.add_task`.
 
     Args:
-        nodes: The page's own nodes, typically its figures.
-        name: Task name, which should match the page's module name.
+        nodes: The graph's top-level nodes, typically a page's figures.
+        name: Task name, which should match the page's module name, or ``all`` for
+            the graph merged from every page.
         doc: One-line summary shown by ``inv --list`` and ``inv --help``.
 
     Returns:
@@ -553,35 +696,41 @@ def all_task(pages: tuple[ModuleType, ...]):
     Returns:
         The collection's default task.
     """
-    nodes = tuple(node for page in pages for node in page.NODES)
-    resolve_nodes(nodes)  # reject unknown requirements and cycles at import time
-
-    @task(name="all")
-    def build(c, force=False, dry_run=False, executable=None):
-        """Regenerate the figures of every documentation page."""
-        if run_nodes(nodes, force, dry_run, executable):
-            raise Exit(1)
-
-    return build
+    return page_task(
+        tuple(node for page in pages for node in page.NODES),
+        "all",
+        "Regenerate the figures of every documentation page.",
+    )
 
 
-def gif_recipe(pattern: str, step: int, name: str) -> Callable[[str | None], None]:
-    """Build a gifski recipe writing ``STATIC/<name>.gif``.
+def video_recipe(
+    pattern: str,
+    step: int,
+    name: str,
+    size: int = 320,
+    fps: int = 25,
+    crf: int = 23,
+) -> Callable[[str | None, bool], None]:
+    """Build a preview-video recipe writing ``STATIC/<name>.mp4``.
 
     Args:
         pattern: Glob, relative to ``cache/``, matching the source frames.
         step: Keep every ``step``-th frame.
         name: Output file path relative to ``docs/source/_static``, without the
-            ``.gif`` suffix.
+            ``.mp4`` suffix.
+        size: Output edge length in pixels; pages whose render is not the default
+            320px square pass their own.
+        fps: Playback rate of the video, for scenes rendered at a rate other than 25.
+        crf: Quality, for previews whose pixels are noise rather than a picture.
 
     Returns:
         A recipe that ignores the blender executable it is handed.
     """
 
     def recipe(executable: str | None, force: bool = False) -> None:
-        out = STATIC / f"{name}.gif"
+        out = STATIC / f"{name}.mp4"
         out.parent.mkdir(parents=True, exist_ok=True)
-        gifski(pattern, step, out)
+        encode_video(pattern, step, out, size=size, fps=fps, crf=crf)
 
     return recipe
 
