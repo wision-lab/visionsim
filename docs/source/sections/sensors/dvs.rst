@@ -5,7 +5,11 @@ Event cameras, also known as Dynamic Vision Sensors (DVS), are bio-inspired sens
 
 These sensors offer several advantages over conventional cameras, including very high temporal resolution (in the order of microseconds), high dynamic range (up to 140 dB), and low power consumption.
 
-.. image:: ../../_static/quick-start/lego-dvs125fps-preview.gif
+.. video:: ../../_static/quick-start/ultramodern-dvs50fps-preview.mp4
+   :loop:
+   :autoplay:
+   :nocontrols:
+   :playsinline:
    :align: center
 
 | 
