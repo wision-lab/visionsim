@@ -20,9 +20,12 @@ def _stills(executable: str | None, force: bool = False) -> None:
         "mkdir -p light-passes-named && for p in diffuse/direct diffuse/indirect diffuse/color"
         " specular/direct specular/indirect specular/color; do"
         " cp light-passes/$p/0000/090.exr light-passes-named/$(echo $p | tr / -).exr; done",
-        # One call tone-maps every pass; the names chosen above keep them distinct.
+        # One call tone-maps every pass; the names chosen above keep them distinct. The
+        # output directory is absolute because `cache/` may be a symlink into another
+        # checkout (see the development page), and `../docs/...` would then write the
+        # stills into that checkout instead of this one.
         "visionsim transforms.tonemap-frames --input-dir light-passes-named"
-        " --output-dir ../docs/source/_static/blender/light-passes --pattern '*.exr' --ext .webp",
+        f" --output-dir {static('blender/light-passes')} --pattern '*.exr' --ext .webp",
     )(executable, force)
 
     # The combined frame is already an sRGB PNG.
