@@ -210,7 +210,11 @@ def _edh(n_edh_bins=4, phi=None, free_running=True, dt=0, seed=0, n_pulses=EDH_P
     h = HistogrammerEDH(HistConfig())
     phi = _phi((B,), seed=seed) if phi is None else phi
     return h.simulate_pixel_edh(
-        phi, n_pulses, n_edh_bins, free_running, dt,
+        phi,
+        n_pulses,
+        n_edh_bins,
+        free_running,
+        dt,
         generator=torch.Generator().manual_seed(seed),
     )
 
@@ -222,11 +226,19 @@ class TestEdhFromEwh:
         edh_h = HistogrammerEDH(HistConfig())
         ewh_h = Histogrammer(HistConfig())
         hist_edh, _ = edh_h.simulate_pixel_edh(
-            phi, EDH_PULSES, 4, free_running, dt,
+            phi,
+            EDH_PULSES,
+            4,
+            free_running,
+            dt,
             generator=torch.Generator().manual_seed(9),
         )
         hist_ewh = ewh_h.simulate_pixel_ewh(
-            phi, EDH_PULSES, B, free_running, dt,
+            phi,
+            EDH_PULSES,
+            B,
+            free_running,
+            dt,
             generator=torch.Generator().manual_seed(9),
         )
         assert torch.equal(hist_edh, hist_ewh)
@@ -260,7 +272,7 @@ class TestEdhFromEwh:
 
     def test_flat_transient_gives_evenly_spaced_boundaries(self):
         n_edh = 4
-        hist, edh = _edh(n_edh_bins=n_edh, phi=torch.full((B,), 0.3), seed=6, n_pulses=20000)
+        _hist, edh = _edh(n_edh_bins=n_edh, phi=torch.full((B,), 0.3), seed=6, n_pulses=20000)
         expected = torch.linspace(0, B, n_edh + 1)
         assert torch.allclose(edh, expected, atol=1.0), (edh, expected)
 

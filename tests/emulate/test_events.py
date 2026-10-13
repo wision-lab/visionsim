@@ -33,7 +33,7 @@ def test_emulate_events(snapshot, tmp_path):
         seed=42087,
     )
 
-    lego_gt_path = Path(__file__).parent / "test_files" / "lego-gt"
+    lego_gt_path = Path(__file__).parents[1] / "test_files" / "lego-gt"
     frames = sorted(lego_gt_path.glob("*.png"))
 
     fps = 24.0

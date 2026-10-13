@@ -69,8 +69,7 @@ DEMO_DEPTH = 5.0
 SEED = 20260821
 
 DTYPE = torch.float64
-MODES = [(True, "free-running", "free_running"),
-         (False, "gated, single-hit", "gated_single_hit")]
+MODES = [(True, "free-running", "free_running"), (False, "gated, single-hit", "gated_single_hit")]
 
 _failures: list[str] = []
 
@@ -115,9 +114,11 @@ def measure(depth_m, free_running, seed):
     """A 'real' measurement: sampled photon timestamps, binned into counts."""
     phi = phi_from_params(torch.tensor(depth_m, dtype=DTYPE), TRUE_SIGNAL, TRUE_BACKGROUND)
     timestamps = simulate_photon_timestamps(
-        phi.detach().float(), N_CYCLES,
+        phi.detach().float(),
+        N_CYCLES,
         dead_time_bins=DEAD_TIME_BINS if free_running else N_BINS,
-        free_running=free_running, paralyzable=False,
+        free_running=free_running,
+        paralyzable=False,
         max_detections_per_cycle=None if free_running else 1,
         generator=torch.Generator().manual_seed(seed),
     )
@@ -168,8 +169,7 @@ def fit_depth(counts, free_running, init_depth, n_steps=N_STEPS, track=False):
     depth = torch.tensor(float(init_depth), dtype=DTYPE, requires_grad=True)
     log_sig = torch.tensor(float(np.log(TRUE_SIGNAL * 2)), dtype=DTYPE, requires_grad=True)
     log_bkg = torch.tensor(float(np.log(TRUE_BACKGROUND * 2)), dtype=DTYPE, requires_grad=True)
-    opt = torch.optim.Adam([{"params": [depth], "lr": 0.05},
-                            {"params": [log_sig, log_bkg], "lr": 0.08}])
+    opt = torch.optim.Adam([{"params": [depth], "lr": 0.05}, {"params": [log_sig, log_bkg], "lr": 0.08}])
 
     history = []
     for _ in range(n_steps):
@@ -179,7 +179,11 @@ def fit_depth(counts, free_running, init_depth, n_steps=N_STEPS, track=False):
         loss = -(counts * torch.log(pred.clamp_min(1e-12))).sum()
         loss.backward()
         if track:
-            history.append((float(loss), float(depth), float(depth.grad)))
+            if depth.grad is None:
+                raise RuntimeError(
+                    "Gradient for 'depth' is None after loss.backward(). Ensure autograd graph is connected."
+                )
+            history.append((float(loss.item()), float(depth.item()), float(depth.grad.item())))
         opt.step()
     return float(depth), float(torch.exp(log_sig)), float(torch.exp(log_bkg)), history
 
@@ -191,7 +195,7 @@ def fig_convergence(free_running, label, slug, outdir: Path):
     counts = measure(DEMO_DEPTH, free_running, SEED)
     init = argmax_depth(counts)
     t0 = time.perf_counter()
-    est, sig, bkg, hist = fit_depth(counts, free_running, init, track=True)
+    est, _sig, _bkg, hist = fit_depth(counts, free_running, init, track=True)
     elapsed = time.perf_counter() - t0
 
     loss = [h[0] for h in hist]
@@ -202,42 +206,48 @@ def fig_convergence(free_running, label, slug, outdir: Path):
 
     ax1.plot(depths, color="#0b6e73", lw=2)
     ax1.axhline(DEMO_DEPTH, color="#b0392b", ls=":", lw=1.2, label=f"true depth {DEMO_DEPTH:.2f} m")
-    ax1.axhline(init, color="#e0a458", ls="--", lw=1.2,
-                label=f"argmax init {init:.3f} m  (bias {init-DEMO_DEPTH:+.3f} m)")
+    ax1.axhline(
+        init, color="#e0a458", ls="--", lw=1.2, label=f"argmax init {init:.3f} m  (bias {init - DEMO_DEPTH:+.3f} m)"
+    )
     ax1.scatter([len(depths) - 1], [est], color="#0b6e73", zorder=5, s=28)
-    ax1.annotate(f"  fit {est:.3f} m\n  err {est-DEMO_DEPTH:+.4f} m",
-                 (len(depths) - 1, est), fontsize=8.5, va="center", family="monospace")
-    ax1.set_xlabel("Adam iteration") 
+    ax1.annotate(
+        f"  fit {est:.3f} m\n  err {est - DEMO_DEPTH:+.4f} m",
+        (len(depths) - 1, est),
+        fontsize=8.5,
+        va="center",
+        family="monospace",
+    )
+    ax1.set_xlabel("Adam iteration")
     ax1.set_ylabel("depth estimate  [m]")
     ax1.set_title("Gradient descent walks off the biased init", fontsize=10.5)
     ax1.legend(fontsize=8)
-    ax1.grid(alpha=.25, lw=.6)
+    ax1.grid(alpha=0.25, lw=0.6)
 
     ax2.plot(loss, color="#2f6f9f", lw=1.8, label="multinomial NLL")
-    ax2.set_xlabel("Adam iteration") 
+    ax2.set_xlabel("Adam iteration")
     ax2.set_ylabel("loss")
     ax2b = ax2.twinx()
     ax2b.semilogy(grads, color="#9aa4ad", lw=1.1, ls="--", label=r"$|\partial L/\partial d|$")
     ax2b.set_ylabel(r"$|\partial \mathrm{loss}/\partial \mathrm{depth}|$", color="#6b7883")
     ax2.set_title(f"Loss and depth gradient  ({elapsed:.1f} s, {N_STEPS} steps)", fontsize=10.5)
-    ax2.grid(alpha=.25, lw=.6)
+    ax2.grid(alpha=0.25, lw=0.6)
     h1, l1 = ax2.get_legend_handles_labels()
     h2, l2 = ax2b.get_legend_handles_labels()
     ax2.legend(h1 + h2, l1 + l2, fontsize=8)
 
-    fig.suptitle(f"{label}  |  fitting depth through the differentiable forward model",
-                 fontsize=11.5)
+    fig.suptitle(f"{label}  |  fitting depth through the differentiable forward model", fontsize=11.5)
     fig.tight_layout()
     path = outdir / f"diffdepth_convergence_{slug}.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
     print(f"    wrote {path.name}  ({elapsed:.1f} s)")
 
-    check(f"{label} — fit beats argmax at {DEMO_DEPTH:.0f} m",
-          abs(est - DEMO_DEPTH) < abs(init - DEMO_DEPTH),
-          f"|fit err|={abs(est-DEMO_DEPTH):.4f} < |argmax err|={abs(init-DEMO_DEPTH):.4f}")
-    check(f"{label} — gradient is finite and non-zero throughout",
-          all(np.isfinite(g) for g in grads) and max(grads) > 0)
+    check(
+        f"{label} — fit beats argmax at {DEMO_DEPTH:.0f} m",
+        abs(est - DEMO_DEPTH) < abs(init - DEMO_DEPTH),
+        f"|fit err|={abs(est - DEMO_DEPTH):.4f} < |argmax err|={abs(init - DEMO_DEPTH):.4f}",
+    )
+    check(f"{label} — gradient is finite and non-zero throughout", all(np.isfinite(g) for g in grads) and max(grads) > 0)
     return elapsed
 
 
@@ -249,8 +259,10 @@ def fig_sweep(free_running, label, slug, outdir: Path):
         d_arg = argmax_depth(counts)
         d_fit, _, _, _ = fit_depth(counts, free_running, grid_init(counts, free_running))
         if abs(d_arg - d_true) > 1.0:
-            print(f"      note: argmax failed at {d_true:.0f} m "
-                  f"({d_arg:.2f} m) — return buried by pile-up; grid init recovers it")
+            print(
+                f"      note: argmax failed at {d_true:.0f} m "
+                f"({d_arg:.2f} m) — return buried by pile-up; grid init recovers it"
+            )
         rows.append((d_true, d_arg, d_fit))
     elapsed = time.perf_counter() - t0
 
@@ -258,30 +270,29 @@ def fig_sweep(free_running, label, slug, outdir: Path):
     arg = np.array([r[1] for r in rows])
     fit = np.array([r[2] for r in rows])
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8.6, 6.4), sharex=True,
-                                   gridspec_kw={"height_ratios": [2, 1]})
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8.6, 6.4), sharex=True, gridspec_kw={"height_ratios": [2, 1]})
     lim = [0, max(DEPTH_SWEEP) + 1]
     ax1.plot(lim, lim, color="#9aa4ad", ls=":", lw=1.2, label="ideal  y = x")
     ax1.plot(true, arg, "o--", color="#e0a458", lw=1.4, ms=6, label="argmax of raw histogram")
-    ax1.plot(true, fit, "o-", color="#0b6e73", lw=2, ms=6,
-             label="grid init + gradient refine, through the model")
+    ax1.plot(true, fit, "o-", color="#0b6e73", lw=2, ms=6, label="grid init + gradient refine, through the model")
     ax1.set_ylabel("estimated depth  [m]")
-    ax1.set_xlim(*lim) 
+    ax1.set_xlim(*lim)
     ax1.set_ylim(*lim)
     ax1.legend(fontsize=8.5)
-    ax1.grid(alpha=.25, lw=.6)
+    ax1.grid(alpha=0.25, lw=0.6)
     ax1.set_title(f"{label}  |  depth recovery over the unambiguous range", fontsize=11)
 
     ax2.axhline(0, color="#9aa4ad", lw=1)
     half_bin = bin_to_depth(0.5)
-    ax2.axhspan(-half_bin, half_bin, color="#9aa4ad", alpha=.15,
-                label=f"argmax quantisation, ±½ bin (±{half_bin*100:.1f} cm)")
+    ax2.axhspan(
+        -half_bin, half_bin, color="#9aa4ad", alpha=0.15, label=f"argmax quantisation, ±½ bin (±{half_bin * 100:.1f} cm)"
+    )
     ax2.plot(true, arg - true, "o--", color="#e0a458", lw=1.4, ms=5)
     ax2.plot(true, fit - true, "o-", color="#0b6e73", lw=2, ms=5)
     ax2.set_xlabel("true depth  [m]")
     ax2.set_ylabel("error  [m]")
     ax2.legend(fontsize=8)
-    ax2.grid(alpha=.25, lw=.6)
+    ax2.grid(alpha=0.25, lw=0.6)
 
     fig.tight_layout()
     path = outdir / f"diffdepth_sweep_{slug}.png"
@@ -292,21 +303,29 @@ def fig_sweep(free_running, label, slug, outdir: Path):
     rms_arg = float(np.sqrt(np.mean((arg - true) ** 2)))
     rms_fit = float(np.sqrt(np.mean((fit - true) ** 2)))
     print(f"    wrote {path.name}  ({elapsed:.1f} s)")
-    print(f"      argmax : bias {bias_arg*100:+6.2f} cm   RMS {rms_arg*100:6.2f} cm")
-    print(f"      fit    : bias {bias_fit*100:+6.2f} cm   RMS {rms_fit*100:6.2f} cm")
+    print(f"      argmax : bias {bias_arg * 100:+6.2f} cm   RMS {rms_arg * 100:6.2f} cm")
+    print(f"      fit    : bias {bias_fit * 100:+6.2f} cm   RMS {rms_fit * 100:6.2f} cm")
 
-    check(f"{label} — fit RMS beats argmax RMS over the sweep",
-          rms_fit < rms_arg, f"{rms_fit*100:.2f} cm < {rms_arg*100:.2f} cm")
-    check(f"{label} — fit reaches sub-bin accuracy",
-          rms_fit < half_bin, f"RMS {rms_fit*100:.2f} cm < half-bin {half_bin*100:.2f} cm")
-    check(f"{label} — argmax bias is systematically negative (pile-up pulls depth short)",
-          bias_arg < 0, f"{bias_arg*100:+.2f} cm")
+    check(
+        f"{label} — fit RMS beats argmax RMS over the sweep",
+        rms_fit < rms_arg,
+        f"{rms_fit * 100:.2f} cm < {rms_arg * 100:.2f} cm",
+    )
+    check(
+        f"{label} — fit reaches sub-bin accuracy",
+        rms_fit < half_bin,
+        f"RMS {rms_fit * 100:.2f} cm < half-bin {half_bin * 100:.2f} cm",
+    )
+    check(
+        f"{label} — argmax bias is systematically negative (pile-up pulls depth short)",
+        bias_arg < 0,
+        f"{bias_arg * 100:+.2f} cm",
+    )
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--outdir", type=Path,
-                    default=Path(__file__).parent / "aspc" / "figures")
+    ap.add_argument("--outdir", type=Path, default=Path(__file__).parent / "aspc" / "figures")
     args = ap.parse_args()
     args.outdir.mkdir(parents=True, exist_ok=True)
 
@@ -314,7 +333,7 @@ def main() -> None:
     print(f"  scene      signal {TRUE_SIGNAL:.0f}, background {TRUE_BACKGROUND:.0f} photons/cycle")
     print(f"  detector   {PERIOD_NS:.0f} ns period, {N_BINS} bins, {DEAD_TIME_BINS} bin dead time")
     print(f"  optimiser  Adam, {N_STEPS} steps, fitting (depth, signal, background)")
-    print(f"  one bin    = {bin_to_depth(1)*100:.2f} cm of depth\n")
+    print(f"  one bin    = {bin_to_depth(1) * 100:.2f} cm of depth\n")
 
     for free_running, label, slug in MODES:
         print(f"{label}:")

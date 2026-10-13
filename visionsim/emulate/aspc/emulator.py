@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Tuple, Union
 
 import numpy as np
 import torch
@@ -19,8 +18,8 @@ from visionsim.emulate.aspc.sensors import SPADSensor
 
 def _build_lidar(
     config: dict,
-    device: Union[str, torch.device] = "cpu",
-) -> Tuple[Detector, Union[PulsedLaser, None], Union[Sun, None]]:
+    device: str | torch.device = "cpu",
+) -> tuple[Detector, PulsedLaser | None, Sun | None]:
     """
     Parses configuration dictionary and instantiates Detector, PulsedLaser emitter, and Sun.
     """
@@ -36,9 +35,7 @@ def _build_lidar(
     ambient_enabled = ambient_cfg.pop("enabled", True)
 
     if "light_conditions" in ambient_cfg and isinstance(ambient_cfg["light_conditions"], str):
-        ambient_cfg["light_conditions"] = get_light_conditions_from_string(
-            ambient_cfg["light_conditions"]
-        )
+        ambient_cfg["light_conditions"] = get_light_conditions_from_string(ambient_cfg["light_conditions"])
 
     scene = Sun(**ambient_cfg) if ambient_enabled else None
 
@@ -67,23 +64,25 @@ def _build_lidar(
 
     return detector, emitter, scene
 
+
 class ASPCEmulator:
     """High-level Orchestrator for Single-Photon LiDAR Simulation."""
 
     def __init__(
         self,
         config: dict,
-        device: Union[str, torch.device] = "cpu",
+        device: str | torch.device = "cpu",
     ):
         self.config = config
         self.device = torch.device(device) if isinstance(device, str) else device
         self.detector, self.emitter, self.scene = _build_lidar(config, device=self.device)
 
-    def process_frame(
-        self, depth_frame: torch.Tensor, albedo_frame: torch.Tensor
-    ) -> np.ndarray:
+    def process_frame(self, depth_frame: torch.Tensor, albedo_frame: torch.Tensor) -> np.ndarray:
         """Executes complete forward simulation for an input depth and albedo frame pair."""
-        transients, _ = self.detector.get_transients(
+        if self.emitter is None or self.scene is None:
+            raise RuntimeError("ASPCEmulator requires both active emitter and ambient scene to be enabled.")
+
+        _transients, _ = self.detector.get_transients(
             depth_frame=depth_frame,
             albedo_frame=albedo_frame,
             emitter=self.emitter,

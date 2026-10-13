@@ -3,6 +3,8 @@ Rendering HDR Sequences
 
 This tutorial shows how to render high-dynamic-range sequences suitable for downstream sensor emulation. HDR images store linear intensity values, unlike display-referred formats like PNG/JPEG.
 
+Here, "HDR" refers specifically to the rendered **image** outputs — frames and composites — which are HDR when saved as linear ``.exr`` or ``.hdr`` instead of 8-bit PNG/JPEG. Auxiliary ground truths that are also stored as ``.exr`` (depth, normals, flow, ...) carry non-color data by definition and are not what this page is about.
+
 |
 
 HDR File Formats
@@ -61,17 +63,33 @@ Composite outputs can also be configured for HDR:
 Using the CLI
 -------------
 
-The same configuration is available through the :meth:`render-animation command <visionsim.cli.blender.render_animation>`:
+The same configuration is available through the :meth:`blender.render-animation command <visionsim.cli.blender.render_animation>`. Render options are grouped under a ``config`` subcommand, so frame settings are passed as ``--config.frames.*``:
 
 .. code-block:: bash
 
-    visionsim render-animation scene.blend ./output \\
-        --frames.file-format OPEN_EXR \\
-        --frames.bit-depth 32
+    # OpenEXR at 32-bit float, lossless ZIP compression
+    visionsim blender.render-animation scene.blend ./output \\
+        --config.frames.file-format OPEN_EXR \\
+        --config.frames.bit-depth 32 \\
+        --config.frames.exr-codec ZIP
 
-    visionsim render-animation scene.blend ./output \\
-        --frames.file-format HDR \\
-        --frames.color-mode RGB
+    # Radiance HDR (always 32-bit float, RGB only)
+    visionsim blender.render-animation scene.blend ./output \\
+        --config.frames.file-format HDR \\
+        --config.frames.color-mode RGB
+
+Composites work the same way (provided the compositor setup does not do any tonemapping already) but must first be enabled:
+
+.. code-block:: bash
+
+    visionsim blender.render-animation scene.blend ./output \\
+        --config.include-composites \\
+        --config.composites.file-format OPEN_EXR \\
+        --config.composites.bit-depth 32
+
+.. note::
+
+    ``bit-depth`` and ``exr-codec`` only apply to ``OPEN_EXR``. Radiance HDR is always 32-bit float and ``RGB``, so pairing it with ``bit-depth`` has no effect.
 
 .. tip::
 

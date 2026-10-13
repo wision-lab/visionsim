@@ -102,9 +102,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from visionsim.emulate.aspc.emitter import PulsedLaser
 from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer
 from visionsim.emulate.aspc.sensors import SPADSensor
-from visionsim.emulate.aspc.sources import PulsedLaser
 from visionsim.emulate.aspc.utils import irradiance_photons, tof2depth, ureg
 
 # --------------------------------------------------------------------------- #
@@ -247,9 +247,7 @@ def run_pipeline(
     else:
         off = torch.full_like(dep, float(ambient), dtype=torch.float32)
 
-    transients, ambient_offsets = hist.calculate_transients(
-        irr, dep, off, masks, n_bins, max_depth_of(laser)
-    )
+    transients, ambient_offsets = hist.calculate_transients(irr, dep, off, masks, n_bins, max_depth_of(laser))
 
     _, irf = laser.get_kernel(bin_width_of(laser, n_bins), "sum")
     irf_t = torch.as_tensor(np.asarray(irf, dtype=np.float32))
@@ -341,9 +339,7 @@ def fig_pipeline(outdir, laser, hist):
 
     centre = len(irf) // 2
     axes[1].plot(np.arange(len(irf)) - centre, irf.numpy(), color="#d1495b", lw=1.8)
-    axes[1].set_title(
-        f"Stage 2 — laser IRF, sum = {float(irf.sum()):.6f} (must be 1: normalize='sum')", fontsize=11
-    )
+    axes[1].set_title(f"Stage 2 — laser IRF, sum = {float(irf.sum()):.6f} (must be 1: normalize='sum')", fontsize=11)
     axes[1].set_xlabel("bins from pulse centre")
 
     axes[2].bar(np.arange(N_BINS), phi[0].numpy(), width=1.0, color="#2a9d8f")
@@ -354,8 +350,11 @@ def fig_pipeline(outdir, laser, hist):
     ambient_total = N_BINS * float(amb[0])
     signal_total = float(phi[0].sum()) - ambient_total
     conserved = np.isclose(signal_total, float(transients[0].sum()), rtol=1e-3)
-    check("Convolution conserves photons", conserved,
-          f"Σφ−ambient={signal_total:.6g} vs Σtransient={float(transients[0].sum()):.6g}")
+    check(
+        "Convolution conserves photons",
+        conserved,
+        f"Σφ−ambient={signal_total:.6g} vs Σtransient={float(transients[0].sum()):.6g}",
+    )
     check("IRF is energy-normalised (T7)", np.isclose(float(irf.sum()), 1.0, rtol=1e-6), f"Σirf={float(irf.sum()):.6f}")
 
     fig.suptitle("Figure 2 — φ pipeline, stage by stage", fontsize=13)
@@ -440,7 +439,7 @@ def fig_invariances(outdir, laser, hist):
     # Distinct linestyles and decreasing widths so four *coincident* curves are visibly
     # four curves -- otherwise a perfect overlay is indistinguishable from a single plot.
     styles = [("-", 6.0), ("--", 4.0), (":", 2.5), ("-.", 1.2)]
-    for (n, (ls, lw)) in zip([16, 32, 64, 128], styles):
+    for n, (ls, lw) in zip([16, 32, 64, 128], styles):
         a, d = flat_wall(6.0, n=n)
         transients, _, _, _ = run_pipeline(laser, hist, a, d, torch.ones(1, n, n))
         totals_res.append(float(transients.sum()))
@@ -478,8 +477,11 @@ def fig_invariances(outdir, laser, hist):
     axes[2].bar(["no vignette", "vignette"], [float(t_flat.sum()), float(t_vig.sum())], color=["#3b7dd8", "#e76f51"])
     axes[2].set_title(f"(c) vignette attenuates: ×{got_ratio:.4f}\n(expected ×{expected_ratio:.4f})", fontsize=11)
     axes[2].set_ylabel("Σ transient")
-    check("Vignette applied with the right weight (T1)", np.isclose(got_ratio, expected_ratio, rtol=1e-3),
-          f"got ×{got_ratio:.5f}, expected ×{expected_ratio:.5f}")
+    check(
+        "Vignette applied with the right weight (T1)",
+        np.isclose(got_ratio, expected_ratio, rtol=1e-3),
+        f"got ×{got_ratio:.5f}, expected ×{expected_ratio:.5f}",
+    )
 
     fig.suptitle("Figure 5 — invariances that must hold", fontsize=13)
     fig.tight_layout()
@@ -534,17 +536,20 @@ def fig_guards(outdir, laser, hist):
     axes[1, 0].set_title("(c) T3 — beyond-range returns alias, not clamp", fontsize=11)
     axes[1, 0].set_xlabel("time bin")
     axes[1, 0].legend(fontsize=8)
-    check("Beyond-range aliases, last bin empty (T3)", float(transients[0, -1]) == 0.0,
-          f"last bin = {float(transients[0,-1]):.3g}")
+    check(
+        "Beyond-range aliases, last bin empty (T3)",
+        float(transients[0, -1]) == 0.0,
+        f"last bin = {float(transients[0, -1]):.3g}",
+    )
 
     # (d) invalid depths — L1 / T8
     a, d = scene_with_invalid()
     transients, _, phi, _ = run_pipeline(laser, hist, a, d, masks)
-    valid_frac = float(torch.isfinite(d) .logical_and(d > 0).float().mean())
+    valid_frac = float(torch.isfinite(d).logical_and(d > 0).float().mean())
     axes[1, 1].bar(np.arange(N_BINS), transients[0].numpy(), width=1.0, color="#3b7dd8")
     axes[1, 1].axvline(depth_to_bin(5.0, laser), color="#2a9d8f", ls="--", label="5 m (only valid surface)")
     axes[1, 1].set_title(
-        f"(d) L1/T8 — invalid depths dropped, not inpainted\n{valid_frac*100:.0f}% of pixels valid, "
+        f"(d) L1/T8 — invalid depths dropped, not inpainted\n{valid_frac * 100:.0f}% of pixels valid, "
         f"finite output: {bool(torch.isfinite(phi).all())}",
         fontsize=11,
     )
@@ -606,8 +611,7 @@ def fig_contract(outdir, laser, hist):
     axes[1].axvline(true_bin, color="#264653", ls="--", lw=1, label=f"wall @ 5 m (bin {true_bin})")
     for g in ghost:
         rel = float(t_bad[0, g] / t_bad[0, true_bin]) * 100
-        axes[1].axvline(g, color="#e76f51", ls=":", lw=1.4,
-                        label=f"GHOST (bin {g}, {rel:.0f}% of peak)")
+        axes[1].axvline(g, color="#e76f51", ls=":", lw=1.4, label=f"GHOST (bin {g}, {rel:.0f}% of peak)")
     axes[1].set_title(
         f"(b) VIOLATION — sky as {SENTINEL:.0f} m\nsentinel aliases into a false surface (log scale)",
         fontsize=10,
@@ -625,13 +629,14 @@ def fig_contract(outdir, laser, hist):
     t_mm, _, _, _ = run_pipeline(laser, hist, a, d, masks)
     axes[2].bar(np.arange(N_BINS), t_mm[0].numpy(), width=1.2, color="#e76f51")
     axes[2].axvline(true_bin, color="#264653", ls="--", lw=1, label=f"expected bin {true_bin}")
-    axes[2].set_title(
-        "(c) VIOLATION — depth in millimetres\nno error, wrong answer", fontsize=10
-    )
+    axes[2].set_title("(c) VIOLATION — depth in millimetres\nno error, wrong answer", fontsize=10)
     axes[2].legend(fontsize=8)
     mm_bins = torch.nonzero(t_mm[0]).flatten().tolist()
-    check("Contract: wrong depth units fail silently (why metres are required)",
-          mm_bins != [true_bin], f"lands in {mm_bins} instead of [{true_bin}]")
+    check(
+        "Contract: wrong depth units fail silently (why metres are required)",
+        mm_bins != [true_bin],
+        f"lands in {mm_bins} instead of [{true_bin}]",
+    )
 
     for ax in axes:
         ax.set_xlabel("time bin")
@@ -640,15 +645,26 @@ def fig_contract(outdir, laser, hist):
     # units clause: a pint Quantity must behave identically to a bare tensor in metres
     a, d = flat_wall(5.0)
     t_q, _ = hist.calculate_transients(
-        scene_irradiance(laser, a, d).unsqueeze(0), (d * ureg.meter).unsqueeze(0),
-        torch.zeros(1, GRID, GRID), masks, N_BINS, md,
+        scene_irradiance(laser, a, d).unsqueeze(0),
+        (d * ureg.meter).unsqueeze(0),
+        torch.zeros(1, GRID, GRID),
+        masks,
+        N_BINS,
+        md,
     )
     t_p, _ = hist.calculate_transients(
-        scene_irradiance(laser, a, d).unsqueeze(0), d.unsqueeze(0),
-        torch.zeros(1, GRID, GRID), masks, N_BINS, md,
+        scene_irradiance(laser, a, d).unsqueeze(0),
+        d.unsqueeze(0),
+        torch.zeros(1, GRID, GRID),
+        masks,
+        N_BINS,
+        md,
     )
-    check("Contract: pint Quantity depth == bare tensor in metres",
-          bool(torch.allclose(t_q, t_p)), "both accepted, identical result")
+    check(
+        "Contract: pint Quantity depth == bare tensor in metres",
+        bool(torch.allclose(t_q, t_p)),
+        "both accepted, identical result",
+    )
 
     fig.suptitle("Figure 7 — the loader contract, made concrete", fontsize=13)
     fig.tight_layout()
@@ -703,8 +719,11 @@ def fig_flux(outdir, laser, hist):
 
     # The identity holding exactly is what licenses treating K as the whole radiometry.
     err = max(abs(x / y - 1.0) for x, y in zip(actual, predicted))
-    check("Flux: photons = K·albedo/d² exactly (oracle for get_scene_radiance)",
-          err < 1e-5, f"max relative error {err:.2e} over {len(cases)} albedo/distance combinations")
+    check(
+        "Flux: photons = K·albedo/d² exactly (oracle for get_scene_radiance)",
+        err < 1e-5,
+        f"max relative error {err:.2e} over {len(cases)} albedo/distance combinations",
+    )
 
     # A global calibration must leave every relative structure alone.
     t_ref, _, _, _ = run_pipeline(laser, hist, a, d, masks)
@@ -712,24 +731,26 @@ def fig_flux(outdir, laser, hist):
     for alpha_s in [0.01, 1.0, 100.0]:
         t, _, _, _ = run_pipeline(laser, hist, a, d, masks, alpha_sig=alpha_s)
         ratios.append(float(t[0, near] / t[0, far]))
-    check("Flux: inverse-square survives calibration (near/far held)",
-          max(ratios) - min(ratios) < 1e-3 * ratios[0],
-          f"near/far = {ratios[0]:.4f} (= (9/3)²) across a 10,000x level change")
+    check(
+        "Flux: inverse-square survives calibration (near/far held)",
+        max(ratios) - min(ratios) < 1e-3 * ratios[0],
+        f"near/far = {ratios[0]:.4f} (= (9/3)²) across a 10,000x level change",
+    )
 
     # The bug the previous per-row normalisation had: inter-FOV contrast must survive.
     a2, d2 = flat_wall(6.0)
     a2 = a2.clone()
     a2[:, : GRID // 2], a2[:, GRID // 2 :] = 0.9, 0.1
-    two_fov = hist.get_perpixel_fov_masks(
-        torch.zeros(GRID, GRID), [[0, 1, 0, 0.5], [0, 1, 0.5, 1]], vignette=False
-    )
+    two_fov = hist.get_perpixel_fov_masks(torch.zeros(GRID, GRID), [[0, 1, 0, 0.5], [0, 1, 0.5, 1]], vignette=False)
     contrasts = []
     for alpha_s in [None, 1.0, 50.0]:
         t, _, _, _ = run_pipeline(laser, hist, a2, d2, two_fov, alpha_sig=alpha_s)
         contrasts.append(float(t[0].sum() / t[1].sum()))
-    check("Flux: inter-FOV contrast survives calibration",
-          all(abs(c - 9.0) < 0.01 for c in contrasts),
-          f"albedo 0.9 vs 0.1 -> contrast {contrasts[0]:.2f} at every level (a per-row rescale would give 1.00)")
+    check(
+        "Flux: inter-FOV contrast survives calibration",
+        all(abs(c - 9.0) < 0.01 for c in contrasts),
+        f"albedo 0.9 vs 0.1 -> contrast {contrasts[0]:.2f} at every level (a per-row rescale would give 1.00)",
+    )
 
     # Ambient is reflected light: scales with albedo, independent of distance.
     floors = []
@@ -737,9 +758,11 @@ def fig_flux(outdir, laser, hist):
         aa, dd = flat_wall(dist, albedo=0.5)
         _, _, _, amb = run_pipeline(laser, hist, aa, dd, masks, alpha_bkg=4.0)
         floors.append(float(amb[0]))
-    check("Flux: alpha_bkg scales with albedo, not distance",
-          max(floors) - min(floors) < 1e-9 and abs(floors[0] - 4.0 * 0.5 / N_BINS) < 1e-9,
-          f"floor = {floors[0]:.4g} = 4.0·0.5/{N_BINS}, identical at 2/8/14 m")
+    check(
+        "Flux: alpha_bkg scales with albedo, not distance",
+        max(floors) - min(floors) < 1e-9 and abs(floors[0] - 4.0 * 0.5 / N_BINS) < 1e-9,
+        f"floor = {floors[0]:.4g} = 4.0·0.5/{N_BINS}, identical at 2/8/14 m",
+    )
 
     # Reaching the pile-up regime takes a reference well above 1, because the reference
     # condition (albedo 1.0 @ 1 m) is far brighter than any real scene point. Here the
@@ -749,9 +772,11 @@ def fig_flux(outdir, laser, hist):
     # normalisation hid it by forcing the total regardless of the scene.
     _, _, phi, _ = run_pipeline(laser, hist, a, d, masks, alpha_sig=100.0, alpha_bkg=4.0)
     peak = float(phi.max())
-    check("Flux: alpha_sig=100 reaches the pile-up regime (phi ~ 0.1-10)",
-          0.1 < peak < 10.0,
-          f"peak φ = {peak:.3g} photons/bin/cycle (alpha_sig=1.0 gives only {peak / 100:.3g})")
+    check(
+        "Flux: alpha_sig=100 reaches the pile-up regime (phi ~ 0.1-10)",
+        0.1 < peak < 10.0,
+        f"peak φ = {peak:.3g} photons/bin/cycle (alpha_sig=1.0 gives only {peak / 100:.3g})",
+    )
 
     fig.suptitle("Figure 8 — flux operating point via the reference condition", fontsize=13)
     fig.tight_layout()
@@ -797,8 +822,7 @@ def fig_flux_roundtrip(outdir, laser, hist):
     for albedo, depth, colour, mark in combos:
         got = [simulate(s, 2.0, albedo, depth)[0] for s in sig_targets]
         sig_err = max(sig_err, max(abs(g / t - 1) for g, t in zip(got, sig_targets)))
-        axes[0].loglog(sig_targets, got, mark + "-", color=colour, ms=6, lw=1.3,
-                       label=f"albedo {albedo}, {depth} m")
+        axes[0].loglog(sig_targets, got, mark + "-", color=colour, ms=6, lw=1.3, label=f"albedo {albedo}, {depth} m")
     axes[0].loglog(sig_targets, sig_targets, ls="--", color="#adb5bd", lw=1.2, zorder=0, label="ideal")
     axes[0].set_xlabel("alpha_sig set")
     axes[0].set_ylabel("alpha_sig recovered from φ")
@@ -811,8 +835,7 @@ def fig_flux_roundtrip(outdir, laser, hist):
     for albedo, depth, colour, mark in combos:
         got = [simulate(5.0, b, albedo, depth)[1] for b in bkg_targets]
         bkg_err = max(bkg_err, max(abs(g / t - 1) for g, t in zip(got, bkg_targets)))
-        axes[1].loglog(bkg_targets, got, mark + "-", color=colour, ms=6, lw=1.3,
-                       label=f"albedo {albedo}, {depth} m")
+        axes[1].loglog(bkg_targets, got, mark + "-", color=colour, ms=6, lw=1.3, label=f"albedo {albedo}, {depth} m")
     axes[1].loglog(bkg_targets, bkg_targets, ls="--", color="#adb5bd", lw=1.2, zorder=0, label="ideal")
     axes[1].set_xlabel("alpha_bkg set")
     axes[1].set_ylabel("alpha_bkg recovered from φ")
@@ -823,10 +846,20 @@ def fig_flux_roundtrip(outdir, laser, hist):
     fixed_bkg, fixed_sig = 2.0, 5.0
     bkg_while_sig_sweeps = [simulate(s, fixed_bkg, 0.8, 5.0)[1] for s in sig_targets]
     sig_while_bkg_sweeps = [simulate(fixed_sig, b, 0.8, 5.0)[0] for b in bkg_targets]
-    axes[2].semilogx(sig_targets, [b / fixed_bkg for b in bkg_while_sig_sweeps], "o-",
-                     color="#2a9d8f", label="alpha_bkg while alpha_sig sweeps")
-    axes[2].semilogx(bkg_targets, [s / fixed_sig for s in sig_while_bkg_sweeps], "s-",
-                     color="#e76f51", label="alpha_sig while alpha_bkg sweeps")
+    axes[2].semilogx(
+        sig_targets,
+        [b / fixed_bkg for b in bkg_while_sig_sweeps],
+        "o-",
+        color="#2a9d8f",
+        label="alpha_bkg while alpha_sig sweeps",
+    )
+    axes[2].semilogx(
+        bkg_targets,
+        [s / fixed_sig for s in sig_while_bkg_sweeps],
+        "s-",
+        color="#e76f51",
+        label="alpha_sig while alpha_bkg sweeps",
+    )
     axes[2].axhline(1.0, ls="--", color="#adb5bd", lw=1.2)
     axes[2].set_ylim(0.9, 1.1)
     axes[2].set_xlabel("the swept parameter")
@@ -839,21 +872,29 @@ def fig_flux_roundtrip(outdir, laser, hist):
         max(abs(s / fixed_sig - 1) for s in sig_while_bkg_sweeps),
     )
 
-    check("Flux round-trip: alpha_sig recovered from φ",
-          sig_err < 0.02,
-          f"max error {sig_err * 100:.2f}% over 0.1–1000 x 3 albedo/depth combinations")
-    check("Flux round-trip: alpha_bkg recovered from φ",
-          bkg_err < 0.02,
-          f"max error {bkg_err * 100:.2f}% over 0.01–10 x 3 albedo/depth combinations")
-    check("Flux round-trip: signal and background do not cross-talk",
-          crosstalk < 0.02,
-          f"held parameter moves by at most {crosstalk * 100:.2f}% while the other sweeps 10,000x")
+    check(
+        "Flux round-trip: alpha_sig recovered from φ",
+        sig_err < 0.02,
+        f"max error {sig_err * 100:.2f}% over 0.1–1000 x 3 albedo/depth combinations",
+    )
+    check(
+        "Flux round-trip: alpha_bkg recovered from φ",
+        bkg_err < 0.02,
+        f"max error {bkg_err * 100:.2f}% over 0.01–10 x 3 albedo/depth combinations",
+    )
+    check(
+        "Flux round-trip: signal and background do not cross-talk",
+        crosstalk < 0.02,
+        f"held parameter moves by at most {crosstalk * 100:.2f}% while the other sweeps 10,000x",
+    )
 
     # SBR is the quantity that actually matters downstream, so state it directly.
     s_got, b_got = simulate(100.0, 4.0, 0.8, 5.0)
-    check("Flux round-trip: SBR recovered",
-          abs((s_got / b_got) / (100.0 / 4.0) - 1) < 0.02,
-          f"set SBR {100.0 / 4.0:.1f}, recovered {s_got / b_got:.2f}")
+    check(
+        "Flux round-trip: SBR recovered",
+        abs((s_got / b_got) / (100.0 / 4.0) - 1) < 0.02,
+        f"set SBR {100.0 / 4.0:.1f}, recovered {s_got / b_got:.2f}",
+    )
 
     fig.suptitle("Figure 9 — flux round-trip: set it, then measure it back out of φ", fontsize=13)
     fig.tight_layout()
@@ -875,8 +916,10 @@ def main():
     hist = Histogrammer(HistConfig(n_bins=N_BINS))
 
     print(f"laser {FREQ.to(ureg.megahertz):~P}, pulse {PULSE_WIDTH:~P}")
-    print(f"unambiguous range {max_depth_of(laser):.3f} m over {N_BINS} bins "
-          f"({max_depth_of(laser)/N_BINS*100:.2f} cm/bin)\n")
+    print(
+        f"unambiguous range {max_depth_of(laser):.3f} m over {N_BINS} bins "
+        f"({max_depth_of(laser) / N_BINS * 100:.2f} cm/bin)\n"
+    )
 
     scenes = {
         "flat wall 4 m": flat_wall(4.0),

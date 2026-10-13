@@ -9,61 +9,61 @@ visionsim.emulate.aspc.ambient module
 
 .. automodule:: visionsim.emulate.aspc.ambient
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:
 
 visionsim.emulate.aspc.detector module
 --------------------------------------
 
 .. automodule:: visionsim.emulate.aspc.detector
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:
 
 visionsim.emulate.aspc.emitter module
 -------------------------------------
 
 .. automodule:: visionsim.emulate.aspc.emitter
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:
 
 visionsim.emulate.aspc.emulator module
 --------------------------------------
 
 .. automodule:: visionsim.emulate.aspc.emulator
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:
 
 visionsim.emulate.aspc.histogrammers module
 -------------------------------------------
 
 .. automodule:: visionsim.emulate.aspc.histogrammers
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:
 
 visionsim.emulate.aspc.sensors module
 -------------------------------------
 
 .. automodule:: visionsim.emulate.aspc.sensors
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:
 
 visionsim.emulate.aspc.utils module
 -----------------------------------
 
 .. automodule:: visionsim.emulate.aspc.utils
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:
 
 Module contents
 ---------------
 
 .. automodule:: visionsim.emulate.aspc
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

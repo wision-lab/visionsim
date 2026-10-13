@@ -80,6 +80,7 @@ dev = [
     "psutil",
     "types-peewee",
     "syrupy>=4.9.1",
+    "types-tqdm"
 ]
 docs = [
     "invoke",
@@ -89,7 +90,17 @@ docs = [
     "click_extra[sphinx,pygments]",
     "myst-parser",  # Should not be needed, but click_extra throws an error if it's not installed
     "sphinx-copybutton",
+    "sphinx-design",
     "sphinxcontrib-video",
     "sphinxcontrib-napoleon",
     "furo",
+    "scienceplots",
 ]
+[[tool.mypy.overrides]]
+module = [
+    "cv2.*",
+    "pint.*",
+    "ruamel.*",
+    "OpenEXR.*",
+]
+ignore_missing_imports = true

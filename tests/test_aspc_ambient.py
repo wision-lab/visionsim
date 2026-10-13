@@ -15,12 +15,12 @@ REL = 1e-9
 
 
 def _sun(**kw):
-    defaults = dict(
-        temperature=5778 * ureg.kelvin,
-        light_conditions=LightConditions.BRIGHT_SUNLIGHT,
-        lambda_pass=550 * ureg.nanometer,
-        delta_lambda=10 * ureg.nanometer,
-    )
+    defaults = {
+        "temperature": 5778 * ureg.kelvin,
+        "light_conditions": LightConditions.BRIGHT_SUNLIGHT,
+        "lambda_pass": 550 * ureg.nanometer,
+        "delta_lambda": 10 * ureg.nanometer,
+    }
     defaults.update(kw)
     return Sun(**defaults)
 

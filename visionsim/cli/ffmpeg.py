@@ -186,7 +186,7 @@ def combine(
                 _log.info(f"Padding {path}...")
                 out_path = Path(tmpdir) / Path(path).name
                 out_path = out_path.with_name(f"{out_path.stem}_padded{out_path.suffix}")
-                cmd = f"ffmpeg -i {path} -vf tpad=stop=-1=color={color},trim=end={max_duration} {out_path} -y"
+                cmd = f"ffmpeg -y -i {path} -vf tpad=stop=-1=color={color},trim=end={max_duration} {out_path}"
                 mapping[str(path)] = out_path
                 _run(cmd)
 
@@ -209,7 +209,7 @@ def combine(
                 "".join(f"[a{i}]" for i, _ in enumerate(in_paths))
                 + f"xstack=inputs={len(in_paths)}:layout={layout_spec}[out]"
             )
-            cmd = f'ffmpeg {in_paths_str} -filter_complex "{filter_inputs_str} {placement}" -map "[out]" -c:v libx264 {outfile}'
+            cmd = f'ffmpeg -y {in_paths_str} -filter_complex "{filter_inputs_str} {placement}" -map "[out]" -c:v libx264 {outfile}'
             _run(cmd)
             return
 
@@ -223,7 +223,7 @@ def combine(
                     in_path = mapping.get(p, p)
                     out_path = Path(tmpdir) / Path(p).name
                     out_path = out_path.with_name(f"{out_path.stem}_height_resize{out_path.suffix}")
-                    _run(f"ffmpeg -i {in_path} -vf scale=-{multiple}:{max_height} {out_path} -y")
+                    _run(f"ffmpeg -y -i {in_path} -vf scale=-{multiple}:{max_height} {out_path}")
                     mapping[p] = out_path
 
             # Combine all videos in the row
@@ -233,9 +233,9 @@ def combine(
                 out_file = Path(tmpdir) / f"row_{i:04}.mp4"
                 row_paths.append(out_file)
                 cmd = (
-                    f"ffmpeg -i {paths} -filter_complex "
+                    f"ffmpeg -y -i {paths} -filter_complex "
                     f"hstack=inputs={len(row)}:shortest={int(mode.lower() == 'shortest')} "
-                    f"{out_file} -vsync vfr -y"
+                    f"{out_file} -vsync vfr"
                 )
                 _run(cmd)
             else:
@@ -261,9 +261,9 @@ def combine(
             # Join all row videos
             paths = " -i ".join(str(p) for p in new_row_paths)
             cmd = (
-                f"ffmpeg -i {paths} -filter_complex "
+                f"ffmpeg -y -i {paths} -filter_complex "
                 f"vstack=inputs={len(matrix)}:shortest={int(mode.lower() == 'shortest')} "
-                f"{outfile} -vsync vfr -y"
+                f"{outfile} -vsync vfr"
             )
             _run(cmd)
         else:

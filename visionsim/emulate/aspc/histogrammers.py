@@ -17,6 +17,7 @@ from visionsim.emulate.aspc.utils import get_irradiance_with_fov, ureg, validate
 # MONTE-CARLO SAMPLING & DEAD-TIME WALK KERNELS
 # =============================================================================
 
+
 def sample_photon_arrivals(
     phi_bar: Tensor,
     n_pulses: int,
@@ -51,9 +52,7 @@ def _sample_occupied_cells(
         return empty, empty
 
     n_tbins = int(rates.shape[0])
-    bins = torch.multinomial(
-        rates.to(torch.float64), n_photons, replacement=True, generator=generator
-    )
+    bins = torch.multinomial(rates.to(torch.float64), n_photons, replacement=True, generator=generator)
     cycles = torch.randint(0, n_pulses, (n_photons,), generator=generator, dtype=torch.int64)
 
     g, _ = torch.sort(cycles * n_tbins + bins)
@@ -71,8 +70,8 @@ def _walk_occupied(
     max_det_per_cycle: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Sequential dead-time scan over occupied bins. Returns (cycles, bins)."""
-    out_cycle = np.empty(int(occ_counts.sum()), dtype=np.int64)
-    out_bin = np.empty(out_cycle.shape[0], dtype=np.int64)
+    out_cycle: np.ndarray = np.empty(int(occ_counts.sum()), dtype=np.int64)
+    out_bin: np.ndarray = np.empty(out_cycle.shape[0], dtype=np.int64)
     n_out = 0
 
     t_armed = -1
@@ -95,8 +94,7 @@ def _walk_occupied(
         if g >= t_armed:
             n_emit = int(occ_counts[i]) if dead_time_bins == 0 else 1
             headroom = max_det_per_cycle - n_det_this_cycle
-            if n_emit > headroom:
-                n_emit = headroom
+            n_emit = min(n_emit, headroom)
 
             for _ in range(n_emit):
                 out_cycle[n_out] = cycle
@@ -122,7 +120,12 @@ def _deadtime_walk(
     flat = counts.reshape(-1)
     occupied = np.nonzero(flat)[0]
     return _walk_occupied(
-        occupied, flat[occupied], n_tbins, dead_time_bins, free_running, paralyzable,
+        occupied,
+        flat[occupied],
+        n_tbins,
+        dead_time_bins,
+        free_running,
+        paralyzable,
         max_det_per_cycle,
     )
 
@@ -175,9 +178,7 @@ def simulate_photon_timestamps(
         first[0] = True
         np.not_equal(cycle_of[1:], cycle_of[:-1], out=first[1:])
         g = occupied_np[first]
-        return torch.stack(
-            [torch.from_numpy(cycle_of[first]), torch.from_numpy(g % n_tbins)], dim=1
-        ).to(torch.int64)
+        return torch.stack([torch.from_numpy(cycle_of[first]), torch.from_numpy(g % n_tbins)], dim=1).to(torch.int64)
 
     cap = (1 << 62) if max_detections_per_cycle is None else int(max_detections_per_cycle)
     cyc, bns = _walk_occupied(
@@ -189,9 +190,7 @@ def simulate_photon_timestamps(
         bool(paralyzable),
         cap,
     )
-    return torch.stack(
-        [torch.from_numpy(cyc), torch.from_numpy(bns)], dim=1
-    ).to(torch.int64)
+    return torch.stack([torch.from_numpy(cyc), torch.from_numpy(bns)], dim=1).to(torch.int64)
 
 
 def timestamps_to_histogram(
@@ -203,13 +202,9 @@ def timestamps_to_histogram(
     if n_hist_bins is None:
         n_hist_bins = n_tbins
     if n_hist_bins > n_tbins:
-        raise ValueError(
-            f"n_hist_bins ({n_hist_bins}) cannot exceed TDC resolution n_tbins ({n_tbins})"
-        )
+        raise ValueError(f"n_hist_bins ({n_hist_bins}) cannot exceed TDC resolution n_tbins ({n_tbins})")
     if n_tbins % n_hist_bins != 0:
-        raise ValueError(
-            f"n_tbins ({n_tbins}) must be an exact multiple of n_hist_bins ({n_hist_bins})"
-        )
+        raise ValueError(f"n_tbins ({n_tbins}) must be an exact multiple of n_hist_bins ({n_hist_bins})")
 
     if timestamps.numel() == 0:
         return torch.zeros(n_hist_bins, dtype=torch.float32)
@@ -221,6 +216,7 @@ def timestamps_to_histogram(
 # =============================================================================
 # PILE-UP DISTORTION FORWARD MODELS
 # =============================================================================
+
 
 def batch_distorted_transient_sync(
     phi_bar: torch.Tensor,
@@ -324,6 +320,7 @@ def calculate_distorted_transient_sync(
 # HISTOGRAMMER BASE CLASS
 # =============================================================================
 
+
 class HistogrammerBase:
     """Base class for SPAD readout and TDC histogramming operations."""
 
@@ -344,8 +341,8 @@ class HistogrammerBase:
         else:
             h, w = empty_ref.shape[0], empty_ref.shape[1]
 
-        y_min_idx, y_max_idx = int(round(r1 * h)), int(round(r2 * h))
-        x_min_idx, x_max_idx = int(round(c1 * w)), int(round(c2 * w))
+        y_min_idx, y_max_idx = round(r1 * h), round(r2 * h)
+        x_min_idx, x_max_idx = round(c1 * w), round(c2 * w)
 
         mask = torch.zeros((h, w), dtype=torch.float32, device=empty_ref.device)
         mask[y_min_idx:y_max_idx, x_min_idx:x_max_idx] = 1.0
@@ -362,7 +359,7 @@ class HistogrammerBase:
     def get_perpixel_fov_masks(
         self,
         empty_ref: torch.Tensor,
-        pixel_fov_list: list = None,
+        pixel_fov_list: list | None = None,
         vignette: bool = True,
     ) -> torch.Tensor:
         if pixel_fov_list is None:
@@ -382,11 +379,11 @@ class HistogrammerBase:
         fov_masks: torch.Tensor,
         gt_ntime_bins: int,
         max_depth: float,
-        sensor_fov: list = None,
-        pixel_fov_list: list = None,
-        w: int = None,
-        h: int = None,
-        omega: float = None,
+        sensor_fov: list | None = None,
+        pixel_fov_list: list | None = None,
+        w: int | None = None,
+        h: int | None = None,
+        omega: float | None = None,
     ) -> tuple[torch.Tensor, list]:
         if hasattr(irradiance_frames, "magnitude"):
             irradiance_frames = irradiance_frames.magnitude
@@ -420,7 +417,13 @@ class HistogrammerBase:
                         ambient_offsets.append(torch.zeros((), device=device))
                         continue
 
-                    if sensor_fov is not None and pixel_fov_list is not None and w is not None and h is not None and omega is not None:
+                    if (
+                        sensor_fov is not None
+                        and pixel_fov_list is not None
+                        and w is not None
+                        and h is not None
+                        and omega is not None
+                    ):
                         fov_irradiance_vals = get_irradiance_with_fov(
                             current_irradiance_vals, sensor_fov, pixel_fov_list[mask_idx], omega, w, h
                         )
@@ -462,13 +465,17 @@ class HistogrammerBase:
 
                 n_fov_pixels = int(index_mask.sum())
                 if n_fov_pixels == 0:
-                    transient_list.append(
-                        torch.zeros((1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=device)
-                    )
+                    transient_list.append(torch.zeros((1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=device))
                     ambient_offsets.append(torch.zeros((), device=device))
                     continue
 
-                if sensor_fov is not None and pixel_fov_list is not None and w is not None and h is not None and omega is not None:
+                if (
+                    sensor_fov is not None
+                    and pixel_fov_list is not None
+                    and w is not None
+                    and h is not None
+                    and omega is not None
+                ):
                     fov_irradiance_vals = get_irradiance_with_fov(
                         current_irradiance_vals, sensor_fov, pixel_fov_list[mask_idx], omega, w, h
                     )
@@ -490,9 +497,7 @@ class HistogrammerBase:
                 ambient_offsets.append(masked_offsets.sum() / (n_fov_pixels * gt_ntime_bins))
 
                 if current_depth_vals.numel() == 0:
-                    transient_list.append(
-                        torch.zeros((1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=device)
-                    )
+                    transient_list.append(torch.zeros((1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=device))
                     continue
 
                 transient_idx = torch.floor(current_depth_vals * gt_ntime_bins / max_depth).to(torch.long)
@@ -509,9 +514,9 @@ class HistogrammerBase:
     ) -> torch.Tensor:
         arrival_rates = torch.zeros_like(transients, dtype=torch.float32, device=transients.device)
         for i in range(transients.shape[0]):
-            convolved_signal = F.conv1d(
-                transients[i].view(1, 1, -1), irf.flip(-1).view(1, 1, -1), padding="same"
-            ).view(-1)
+            convolved_signal = F.conv1d(transients[i].view(1, 1, -1), irf.flip(-1).view(1, 1, -1), padding="same").view(
+                -1
+            )
 
             if isinstance(offset, (list, tuple)):
                 background = offset[i] if i < len(offset) else (offset[0] if len(offset) > 0 else 0.0)
@@ -569,8 +574,10 @@ class Histogrammer(HistogrammerBase):
     """Equi-Width Histogrammer (EWH) class."""
 
     @validate_units()
-    def __init__(self, config: HistConfig = HistConfig()):
+    def __init__(self, config: HistConfig | None = None):
         super().__init__()
+        if config is None:
+            config = HistConfig()
         for k, v in config.__dict__.items():
             setattr(self, k, v)
 
@@ -586,8 +593,13 @@ class Histogrammer(HistogrammerBase):
         generator: torch.Generator | None = None,
     ) -> torch.Tensor:
         return self.simulate_pixel_photon_hist(
-            phi_bar, n_pulses, n_bins, free_running, dead_time_bins,
-            paralyzable=paralyzable, generator=generator,
+            phi_bar,
+            n_pulses,
+            n_bins,
+            free_running,
+            dead_time_bins,
+            paralyzable=paralyzable,
+            generator=generator,
         )
 
     def simulate_ewh(
@@ -601,13 +613,9 @@ class Histogrammer(HistogrammerBase):
     ) -> list[torch.Tensor]:
         if fast_sim:
             if free_running:
-                photon_hist_probs = batch_distorted_transient_async(
-                    arrival_rates, dead_time_bins, n_bins
-                )
+                photon_hist_probs = batch_distorted_transient_async(arrival_rates, dead_time_bins, n_bins)
             else:
-                photon_hist_probs = batch_distorted_transient_sync(
-                    arrival_rates, dead_time_bins, n_bins
-                )
+                photon_hist_probs = batch_distorted_transient_sync(arrival_rates, dead_time_bins, n_bins)
             photon_hists = photon_hist_probs * n_pulses
             return [photon_hists[i] for i in range(photon_hists.shape[0])]
 
@@ -635,8 +643,10 @@ class Histogrammer(HistogrammerBase):
 class HistogrammerEDH(HistogrammerBase):
     """Equi-Depth Histogrammer (EDH) class."""
 
-    def __init__(self, config: HistConfig = HistConfig()):
+    def __init__(self, config: HistConfig | None = None):
         super().__init__()
+        if config is None:
+            config = HistConfig()
         for k, v in config.__dict__.items():
             setattr(self, k, v)
 
@@ -656,7 +666,7 @@ class HistogrammerEDH(HistogrammerBase):
             e2[e1_ori < 0] = 1e12
 
             neg_max_val_, neg_max_idx_ = torch.max(e1, axis=-1)
-            pos_min_val_, pos_min_idx_ = torch.min(e2, axis=-1)
+            pos_min_val_, _ = torch.min(e2, axis=-1)
             a1 = torch.abs(neg_max_val_)
             b1 = pos_min_val_
             edh_bins[idx + 1] = neg_max_idx_ + a1 * 1.0 / (a1 + b1 + 1e-14)
@@ -676,8 +686,13 @@ class HistogrammerEDH(HistogrammerBase):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         n_tbins = phi_bar.shape[-1]
         photon_hist = self.simulate_pixel_photon_hist(
-            phi_bar, n_pulses, n_tbins, free_running, dead_time_bins,
-            paralyzable=paralyzable, generator=generator,
+            phi_bar,
+            n_pulses,
+            n_tbins,
+            free_running,
+            dead_time_bins,
+            paralyzable=paralyzable,
+            generator=generator,
         )
         photon_edh = self.photon_hist2edh(photon_hist, n_bins)
         return photon_hist, photon_edh

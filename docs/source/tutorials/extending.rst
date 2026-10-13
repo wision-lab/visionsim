@@ -9,9 +9,9 @@ Here we create a custom ``ExtendedService`` which allows for axis-aligned boundi
 
 Currently, in order to use this new rendering service, the user must spin it up manually (as opposed to using :meth:`BlenderClient.spawn <visionsim.simulate.blender.BlenderClient.spawn>`):
 
-.. code-block:: console 
-    
-    $ blender --background --python-use-system-env --python examples/blender/extended_service.py
+.. code-block:: bash
+
+    blender --background --python-use-system-env --python examples/blender/extended_service.py
 
 And then connect to that render service, either directly using the appropriate connection settings, or using the :meth:`BlenderClient.auto_connect <visionsim.simulate.blender.BlenderClient.auto_connect>`: 
 

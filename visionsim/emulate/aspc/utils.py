@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import functools
 import inspect
 import math
 from copy import deepcopy
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Optional, Tuple, Union
+from typing import Any, Callable
 
 import cv2
 import numpy as np
@@ -72,6 +74,7 @@ def tof2depth(t):
 @ureg.wraps(ureg.count, (ureg.watt, ureg.second, ureg.meter))
 def watts2photons(watts, t, wavelength):
     from scipy.constants import h
+
     energy = watts * t
     photon_energy = h * c / wavelength
     return energy / photon_energy
@@ -103,17 +106,21 @@ def get_irradiance_with_fov(irradiance, sensor_fov, pixel_fov, omega, w, h):
 
 
 def preproc_albedo_intensity_depth_frames(
-    root: Union[str, Path],
-    device: Union[str, torch.device],
+    root: str | Path,
+    device: str | torch.device,
     config: dict,
     start_idx: int,
-    num_frames: Optional[int] = 1,
-    requires_grad: Optional[bool] = False,
+    num_frames: int | None = 1,
+    requires_grad: bool | None = False,
 ):
     root = Path(root) if isinstance(root, str) else root
     frames = Dataset.from_path(root / "frames")
     depths = Dataset.from_path(root / "depths")
     assert len(depths) == len(frames), "Different number of depth and RGB frames"
+
+    if num_frames is None:
+        num_frames = len(frames) - start_idx
+
     assert start_idx + num_frames <= len(frames), "start_idx + num_frames must not exceed total rendered frames"
 
     Nr, Nc = config["sensor"]["size"]
@@ -135,8 +142,8 @@ def preproc_albedo_intensity_depth_frames(
     depth_frames_list = []
 
     for idx in range(len(rgb_img_list)):
-        rgb_img = rgb_img_list[idx]
-        raw_depth = depth_img_list[idx]
+        rgb_img = np.asarray(rgb_img_list[idx])
+        raw_depth = np.asarray(depth_img_list[idx])
 
         if raw_depth.ndim == 3:
             raw_depth = raw_depth[:, :, 0]
@@ -262,7 +269,7 @@ def yaml_constructor(cls_or_func, *extra_args):
     return constructor
 
 
-def _load_config(config_path: Union[Path, str, dict, None]) -> dict:
+def _load_config(config_path: Path | str | dict | None) -> dict:
     if config_path is None:
         return {}
 
@@ -312,13 +319,13 @@ def _to_quantity(val: Any, unit_str: str) -> Any:
             if q.dimensionless:
                 return ureg.Quantity(q.magnitude, unit_str)
             return q
-        except Exception:
+        except Exception:  # noqa: BLE001
             return ureg.Quantity(float(val), unit_str)
 
     return val
 
 
-def _get_nested_val(d: dict, path: Tuple[str, ...]) -> Tuple[bool, Any]:
+def _get_nested_val(d: dict, path: tuple[str, ...]) -> tuple[bool, Any]:
     curr = d
     for step in path:
         if isinstance(curr, dict) and step in curr:
@@ -331,7 +338,7 @@ def _get_nested_val(d: dict, path: Tuple[str, ...]) -> Tuple[bool, Any]:
 def _build_config(
     DEFAULT_CONFIG: dict,
     user_args: dict,
-    config_file: Union[Path, str, dict, None] = None,
+    config_file: Path | str | dict | None = None,
 ) -> dict:
     yml_config = _load_config(config_file)
 
@@ -408,7 +415,7 @@ def _build_config(
     return config
 
 
-def prepare_config(user_args: dict, config_file: Union[Path, str, None] = None) -> dict:
+def prepare_config(user_args: dict, config_file: Path | str | None = None) -> dict:
     DEFAULT_CONFIG = {
         "histogrammer": {
             "min_depth": 0 * ureg.meters,

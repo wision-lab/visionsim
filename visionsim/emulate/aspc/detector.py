@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import Any
 
 import numpy as np
 import torch
@@ -19,7 +19,7 @@ from visionsim.emulate.aspc.utils import (
 
 class Detector:
     """
-    Unified Detector module combining physical camera optics (SPADSensor), 
+    Unified Detector module combining physical camera optics (SPADSensor),
     spatial pixel FOV masking, and readout processing (Histogrammer).
     """
 
@@ -27,37 +27,41 @@ class Detector:
         self,
         sensor: SPADSensor,
         histogrammer: HistogrammerBase,
-        device: Union[str, torch.device] = "cpu",
-        pixel_fov_list: Union[List[List[float]], str, Path, None] = None,
+        device: str | torch.device = "cpu",
+        pixel_fov_list: list[list[float]] | str | Path | None = None,
     ):
         self.sensor = sensor
-        self.histogrammer = histogrammer
+        self.histogrammer: Any = histogrammer
         self.device = torch.device(device) if isinstance(device, str) else device
 
         # Load or set registered FOV coordinates
+        parsed_fov_list: list[list[float]]
         if isinstance(pixel_fov_list, (str, Path)):
             path = Path(pixel_fov_list)
             if path.exists():
-                pixel_fov_list = np.loadtxt(path, dtype=np.float32).tolist()
-                if isinstance(pixel_fov_list[0], (float, int)):
-                    pixel_fov_list = [pixel_fov_list]
+                raw_data = np.loadtxt(path, dtype=np.float32).tolist()
+                if isinstance(raw_data, list) and len(raw_data) > 0 and isinstance(raw_data[0], (float, int)):
+                    parsed_fov_list = [raw_data]
+                else:
+                    parsed_fov_list = raw_data
             else:
-                pixel_fov_list = [[0.0, 1.0, 0.0, 1.0]]
+                parsed_fov_list = [[0.0, 1.0, 0.0, 1.0]]
+        elif pixel_fov_list is None:
+            parsed_fov_list = [[0.0, 1.0, 0.0, 1.0]]
+        else:
+            parsed_fov_list = pixel_fov_list
 
-        if pixel_fov_list is None:
-            pixel_fov_list = [[0.0, 1.0, 0.0, 1.0]]
-
-        self.pixel_fov_list: List[List[float]] = pixel_fov_list
+        self.pixel_fov_list: list[list[float]] = parsed_fov_list
 
         # Cached simulation state
-        self.transients: Union[torch.Tensor, None] = None
-        self.arrival_rates: Union[torch.Tensor, None] = None
-        self.ambient_offsets: Union[List[torch.Tensor], torch.Tensor, None] = None
+        self.transients: torch.Tensor | None = None
+        self.arrival_rates: torch.Tensor | None = None
+        self.ambient_offsets: list[torch.Tensor] | torch.Tensor | None = None
 
     def build_pixel_fov_list(
         self,
-        per_pixel_fov: Union[Quantity, Tuple[Quantity, Quantity]],
-        output_path: Union[str, None] = None,
+        per_pixel_fov: Quantity | tuple[Quantity, Quantity],
+        output_path: str | None = None,
     ) -> list:
         """Builds normalized FOV bounds [r1, r2, c1, c2] for every pixel in sensor array."""
         if isinstance(per_pixel_fov, Quantity):
@@ -98,10 +102,10 @@ class Detector:
         """Generates a 2D spatial FOV mask with optional smooth vignetting."""
         img_rows, img_cols = empty_mask.shape
 
-        r1 = max(0, min(img_rows, int(round(row1 * img_rows))))
-        r2 = max(0, min(img_rows, int(round(row2 * img_rows))))
-        c1 = max(0, min(img_cols, int(round(col1 * img_cols))))
-        c2 = max(0, min(img_cols, int(round(col2 * img_cols))))
+        r1 = max(0, min(img_rows, round(row1 * img_rows)))
+        r2 = max(0, min(img_rows, round(row2 * img_rows)))
+        c1 = max(0, min(img_cols, round(col1 * img_cols)))
+        c2 = max(0, min(img_cols, round(col2 * img_cols)))
 
         mask = torch.zeros((img_rows, img_cols), dtype=torch.float32, device=self.device)
 
@@ -138,27 +142,19 @@ class Detector:
 
         return torch.concat(mask_list)
 
-    def _get_signal(
-        self, depth_frame: torch.Tensor, albedo_frame: torch.Tensor, emitter: PulsedLaser
-    ) -> torch.Tensor:
+    def _get_signal(self, depth_frame: torch.Tensor, albedo_frame: torch.Tensor, emitter: PulsedLaser) -> torch.Tensor:
         """Converts active laser radiance to focal plane irradiance (#photons)."""
         num_pixels = self.sensor.w * self.sensor.h
-        radiance = emitter.get_scene_radiance(
-            albedo_frame, depth_frame, num_pixels, self.sensor.omega
-        )
-        irradiance = (radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(
-            irradiance_photons
-        ) * (self.sensor.pixel_pitch.to(ureg.meter)) ** 2
+        radiance = emitter.get_scene_radiance(albedo_frame, depth_frame, num_pixels, self.sensor.omega)
+        irradiance = (radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(irradiance_photons) * (
+            self.sensor.pixel_pitch.to(ureg.meter)
+        ) ** 2
 
         return torch.as_tensor(irradiance.magnitude, dtype=torch.float32, device=self.device)
 
-    def _get_ambient_offset(
-        self, albedo_frame: torch.Tensor, scene: Sun, emitter: PulsedLaser
-    ) -> torch.Tensor:
+    def _get_ambient_offset(self, albedo_frame: torch.Tensor, scene: Sun, emitter: PulsedLaser) -> torch.Tensor:
         """Converts ambient background radiance to focal plane offset irradiance (#photons)."""
-        ambient_radiance = scene.get_scene_radiance(
-            albedo_frame, emitter.pulse_repetition
-        )
+        ambient_radiance = scene.get_scene_radiance(albedo_frame, emitter.pulse_repetition)
         ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(
             irradiance_photons
         ) * (self.sensor.pixel_pitch.to(ureg.meter)) ** 2
@@ -171,7 +167,7 @@ class Detector:
         albedo_frame: torch.Tensor,
         emitter: PulsedLaser,
         scene: Sun,
-    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
         """Calculates spatial-temporal transients over laser ToF bins."""
         irradiance = self._get_signal(depth_frame, albedo_frame, emitter)
         offsets = self._get_ambient_offset(albedo_frame, scene, emitter)
@@ -227,25 +223,25 @@ class Detector:
         self.arrival_rates = arrival_rates
         return arrival_rates
 
-    def get_ewh(self, emitter: PulsedLaser) -> List[torch.Tensor]:
-            """Simulates SPAD Equi-Width Histogram (EWH) output."""
-            if self.arrival_rates is None:
-                raise RuntimeError("Arrival rates not computed. Call get_arrival_rates() first.")
+    def get_ewh(self, emitter: PulsedLaser) -> list[torch.Tensor]:
+        """Simulates SPAD Equi-Width Histogram (EWH) output."""
+        if self.arrival_rates is None:
+            raise RuntimeError("Arrival rates not computed. Call get_arrival_rates() first.")
 
-            dead_time_bins = int(
-                np.round(
-                    self.histogrammer.dead_time.to(ureg.second).magnitude
-                    * self.histogrammer.n_bins
-                    * emitter.pulse_repetition.to(ureg.hertz).magnitude
-                )
+        dead_time_bins = int(
+            np.round(
+                self.histogrammer.dead_time.to(ureg.second).magnitude
+                * self.histogrammer.n_bins
+                * emitter.pulse_repetition.to(ureg.hertz).magnitude
             )
+        )
 
-            ewh_list = self.histogrammer.simulate_ewh(
-                arrival_rates=self.arrival_rates,
-                n_pulses=self.histogrammer.n_pulses,
-                n_bins=self.histogrammer.n_bins,
-                free_running=self.histogrammer.free_running,
-                dead_time_bins=dead_time_bins,
-                fast_sim=self.histogrammer.fast_sim,
-            )
-            return ewh_list
+        ewh_list = self.histogrammer.simulate_ewh(
+            arrival_rates=self.arrival_rates,
+            n_pulses=self.histogrammer.n_pulses,
+            n_bins=self.histogrammer.n_bins,
+            free_running=self.histogrammer.free_running,
+            dead_time_bins=dead_time_bins,
+            fast_sim=self.histogrammer.fast_sim,
+        )
+        return ewh_list

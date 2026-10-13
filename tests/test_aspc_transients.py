@@ -116,9 +116,7 @@ class TestFovMaskSemantics:
         assert float(t.sum()) == pytest.approx(1.0)
 
     def test_multiple_fovs_produce_independent_rows(self, hist):
-        masks = hist.get_perpixel_fov_masks(
-            torch.zeros(H, W), [[0, 0.5, 0, 1], [0.5, 1, 0, 1]], vignette=False
-        )
+        masks = hist.get_perpixel_fov_masks(torch.zeros(H, W), [[0, 0.5, 0, 1], [0.5, 1, 0, 1]], vignette=False)
         irr, dep, off = _scene(1.0)
         dep[0, : H // 2, :] = 2.0
         dep[0, H // 2 :, :] = 6.0
@@ -308,9 +306,7 @@ class TestResolutionDecoupling:
         for h, w in [(75, 100), (150, 200), (300, 400)]:
             s = SPADSensor(size=(h, w), fov=66 * ureg.degree)
             rad = laser.get_scene_radiance(torch.tensor(0.5), 3.0 * ureg.meter, s.w * s.h, s.omega)
-            irr = (rad * np.pi / 4 * (1 / s.f_number) ** 2).to(irradiance_photons) * (
-                s.pixel_pitch.to(ureg.meter)
-            ) ** 2
+            irr = (rad * np.pi / 4 * (1 / s.f_number) ** 2).to(irradiance_photons) * (s.pixel_pitch.to(ureg.meter)) ** 2
             vals.append(float(irr.magnitude))
         assert vals[1] == pytest.approx(vals[0], rel=1e-9)
         assert vals[2] == pytest.approx(vals[0], rel=1e-9)

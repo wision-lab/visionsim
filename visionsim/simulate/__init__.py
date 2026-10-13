@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -31,11 +30,12 @@ def install_dependencies(
     if version and editable:
         raise ValueError("Cannot specify both version and editable.")
 
-    cmd = f"{executable or 'blender'} -b --python-use-system-env --python '{install.__file__}' -- "
+    blender = os.fspath(executable) if executable else "blender"
+    cmd = [blender, "-b", "--python-use-system-env", "--python", install.__file__, "--"]
     path = path or Path(visionsim.__path__[0]).parent.as_posix()
 
     if version:
-        cmd += f"--version={version}"
+        cmd.append(f"--version={version}")
     else:
-        cmd += f"--editable {path}" if editable else f"{path}"
-    return subprocess.run(shlex.split(cmd), stdout=sys.stdout, stderr=subprocess.STDOUT, text=True, check=True)
+        cmd += ["--editable", path] if editable else [path]
+    return subprocess.run(cmd, stdout=sys.stdout, stderr=subprocess.STDOUT, text=True, check=True)

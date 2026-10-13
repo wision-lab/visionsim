@@ -131,9 +131,7 @@ class TestExpectedRates:
         phi = torch.tensor([0.05, 0.20, 0.10, 0.02])
         n_pulses = 200_000
         gen = torch.Generator().manual_seed(1234)
-        ts = simulate_photon_timestamps(
-            phi, n_pulses, dead_time_bins=0, free_running=True, generator=gen
-        )
+        ts = simulate_photon_timestamps(phi, n_pulses, dead_time_bins=0, free_running=True, generator=gen)
         hist = timestamps_to_histogram(ts, n_tbins=len(phi)) / n_pulses
         torch.testing.assert_close(hist, phi, rtol=0.02, atol=1e-3)
 
@@ -141,9 +139,7 @@ class TestExpectedRates:
         phi = torch.full((3,), 0.5)
         n_pulses = 200_000
         gen = torch.Generator().manual_seed(7)
-        ts = simulate_photon_timestamps(
-            phi, n_pulses, dead_time_bins=0, free_running=True, generator=gen
-        )
+        ts = simulate_photon_timestamps(phi, n_pulses, dead_time_bins=0, free_running=True, generator=gen)
         rate = float(timestamps_to_histogram(ts, 3).sum()) / (n_pulses * 3)
         bernoulli_rate = 1.0 - math.exp(-0.5)
         assert rate == pytest.approx(0.5, rel=0.02)
@@ -159,7 +155,11 @@ class TestSparseSampler:
         hists = {}
         for mode in (True, False):
             ts = simulate_photon_timestamps(
-                phi, n_pulses, dead_time_bins=0, free_running=True, sparse=mode,
+                phi,
+                n_pulses,
+                dead_time_bins=0,
+                free_running=True,
+                sparse=mode,
                 generator=torch.Generator().manual_seed(17),
             )
             hists[mode] = timestamps_to_histogram(ts, n_tbins=len(phi)) / n_pulses
@@ -172,7 +172,11 @@ class TestSparseSampler:
         totals = {}
         for mode in (True, False):
             ts = simulate_photon_timestamps(
-                phi, n_pulses, dead_time_bins=8, free_running=True, sparse=mode,
+                phi,
+                n_pulses,
+                dead_time_bins=8,
+                free_running=True,
+                sparse=mode,
                 generator=torch.Generator().manual_seed(23),
             )
             totals[mode] = ts.shape[0] / n_pulses
@@ -182,7 +186,11 @@ class TestSparseSampler:
         phi = torch.full((4,), 0.05)
         n_pulses = 20_000
         ts = simulate_photon_timestamps(
-            phi, n_pulses, dead_time_bins=0, free_running=True, sparse=True,
+            phi,
+            n_pulses,
+            dead_time_bins=0,
+            free_running=True,
+            sparse=True,
             generator=torch.Generator().manual_seed(31),
         )
         halves = torch.bincount(ts[:, 0] * 2 // n_pulses, minlength=2)
@@ -190,9 +198,7 @@ class TestSparseSampler:
 
     def test_auto_selects_sparse_at_low_flux(self):
         phi = torch.full((200,), 1e-5)
-        ts = simulate_photon_timestamps(
-            phi, 5_000, generator=torch.Generator().manual_seed(1)
-        )
+        ts = simulate_photon_timestamps(phi, 5_000, generator=torch.Generator().manual_seed(1))
         assert ts.shape[1] == 2
 
     def test_zero_rate_yields_no_detections(self):
@@ -212,8 +218,12 @@ class TestAnalyticRates:
         rates = []
         for s in range(self.N_SEEDS if n_seeds is None else n_seeds):
             ts = simulate_photon_timestamps(
-                phi, self.N_PULSES, dead_time_bins=tau, free_running=True,
-                paralyzable=paralyzable, generator=torch.Generator().manual_seed(500 + s),
+                phi,
+                self.N_PULSES,
+                dead_time_bins=tau,
+                free_running=True,
+                paralyzable=paralyzable,
+                generator=torch.Generator().manual_seed(500 + s),
             )
             rates.append(ts.shape[0] / (self.N_PULSES * self.N_BINS))
         mean = sum(rates) / len(rates)
@@ -244,9 +254,9 @@ class TestAnalyticRates:
         par = [self._mean_rate(lam, tau, paralyzable=True, n_seeds=2)[0] for lam in lams]
         non_par = [self._mean_rate(lam, tau, paralyzable=False, n_seeds=2)[0] for lam in lams]
         assert par[-1] < par[2], "paralyzable rate must collapse at high flux"
-        assert par == sorted(par[: par.index(max(par)) + 1]) + sorted(
-            par[par.index(max(par)) + 1 :], reverse=True
-        ), "paralyzable rate must rise then fall"
+        assert par == sorted(par[: par.index(max(par)) + 1]) + sorted(par[par.index(max(par)) + 1 :], reverse=True), (
+            "paralyzable rate must rise then fall"
+        )
         assert non_par == sorted(non_par), "non-paralyzable rate must increase monotonically"
         assert non_par[-1] < 1.0 / tau * 1.05, "non-paralyzable saturates near 1/tau"
 
@@ -262,9 +272,7 @@ class TestCoatesRoundTrip:
     def test_recovers_phi(self, scale):
         n_bins, n_pulses = 12, 400_000
         phi = torch.linspace(0.5, 1.5, n_bins) * scale
-        ts = simulate_photon_timestamps(
-            phi, n_pulses, free_running=False, generator=torch.Generator().manual_seed(77)
-        )
+        ts = simulate_photon_timestamps(phi, n_pulses, free_running=False, generator=torch.Generator().manual_seed(77))
         hist = timestamps_to_histogram(ts, n_bins)
         recovered = self.coates(hist, n_pulses)
         torch.testing.assert_close(recovered, phi, rtol=0.05, atol=2e-3)
@@ -272,9 +280,7 @@ class TestCoatesRoundTrip:
     def test_raw_histogram_is_pile_up_distorted(self):
         n_bins, n_pulses = 12, 200_000
         phi = torch.full((n_bins,), 0.4)
-        ts = simulate_photon_timestamps(
-            phi, n_pulses, free_running=False, generator=torch.Generator().manual_seed(78)
-        )
+        ts = simulate_photon_timestamps(phi, n_pulses, free_running=False, generator=torch.Generator().manual_seed(78))
         hist = timestamps_to_histogram(ts, n_bins)
         assert float(hist[0]) > 2.0 * float(hist[-1])
         recovered = self.coates(hist, n_pulses)
@@ -287,9 +293,7 @@ class TestDeadTimeInvariants:
         n_tbins = 16
         phi = torch.full((n_tbins,), 0.4)
         gen = torch.Generator().manual_seed(99)
-        ts = simulate_photon_timestamps(
-            phi, 500, dead_time_bins=dt, free_running=True, generator=gen
-        )
+        ts = simulate_photon_timestamps(phi, 500, dead_time_bins=dt, free_running=True, generator=gen)
         assert ts.shape[0] > 50
         g = ts[:, 0] * n_tbins + ts[:, 1]
         gaps = g[1:] - g[:-1]
@@ -337,25 +341,17 @@ class TestGatedSingleHit:
         counts = sample_photon_arrivals(phi, 300, generator=gen)
 
         gen2 = torch.Generator().manual_seed(42)
-        ts = simulate_photon_timestamps(
-            phi, 300, dead_time_bins=5, free_running=False, generator=gen2, sparse=False
-        )
+        ts = simulate_photon_timestamps(phi, 300, dead_time_bins=5, free_running=False, generator=gen2, sparse=False)
 
         occupied = counts > 0
-        want = [
-            (c, int(occupied[c].to(torch.uint8).argmax()))
-            for c in range(300)
-            if bool(occupied[c].any())
-        ]
+        want = [(c, int(occupied[c].to(torch.uint8).argmax())) for c in range(300) if bool(occupied[c].any())]
         assert [tuple(r) for r in ts.tolist()] == want
 
     @pytest.mark.parametrize("dt", [0, 1, 5, 100])
     def test_dead_time_is_irrelevant(self, dt):
         phi = torch.full((10,), 0.3)
         gen = torch.Generator().manual_seed(11)
-        got = simulate_photon_timestamps(
-            phi, 200, dead_time_bins=dt, free_running=False, generator=gen, sparse=False
-        )
+        got = simulate_photon_timestamps(phi, 200, dead_time_bins=dt, free_running=False, generator=gen, sparse=False)
         gen = torch.Generator().manual_seed(11)
         baseline = simulate_photon_timestamps(
             phi, 200, dead_time_bins=0, free_running=False, generator=gen, sparse=False
@@ -372,17 +368,13 @@ class TestGatedSingleHit:
         occupied = counts > 0
         has = occupied.any(dim=1)
         first = occupied.to(torch.uint8).argmax(dim=1)
-        got = list(
-            zip(torch.nonzero(has, as_tuple=True)[0].tolist(), first[has].tolist())
-        )
+        got = list(zip(torch.nonzero(has, as_tuple=True)[0].tolist(), first[has].tolist()))
         assert got == want
 
     def test_multi_hit_gated_detects_more(self):
         phi = torch.full((20,), 0.15)
         gen = torch.Generator().manual_seed(21)
-        single = simulate_photon_timestamps(
-            phi, 400, dead_time_bins=2, free_running=False, generator=gen
-        )
+        single = simulate_photon_timestamps(phi, 400, dead_time_bins=2, free_running=False, generator=gen)
         gen = torch.Generator().manual_seed(21)
         multi = simulate_photon_timestamps(
             phi,
@@ -458,7 +450,10 @@ class TestApiContract:
     def test_timestamps_are_sorted(self):
         phi = torch.full((10,), 0.3)
         ts = simulate_photon_timestamps(
-            phi, 200, dead_time_bins=2, free_running=True,
+            phi,
+            200,
+            dead_time_bins=2,
+            free_running=True,
             generator=torch.Generator().manual_seed(4),
         )
         g = ts[:, 0] * 10 + ts[:, 1]

@@ -6,7 +6,6 @@ import re
 import shutil
 import subprocess
 import sys
-import warnings
 from importlib.metadata import Distribution
 from pathlib import Path
 
@@ -29,11 +28,20 @@ def pytest_addoption(parser):
 def executable(pytestconfig):
     executable_path = pytestconfig.getoption("--executable")
 
+    # direct_url.json is absent for installs from an index (a plain `pip install visionsim`),
+    # so a missing file is itself proof of a non-editable install.
     direct_url = Distribution.from_name("visionsim").read_text("direct_url.json")
-    pkg_is_editable = json.loads(direct_url).get("dir_info", {}).get("editable", False)
+    pkg_is_editable = json.loads(direct_url).get("dir_info", {}).get("editable", False) if direct_url else False
 
     if not pkg_is_editable:
-        warnings.warn(RuntimeWarning("Package visionsim should be installed as editable for development!"))
+        # Blender is told to install visionsim editable from this interpreter's import
+        # path, so a non-editable install would have it import a frozen site-packages
+        # copy while the client runs the working tree - tests would pass against stale code.
+        raise RuntimeError(
+            "visionsim must be installed as editable for development, otherwise Blender "
+            "imports a stale copy of the package and the tests no longer reflect your "
+            "working tree. Install with `pip install -e . --group dev` (or `uv sync`)."
+        )
 
     if any("blender" in proc.name().lower() for proc in psutil.process_iter()):
         # Note: If there's a previous BlenderServer that's running, we might connect to that

@@ -1,4 +1,6 @@
-from typing import Any, Tuple, Union
+from __future__ import annotations
+
+from typing import Any
 
 import numpy as np
 import torch
@@ -27,9 +29,7 @@ class DynamicSource:
         self.pulse_shape = pulse_shape
         self.pulse_shape_custom = pulse_shape_custom
 
-    def get_kernel(
-        self, bin_width: Quantity, normalize: str = "sum"
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    def get_kernel(self, bin_width: Quantity, normalize: str = "sum") -> tuple[np.ndarray, np.ndarray]:
         if self.pulse_width.check(ureg.meter.dimensionality):
             pw_m = self.pulse_width.to(ureg.meter).magnitude
         else:
@@ -40,7 +40,7 @@ class DynamicSource:
         else:
             bw_m = tof2depth(bin_width).to(ureg.meter).magnitude
 
-        num_bins = max(1, int(round(pw_m / bw_m)))
+        num_bins = max(1, round(pw_m / bw_m))
         if self.pulse_shape == "gaussian":
             half_num = max(3 * num_bins, 5)
             x = np.arange(-half_num, half_num + 1) * bw_m
@@ -102,19 +102,19 @@ class PulsedLaser(DynamicSource):
 
     def get_scene_radiance(
         self,
-        albedo: Union[torch.Tensor, float],
-        depth: Union[torch.Tensor, Quantity, float],
+        albedo: torch.Tensor | float,
+        depth: torch.Tensor | Quantity | float,
         num_pixels: int,
         omega: Quantity,
     ) -> Quantity:
         n_photons = self.num_photons_per_cycle.magnitude
         depth_m = depth.magnitude if hasattr(depth, "magnitude") else depth
         albedo_val = albedo.magnitude if hasattr(albedo, "magnitude") else albedo
-        
+
         # Total emitter solid angle = num_pixels * omega
         omega_val = omega.magnitude if hasattr(omega, "magnitude") else omega
         total_omega = omega_val * num_pixels
-        
+
         # Radiance is total photons divided by total illuminated solid angle and area
-        rad_val = (n_photons * albedo_val) / (np.pi * (depth_m ** 2) * total_omega)
+        rad_val = (n_photons * albedo_val) / (np.pi * (depth_m**2) * total_omega)
         return rad_val * radiance_photons

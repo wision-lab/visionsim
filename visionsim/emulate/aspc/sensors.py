@@ -1,6 +1,5 @@
 import textwrap
 from collections import OrderedDict
-from typing import Tuple
 
 import numpy as np
 from pint import Quantity
@@ -26,7 +25,7 @@ class SensorBase:
     def __init__(
         self,
         *,
-        size: Tuple[int, int] = (1080, 1920),
+        size: tuple[int, int] = (1080, 1920),
         pixel_pitch=10 * ureg.micrometer,
         fov=(90.5 * ureg.degree, 90.5 * ureg.degree),
         f_number=1.4,
@@ -47,9 +46,12 @@ class SensorBase:
 
         if isinstance(fov, Quantity):
             # Quantity array (YAML !Quantity [.5 degree, .5 degree]) or scalar Quantity
-            if getattr(fov, "ndim", 0) > 0 and len(fov) >= 2:
-                fov_x_raw, fov_y_raw = fov[0], fov[1]
-            elif isinstance(getattr(fov, "magnitude", None), (list, tuple, np.ndarray)) and len(fov.magnitude) >= 2:
+            if (
+                getattr(fov, "ndim", 0) > 0
+                and len(fov) >= 2
+                or isinstance(getattr(fov, "magnitude", None), (list, tuple, np.ndarray))
+                and len(fov.magnitude) >= 2
+            ):
                 fov_x_raw, fov_y_raw = fov[0], fov[1]
             else:
                 fov_x_raw = fov
@@ -91,11 +93,14 @@ class SensorBase:
         # 7. Intrinsics matrix (K)
         self.c_x = self.w / 2.0
         self.c_y = self.h / 2.0
-        self.intrinsics = np.array([
-            [self.f_x_px, 0.0, self.c_x, 0.0],
-            [0.0, self.f_y_px, self.c_y, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-        ], dtype=float)
+        self.intrinsics = np.array(
+            [
+                [self.f_x_px, 0.0, self.c_x, 0.0],
+                [0.0, self.f_y_px, self.c_y, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ],
+            dtype=float,
+        )
 
         # 8. Solid angle per pixel
         total_solid_angle = pyramid_solid_angle(self.fov_x, self.fov_y)

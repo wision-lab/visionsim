@@ -23,6 +23,11 @@ import torch
 HERE = Path(__file__).parent
 FIGDIR = HERE / "aspc" / "figures"
 OUT = HERE / "aspc" / "aspc_forward_model_report.html"
+_spec = importlib.util.spec_from_file_location("fmvsmc", HERE / "aspc_forward_model_vs_mc.py")
+assert _spec is not None and _spec.loader is not None, "Failed to load spec for aspc_forward_model_vs_mc.py"
+fm = importlib.util.module_from_spec(_spec)
+sys.modules["fmvsmc"] = fm
+_spec.loader.exec_module(fm)
 
 _spec = importlib.util.spec_from_file_location("fmvsmc", HERE / "aspc_forward_model_vs_mc.py")
 fm = importlib.util.module_from_spec(_spec)
@@ -58,7 +63,7 @@ def scaling():
             _, ms = timed(lambda n=n, fr=free_running: fm.mc_ewh(phi, n, free_running=fr))
             pts.append((n, ms))
         crossover = next((n for n, ms in pts if ms > ms_model), None)
-        out.append(dict(label=label, ms_model=ms_model, pts=pts, crossover=crossover))
+        out.append({"label": label, "ms_model": ms_model, "pts": pts, "crossover": crossover})
     return out
 
 
@@ -70,27 +75,42 @@ def stats():
             for sig, bkg in fm.SBR_CASES:
                 phi = fm.make_phi(sig, bkg, depth)
                 model, ms_model = timed(
-                    lambda: fm.forward_ewh(phi, free_running=free_running), 20)
+                    lambda phi=phi, free_running=free_running: fm.forward_ewh(phi, free_running=free_running), 20
+                )
                 (mc10k, total), ms_10k = timed(
-                    lambda: fm.mc_ewh(phi, 10_000, free_running=free_running))
-                (mc1k, total1k), ms_1k = timed(
-                    lambda: fm.mc_ewh(phi, 1_000, free_running=free_running))
+                    lambda phi=phi, free_running=free_running: fm.mc_ewh(phi, 10_000, free_running=free_running)
+                )
+                (mc1k, _total1k), ms_1k = timed(
+                    lambda phi=phi, free_running=free_running: fm.mc_ewh(phi, 1_000, free_running=free_running)
+                )
                 err = float(abs(mc10k - model).max())
                 err1k = float(abs(mc1k - model).max())
                 q = float(model.max())
                 tol = 5.0 * (q * (1 - q) / total) ** 0.5
-                rows.append(dict(
-                    depth=depth, free_running=free_running, label=label, slug=slug,
-                    sig=sig, bkg=bkg, err=err, err1k=err1k, tol=tol, total=total,
-                    ratio=err / tol,
-                    ms_model=ms_model, ms_1k=ms_1k, ms_10k=ms_10k,
-                    speedup=ms_10k / ms_model,
-                    phi_peak=float((phi / phi.sum()).max()),
-                    model_peak=q,
-                    phi_argmax=int(torch.argmax(phi)),
-                    model_argmax=int(model.argmax()),
-                    file=FIGDIR / f"fm_vs_mc_{slug}_d{depth:.0f}m_sbr_{sig:.0f}_{bkg:.0f}.png",
-                ))
+                rows.append(
+                    {
+                        "depth": depth,
+                        "free_running": free_running,
+                        "label": label,
+                        "slug": slug,
+                        "sig": sig,
+                        "bkg": bkg,
+                        "err": err,
+                        "err1k": err1k,
+                        "tol": tol,
+                        "total": total,
+                        "ratio": err / tol,
+                        "ms_model": ms_model,
+                        "ms_1k": ms_1k,
+                        "ms_10k": ms_10k,
+                        "speedup": ms_10k / ms_model,
+                        "phi_peak": float((phi / phi.sum()).max()),
+                        "model_peak": q,
+                        "phi_argmax": int(torch.argmax(phi)),
+                        "model_argmax": int(model.argmax()),
+                        "file": FIGDIR / f"fm_vs_mc_{slug}_d{depth:.0f}m_sbr_{sig:.0f}_{bkg:.0f}.png",
+                    }
+                )
     return rows
 
 
@@ -118,35 +138,41 @@ def main() -> None:
         f'<td class="num">{r["ms_1k"]:.1f}</td><td class="num">{r["ms_10k"]:.1f}</td>'
         f'<td class="num">{r["ms_model"]:.2f}</td>'
         f'<td class="num"><strong>{r["speedup"]:.0f}&times;</strong></td></tr>'
-        for r in rows)
+        for r in rows
+    )
+
+    def _fmt_crossover(c: int | None) -> str:
+        return f"&asymp;{c:,}" if c is not None else "N/A"
 
     scale_rows = "\n".join(
         f'<tr><td>{d["label"]}</td><td class="num">{d["ms_model"]:.2f} ms</td>'
         + "".join(f'<td class="num">{ms:.1f} ms</td>' for _, ms in d["pts"])
-        + f'<td class="num">&asymp;{d["crossover"]:,}</td></tr>'
-        for d in scale)
-
+        + f'<td class="num">{_fmt_crossover(d["crossover"])}</td></tr>'
+        for d in scale
+    )
     blocks = []
     for depth in DEPTHS:
         for free_running, label, slug in MODES:
             sel = [r for r in rows if r["depth"] == depth and r["free_running"] == free_running]
             figs = "\n".join(
                 f'''<figure>
-      <img src="data:image/png;base64,{b64(r["file"])}" alt="{label} at {r['depth']:.0f} m, SBR 1:{r['bkg']:.0f}">
+      <img src="data:image/png;base64,{b64(r["file"])}" alt="{label} at {r["depth"]:.0f} m, SBR 1:{r["bkg"]:.0f}">
       <figcaption><strong>signal:background 1:{r["bkg"]:.0f}</strong> &mdash;
-        &Sigma;&phi; = {r["sig"]+r["bkg"]:.0f} photons/cycle.
+        &Sigma;&phi; = {r["sig"] + r["bkg"]:.0f} photons/cycle.
         max|MC<sub>10k</sub> &minus; model| = <span class="mono">{r["err"]:.4f}</span>,
         budget <span class="mono">{r["tol"]:.4f}</span> &rarr; {chip(r)}.
         {r["total"]:,.0f} detections in 10,000 cycles.<br>
         Time: MC 1k <span class="mono">{r["ms_1k"]:.1f} ms</span>, MC 10k <span class="mono">{r["ms_10k"]:.1f} ms</span>, model <span class="mono">{r["ms_model"]:.2f} ms</span> &rarr; <strong>{r["speedup"]:.0f}&times;</strong>.</figcaption>
-    </figure>''' for r in sel)
-            blocks.append(f'''
+    </figure>'''
+                for r in sel
+            )
+            blocks.append(f"""
   <section>
     <div class="sec-head"><span class="n">{depth:.0f} m</span><h2>{label}</h2></div>
     <div class="stack">{figs}</div>
-  </section>''')
+  </section>""")
 
-    html = f'''<title>Forward Model Verification</title>
+    html = f"""<title>Forward Model Verification</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@600&display=swap">
@@ -411,14 +437,15 @@ def main() -> None:
     <div>Findings register and the full audit: <code>ASPC_KNOWN_ISSUES.md</code>. Unit coverage: <code>tests/test_aspc_forward_models.py</code>.</div>
   </footer>
 </div>
-'''
+"""
     OUT.write_text(html)
-    print(f"wrote {OUT}  ({OUT.stat().st_size/1e6:.2f} MB, {len(rows)} figures inlined)")
-    print(f"worst case: {worst['ratio']:.2f}x noise floor "
-          f"({worst['label']}, {worst['depth']:.0f} m, SBR 1:{worst['bkg']:.0f})")
+    print(f"wrote {OUT}  ({OUT.stat().st_size / 1e6:.2f} MB, {len(rows)} figures inlined)")
+    print(
+        f"worst case: {worst['ratio']:.2f}x noise floor "
+        f"({worst['label']}, {worst['depth']:.0f} m, SBR 1:{worst['bkg']:.0f})"
+    )
     for d in scale:
-        print(f"  {d['label']:17s} model {d['ms_model']:6.2f} ms fixed, "
-              f"break-even at ~{d['crossover']:,} cycles")
+        print(f"  {d['label']:17s} model {d['ms_model']:6.2f} ms fixed, break-even at ~{d['crossover']:,} cycles")
 
 
 if __name__ == "__main__":

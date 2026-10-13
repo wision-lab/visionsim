@@ -1,23 +1,24 @@
 from pathlib import Path
 
-import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from matplotlib import patches
 
-plt.style.use('seaborn-v0_8-paper')
+plt.style.use("seaborn-v0_8-paper")
 
-plt.rcParams.update({
-    'font.family': 'serif',          
-    'font.size': 18,                 
-    'axes.labelsize': 18,            
-    'axes.titlesize': 20,            
-    'xtick.labelsize': 18,
-    'ytick.labelsize': 18,
-    'legend.fontsize': 18,
-    'lines.linewidth': 4             
-})
-
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+        "font.size": 18,
+        "axes.labelsize": 18,
+        "axes.titlesize": 20,
+        "xtick.labelsize": 18,
+        "ytick.labelsize": 18,
+        "legend.fontsize": 18,
+        "lines.linewidth": 4,
+    }
+)
 
 
 def plot_spad_sensor_grid(
@@ -45,11 +46,7 @@ def plot_spad_sensor_grid(
         save_fullres_depth = parent / "fullres_true_depth.svg"
         save_combined_fov_img = parent / f"{base_name}_combined_fov_vignette.svg"
         save_combined_fov_overlay_img = parent / f"{base_name}_combined_fov_overlay_vignette.svg"
-        
 
-
-
-    
     master_grid = torch.max(fov_masks, dim=0)[0].detach().cpu().numpy()
 
     # Derive figure width/height from the image shape so landscape images fill the frame.
@@ -123,7 +120,7 @@ def plot_spad_sensor_grid(
     if hasattr(max_depth_val, "magnitude"):
         max_depth_val = max_depth_val.magnitude
     bin_dist_m = max_depth_val / histogrammer.n_bins
-    
+
     print("bin_dist_m: ", bin_dist_m)
     print("max_depth_val m", max_depth_val)
 
@@ -145,8 +142,8 @@ def plot_spad_sensor_grid(
                 valid_depths = depth_img[mask > 0]
                 if len(valid_depths) > 0:
                     depth_map_gt[r, c] = np.mean(valid_depths)
-    
-    print("depth_map_est min max", depth_map_est.min(), depth_map_est.max(), depth_map_est.max()-depth_map_est.min())
+
+    print("depth_map_est min max", depth_map_est.min(), depth_map_est.max(), depth_map_est.max() - depth_map_est.min())
     print("depth_map_gt min max", depth_map_gt.min(), depth_map_gt.max(), depth_map_gt.max() - depth_map_gt.min())
 
     # --- GLOBAL SCALING ---
@@ -161,12 +158,11 @@ def plot_spad_sensor_grid(
     fig_maps, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     fig_maps.suptitle(f"Reconstruction{scenario_name}", fontsize=16)
 
-
     num_bins = transients.shape[-1]
     depth_max = depth_map_gt.max()
 
     # Calculate the physical size/depth width of a single temporal bin
-    bin_size = depth_max / num_bins 
+    bin_size = depth_max / num_bins
 
     # Divide by bin size, truncate to integer to group them, then multiply back
     depth_image_quantized = (depth_map_gt / bin_size).astype(np.int32) * bin_size
@@ -236,20 +232,19 @@ def plot_spad_sensor_grid(
             (rows - 1, 0, "Bottom-Left"),
             (rows - 1, cols - 1, "Bottom-Right"),
         ]
-        
+
         ax_flat = axes.flatten()
 
         for i, (r, c, name) in enumerate(corners):
             idx = r * cols + c
             ax = ax_flat[i]
             if idx < len(transient_data):
-
                 ax.set_title(f"{name} (Row {r}, Col {c})")
                 # 1. Transient (Line Plot)
                 t_data = transient_data[idx]
                 ax.plot(t_data, color="blue", alpha=1, linewidth=2, label="Transient")
                 np.save(parent / f"t_data_row_{r}_col_{c}.npy", t_data)
-                
+
                 # 2. Arrivals (Line Plot)
                 ax3_w = ax.twinx()
                 a_data = arrival_rates_data[idx]
@@ -264,17 +259,18 @@ def plot_spad_sensor_grid(
                 ax2_w.plot(e_data, color="black", alpha=0.95, linewidth=2.0, label="Detections")
                 np.save(parent / f"e_data_row_{r}_col_{c}.npy", e_data)
 
-                
                 # Hide y-ticks for cleaner look
                 ax.set_yticks([])
                 ax2_w.set_yticks([])
                 ax3_w.set_yticks([])
-                
+
                 if i == 0:  # Legend only on first subplot
                     lines_1, labels_1 = ax.get_legend_handles_labels()
                     lines_2, labels_2 = ax2_w.get_legend_handles_labels()
                     lines_3, labels_3 = ax3_w.get_legend_handles_labels()
-                    ax.legend(lines_1 + lines_2 + lines_3, labels_1 + labels_2 + labels_3, loc="upper right", fontsize="small")
+                    ax.legend(
+                        lines_1 + lines_2 + lines_3, labels_1 + labels_2 + labels_3, loc="upper right", fontsize="small"
+                    )
                     # ax.legend(lines_1, labels_1, loc="upper right", fontsize="small")
 
         plt.tight_layout()
@@ -299,7 +295,6 @@ def plot_spad_sensor_grid(
                     a_data = arrival_rates_data[idx]
                     ax3_w.plot(a_data, color="tab:blue", alpha=0.8, linewidth=1.5, label="arrivals")
 
-
                     ax.set_xticks([])
                     ax.set_yticks([])
                     ax2_w.set_yticks([])
@@ -315,7 +310,7 @@ def plot_spad_sensor_grid(
     if save_path:
         plt.axis("off")
         print(f"Saving reconstruction to {save_path_recon}...")
-        
+
         fig_maps.savefig(save_path_recon, dpi=150, bbox_inches="tight")
 
         print(f"Saving overlay to {save_path_overlay}...")

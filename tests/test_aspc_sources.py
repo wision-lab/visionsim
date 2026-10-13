@@ -10,13 +10,13 @@ REL = 1e-9
 
 
 def _laser(**kw):
-    defaults = dict(
-        wavelength=550 * ureg.nanometer,
-        pulse_repetition=10e6 * ureg.hertz,
-        pulse_width=1 * ureg.nanosecond,
-        avg_watts=1 * ureg.milliwatt,
-        pulse_shape="gaussian",
-    )
+    defaults = {
+        "wavelength": 550 * ureg.nanometer,
+        "pulse_repetition": 10e6 * ureg.hertz,
+        "pulse_width": 1 * ureg.nanosecond,
+        "avg_watts": 1 * ureg.milliwatt,
+        "pulse_shape": "gaussian",
+    }
     defaults.update(kw)
     return PulsedLaser(**defaults)
 

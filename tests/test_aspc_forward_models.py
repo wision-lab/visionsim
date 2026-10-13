@@ -26,7 +26,8 @@ def tolerance(total_detections: int, n_bins: int = B, q: float | None = None) ->
 def mc_shape(phi, dead_time_bins, free_running, cap, n_pulses=N_PULSES, seed=0):
     """Sampled ground-truth histogram, normalised, plus its total count."""
     timestamps = simulate_photon_timestamps(
-        phi, n_pulses,
+        phi,
+        n_pulses,
         dead_time_bins=dead_time_bins,
         free_running=free_running,
         paralyzable=False,
@@ -42,19 +43,24 @@ def mc_shape(phi, dead_time_bins, free_running, cap, n_pulses=N_PULSES, seed=0):
 def phi_flat():
     return torch.full((B,), 0.15)
 
+
 def phi_random_low():
     return torch.rand(B, generator=torch.Generator().manual_seed(3)) * 0.35 + 0.02
+
 
 def phi_random_high():
     return torch.rand(B, generator=torch.Generator().manual_seed(7)) * 1.2 + 0.05
 
+
 def phi_ramp():
     return torch.linspace(0.05, 0.6, B)
+
 
 def phi_spike():
     p = torch.full((B,), 0.01)
     p[5] = 3.0
     return p
+
 
 SHAPES = [
     pytest.param(phi_flat, id="flat"),
@@ -98,8 +104,7 @@ class TestFreeRunning:
     def test_dead_time_biases_detections_earlier(self):
         phi = phi_ramp()
         idx = torch.arange(B, dtype=torch.float64)
-        com = [float((idx * calculate_distorted_transient(phi, dt, B).double()).sum())
-               for dt in (1, 4, 8)]
+        com = [float((idx * calculate_distorted_transient(phi, dt, B).double()).sum()) for dt in (1, 4, 8)]
         assert com[0] > com[1] > com[2], com
 
 
@@ -147,8 +152,7 @@ class TestGatedSingleHit:
 # Shared contract                                                             #
 # =========================================================================== #
 class TestModelContract:
-    @pytest.mark.parametrize("model", [calculate_distorted_transient,
-                                       calculate_distorted_transient_sync])
+    @pytest.mark.parametrize("model", [calculate_distorted_transient, calculate_distorted_transient_sync])
     @pytest.mark.parametrize("dt", [0, 3, B])
     def test_returns_a_normalised_distribution(self, model, dt):
         out = model(phi_random_low(), dt, B)
@@ -156,14 +160,12 @@ class TestModelContract:
         assert float(out.sum()) == pytest.approx(1.0, abs=1e-6)
         assert torch.all(out >= 0)
 
-    @pytest.mark.parametrize("model", [calculate_distorted_transient,
-                                       calculate_distorted_transient_sync])
+    @pytest.mark.parametrize("model", [calculate_distorted_transient, calculate_distorted_transient_sync])
     def test_zero_flux_does_not_nan(self, model):
         out = model(torch.zeros(B), 3, B)
         assert not torch.isnan(out).any()
 
-    @pytest.mark.parametrize("model", [calculate_distorted_transient,
-                                       calculate_distorted_transient_sync])
+    @pytest.mark.parametrize("model", [calculate_distorted_transient, calculate_distorted_transient_sync])
     def test_negative_rates_are_clamped(self, model):
         phi = phi_random_low()
         phi[2] = -0.05
@@ -217,7 +219,8 @@ class TestDifferentiable:
             fd = (f(up) - f(dn)) / (2 * eps)
             analytic = float(phi.grad[i])
             assert analytic == pytest.approx(fd, abs=1e-4, rel=2e-2), (
-                f"bin {i}: analytic {analytic:.6f} vs finite-difference {fd:.6f}")
+                f"bin {i}: analytic {analytic:.6f} vs finite-difference {fd:.6f}"
+            )
 
     @pytest.mark.parametrize("model,dt", DIFF_CASES)
     def test_no_numpy_round_trip(self, model, dt):

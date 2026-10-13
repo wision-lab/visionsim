@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import math
 from enum import Enum
-from typing import Tuple, Union
 
 import numpy as np
 from pint import Quantity
@@ -22,10 +23,10 @@ class LightConditions(Enum):
     BRIGHT_SHADE = 20000
     OVERCAST = 2500
     SUNSET = 400
-    SUNRISE = 400
+    SUNRISE = 400  # noqa: PIE796
     STORM_OVERCAST = 200
     OVERCAST_SUNSET = 40
-    OVERCAST_SUNRISE = 40
+    OVERCAST_SUNRISE = 40  # noqa: PIE796
     FULL_MOON = 0.25
     QUARTER_MOON = 0.01
     STARLIGHT_WITH_AIRGLOW = 0.002
@@ -75,7 +76,7 @@ class Sun(BlackBodySource):
         temperature=5778 * ureg.kelvin,
         lambda_pass=500e-9 * ureg.meter,
         delta_lambda=10e-9 * ureg.meter,
-        light_conditions: Union[LightConditions, str] = LightConditions.BRIGHT_SUNLIGHT,
+        light_conditions: LightConditions | str = LightConditions.BRIGHT_SUNLIGHT,
         emissivity: float = 1.0,
     ):
         super().__init__(temperature=temperature)
@@ -94,14 +95,21 @@ class Sun(BlackBodySource):
 
     @property
     def lux(self) -> Quantity:
-        return self.light_conditions.value if isinstance(self.light_conditions, LightConditions) else self.light_conditions
+        return (
+            self.light_conditions.value if isinstance(self.light_conditions, LightConditions) else self.light_conditions
+        )
 
     def _calculate_filter_efficiency(self) -> Quantity:
-        filter_lam = np.array([
-            (self.lambda_pass - self.delta_lambda).to(ureg.meter).magnitude,
-            self.lambda_pass.to(ureg.meter).magnitude,
-            (self.lambda_pass + self.delta_lambda).to(ureg.meter).magnitude,
-        ]) * ureg.meters
+        filter_lam = (
+            np.array(
+                [
+                    (self.lambda_pass - self.delta_lambda).to(ureg.meter).magnitude,
+                    self.lambda_pass.to(ureg.meter).magnitude,
+                    (self.lambda_pass + self.delta_lambda).to(ureg.meter).magnitude,
+                ]
+            )
+            * ureg.meters
+        )
 
         radiance_vals = self.radiance_per_wavelength(filter_lam)
         passes_through = trapezoid(radiance_vals.magnitude, x=filter_lam.magnitude) * radiance_vals.units
@@ -111,14 +119,12 @@ class Sun(BlackBodySource):
     @ureg.check(None, None, ureg.hertz)
     def get_scene_radiance(self, rho_hat, pulse_repetition: Quantity):
         watts_eff_per_area = 0.0079 * self.lux.to(ureg.lux).magnitude * self.c_eff * ureg.watt
-        photons_eff = (
-            watts2photons(watts_eff_per_area, 1 / pulse_repetition, self.lambda_pass) / ureg.meter**2
-        )
+        photons_eff = watts2photons(watts_eff_per_area, 1 / pulse_repetition, self.lambda_pass) / ureg.meter**2
         radiance = (photons_eff.to(ureg.count / ureg.meter**2) * rho_hat / np.pi) / ureg.steradian
         return radiance.to(radiance_photons)
 
     @property
-    def params(self) -> Tuple:
+    def params(self) -> tuple:
         return (
             self.intensity,
             self.stability_factor,
@@ -135,7 +141,11 @@ class Sun(BlackBodySource):
         return hash(self.params)
 
     def __repr__(self) -> str:
-        cond_name = self.light_conditions.name if isinstance(self.light_conditions, LightConditions) else str(self.light_conditions)
+        cond_name = (
+            self.light_conditions.name
+            if isinstance(self.light_conditions, LightConditions)
+            else str(self.light_conditions)
+        )
         return (
             f"Sun(temperature={self.temperature:.0f~P}, "
             f"passband={self.lambda_pass.to(ureg.nanometer):.1f~P}, "

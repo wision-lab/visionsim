@@ -25,201 +25,364 @@ FIGS = [
     (
         "7_loader_contract.png",
         "The loader contract, made concrete",
-        "One flat wall at 5&nbsp;m with a sky band, loaded three ways: sky marked with 0 (conforming), "
-        "sky marked with a 25&nbsp;m numeric sentinel, and the whole map handed over in millimetres.",
-        "The data loader is deliberately outside this example&rsquo;s scope &mdash; that is what makes it "
-        "dependency-free. So the boundary has to be stated as a contract instead, and a contract is "
-        "only useful if the cost of violating it is visible.",
-        "Conforming input gives one true surface at bin&nbsp;66. A 25&nbsp;m sentinel <strong>aliases to "
-        "bin&nbsp;133 at 2% of the true peak</strong> &mdash; a plausible weak return, which is exactly why "
-        "sentinels are forbidden. Millimetres silently lands in bin&nbsp;112 with no error raised. Both "
-        "violations produce believable output; neither raises. A pint <code>Quantity</code> and a bare "
-        "tensor in metres are verified identical.",
+        (
+            "One flat wall at 5&nbsp;m with a sky band, loaded three ways: sky marked with 0 (conforming), "
+            "sky marked with a 25&nbsp;m numeric sentinel, and the whole map handed over in millimetres."
+        ),
+        (
+            "The data loader is deliberately outside this example&rsquo;s scope &mdash; that is what makes it "
+            "dependency-free. So the boundary has to be stated as a contract instead, and a contract is "
+            "only useful if the cost of violating it is visible."
+        ),
+        (
+            "Conforming input gives one true surface at bin&nbsp;66. A 25&nbsp;m sentinel <strong>aliases to "
+            "bin&nbsp;133 at 2% of the true peak</strong> &mdash; a plausible weak return, which is exactly why "
+            "sentinels are forbidden. Millimetres silently lands in bin&nbsp;112 with no error raised. Both "
+            "violations produce believable output; neither raises. A pint <code>Quantity</code> and a bare "
+            "tensor in metres are verified identical."
+        ),
         ["L1", "T3", "T8"],
     ),
     (
         "9_flux_roundtrip.png",
         "Flux round-trip",
-        "Set <code>alpha_sig</code> and <code>alpha_bkg</code>, simulate, then invert the closed form "
-        "to measure both back out of &phi;. Ambient is uniform across the cycle while signal occupies "
-        "only the bins under the pulse, so the median of &phi; recovers the floor and the remainder is "
-        "signal. Repeated across three albedo/distance combinations.",
-        "Figure&nbsp;3 shows the levels <em>scale</em> correctly. This shows they are <em>numerically "
-        "what was asked for</em> &mdash; the parameters survive albedo weighting, inverse-square falloff, "
-        "FOV averaging, convolution with the IRF and the ambient split, and still come back out intact. "
-        "It is the photon-budget analogue of the depth round-trip.",
-        "<code>alpha_sig</code> recovered to <strong>0.01%</strong> across four decades (0.1&ndash;1000); "
-        "<code>alpha_bkg</code> to <strong>0.00%</strong> across 0.01&ndash;10; both independent of albedo "
-        "and distance. Panel (c) shows no cross-talk: sweeping either parameter over 10,000&times; moves the "
-        "other by at most <strong>0.00%</strong>, so signal and background are genuinely separable in &phi;. "
-        "SBR set to 25.0 recovers as 25.00.",
+        (
+            "Set <code>alpha_sig</code> and <code>alpha_bkg</code>, simulate, then invert the closed form "
+            "to measure both back out of &phi;. Ambient is uniform across the cycle while signal occupies "
+            "only the bins under the pulse, so the median of &phi; recovers the floor and the remainder is "
+            "signal. Repeated across three albedo/distance combinations."
+        ),
+        (
+            "Figure&nbsp;3 shows the levels <em>scale</em> correctly. This shows they are <em>numerically "
+            "what was asked for</em> &mdash; the parameters survive albedo weighting, inverse-square falloff, "
+            "FOV averaging, convolution with the IRF and the ambient split, and still come back out intact. "
+            "It is the photon-budget analogue of the depth round-trip."
+        ),
+        (
+            "<code>alpha_sig</code> recovered to <strong>0.01%</strong> across four decades (0.1&ndash;1000); "
+            "<code>alpha_bkg</code> to <strong>0.00%</strong> across 0.01&ndash;10; both independent of albedo "
+            "and distance. Panel (c) shows no cross-talk: sweeping either parameter over 10,000&times; moves the "
+            "other by at most <strong>0.00%</strong>, so signal and background are genuinely separable in &phi;. "
+            "SBR set to 25.0 recovers as 25.00."
+        ),
         [],
     ),
     (
         "8_flux_control.png",
         "Flux operating point via the reference condition",
-        "Two planes at 3 and 9&nbsp;m, with the operating point set by <em>defining the reference "
-        "condition</em>: <code>alpha_sig</code> and <code>alpha_bkg</code> are photons per pixel per "
-        "cycle for a flat Lambertian surface of albedo&nbsp;1.0, with <code>alpha_sig</code> additionally "
-        "referenced at 1&nbsp;metre. The scene&rsquo;s actual counts then follow from physics: "
-        "<code>signal = alpha_sig&middot;albedo/d&sup2;</code> and <code>ambient = alpha_bkg&middot;albedo</code>.",
-        "The default photon level is whatever the radiometry happens to yield &mdash; about 1e-5 "
-        "photons/pixel/cycle, i.e. very low flux. Every check on this page is scale-free so that is "
-        "harmless here, but it is the wrong regime downstream: pile-up and dead time only bite around "
-        "&phi;&nbsp;&asymp;&nbsp;0.1&ndash;10, and at 1e-5 the detector is idle essentially always &mdash; so "
-        "<em>every</em> dead-time model would agree with every other one, including the ones known to be "
-        "wrong. Note the two distance laws differ deliberately: signal falls as 1/d&sup2; while ambient does "
-        "not fall off at all, because the sun&rsquo;s irradiance on a surface is independent of camera range.",
-        "Panel (c) is the key result: <code>photons = K&middot;albedo/d&sup2;</code> holds to <strong>1.2e-07 "
-        "relative error</strong> across seven albedo/distance combinations, so the entire radiometry chain "
-        "&mdash; laser power, aperture, f-number, pixel pitch, solid angle &mdash; collapses into one constant "
-        "<strong>K&nbsp;=&nbsp;2.491e-03</strong>. That makes <code>alpha_sig</code> a single global calibration "
-        "rather than a renormalisation, so relative structure survives intact: inverse-square holds at "
-        "<strong>9.00</strong> across a 10,000&times; level change, and inter-FOV contrast for albedo 0.9 vs 0.1 "
-        "stays at <strong>9.00</strong> where a per-row rescale would have flattened it to 1.00. The identity "
-        "also doubles as an independent oracle for <code>get_scene_radiance</code>.",
+        (
+            "Two planes at 3 and 9&nbsp;m, with the operating point set by <em>defining the reference "
+            "condition</em>: <code>alpha_sig</code> and <code>alpha_bkg</code> are photons per pixel per "
+            "cycle for a flat Lambertian surface of albedo&nbsp;1.0, with <code>alpha_sig</code> additionally "
+            "referenced at 1&nbsp;metre. The scene&rsquo;s actual counts then follow from physics: "
+            "<code>signal = alpha_sig&middot;albedo/d&sup2;</code> and <code>ambient = alpha_bkg&middot;albedo</code>."
+        ),
+        (
+            "The default photon level is whatever the radiometry happens to yield &mdash; about 1e-5 "
+            "photons/pixel/cycle, i.e. very low flux. Every check on this page is scale-free so that is "
+            "harmless here, but it is the wrong regime downstream: pile-up and dead time only bite around "
+            "&phi;&nbsp;&asymp;&nbsp;0.1&ndash;10, and at 1e-5 the detector is idle essentially always &mdash; so "
+            "<em>every</em> dead-time model would agree with every other one, including the ones known to be "
+            "wrong. Note the two distance laws differ deliberately: signal falls as 1/d&sup2; while ambient does "
+            "not fall off at all, because the sun&rsquo;s irradiance on a surface is independent of camera range."
+        ),
+        (
+            "Panel (c) is the key result: <code>photons = K&middot;albedo/d&sup2;</code> holds to <strong>1.2e-07 "
+            "relative error</strong> across seven albedo/distance combinations, so the entire radiometry chain "
+            "&mdash; laser power, aperture, f-number, pixel pitch, solid angle &mdash; collapses into one constant "
+            "<strong>K&nbsp;=&nbsp;2.491e-03</strong>. That makes <code>alpha_sig</code> a single global calibration "
+            "rather than a renormalisation, so relative structure survives intact: inverse-square holds at "
+            "<strong>9.00</strong> across a 10,000&times; level change, and inter-FOV contrast for albedo 0.9 vs 0.1 "
+            "stays at <strong>9.00</strong> where a per-row rescale would have flattened it to 1.00. The identity "
+            "also doubles as an independent oracle for <code>get_scene_radiance</code>."
+        ),
         [],
     ),
     (
         "4_depth_recovery.png",
         "End-to-end depth recovery",
-        "40 flat walls at depths spanning 0.6&nbsp;m to 14.5&nbsp;m. Each is pushed through the "
-        "complete pipeline, then <code>argmax(&phi;)</code> is converted back to metres via the "
-        "bin centre and compared against truth.",
-        "Everything upstream has to be simultaneously right for these points to land on "
-        "<em>y&nbsp;=&nbsp;x</em>: radiometry, depth&rarr;bin mapping, aliasing, IRF width and "
-        "convolution orientation. A single broken stage bends the line or offsets it.",
-        "Max error <strong>0.500 bins</strong> &mdash; exactly the quantisation floor. The "
-        "residual panel is the real diagnostic: pure rounding produces the uniform sawtooth you "
-        "see, whereas a half-bin offset, a kernel-flip error or an off-by-one would show up as a "
-        "tilt or a step.",
+        (
+            "40 flat walls at depths spanning 0.6&nbsp;m to 14.5&nbsp;m. Each is pushed through the "
+            "complete pipeline, then <code>argmax(&phi;)</code> is converted back to metres via the "
+            "bin centre and compared against truth."
+        ),
+        (
+            "Everything upstream has to be simultaneously right for these points to land on "
+            "<em>y&nbsp;=&nbsp;x</em>: radiometry, depth&rarr;bin mapping, aliasing, IRF width and "
+            "convolution orientation. A single broken stage bends the line or offsets it."
+        ),
+        (
+            "Max error <strong>0.500 bins</strong> &mdash; exactly the quantisation floor. The "
+            "residual panel is the real diagnostic: pure rounding produces the uniform sawtooth you "
+            "see, whereas a half-bin offset, a kernel-flip error or an off-by-one would show up as a "
+            "tilt or a step."
+        ),
         ["A4", "T3", "T4", "T7"],
     ),
     (
         "5_invariances.png",
         "Invariances that must hold",
-        "The same flat wall at 6&nbsp;m, re-run while varying exactly one thing at a time: render "
-        "grid (16&sup2;&rarr;128&sup2;), FOV rectangle size, and vignette on/off.",
-        "Properties that must <em>not</em> change are often more diagnostic than ones that must. "
-        "If collected photons track render resolution, then the render grid is secretly acting as "
-        "the physical sensor.",
-        "(a) Four resolutions give coincident transients, spread <strong>1.9e-4</strong>. "
-        "(b) Four FOV sizes give equal totals &mdash; a SPAD averages over its FOV. "
-        "(c) Vignette attenuates <strong>&times;0.4983</strong> against an expected "
-        "<strong>&times;0.4983</strong>, confirming the weights are applied and not wrongly "
-        "normalised away.",
+        (
+            "The same flat wall at 6&nbsp;m, re-run while varying exactly one thing at a time: render "
+            "grid (16&sup2;&rarr;128&sup2;), FOV rectangle size, and vignette on/off."
+        ),
+        (
+            "Properties that must <em>not</em> change are often more diagnostic than ones that must. "
+            "If collected photons track render resolution, then the render grid is secretly acting as "
+            "the physical sensor."
+        ),
+        (
+            "(a) Four resolutions give coincident transients, spread <strong>1.9e-4</strong>. "
+            "(b) Four FOV sizes give equal totals &mdash; a SPAD averages over its FOV. "
+            "(c) Vignette attenuates <strong>&times;0.4983</strong> against an expected "
+            "<strong>&times;0.4983</strong>, confirming the weights are applied and not wrongly "
+            "normalised away."
+        ),
         ["F3", "T1"],
     ),
     (
         "3_depth_binning.png",
         "Depth to bin, against the oracle",
-        "Three scenes &mdash; flat wall at 4&nbsp;m, two planes at 3 and 9&nbsp;m, tilted plane "
-        "spanning 2&rarr;13&nbsp;m &mdash; with predicted bins drawn as dashed lines from the "
-        "closed form <code>floor(d&middot;n/max_depth) mod n</code>.",
-        "The depth&rarr;bin conversion is the one step with a hand-computable answer for any "
-        "scene, so comparing occupied bins against the closed form isolates it from everything "
-        "else in the pipeline.",
-        "Exact match on all three, including <strong>8 distinct bins</strong> for the tilted "
-        "plane. The <code>mod n</code> in the oracle is itself the aliasing fix &mdash; the old "
-        "<code>clamp</code> behaviour fails the 13&nbsp;m case.",
+        (
+            "Three scenes &mdash; flat wall at 4&nbsp;m, two planes at 3 and 9&nbsp;m, tilted plane "
+            "spanning 2&rarr;13&nbsp;m &mdash; with predicted bins drawn as dashed lines from the "
+            "closed form <code>floor(d&middot;n/max_depth) mod n</code>."
+        ),
+        (
+            "The depth&rarr;bin conversion is the one step with a hand-computable answer for any "
+            "scene, so comparing occupied bins against the closed form isolates it from everything "
+            "else in the pipeline."
+        ),
+        (
+            "Exact match on all three, including <strong>8 distinct bins</strong> for the tilted "
+            "plane. The <code>mod n</code> in the oracle is itself the aliasing fix &mdash; the old "
+            "<code>clamp</code> behaviour fails the 13&nbsp;m case."
+        ),
         ["T3"],
     ),
     (
         "6_guards.png",
         "Regression guards, one panel per fix",
-        "Four targeted probes, each plotting the <em>old</em> wrong behaviour beside the new so "
-        "the difference is visible rather than merely asserted.",
-        "A passing test tells you the code is right today. Showing the failure mode next to it "
-        "tells you which regression the test actually catches.",
-        "(a) <strong>T7</strong> &mdash; IRF sum 6.67 vs 1.0000. Note 6.67 here against 33.36 at "
-        "<code>n_bins=1000</code>: that difference is itself the evidence that the error was "
-        "configuration-dependent. (b) <strong>T4</strong> &mdash; mirrored vs true convolution, "
-        "with the pipeline output marked. (c) <strong>T3</strong> &mdash; aliasing to bin 80 "
-        "rather than piling at bin 199, log-scaled because the aliased return is genuinely ~27&times; "
-        "fainter from inverse-square falloff at 21&nbsp;m vs 4&nbsp;m. (d) <strong>L1/T8</strong> "
-        "&mdash; invalid depths dropped, 66% pixel validity, output finite.",
+        (
+            "Four targeted probes, each plotting the <em>old</em> wrong behaviour beside the new so "
+            "the difference is visible rather than merely asserted."
+        ),
+        (
+            "A passing test tells you the code is right today. Showing the failure mode next to it "
+            "tells you which regression the test actually catches."
+        ),
+        (
+            "(a) <strong>T7</strong> &mdash; IRF sum 6.67 vs 1.0000. Note 6.67 here against 33.36 at "
+            "<code>n_bins=1000</code>: that difference is itself the evidence that the error was "
+            "configuration-dependent. (b) <strong>T4</strong> &mdash; mirrored vs true convolution, "
+            "with the pipeline output marked. (c) <strong>T3</strong> &mdash; aliasing to bin 80 "
+            "rather than piling at bin 199, log-scaled because the aliased return is genuinely ~27&times; "
+            "fainter from inverse-square falloff at 21&nbsp;m vs 4&nbsp;m. (d) <strong>L1/T8</strong> "
+            "&mdash; invalid depths dropped, 66% pixel validity, output finite."
+        ),
         ["T7", "T4", "T3", "L1", "T8"],
     ),
     (
         "2_pipeline.png",
         "The pipeline, stage by stage",
-        "A sphere on a backdrop &mdash; the only scene here with curvature &mdash; shown at all "
-        "three stages with a small ambient term switched on.",
-        "The intermediate stages are where a magnitude error hides. Seeing the transient, the "
-        "kernel and &phi; together makes the convolution&rsquo;s effect legible.",
-        "Sphere curvature spreads across bins 46&ndash;53 while the flat backdrop stays a single "
-        "spike at 146. The IRF sums to <strong>1.000000</strong>. In &phi; the peaks are broadened "
-        "by exactly the pulse width, and the ambient floor sits underneath, uniform across all bins.",
+        (
+            "A sphere on a backdrop &mdash; the only scene here with curvature &mdash; shown at all "
+            "three stages with a small ambient term switched on."
+        ),
+        (
+            "The intermediate stages are where a magnitude error hides. Seeing the transient, the "
+            "kernel and &phi; together makes the convolution&rsquo;s effect legible."
+        ),
+        (
+            "Sphere curvature spreads across bins 46&ndash;53 while the flat backdrop stays a single "
+            "spike at 146. The IRF sums to <strong>1.000000</strong>. In &phi; the peaks are broadened "
+            "by exactly the pulse width, and the ambient floor sits underneath, uniform across all bins."
+        ),
         ["T7"],
     ),
     (
         "1_scenes.png",
         "The synthetic scenes",
-        "Albedo and depth maps built from <code>torch</code> primitives &mdash; no renders, no "
-        "dataset, no loader anywhere in the path.",
-        "Orientation rather than verification. Included so the geometry behind every other figure "
-        "is inspectable.",
-        "Five scenes: flat wall, two planes, tilted plane, sphere on backdrop, and one carrying a "
-        "sky band (depth&nbsp;0) plus a dropout column (NaN) to exercise invalid-depth handling.",
+        (
+            "Albedo and depth maps built from <code>torch</code> primitives &mdash; no renders, no "
+            "dataset, no loader anywhere in the path."
+        ),
+        ("Orientation rather than verification. Included so the geometry behind every other figure is inspectable."),
+        (
+            "Five scenes: flat wall, two planes, tilted plane, sphere on backdrop, and one carrying a "
+            "sky band (depth&nbsp;0) plus a dropout column (NaN) to exercise invalid-depth handling."
+        ),
         [],
     ),
 ]
 
 STAGES = [
-    ("Stage 0", "Data loader", "utils.py", "albedo + depth maps out of rendered frames", [
-        ("L1", "<code>cv2.inpaint</code> fabricated depth for every out-of-range pixel, inventing "
-               "plausible-looking geometry for sky and far background", "fixed",
-         "Removed. Because beyond-range returns now alias correctly, those pixels were never invalid."),
-        ("L2", "Two incompatible depth encodings selected by array shape alone", "fixed",
-         "Channel selection and unit interpretation are now separate decisions; rescaling keys off integer dtype."),
-        ("L3", "Two different <code>max_depth</code> values &mdash; one for the inpaint threshold, one for rescaling", "fixed",
-         "Split into <code>max_resolvable_depth</code> (hardware limit) and <code>scale_depth</code> (renderer range), with a check between them."),
-        ("L4", "Bilinear resize on depth, inventing flying-pixel surfaces at every object edge", "fixed",
-         "<code>cv2.INTER_NEAREST</code>."),
-        ("L5", "Albedo taken as the red channel of an already-shaded render, so renderer illumination is double-counted", "documented",
-         "Accepted as a deliberate approximation; the assumption is now stated at the point of use."),
-        ("L6", "Debug prints in library code", "fixed", ""),
-    ]),
-    ("Stage 1", "Radiometry", "sources.py, sensors.py", "scene &rarr; photons per SPAD pixel per cycle", [
-        ("T8", "Depth&nbsp;0 guarded by a 1e-12&nbsp;m epsilon, giving radiance ~1e24 rather than being rejected", "fixed",
-         "Non-finite and &le;&nbsp;0 depths mean &ldquo;no surface&rdquo; and are dropped upstream of the epsilon."),
-        ("A1", "Ambient radiance wrongly scales with the camera&rsquo;s per-pixel solid angle", "open",
-         "Modeling decision, deliberately deferred."),
-    ]),
-    ("Stage 2", "Transient assembly", "histogrammers.py", "irradiance binned by depth, per FOV", [
-        ("T1", "Vignette weights computed then discarded &mdash; the multiply landed on a rebound name, "
-               "not the values actually scattered", "fixed",
-         "Applied to <code>fov_irradiance_vals</code>; the dead rebind is gone."),
-        ("T3", "Beyond-range returns clamped into the last bin, creating a spike that reads as a real surface", "fixed",
-         "<code>torch.remainder</code> aliases them. Mode-independent: the detector is armed every cycle, so this holds for gated and free-running alike."),
-        ("F3", "Render resolution coupled to physical sensor size &mdash; doubling resolution collected 4&times; the photons", "fixed",
-         "Divide by <code>n_fov_pixels</code>, so a SPAD averages over its FOV instead of summing raw."),
-        ("F8", "Default full-scene FOV <code>[0, 0.999, 0, 0.999]</code> was resolution-dependent, dropping 1,999&nbsp;px at 1000&sup2;", "fixed",
-         "Now <code>[0, 1.0, 0, 1.0]</code>."),
-        ("T2", "Frames stack rather than accumulate; the preallocated buffer was never written", "partial",
-         "Dead buffer removed. Stacking semantics remain undecided, pinned by a characterisation test."),
-        ("T5", "Ambient path skips the FOV correction the signal path receives", "partial",
-         "Ambient is now divided by <code>n_fov_pixels</code> too. The modeling asymmetry stays open, tied to A1."),
-    ]),
-    ("Stage 3", "IRF and convolution", "camera.py, histogrammers.py", "transient &lowast; pulse + ambient = &phi;", [
-        ("T7", "The IRF was never normalised &mdash; every arrival rate inflated by a configuration-dependent "
-               "factor (33.36&times; at n_bins=1000, 6.67&times; at 200; 11/21/51&times; for square pulses at &tau;&nbsp;=&nbsp;1/2/5&nbsp;ns)", "fixed",
-         "Passes <code>normalize=&quot;sum&quot;</code>. Largest single scalar error in the layer."),
-        ("T4", "<code>F.conv1d</code> is cross-correlation, so asymmetric pulses came out time-reversed", "fixed",
-         "<code>irf.flip(-1)</code>, verified against <code>np.convolve</code> rather than hand-derived indices."),
-        ("T6", "Configured <code>bin_width</code> silently ignored", "fixed",
-         "Validated against the frequency-implied value at 1% tolerance; raises on real disagreement."),
-        ("A4", "One-way vs round-trip conventions cancel only by luck", "verified",
-         "Correct as written &mdash; the two factors of 2 cancel exactly. Now pinned by a test so neither can be &ldquo;fixed&rdquo; alone."),
-    ]),
-    ("Cross-cutting", "Geometry and packaging", "camera.py", "FOV construction, Python compatibility", [
-        ("F1", "<code>build_pixel_fov_list</code> built a list and never assigned it &mdash; the output was orphaned", "fixed",
-         "Assigns <code>self.histogrammer.pixel_fov_list</code> before returning."),
-        ("F5", "FOV centre used the pixel top edge, a half-pixel bias", "fixed", "<code>(row+0.5)/h</code>."),
-        ("F6", "Docstring promised a float where a pint <code>Quantity</code> is required", "fixed", "Corrected."),
-        ("E2", "<code>dict | None</code> made <code>camera.py</code> unimportable on Python&nbsp;3.9, which the project declares as supported", "fixed",
-         "<code>from __future__ import annotations</code>. This is what made the camera-layer fixes testable at all."),
-    ]),
+    (
+        "Stage 0",
+        "Data loader",
+        "utils.py",
+        "albedo + depth maps out of rendered frames",
+        [
+            (
+                "L1",
+                (
+                    "<code>cv2.inpaint</code> fabricated depth for every out-of-range pixel, inventing "
+                    "plausible-looking geometry for sky and far background"
+                ),
+                "fixed",
+                "Removed. Because beyond-range returns now alias correctly, those pixels were never invalid.",
+            ),
+            (
+                "L2",
+                "Two incompatible depth encodings selected by array shape alone",
+                "fixed",
+                "Channel selection and unit interpretation are now separate decisions; rescaling keys off integer dtype.",
+            ),
+            (
+                "L3",
+                "Two different <code>max_depth</code> values &mdash; one for the inpaint threshold, one for rescaling",
+                "fixed",
+                "Split into <code>max_resolvable_depth</code> (hardware limit) and <code>scale_depth</code> (renderer range), with a check between them.",
+            ),
+            (
+                "L4",
+                "Bilinear resize on depth, inventing flying-pixel surfaces at every object edge",
+                "fixed",
+                "<code>cv2.INTER_NEAREST</code>.",
+            ),
+            (
+                "L5",
+                "Albedo taken as the red channel of an already-shaded render, so renderer illumination is double-counted",
+                "documented",
+                "Accepted as a deliberate approximation; the assumption is now stated at the point of use.",
+            ),
+            ("L6", "Debug prints in library code", "fixed", ""),
+        ],
+    ),
+    (
+        "Stage 1",
+        "Radiometry",
+        "sources.py, sensors.py",
+        "scene &rarr; photons per SPAD pixel per cycle",
+        [
+            (
+                "T8",
+                "Depth&nbsp;0 guarded by a 1e-12&nbsp;m epsilon, giving radiance ~1e24 rather than being rejected",
+                "fixed",
+                "Non-finite and &le;&nbsp;0 depths mean &ldquo;no surface&rdquo; and are dropped upstream of the epsilon.",
+            ),
+            (
+                "A1",
+                "Ambient radiance wrongly scales with the camera&rsquo;s per-pixel solid angle",
+                "open",
+                "Modeling decision, deliberately deferred.",
+            ),
+        ],
+    ),
+    (
+        "Stage 2",
+        "Transient assembly",
+        "histogrammers.py",
+        "irradiance binned by depth, per FOV",
+        [
+            (
+                "T1",
+                (
+                    "Vignette weights computed then discarded &mdash; the multiply landed on a rebound name, "
+                    "not the values actually scattered"
+                ),
+                "fixed",
+                "Applied to <code>fov_irradiance_vals</code>; the dead rebind is gone.",
+            ),
+            (
+                "T3",
+                "Beyond-range returns clamped into the last bin, creating a spike that reads as a real surface",
+                "fixed",
+                "<code>torch.remainder</code> aliases them. Mode-independent: the detector is armed every cycle, so this holds for gated and free-running alike.",
+            ),
+            (
+                "F3",
+                "Render resolution coupled to physical sensor size &mdash; doubling resolution collected 4&times; the photons",
+                "fixed",
+                "Divide by <code>n_fov_pixels</code>, so a SPAD averages over its FOV instead of summing raw.",
+            ),
+            (
+                "F8",
+                "Default full-scene FOV <code>[0, 0.999, 0, 0.999]</code> was resolution-dependent, dropping 1,999&nbsp;px at 1000&sup2;",
+                "fixed",
+                "Now <code>[0, 1.0, 0, 1.0]</code>.",
+            ),
+            (
+                "T2",
+                "Frames stack rather than accumulate; the preallocated buffer was never written",
+                "partial",
+                "Dead buffer removed. Stacking semantics remain undecided, pinned by a characterisation test.",
+            ),
+            (
+                "T5",
+                "Ambient path skips the FOV correction the signal path receives",
+                "partial",
+                "Ambient is now divided by <code>n_fov_pixels</code> too. The modeling asymmetry stays open, tied to A1.",
+            ),
+        ],
+    ),
+    (
+        "Stage 3",
+        "IRF and convolution",
+        "camera.py, histogrammers.py",
+        "transient &lowast; pulse + ambient = &phi;",
+        [
+            (
+                "T7",
+                (
+                    "The IRF was never normalised &mdash; every arrival rate inflated by a configuration-dependent "
+                    "factor (33.36&times; at n_bins=1000, 6.67&times; at 200; 11/21/51&times; for square pulses at &tau;&nbsp;=&nbsp;1/2/5&nbsp;ns)"
+                ),
+                "fixed",
+                "Passes <code>normalize=&quot;sum&quot;</code>. Largest single scalar error in the layer.",
+            ),
+            (
+                "T4",
+                "<code>F.conv1d</code> is cross-correlation, so asymmetric pulses came out time-reversed",
+                "fixed",
+                "<code>irf.flip(-1)</code>, verified against <code>np.convolve</code> rather than hand-derived indices.",
+            ),
+            (
+                "T6",
+                "Configured <code>bin_width</code> silently ignored",
+                "fixed",
+                "Validated against the frequency-implied value at 1% tolerance; raises on real disagreement.",
+            ),
+            (
+                "A4",
+                "One-way vs round-trip conventions cancel only by luck",
+                "verified",
+                "Correct as written &mdash; the two factors of 2 cancel exactly. Now pinned by a test so neither can be &ldquo;fixed&rdquo; alone.",
+            ),
+        ],
+    ),
+    (
+        "Cross-cutting",
+        "Geometry and packaging",
+        "camera.py",
+        "FOV construction, Python compatibility",
+        [
+            (
+                "F1",
+                "<code>build_pixel_fov_list</code> built a list and never assigned it &mdash; the output was orphaned",
+                "fixed",
+                "Assigns <code>self.histogrammer.pixel_fov_list</code> before returning.",
+            ),
+            ("F5", "FOV centre used the pixel top edge, a half-pixel bias", "fixed", "<code>(row+0.5)/h</code>."),
+            ("F6", "Docstring promised a float where a pint <code>Quantity</code> is required", "fixed", "Corrected."),
+            (
+                "E2",
+                "<code>dict | None</code> made <code>camera.py</code> unimportable on Python&nbsp;3.9, which the project declares as supported",
+                "fixed",
+                "<code>from __future__ import annotations</code>. This is what made the camera-layer fixes testable at all.",
+            ),
+        ],
+    ),
 ]
 
 CHECKS = [
@@ -253,10 +416,22 @@ CHECKS = [
 ]
 
 NOT_COVERED = [
-    ("<code>Camera</code> orchestration", "<code>get_transients</code> / <code>get_arrival_rates</code> glue needs a dataset to construct, so the example calls the underlying functions directly."),
-    ("The data loader itself", "L1&ndash;L4 are verified by reading only. The example bypasses the loader by design and specifies the boundary as a written contract instead &mdash; see figure&nbsp;1. Any loader satisfying that contract inherits everything verified here; nothing enforces it at runtime, so conformance is the loader author&rsquo;s responsibility."),
-    ("Everything after &phi;", "Dead time, pile-up and the histogram forward models are untouched here. Four <code>xfail</code>s remain there: A1, H1&times;2 and dt=0. Figure&nbsp;1 exists so that work can start at a realistic operating point rather than the default low-flux one."),
-    ("The ambient <em>source</em>", "Background level is set directly as a number. <code>Sun.get_scene_radiance</code> and <code>Camera._get_ambient_offset</code> are never called, so ambient magnitude is plumbed-and-checked but not physically derived. This is where A1 and T5 live &mdash; both still open."),
+    (
+        "<code>Camera</code> orchestration",
+        "<code>get_transients</code> / <code>get_arrival_rates</code> glue needs a dataset to construct, so the example calls the underlying functions directly.",
+    ),
+    (
+        "The data loader itself",
+        "L1&ndash;L4 are verified by reading only. The example bypasses the loader by design and specifies the boundary as a written contract instead &mdash; see figure&nbsp;1. Any loader satisfying that contract inherits everything verified here; nothing enforces it at runtime, so conformance is the loader author&rsquo;s responsibility.",
+    ),
+    (
+        "Everything after &phi;",
+        "Dead time, pile-up and the histogram forward models are untouched here. Four <code>xfail</code>s remain there: A1, H1&times;2 and dt=0. Figure&nbsp;1 exists so that work can start at a realistic operating point rather than the default low-flux one.",
+    ),
+    (
+        "The ambient <em>source</em>",
+        "Background level is set directly as a number. <code>Sun.get_scene_radiance</code> and <code>Camera._get_ambient_offset</code> are never called, so ambient magnitude is plumbed-and-checked but not physically derived. This is where A1 and T5 live &mdash; both still open.",
+    ),
 ]
 
 BADGES = {
@@ -400,9 +575,7 @@ def data_uri(path: pathlib.Path) -> str:
 def build(figdir: pathlib.Path) -> str:
     flow = ""
     for stage, name, files, what, rows in STAGES:
-        chips = "".join(
-            f'<span class="chip {BADGES[st][1]}">{fid}</span>' for fid, _, st, _ in rows
-        )
+        chips = "".join(f'<span class="chip {BADGES[st][1]}">{fid}</span>' for fid, _, st, _ in rows)
         flow += (
             f'<div class="node"><span class="eyebrow">{stage}</span>'
             f'<span class="stagename">{name}</span>'
@@ -411,8 +584,7 @@ def build(figdir: pathlib.Path) -> str:
         )
 
     checks = "".join(
-        f'<li><span class="ck">PASS</span><span class="ck-n">{n}</span>'
-        f'<span class="ck-v">{v}</span></li>'
+        f'<li><span class="ck">PASS</span><span class="ck-n">{n}</span><span class="ck-v">{v}</span></li>'
         for n, v in CHECKS
     )
 
@@ -425,7 +597,7 @@ def build(figdir: pathlib.Path) -> str:
         figs += f"""
 <section class="fig">
   <div class="fig-head"><span class="eyebrow">Figure {i}</span><h3>{title}</h3>
-    {f'<div class="tags">{tags}</div>' if tags else ''}</div>
+    {f'<div class="tags">{tags}</div>' if tags else ""}</div>
   <figure><img src="{data_uri(path)}" alt="{title}" />
     <figcaption>{fname}</figcaption></figure>
   <div class="fig-body">
@@ -456,9 +628,7 @@ def build(figdir: pathlib.Path) -> str:
 </div>"""
 
     gaps = "".join(f'<div class="gap"><b>{t}</b><span>{d}</span></div>' for t, d in NOT_COVERED)
-    n_fixed = sum(
-        1 for *_, rows in STAGES for row in rows if row[2] in ("fixed", "verified")
-    )
+    n_fixed = sum(1 for *_, rows in STAGES for row in rows if row[2] in ("fixed", "verified"))
     stamp = _dt.date.today().isoformat()
 
     return f"""<!doctype html>

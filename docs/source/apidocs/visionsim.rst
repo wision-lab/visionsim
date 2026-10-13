@@ -22,13 +22,13 @@ visionsim.types module
 
 .. automodule:: visionsim.types
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:
 
 Module contents
 ---------------
 
 .. automodule:: visionsim
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

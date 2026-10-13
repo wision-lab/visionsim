@@ -7,4 +7,5 @@ Sensor Emulation
    sensors/rgb
    sensors/spc
    sensors/dvs
+   sensors/itof
    sensors/imu
