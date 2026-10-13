@@ -18,34 +18,50 @@ Artifacts
 
 Video interpolation is an inherently ambiguous task -- it is inconceivable to re-create a whole movie by interpolating it's first and last frame -- yet, when input frames are close enough, the problem becomes significantly simpler. We use this key insight to our advantage, we do not need to render ground truth frames at the framerate of a single photon camera, we can instead render them at framerate that is sufficient to capture most scene motion, and then interpolate the rest of the way.       
 
-What framerate to render at depends entirely on the scene, it's geometry and textures and how fast the relative motion is. To illustrate this point, we've taken the scene for the :doc:`quickstart guide <../quick-start>` and rendered it at different framerates and interpolated it to 400 fps:
+What framerate to render at depends entirely on the scene, it's geometry and textures and how fast the relative motion is. To illustrate this point, we've taken the lego scene used in :doc:`the NeRF tutorial <../tutorials/nerf-splats>` and rendered it at different framerates and interpolated it to 400 fps:
 
 .. grid:: 2
     :gutter: 2
 
     .. grid-item::
 
-        .. figure:: ../_static/interpolation/lego0025-interp.gif
-
-            6.25 fps interpolated 64x
-
-    .. grid-item::
-
-        .. figure:: ../_static/interpolation/lego0050-interp.gif
-
-            12.5 fps interpolated 32x
+        .. video:: ../_static/interpolation/lego0025-interp.mp4
+            :loop:
+            :autoplay:
+            :nocontrols:
+            :playsinline:
+            :align: center
+            :caption: 6.25 fps interpolated 64x
 
     .. grid-item::
 
-        .. figure:: ../_static/interpolation/lego0100-interp.gif
-
-            25 fps interpolated 16x
+        .. video:: ../_static/interpolation/lego0050-interp.mp4
+            :loop:
+            :autoplay:
+            :nocontrols:
+            :playsinline:
+            :align: center
+            :caption: 12.5 fps interpolated 32x
 
     .. grid-item::
 
-        .. figure:: ../_static/interpolation/lego0200-interp.gif
+        .. video:: ../_static/interpolation/lego0100-interp.mp4
+            :loop:
+            :autoplay:
+            :nocontrols:
+            :playsinline:
+            :align: center
+            :caption: 25 fps interpolated 16x
 
-            50 fps interpolated 8x
+    .. grid-item::
+
+        .. video:: ../_static/interpolation/lego0200-interp.mp4
+            :loop:
+            :autoplay:
+            :nocontrols:
+            :playsinline:
+            :align: center
+            :caption: 50 fps interpolated 8x
 
 As you can see, *for this scene*, we need to render at a minimum of 50fps for artifacts to become imperceptible. Here we've interpolated the 50fps render only 8x, but we can interpolate it much more without creating additional artifacts since adjacent frames are similar enough.
 
@@ -64,3 +80,10 @@ This effect can be shown quantitatively too. In the figure below, which was comp
    Rendering/Interpolation Tradeoff
 
 Notice that the time it takes to interpolate the frames is dwarfed by rendering time. The overall quality of the data improves with higher frame rates and lower interpolation factors, hitting an inflection point around 200fps, after which there are diminishing returns as rendering time explodes. From this, we can see that *for this specific scene* the native frame rate is around two to four hundred frames per second when using RIFE as the interpolation method, and below this rate we incur significant interpolation artifacts as shown. It takes just under 20 minutes to render this scene at 400fps and interpolate it 16x to 6.4kHz, as compared to over four hours if we rendered every frame. 
+
+|
+
+.. seealso::
+
+    - :doc:`../quick-start` for the 32x interpolation pass it runs.
+    - :doc:`../tutorials/large-dataset` for interpolation at dataset scale.
