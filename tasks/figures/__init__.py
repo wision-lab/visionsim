@@ -13,11 +13,28 @@ from invoke import Collection
 from . import quick_start, sections, tutorials
 from ._page import all_task
 from .sections import interpolation
-from .sections.sensors import itof
-from .tutorials import light_passes, playblast, stereo
+from .sections.blender import groundtruths
+from .sections.sensors import imu, itof, rgb
+from .tutorials import hdr, light_passes, playblast, stereo, varying_focal_lengths
 
 ns = Collection()
-ns.add_task(all_task((quick_start, interpolation, itof, light_passes, playblast, stereo)))
+ns.add_task(
+    all_task(
+        (
+            quick_start,
+            interpolation,
+            groundtruths,
+            imu,
+            itof,
+            rgb,
+            hdr,
+            light_passes,
+            playblast,
+            stereo,
+            varying_focal_lengths,
+        )
+    )
+)
 ns.add_task(quick_start.build)
 ns.add_collection(Collection.from_module(sections))
 ns.add_collection(Collection.from_module(tutorials))
