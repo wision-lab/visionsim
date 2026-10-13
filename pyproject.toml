@@ -65,6 +65,11 @@ exclude = [
 ]
 follow_imports="skip"
 
+# Tree Clipper only exists inside Blender's own Python, which the export service runs in.
+[[tool.mypy.overrides]]
+module = ["tree_clipper", "tree_clipper.*"]
+ignore_missing_imports = true
+
 [dependency-groups]
 dev = [
     "build>=1.3.0",

@@ -114,7 +114,7 @@ NOTES.md
 *.DS_store
 scenes/
 data/
-cache/
+cache
 examples/logs/
 examples/renders/
 examples/*.blend*
