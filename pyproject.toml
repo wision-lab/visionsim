@@ -38,6 +38,10 @@ dependencies = [
     "peewee",
     "pydantic",
     "typing-extensions",
+    "pint",
+    "opencv-python",
+    "ruamel.yaml",
+    "tqdm",
 ]
 license = "GPL-3.0-or-later"
 license-files = ["LICEN[CS]E*"]
