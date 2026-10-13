@@ -39,37 +39,37 @@ Here, each pass is tone-mapped independently, so these show the structure each o
 
     .. grid-item::
 
-        .. figure:: ../_static/blender/light-passes/diffuse-direct.png
+        .. figure:: ../_static/blender/light-passes/diffuse-direct.webp
 
             Diffuse Direct
 
     .. grid-item::
 
-        .. figure:: ../_static/blender/light-passes/diffuse-indirect.png
+        .. figure:: ../_static/blender/light-passes/diffuse-indirect.webp
 
             Diffuse Indirect
 
     .. grid-item::
 
-        .. figure:: ../_static/blender/light-passes/diffuse-color.png
+        .. figure:: ../_static/blender/light-passes/diffuse-color.webp
 
             Diffuse Color
 
     .. grid-item::
 
-        .. figure:: ../_static/blender/light-passes/specular-direct.png
+        .. figure:: ../_static/blender/light-passes/specular-direct.webp
 
             Glossy Direct
 
     .. grid-item::
 
-        .. figure:: ../_static/blender/light-passes/specular-indirect.png
+        .. figure:: ../_static/blender/light-passes/specular-indirect.webp
 
             Glossy Indirect
 
     .. grid-item::
 
-        .. figure:: ../_static/blender/light-passes/specular-color.png
+        .. figure:: ../_static/blender/light-passes/specular-color.webp
 
             Glossy Color
 
@@ -77,7 +77,7 @@ Here, each pass is tone-mapped independently, so these show the structure each o
 
 Diffuse Direct is the light reaching surfaces straight from a source, and Diffuse Indirect is what has bounced off something else first. Their sum has no surface color in it at all: Diffuse Color supplies that, which is why it reads as a flat, unlit albedo map. The glossy passes follow the same split for reflections, and specular highlights are what the direct and indirect glossy passes isolate. Together these are combined to give you the final render:
 
-.. figure:: ../_static/blender/light-passes/combined.png
+.. figure:: ../_static/blender/light-passes/combined.webp
    :align: center
 
    Combined
@@ -119,3 +119,10 @@ Only the diffuse and glossy passes described above are available. Blender can al
 Each pass is stored as a linear EXR at the render's full resolution, so enabling them can take significant disk space, several times that of the frames themselves. Saving them as half-float or with a lighter codec brings that back down at some precision cost.
 
 They are also unavailable from :doc:`blender.render-playblast <playblast>`. The viewport renderer has no equivalent of Cycles' light passes, so ``include_*`` flags are ignored and only the color preview is written.
+
+|
+
+.. seealso::
+
+    - :doc:`../sections/blender/groundtruths` for the reference on each pass.
+    - :doc:`hdr` for EXR/HDR output.
