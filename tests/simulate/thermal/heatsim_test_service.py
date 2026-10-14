@@ -1,6 +1,6 @@
 """Composable Blender primitives for the heatsim tests.
 
-This module is imported inside a spawned Blender process: ``HeatsimTestService`` is a
+This module is loaded inside a spawned Blender process: ``HeatsimTestService`` is a
 ``BlenderService`` subclass, and such a service can only be instantiated within Blender's
 Python runtime (``BlenderService.__init__`` raises otherwise). Tests reach it via
 ``BlenderClient.spawn(service=SERVICE_PATH)`` and drive multi-step scenarios by calling
@@ -24,8 +24,10 @@ from typing import Any
 
 from visionsim.simulate.blender import BlenderService, bpy, np
 
-# Dotted ``module:ClassName`` path passed to ``BlenderClient.spawn(service=...)``.
-SERVICE_PATH = "tests.simulate.thermal.heatsim_test_service:HeatsimTestService"
+# Absolute ``/path/to/service.py:ClassName`` target for ``BlenderClient.spawn(service=...)``:
+# importing this module by name would first execute every parent package's ``__init__``
+# inside blender's python, which commonly lacks their dependencies.
+SERVICE_PATH = f"{Path(__file__).resolve()}:HeatsimTestService"
 
 
 def call_service(client: Any, name: str, *args: Any, **kwargs: Any) -> Any:

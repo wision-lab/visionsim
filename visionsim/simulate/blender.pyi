@@ -132,6 +132,8 @@ class BlenderServer(rpyc.utils.server.Server):
         executable: str | os.PathLike | None = None,
         service: str | None = None,
         background: bool = True,
+        factory_startup: bool = False,
+        env: dict[str, str] | None = None,
     ) -> Generator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:
         """Spawn one or more blender instances and start a :class:`BlenderServer` in each.
 
@@ -164,13 +166,19 @@ class BlenderServer(rpyc.utils.server.Server):
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
-            service (str | None, optional): dotted ``module:ClassName`` path of the
-                :class:`BlenderService` subclass the spawned server should expose. Defaults to None
-                (the base :class:`BlenderService`).
+            service (str | None, optional): path of the :class:`BlenderService` subclass the spawned
+                server should expose, either dotted (``module:ClassName``, imported inside blender) or a
+                ``/path/to/service.py:ClassName`` file (executed as a script, so the file's package is
+                never imported). Defaults to None (the base :class:`BlenderService`).
             background (bool, optional): if true, spawn blender in background mode (``-b``). This is faster
                 and does not require a display, but has no OpenGL context, so viewport renders (playblasts)
                 are unavailable. Set to false to keep a window/GL context open (requires a display).
                 Defaults to True.
+            factory_startup (bool, optional): if true, pass ``--factory-startup`` so the run ignores the
+                machine's blender preferences and startup file. Defaults to False.
+            env (dict[str, str] | None, optional): extra environment variables for the spawned blender,
+                such as ``PYTHONPATH``. Merged over the parent's ``os.environ``, which is inherited by
+                default. Defaults to None.
 
         Raises:
             TimeoutError: raise if unable to discover spawned servers in ``timeout`` seconds and kill any spawned processes.
@@ -1247,6 +1255,8 @@ class BlenderClient:
         executable: str | os.PathLike | None = None,
         service: str | None = None,
         background: bool = True,
+        factory_startup: bool = False,
+        env: dict[str, str] | None = None,
     ) -> Generator[Self]:
         """Spawn and connect to a blender server.
         The spawned process is accessible through the client's ``process`` attribute.
@@ -1266,12 +1276,17 @@ class BlenderClient:
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
-            service (str | None, optional): dotted ``module:ClassName`` path of the
-                :class:`BlenderService` subclass the spawned server should expose. Defaults to None
-                (the base :class:`BlenderService`).
+            service (str | None, optional): path of the :class:`BlenderService` subclass the spawned server
+                should expose, either dotted (``module:ClassName``) or a ``/path/to/service.py:ClassName``
+                file. Defaults to None (the base :class:`BlenderService`).
             background (bool, optional): if true, spawn blender in background mode (``-b``). Background mode
                 has no OpenGL context, so viewport renders (playblasts) require ``background=False``, which
                 also requires a display. Defaults to True.
+            factory_startup (bool, optional): if true, pass ``--factory-startup`` so the run ignores the
+                machine's blender preferences and startup file. Defaults to False.
+            env (dict[str, str] | None, optional): extra environment variables for the spawned blender,
+                such as ``PYTHONPATH``. Merged over the parent's ``os.environ``, which is inherited by
+                default. Defaults to None.
 
         Yields:
             Generator[Self]: the connected client
@@ -2147,6 +2162,8 @@ class BlenderClients(tuple):
         executable: str | os.PathLike | None = None,
         service: str | None = None,
         background: bool = True,
+        factory_startup: bool = False,
+        env: dict[str, str] | None = None,
     ) -> Generator[Self]:
         """Spawn and connect to one or more blender servers.
         The spawned processes are accessible through the client's ``process`` attribute.
@@ -2167,12 +2184,17 @@ class BlenderClients(tuple):
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
-            service (str | None, optional): dotted ``module:ClassName`` path of the
-                :class:`BlenderService` subclass the spawned server should expose. Defaults to None
-                (the base :class:`BlenderService`).
+            service (str | None, optional): path of the :class:`BlenderService` subclass the spawned server
+                should expose, either dotted (``module:ClassName``) or a ``/path/to/service.py:ClassName``
+                file. Defaults to None (the base :class:`BlenderService`).
             background (bool, optional): if true, spawn blender instances in background mode (``-b``). Background
                 mode has no OpenGL context, so viewport renders (playblasts) require ``background=False``, which
                 also requires a display. Defaults to True.
+            factory_startup (bool, optional): if true, pass ``--factory-startup`` so the run ignores the
+                machine's blender preferences and startup file. Defaults to False.
+            env (dict[str, str] | None, optional): extra environment variables for the spawned blender
+                instances, such as ``PYTHONPATH``. Merged over the parent's ``os.environ``, which is
+                inherited by default. Defaults to None.
 
         Yields:
             Generator[Self]: the connected clients
