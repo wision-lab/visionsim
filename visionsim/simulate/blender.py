@@ -3433,7 +3433,8 @@ if __name__ == "__main__":
     # setdefault is a no-op and the dual-class failure returns).
     sys.modules["visionsim.simulate.blender"] = sys.modules["__main__"]
 
-    where, _, class_name = args.service.partition(":")
+    # Split on the last colon: a Windows file spec is ``C:\...\service.py:Class``.
+    where, _, class_name = args.service.rpartition(":")
 
     if where.endswith(".py"):
         # Run the file as a script: importing it would execute each parent package's
