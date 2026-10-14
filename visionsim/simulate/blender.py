@@ -517,6 +517,9 @@ class BlenderService(rpyc.Service):
         # TEXEL render domain: the AtlasPlan from the most recent exposed_prepare_thermal
         # call (None in VERTEX mode, or if TEXEL mode found nothing atlas-eligible).
         self._thermal_atlas_plan: Any | None = None
+        # (tmin, tmax) preview colormap span from the most recent exposed_prepare_thermal
+        # call, read back by the separate exposed_include_thermal call; None until then.
+        self._thermal_temp_range: tuple[float, float] | None = None
 
     def _clear_cached_properties(self) -> None:
         # Based on: https://stackoverflow.com/a/71579485
@@ -564,6 +567,7 @@ class BlenderService(rpyc.Service):
         self._loaded_persistent_data = None
         self._persistent_data_before_thermal = None
         self._thermal_atlas_plan = None
+        self._thermal_temp_range = None
 
     def register_output_type(
         self,
@@ -1899,7 +1903,7 @@ class BlenderService(rpyc.Service):
             # Span the colormap over the solved scene's actual temperature range
             # (computed in prepare_thermal) instead of the fixed 295-400 K default,
             # so low-dT scenes are not crushed to the dark end of inferno.
-            rng = getattr(self, "_thermal_temp_range", None)
+            rng = self._thermal_temp_range
             group = self.tree.nodes.new("CompositorNodeGroup")
             group.label = "Thermal Preview"
             group.node_tree = (
