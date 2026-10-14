@@ -46,16 +46,21 @@ NODES = (
         ),
     ),
     Node(
-        name="ultramodern-dvs50fps-preview",
-        files=(static("quick-start/ultramodern-dvs50fps-preview.mp4"),),
+        name="ultramodern-dvs1600fps-preview",
+        files=(static("quick-start/ultramodern-dvs1600fps-preview.mp4"),),
         is_figure=True,
         # The event-camera section embeds this figure; the frames come from the
         # quick-start dataset, so the figure belongs to this page.
-        requires=("ultramodern-dvs50fps",),
-        # Event previews are per-pixel noise, which costs several megabytes a clip even
-        # at the default quality.
+        requires=("ultramodern-dvs1600fps",),
+        # Event previews are per-pixel noise, so the clip is expensive at any quality.
+        # Keep every 64th preview to play the trajectory at 25fps like the ground-truth
+        # clip, and encode at the frames' own size since the pages stretch it to width.
         recipe=video_recipe(
-            "quickstart/ultramodern-dvs50fps/preview/*/*.png", 2, "quick-start/ultramodern-dvs50fps-preview", crf=28
+            "quickstart/ultramodern-dvs1600fps/preview/*/*.png",
+            64,
+            "quick-start/ultramodern-dvs1600fps-preview",
+            size=512,
+            crf=28,
         ),
     ),
     Node(

@@ -59,6 +59,11 @@ class PercentVideoWidth(SphinxPostTransform):
     ``figwidth`` as a style on the container instead, which a percentage survives, but
     its directive clears that option unless the video also has a caption. After the
     directive has run, move the percentage over to the option that works.
+
+    Sizing the container is not enough on its own. The stylesheet caps a clip at that
+    container but will not stretch one narrower than it, and the previews are encoded
+    small, so tag the node for the ``.fill-width`` rule in ``custom.css``, which fills
+    the container the percentage set up.
     """
 
     default_priority = 100
@@ -70,6 +75,7 @@ class PercentVideoWidth(SphinxPostTransform):
             if isinstance(width, str) and width.endswith("%"):
                 node["figwidth"] = width
                 node["width"] = ""
+                node["klass"] = f"{node.get('klass', '')} fill-width".strip()
 
 
 def setup(app):
