@@ -1,6 +1,5 @@
 """Tests for the thermal preview colormap: the global temperature range helper
-and the inferno-stop compositor node group (see
-docs/superpowers/specs/2026-07-07-visionsim-thermal-parity-design.md §9).
+and the inferno-stop compositor node group.
 
 Both drive primitives inside a spawned Blender via the heatsim test service.
 """
