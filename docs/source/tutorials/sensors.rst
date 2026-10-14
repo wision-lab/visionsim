@@ -6,4 +6,5 @@ Sensors
 
    rgb
    itof
+   dvs
    imu

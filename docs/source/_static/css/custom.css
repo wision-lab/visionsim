@@ -142,3 +142,7 @@ table.borderless th {
     margin-left: auto;
     margin-right: auto;
 }
+
+.sphinx-contrib-video-container video.fill-width {
+    width: 100%;
+}

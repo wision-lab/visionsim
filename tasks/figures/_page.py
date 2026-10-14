@@ -172,14 +172,14 @@ INTERMEDIATES: dict[str, Node] = {
             " --output-dir=quickstart/ultramodern-spc1600fps/preview/",
         ),
     ),
-    "ultramodern-dvs50fps": Node(
-        name="ultramodern-dvs50fps",
-        files=(CACHE / "quickstart" / "ultramodern-dvs50fps" / "preview",),
-        requires=("ultramodern-gt",),
+    "ultramodern-dvs1600fps": Node(
+        name="ultramodern-dvs1600fps",
+        files=(CACHE / "quickstart" / "ultramodern-dvs1600fps" / "preview",),
+        requires=("ultramodern-interp",),
         recipe=_command_recipe(
-            "ultramodern-dvs50fps",
-            "visionsim emulate.events --input-dir=quickstart/ultramodern-gt/frames"
-            " --output-dir=quickstart/ultramodern-dvs50fps/ --fps=50 --preview-step=1 --force",
+            "ultramodern-dvs1600fps",
+            "visionsim emulate.events --input-dir=quickstart/ultramodern-interp/"
+            " --output-dir=quickstart/ultramodern-dvs1600fps/ --fps=1600 --preview-step=1 --force",
         ),
     ),
     "ultramodern-itof": Node(

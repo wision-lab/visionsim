@@ -12,6 +12,7 @@ Added
 ^^^^^
 
 - Indirect time-of-flight (iToF) sensor emulation, with a tutorial and figure task.
+- An event camera (DVS) emulation tutorial covering the CLI, output format, Python API and parameter figures.
 - Standalone ``render-playblast`` CLI for fast viewport previews, plus a playblast tutorial.
 - HDR, stereo, light-pass, and large-dataset tutorials backed by per-page figure tasks.
 - A grouped tutorials index (Sensors, Rendering & Simulation, Applications) and new

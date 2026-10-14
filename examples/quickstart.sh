@@ -20,8 +20,8 @@ visionsim emulate.spad \
     --input-dir=quickstart/ultramodern-interp/ \
     --output-dir=quickstart/ultramodern-spc1600fps/
 visionsim emulate.events \
-    --input-dir=quickstart/ultramodern-gt/frames \
-    --output-dir=quickstart/ultramodern-dvs50fps/ --fps=50 --preview-step=1
+    --input-dir=quickstart/ultramodern-interp/ \
+    --output-dir=quickstart/ultramodern-dvs1600fps/ --fps=1600 --preview-step=1
 visionsim emulate.itof \
     --input-dir=quickstart/ultramodern-gt/frames \
     --depth-dir=quickstart/ultramodern-gt/depths \
