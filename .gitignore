@@ -112,7 +112,6 @@ TODO.md
 NOTES.md
 *.pkl
 *.DS_store
-# Thermal FEM solve cache (prepare_thermal writes `<blend>.heatsim/` next to the source blend)
 *.heatsim/
 **/*.heatsim/
 scenes/
@@ -126,8 +125,28 @@ docs/source/_build/
 examples/assets/
 uv.lock
 
-# Local planning / working docs — preserved on the heatsim-devdocs branch, kept out of heatsim
+# AI coding stuffs
+.claude/
+CLAUDE.md
+.claudeignore
+.cursor/
+.cursorrules
+.windsurf/
+.codex/
+.gemini/
+GEMINI.md
+.copilot/
+.aider*
+.continue/
+.tabnine*
+.ollama/
+.llm/
+skills/
 docs/superpowers/
+.superpowers/
+memory-bank/
+AGENTS.md
+
+# Local planning 
 docs/thermal_integration/
 docs/notes/
-.superpowers/

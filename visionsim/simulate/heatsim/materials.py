@@ -281,18 +281,26 @@ def load_assignments(path: Path) -> SceneAssignment:
 
     defaults_block = raw.get("defaults", {})
     if not isinstance(defaults_block, dict):
-        raise ValueError(f"{path}: 'defaults' must be an object, got {type(defaults_block).__name__}")
+        # A malformed sidecar is a ValueError like every other failure in this function,
+        # not the TypeError TRY004 wants for a caller-supplied argument.
+        raise ValueError(  # noqa: TRY004
+            f"{path}: 'defaults' must be an object, got {type(defaults_block).__name__}"
+        )
     default_preset = _lookup_preset(defaults_block.get("preset"), f"{path.name}:defaults")
 
     materials_block = raw.get("materials", {})
     if not isinstance(materials_block, dict):
-        raise ValueError(f"{path}: 'materials' must be an object, got {type(materials_block).__name__}")
+        raise ValueError(  # noqa: TRY004
+            f"{path}: 'materials' must be an object, got {type(materials_block).__name__}"
+        )
 
     entries: dict[str, MaterialEntry] = {}
     for name, spec in materials_block.items():
         where = f"{path.name}:{name}"
         if not isinstance(spec, dict):
-            raise ValueError(f"{path}: material {name!r} spec must be an object, got {type(spec).__name__}")
+            raise ValueError(  # noqa: TRY004
+                f"{path}: material {name!r} spec must be an object, got {type(spec).__name__}"
+            )
         preset = _lookup_preset(spec.get("preset"), where)
 
         role = str(spec.get("role") or "FEM_PARTICIPANT").upper()
