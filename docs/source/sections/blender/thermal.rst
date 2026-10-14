@@ -29,6 +29,10 @@ you only need temperatures, add ``--config.thermal.no-radiance``. The default
 ``render-domain AUTO`` chooses how densely to sample each surface; large walls
 and floors will often use thermal atlas texels.
 
+``--config.include-all`` enables thermal along with every other output, so it
+also pays for the bake, the heat solve and the second render pass. Pass
+``--config.include-thermal`` instead when you want only the thermal outputs.
+
 For example, to assign thermal materials, run a 60-second static heat solve,
 and increase the bake's spatial resolution::
 
