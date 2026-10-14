@@ -56,9 +56,24 @@ While many methods exist, one of the simplest and most ubiquitous is to simply i
 
 .. literalinclude:: ../../../../examples/sensors/imu.py 
 
-Using a bit of Blender's geometry nodes we can composite a few estimated trajectories back into the scene, by importing the ``mesh_camera.json`` group onto a cube:
+Using a bit of Blender's geometry nodes we can composite a few estimated trajectories back into the scene:
 
-.. node-graph:: ../../../../examples/blender/mesh_camera.json
+.. tab-set::
+
+    .. tab-item:: Preview
+        :selected:
+
+        .. video:: ../../_static/sensors/imu-preview.mp4
+           :loop:
+           :autoplay:
+           :nocontrols:
+           :playsinline:
+           :align: center
+           :width: 80%
+
+    .. tab-item:: Geometry nodes
+
+        .. node-graph:: ../../../../examples/blender/mesh_camera.json
 
 | 
 
