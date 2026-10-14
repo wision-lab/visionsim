@@ -8,7 +8,7 @@ Sometimes you don't need a full render. While iterating on camera moves or a lay
 Playblast vs. Full Render
 -------------------------
 
-The two modes side by side, both rendered from ``loft.blend``:
+The two modes side by side, both rendered from `loft.blend <https://drive.google.com/drive/folders/1gRxhL3rbGDTfgKytre8WkbBu-QDJFy15?usp=sharing>`_:
 
 .. grid:: 2
     :gutter: 2

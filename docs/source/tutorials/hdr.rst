@@ -100,7 +100,7 @@ Composites work the same way (provided the compositor setup does not do any tone
 Example: an HDR render of the attic scene
 -----------------------------------------
 
-The ``attic`` scene is a 600-frame camera flythrough at 50 fps. Frame 410, below, looks up at the roof, where the skylights are many times brighter than the shadowed corner under the eaves, so one frame already spans the range this page is about. Render it as a 32-bit linear OpenEXR, at twice the resolution of the blend and four times its sample count:
+The `attic scene <https://drive.google.com/drive/folders/1gRxhL3rbGDTfgKytre8WkbBu-QDJFy15?usp=sharing>`_ is a 600-frame camera flythrough at 50 fps. Frame 410, below, looks up at the roof, where the skylights are many times brighter than the shadowed corner under the eaves, so one frame already spans the range this page is about. Render it as a 32-bit linear OpenEXR, at twice the resolution of the blend and four times its sample count:
 
 .. code-block:: bash
 
