@@ -37,8 +37,16 @@ ROOT = Path(__file__).resolve().parents[2]
 CACHE = ROOT / "cache"
 STATIC = ROOT / "docs" / "source" / "_static"
 
-NODE_TREE_SERVICE = ROOT / "tasks" / "figures" / "export_node_trees.py"
-"""BlenderService subclass that exports node trees, spawned by :func:`export_node_trees`."""
+NODE_TREE_SERVICE = ROOT / "tasks" / "figures" / "node_trees.py"
+"""BlenderService subclass that exports node trees and lays those exports out, spawned by
+:func:`export_node_trees` and :func:`arrange_node_trees`."""
+
+NODE_TREES = (
+    *(STATIC / "blender" / "nodes").glob("*.json"),
+    ROOT / "examples" / "blender" / "mesh_camera.json",
+)
+"""The Tree Clipper exports the documentation draws its node graphs from: the compositor
+trees the ground-truth figures show, and the geometry nodes group the IMU page shows."""
 
 BLENDER_SERVICE = ROOT / "visionsim" / "simulate" / "blender.py"
 """The library's own BlenderService, for figures that drive it through the client API."""
@@ -634,8 +642,8 @@ def export_node_trees(
     is rendered, so ``dataset`` only names the directory those passes would write to,
     which is what keeps their output paths out of the figures.
 
-    The layout in the files this overwrites is not reproduced: the committed exports are
-    arranged by hand, and what is written here is the tree as the service created it.
+    The layout in the files this overwrites is not reproduced: what is written here is the
+    tree as the service created it, which :func:`arrange_node_trees` lays out.
 
     Args:
         executable: Blender to run, ``None`` for ``$VSIM_BLENDER``, or ``blender`` on ``$PATH``.
@@ -652,6 +660,19 @@ def export_node_trees(
             if method is not None:
                 getattr(client, method)(**kwargs)
             print(client.export_tree(figure, str(output_dir)))
+
+
+@task(name="arrange-node-trees")
+def arrange_node_trees(c, executable=None):
+    """Re-arrange the node tree exports the documentation draws, in place.
+
+    One blender serves every file: :data:`NODE_TREE_SERVICE` is started once and each export
+    is handed to it in turn. The blender it starts needs 5.0 or newer and has to carry Tree
+    Clipper and the Node Arrange extension.
+    """
+    with blender_service(NODE_TREE_SERVICE, executable) as client:
+        for path in sorted(NODE_TREES):
+            print(client.arrange_tree(str(path)))
 
 
 def page_task(nodes: tuple[Node, ...], name: str, doc: str):

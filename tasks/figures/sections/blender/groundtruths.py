@@ -2,7 +2,9 @@
 
 The page shows each kind of ground truth as an interactive graph of the compositor tree
 :class:`~visionsim.simulate.blender.BlenderService` sets up for it, exported from the
-quick-start scene the rest of the documentation renders its ground truth from.
+quick-start scene the rest of the documentation renders its ground truth from. The tree a
+service builds is stacked, so run ``inv figures.arrange-node-trees`` after regenerating
+these.
 """
 
 from __future__ import annotations
@@ -29,8 +31,7 @@ def _export(executable: str | None, force: bool = False) -> None:
     """Build the page's ground-truth trees on the quick-start scene and export them.
 
     Args:
-        executable: Blender to export with, which has to be 5.0 or newer and carry the
-            Node Arrange extension.
+        executable: Blender to export with, which has to be 5.0 or newer.
         force: Ignored; the export overwrites unconditionally.
     """
     export_node_trees(executable, cached("ultramodern.blend"), static("blender/nodes"), "ultramodern-gt", PASSES)

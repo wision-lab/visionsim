@@ -128,6 +128,8 @@ Sphinx does not run any figure recipe. Every documentation page that has generat
 
 Using ``--dry-run`` reports what would happen without writing anything, and ``--force`` rebuilds the page's figures and their dependencies.
 
+The compositor and IMU pages draw Tree Clipper exports of node trees, whose nodes the viewer places where the export says, so run ``inv figures.arrange-node-trees`` after regenerating one. It lays each export out with `Node Arrange <https://github.com/Leonardo-Pike-Excell/node-arrange>`_ in one blender serving every file, which needs blender 5.0 or newer, Tree Clipper and that extension.
+
 A page is one dependency graph. Its module lists only the figures the page owns, and each figure names the intermediates it needs through ``requires``. Shared intermediates, such as the rendered and interpolated datasets several quick-start figures read, live in ``_page.INTERMEDIATES`` and are provisioned at most once per invocation. Each node is attempted once. A node whose requirement failed is skipped with one line naming that requirement, so a failed render is reported once at its root instead of failing again for every dependent. Cycles and unknown requirement names are rejected when the task loads, so ``inv --list`` fails instead of a run half-way through.
 
 Figures and intermediates that render need the scene blends in ``cache/`` (``lego.blend`` for the interpolation figures, ``ultramodern.blend`` for the quick start), obtained manually or with `gdown <https://github.com/wkentaro/gdown>`_ using the ``--fuzzy --folder`` command in ``examples/README.md``; without them the blender command fails and the node is reported as skipped.
