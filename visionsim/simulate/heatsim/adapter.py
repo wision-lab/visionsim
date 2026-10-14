@@ -637,8 +637,12 @@ def write_atlas(
     Scatters every atlas-participating object's LAST solved timestep into the shared atlas
     array at its tile's texels (:func:`_scatter_atlas_arrays`), push-out dilates across the
     invalid margin so render-time bilinear filtering never samples an untouched texel, and
-    saves an RGBA float EXR (R=G=B=temperature in Kelvin, A=1 where valid/dilated coverage
-    exists, 0 elsewhere) to ``<cache_root>/atlas_<digest>/atlas_temperature.exr``. The caller
+    saves an RGBA float EXR to ``<cache_root>/atlas_<hash>/atlas_temperature.exr``:
+    R and B hold temperature in Kelvin, G holds the per-texel IR emissivity the gray-body
+    shader reads (``thermal_shader._build_emissivity_source_chain``), and A is 1 where
+    valid/dilated coverage exists, 0 elsewhere. ``<hash>`` covers the plan digest plus the
+    participating object names and their solved values, so re-solving with different
+    temperatures writes a new path rather than overwriting a cached atlas. The caller
     (``blender.py``) is expected to load and pack the result as the ``HeatSim_Temperature_Atlas``
     Blender image before wiring the shader (:mod:`thermal_shader`) or rendering.
 
