@@ -47,6 +47,13 @@ def test_cache_rejects_wrong_shape_and_corruption(tmp_path):
     archive_path.write_bytes(b"incomplete")
     assert cache.read_temperatures(tmp_path, key, {"wall": 4}) is None
 
+    # An interrupted write leaves a truncated but otherwise well-formed zip, which np.load
+    # reports as zipfile.BadZipFile -- not an OSError. It must be a cache miss too.
+    cache.write_temperatures(tmp_path, key, {"wall": np.full((3, 4), 295.0)}, {})
+    truncated = archive_path.read_bytes()
+    archive_path.write_bytes(truncated[: len(truncated) // 2])
+    assert cache.read_temperatures(tmp_path, key, {"wall": 4}) is None
+
 
 def test_source_identity_requires_clean_saved_inputs(tmp_path):
     blend = tmp_path / "room.blend"

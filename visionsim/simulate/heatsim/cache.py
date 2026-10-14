@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import tempfile
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -152,6 +153,8 @@ def read_temperatures(
                     reject(f"non-finite history for {name}")
                     return None
             return result
-    except (OSError, ValueError, KeyError, TypeError, EOFError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, EOFError, zipfile.BadZipFile) as exc:
+        # BadZipFile is not an OSError: an interrupted write leaves a truncated archive
+        # that must count as a cache miss, not abort the solve that wanted a cached result.
         reject(str(exc))
         return None
