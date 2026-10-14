@@ -1306,15 +1306,14 @@ def _write_emissivity_attr(obj: Any, mesh: Any, defaults: dict, assignment: Any 
 
 def _write_constant_fill_attributes(obj: Any, mesh: Any, defaults: dict, assignment: Any | None, fill_T: float) -> None:
     """Constant-fill ``sim_temperature`` (and ``emissivity``) for a vertex-path object
-    whose per-vertex write-back is impossible this frame (topology mismatch or missing
-    history) -- called instead of leaving both attributes absent.
+    with no entry in ``history`` -- called instead of leaving both attributes absent.
 
     An absent ``sim_temperature`` makes the ``temperature`` AOV emit 0 K (see
     ``thermal_shader._build_temperature_source_chain``'s ``is_valid = sim_temperature >
     1.0`` gate), which silently discards a real solved field down to nothing worse than
     if the object had never been simulated. A constant fill is coarser than genuine
-    per-vertex detail but is never worse than 0 K or (for the shape-mismatch case)
-    ambient -- see ``write_frame_attributes`` for how ``fill_T`` is chosen.
+    per-vertex detail but is never worse than 0 K -- see ``write_frame_attributes`` for
+    how ``fill_T`` is chosen.
     """
     n = len(mesh.vertices)
     _write_point_float_attr(mesh, "sim_temperature", np.full(n, fill_T, dtype=np.float32))
@@ -1333,14 +1332,15 @@ def write_frame_attributes(
 
     For every simulated mesh (present in ``history``) this writes a
     ``sim_temperature`` (FLOAT/POINT) attribute for that timestep plus a constant
-    ``emissivity`` (FLOAT/POINT) attribute. Vertex-path objects whose per-vertex
-    write-back is impossible this frame -- ``history`` has no entry for them, or its
-    per-vertex count doesn't match the base mesh (a topology-changing modifier) -- still
-    get a CONSTANT-fill ``sim_temperature``/``emissivity`` (never left absent: an absent
-    ``sim_temperature`` makes the ``temperature`` AOV emit 0 K, see
-    :func:`_write_constant_fill_attributes`), plus an OBJECT-level
+    ``emissivity`` (FLOAT/POINT) attribute. An object with no entry in ``history`` -- e.g.
+    a ``DIRICHLET_SOURCE`` whose topology changes every frame, so it was never given a
+    per-vertex field -- gets a CONSTANT-fill ``sim_temperature``/``emissivity`` instead of
+    being left absent (an absent ``sim_temperature`` makes the ``temperature`` AOV emit
+    0 K, see :func:`_write_constant_fill_attributes`). A per-vertex field whose count does
+    not match the base mesh raises ``RuntimeError`` instead: writing it would render a
+    plausible-looking but wrong field. The object also gets an OBJECT-level
     ``heatsim_default_temperature`` custom property so downstream rendering still has a
-    sane fallback too: ``defaults['initial_temperature_K']`` (ambient) for FEM
+    sane fallback: ``defaults['initial_temperature_K']`` (ambient) for FEM
     participants, or the object's own ``dirichlet_temperature_K`` reservoir temperature
     for a ``DIRICHLET_SOURCE`` (e.g. a topology-changing hot liquid whose vertex count
     can't be tracked per-frame) so it still renders hot instead of at ambient. This does
