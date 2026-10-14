@@ -89,13 +89,11 @@ def _ensure_single_user_meshes(sim_objects: list) -> None:
 def _is_set(mat: Any, attr: str) -> bool:
     """True iff *attr* was explicitly set on the per-object PropertyGroup *mat*.
 
-    ``obj.heat_sim_material`` is a ``PointerProperty`` registered on every object,
-    so ``mat`` is never ``None`` and a ``FloatProperty`` always returns its group
-    default - the global ``defaults`` (``--config.thermal.*``) would otherwise be
-    unreachable.  Blender's ``bpy_struct.is_property_set`` distinguishes an
-    explicitly-authored value from the registered default, restoring the locked
-    "per-object overrides, globals as fallback" contract.  Non-Blender fakes that
-    expose ``is_property_set`` are honoured too; anything else is treated as unset.
+    Every object carries a ``heat_sim_material`` group and every ``FloatProperty``
+    returns its group default, so without ``bpy_struct.is_property_set`` the global
+    ``--config.thermal.*`` values are unreachable and "per-object overrides, globals as
+    fallback" breaks. Fakes that expose ``is_property_set`` are honoured; anything else
+    counts as unset.
     """
     if mat is None:
         return False
@@ -144,12 +142,9 @@ def resolve_material(obj: Any, defaults: dict) -> dict:
     }
 
 
-# Robust percentile bounds for the preview colormap. Raw min/max lets a handful
-# of runaway/artifact vertices (low heat-capacity materials or coarse-mesh spikes
-# under an aggressive irradiance_scale) stretch tmax to thousands of Kelvin, which
-# crushes the entire ambient scene to the cool/black end of inferno and leaves
-# only the outlier blob visible. Clipping to P1..P99 discards those tails so the
-# colormap spans the temperatures the bulk of the scene actually occupies.
+# Robust percentile bounds for the preview colormap: raw min/max lets a handful of
+# artifact-hot vertices stretch tmax and crush the ambient bulk to the dark end of
+# inferno. P1..P99 spans the temperatures the scene actually occupies.
 _PREVIEW_PCT_LOW = 1.0
 _PREVIEW_PCT_HIGH = 99.0
 
@@ -907,12 +902,10 @@ def _combine_texel_object(
 
     if per_face is not None:
         # Per-face resolution: every field is already (K,) via `face_idx` lookup.
-        # Dirichlet texels are pinned individually - alpha=0, no incident flux,
-        # excluded from the radiation/convection boundary - exactly what the
-        # per-vertex/object-level branches do. T0 for a non-pinned texel is the
-        # simulation's ambient initial condition, not resolve_face_materials'
-        # per-face value (which, for a face on a Dirichlet slot, IS the reservoir
-        # temperature) - mirrors the per-vertex branch's same reasoning.
+        # Dirichlet texels get alpha=0, no incident flux and no boundary radiation, as in
+        # the other branches. T0 for a non-pinned texel is the ambient initial condition,
+        # not resolve_face_materials' per-face value (which for a Dirichlet slot IS the
+        # reservoir temperature).
         rho = per_face["rho"][face_idx]
         c_vec = per_face["c"][face_idx]
         eps = per_face["eps"][face_idx]
@@ -1029,13 +1022,11 @@ def _combine(
         per_vertex = None
         if assignment is not None:
             per_vertex = materials.resolve_vertex_materials(obj, assignment, mat)
-            # resolve_vertex_materials walks the object's *base* mesh, so its arrays
-            # are sized to len(obj.data.vertices). _combine operates on the *evaluated*
-            # geometry from _extract_geometry, whose vertex count differs when the
-            # object carries topology-changing modifiers (Subdivision, Array, ...).
-            # When they disagree we cannot map slots to evaluated vertices, so fall
-            # back to the object-level path for this object rather than crash - the
-            # same shape-mismatch degradation write_frame_attributes already applies.
+            # resolve_vertex_materials sizes its arrays to the *base* mesh
+            # (len(obj.data.vertices)); _combine works on the *evaluated* geometry, whose
+            # vertex count differs under topology-changing modifiers (Subdivision, Array,
+            # ...). Slots then cannot be mapped to evaluated vertices, so this object
+            # degrades to the object-level path rather than crashing.
             if per_vertex is not None and int(per_vertex["alpha"].shape[0]) != n:
                 _log.warning(
                     "[heatsim.adapter] '%s': base mesh has %d verts but evaluated geometry has %d "
@@ -1389,12 +1380,10 @@ def write_frame_attributes(
         if obj.name in atlas_names:
             # TEXEL: this object's field lives in the atlas image, not on its mesh --
             # only the fallback (used wherever the atlas mix factor is 0) is written.
-            # Remove any stale sim_temperature/emissivity POINT attributes left by a
-            # prior VERTEX-mode run on this same mesh (long-lived RPyC service can
-            # switch modes between prepare_thermal calls): the shader's vertex path
-            # reads sim_temperature whenever it's present and > 1.0, so a leftover
-            # attribute would bleed stale per-vertex temperatures through atlas holes
-            # (mix factor 0) instead of the fresh fallback written below.
+            # Clear stale sim_temperature/emissivity POINT attributes from a prior
+            # VERTEX-mode run in the same service session: the shader's vertex path reads
+            # sim_temperature whenever it is present and > 1.0, so a leftover attribute
+            # would bleed stale temperatures through atlas holes (mix factor 0).
             for attr_name in ("sim_temperature", "emissivity"):
                 if attr_name in mesh.attributes:
                     mesh.attributes.remove(mesh.attributes[attr_name])
@@ -1402,11 +1391,10 @@ def write_frame_attributes(
             continue
 
         if atlas_plan is None and ATLAS_COVERAGE_PROP in obj:
-            # VERTEX mode: clear a stale coverage gate left by a prior TEXEL-mode run
-            # on this same object (long-lived RPyC service can switch modes between
-            # prepare_thermal calls). Otherwise the shader's atlas mix factor stays
-            # gated open by a stale alpha * stale coverage=1.0, letting a stale packed
-            # atlas image win over the fresh per-vertex sim_temperature written below.
+            # VERTEX mode: clear the coverage gate a prior TEXEL-mode run left behind, or
+            # the shader's atlas mix factor stays gated open by a stale alpha * stale
+            # coverage=1.0, letting the stale packed atlas image win over the fresh
+            # per-vertex sim_temperature written below.
             del obj[ATLAS_COVERAGE_PROP]
 
         hist = history.get(obj.name)

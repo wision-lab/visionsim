@@ -1729,13 +1729,11 @@ class BlenderService(rpyc.Service):
 
         self._thermal_atlas_plan = None
 
-        # Cycles' persistent data keeps the device-side scene alive between frames, but
-        # the thermal passes swap materials and AOV wiring on every frame. That
-        # combination intermittently renders a surface's temperature as 0 K: over a
-        # 50-frame classroom sequence it blanked whole objects in 6 frames on one run and
-        # 2 on the next (up to 31% of a frame), and which frames broke changed run to run.
-        # Turning it off for thermal runs drops the 0 K fraction from ~1.9% to ~0.03%
-        # (background only) and makes the sequence deterministic.
+        # Cycles' persistent data keeps device-side scene state alive between frames, but
+        # the thermal passes rewire materials and AOVs every frame; combined, that
+        # rendered surfaces as 0 K nondeterministically (up to 31% of a frame, different
+        # frames each run). Disabling it for thermal runs makes the sequence
+        # deterministic and drops the 0 K fraction from ~1.9% to ~0.03% (background).
         if self.scene.render.use_persistent_data:
             self.log.info("thermal: disabling Cycles persistent data (stale AOV state between frames)")
             self._persistent_data_before_thermal = self._loaded_persistent_data
@@ -1781,11 +1779,9 @@ class BlenderService(rpyc.Service):
             assignment=self._thermal_assignment,
             atlas_plan=atlas_plan,
         )
-        # Global temperature range for the preview colormap, spanning the solved
-        # scene's actual data instead of a fixed band -- already pools TEXEL objects'
-        # texel temperatures the same way as VERTEX objects' vertex temperatures, since
-        # `history` doesn't distinguish the two. Stashed on the service so
-        # ``include_thermal`` (a separate call on the same instance) can read it.
+        # Global preview range over the solved scene (already pools TEXEL texel and VERTEX
+        # vertex temperatures, since `history` doesn't distinguish them). Stashed on the
+        # service: the caller's `include_thermal` is a separate RPC call on this instance.
         self._thermal_temp_range = adapter.global_temperature_range(history, initial_temperature_K)
 
         if atlas_plan is not None and atlas_plan.texels:
@@ -2396,14 +2392,10 @@ class BlenderService(rpyc.Service):
         if not dry_run:  # noqa: SIM102
             # Render frame(s), skip the render iff all files exist and `allow_skips`
             if not allow_skips or any(not Path(self.root_path / p).exists() for p in paths.values()):
-                # Snapshot original node mute states and pre-mute thermal_radiance so the
-                # main render does not write an incorrect (RGB-material) radiance file.
-                # The "composites" entry uses `object` as a placeholder (no real .mute),
-                # so we skip it; composites are suppressed in the second pass by write_still=False.
-                # `_orig_mute` is bound before the guard so the finally always restores cleanly,
-                # and a single outer try/finally covers BOTH render passes: if the main render
-                # raises, thermal_radiance.mute is still restored (otherwise it would stay muted
-                # permanently across subsequent frames, silently dropping radiance output).
+                # Mute thermal_radiance and snapshot the other nodes' mute states: the main
+                # render must not write an RGB-material radiance file, and the finally below
+                # restores every state across both passes. The "composites" entry holds an
+                # `object` placeholder (no `.mute`) and is suppressed by write_still=False.
                 _thermal_armed = getattr(self, "_thermal_radiance", None)
                 _orig_mute: dict[str, bool] = {}
                 _thermal_state = None

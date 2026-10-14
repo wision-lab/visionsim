@@ -7,20 +7,10 @@ import pytest
 
 from visionsim.simulate.heatsim.solver import HeatSimFEM
 
-# ---------------------------------------------------------------------------
-# Minimal surrogate objects for gen_params / sim_params
-# ---------------------------------------------------------------------------
-# HeatSimFEM.__init__ expects two positional objects:
-#   gen_params  — accessed for .device, .RHO, .C, .K, .NUM_FRAME_DELTA
-#   sim_params  — accessed for .sim_radiation, .sim_convection,
-#                 .add_tikhonov_reg, .sim_time, .record_time
-#
-# perform_gt_heat_simulation derives dt = gen_params.NUM_FRAME_DELTA / 60.0
-# and sim_steps = int(sim_params.sim_time / dt).
-#
-# Setting record_time == sim_time makes record_attimestep = 0, which triggers
-# the "record all" branch: the returned array has shape (sim_steps + 1, N).
-# ---------------------------------------------------------------------------
+# Minimal surrogates for HeatSimFEM's two positional param objects: gen_params
+# (.device, .RHO, .C, .K, .NUM_FRAME_DELTA) and sim_params (.sim_radiation,
+# .sim_convection, .add_tikhonov_reg, .sim_time, .record_time).
+# record_time == sim_time records every step, so histories come back (sim_steps + 1, N).
 
 _DT = 0.05  # seconds per timestep
 _NUM_STEPS = 5
@@ -73,14 +63,7 @@ def test_solver_produces_finite_physical_temperatures():
         laplacian_backend="ROBUST",
     )
 
-    # perform_gt_heat_simulation real signature:
-    #   verts_np, faces_np, boundary_faces_np,
-    #   boundary_verts_mask_override=None, u0=None, irradiance_map=None,
-    #   thermal_diffusivity_map=None, density_map=None, specific_heat_map=None,
-    #   emissivity_map=None, steady_state=False, tol_K_per_s=0.0,
-    #   store_only_final=False
-    #
-    # In POINTS mode, faces_np and boundary_faces_np are unused; pass None.
+    # In POINTS mode faces_np and boundary_faces_np are unused; pass None.
     history = fem.perform_gt_heat_simulation(
         verts_np=points,
         faces_np=None,

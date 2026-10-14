@@ -141,13 +141,9 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
         # missing/degenerate bake as full absorption, a documented fallback.
         warnings.warn(f"HeatSim: bake-UV prep failed for {obj.name}; using existing UVs. {exc}")
     finally:
-        # Restore selection / active / mode best-effort.
-        # Crucially, always return to OBJECT mode: this function enters EDIT mode
-        # above, and if smart_project raised, control skipped the mode_set back to
-        # OBJECT. Leaving the shared context in EDIT makes the *next* object's
-        # object.select_all.poll() fail and abort the bake (the backwards
-        # ``prev_mode != "OBJECT"`` guard used to skip this reset when the object
-        # started, as they all do, in OBJECT mode).
+        # Restore selection / active / mode best-effort, but always return to OBJECT mode:
+        # this function enters EDIT mode above, and if smart_project raised, the next
+        # object's object.select_all.poll() would fail in the leftover EDIT context.
         if getattr(bpy.context, "mode", "OBJECT") != "OBJECT":
             try:
                 bpy.ops.object.mode_set(mode="OBJECT")

@@ -38,23 +38,13 @@ def point_cloud_laplacian_and_mass(
     L, M = robust_laplacian.point_cloud_laplacian(points, mollify_factor=mollify_factor, n_neighbors=int(n_neighbors))
 
     # Sanitize: robust_laplacian can emit non-finite entries for degenerate local
-    # neighbourhoods (coincident or near-coincident points, where the local tangent
-    # plane is undefined). They are rare and they are fatal, because the failure is
-    # global rather than local: an inf on L's diagonal makes diagA inf, so the Jacobi
-    # preconditioner entry becomes 0, A @ p goes non-finite, and PCG's
-    # ``alpha = rz_old / (p . Ap)`` -- a SCALAR -- becomes NaN. One bad node therefore
-    # poisons the entire field on the first timestep.
-    #
-    # Observed on visionsim50/bathroom1: exactly 2 of 120,183 nodes carried -inf on
-    # diag(L) while rho, c, eps, alpha, diag(M) and the RHS were all finite. The solve
-    # returned 99.80% NaN -- every object, every timestep past the initial condition --
-    # and the pipeline still exited 0 and rendered 600 frames from it.
-    #
-    # Zeroing a bad row isolates that node from conduction; it still exchanges with
-    # ambient through the boundary terms and still receives its absorbed flux, so it
-    # behaves like a thermally disconnected speck rather than destroying the solve.
-    # This is strictly better than the alternative of propagating NaN, and it is a
-    # no-op on well-conditioned clouds.
+    # neighbourhoods (coincident points, undefined tangent plane). They are fatal
+    # globally, not locally: an inf on diag(L) zeroes the Jacobi entry, so PCG's scalar
+    # alpha becomes NaN and one bad node poisons every timestep (observed: 2 of 120k
+    # nodes on visionsim50/bathroom1 -> a 99.80% NaN solve that still exited 0).
+    # Zeroing the bad rows isolates those nodes from conduction -- they still exchange
+    # with ambient through the boundary terms and still absorb flux -- and the whole
+    # branch is a no-op on well-conditioned clouds.
     L = L.tocsr()
     bad_data = ~np.isfinite(L.data)
     if bad_data.any():
