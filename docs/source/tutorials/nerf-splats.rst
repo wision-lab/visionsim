@@ -146,18 +146,3 @@ The exported ``.ply`` is a standard Gaussian splat file, and Brush will open it 
 .. figure:: ../_static/splat-tutorial/brush-splat.webp
 
     The trained splat in Brush's viewer, with the run's final stats.
-
-|
-
-Loading the data
-----------------
-
-The same file reads back through the :class:`Dataset <visionsim.dataset.Dataset>` API, which loads each frame and hands back its transform, including the depth path that ``merge`` added:
-
-.. code-block:: python
-
-    from visionsim.dataset import Dataset
-
-    dataset = Dataset.from_path("lego-nobkg-gt/")
-    for image, transform in dataset:
-        depth_path = transform["depth_file_path"]
