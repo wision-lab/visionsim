@@ -203,13 +203,11 @@ def test_render_thermal(tmp_path_factory, executable):
         client.move_keyframes(scale=1 / 5)
         client.set_animation_range(10, 10 + N)
         client.include_frames()
-        # CPU solve for determinism. POINTS is the default/recommended domain, so
-        # the gate covers it. The reused cube fixture has a single 8-vertex Cube;
-        # robust_laplacian's point-cloud Laplacian defaults to 30 neighbours, which
-        # would raise "k+1 is greater than number of points" on 8 verts, but the
-        # laplacian backend now clamps n_neighbors to len(points)-1 (-> 7 here), so
-        # the solve runs. An 8-point solve is physically degenerate, but this gate
-        # only checks the solve -> temperature-AOV -> radiance render plumbing.
+        # CPU solve for determinism; `render_domain` stays at its AUTO default here (POINTS
+        # is a solver-side laplacian_domain, not a render domain), so this gate covers AUTO.
+        # The cube fixture has a single 8-vertex Cube, which robust_laplacian's default of 30
+        # neighbours rejects; the backend clamps n_neighbors to len(points) - 1 (7 here), so
+        # the degenerate solve runs. This gate checks solve -> temperature AOV -> radiance only.
         client.prepare_thermal(device="cpu", bake_samples=4, irradiance_texture_size=64)
         client.include_thermal(radiance=True, preview=True)
         client.render_animation()
@@ -247,8 +245,15 @@ def test_render_thermal(tmp_path_factory, executable):
     assert rad_shape == (50, 50, 3)
 
 
-def test_nonthermal_render_without_thermal_dependencies(tmp_path, executable):
-    scene = Path(__file__).parent.parent / "test_files" / "scenes" / "cube.blend"
+def test_render_without_thermal_outputs(tmp_path, executable):
+    """An RGB-only render must not touch the thermal pipeline at all.
+
+    Renders from a tmp copy of the scene, because thermal caches land beside the
+    *source* blend (``<blend>.heatsim/``) and a shared fixture copy would hide
+    whether this path created one.
+    """
+    scene = tmp_path / "scene.blend"
+    shutil.copy(Path(__file__).parent.parent / "test_files" / "scenes" / "cube.blend", scene)
     (tmp_path / "logs").mkdir()
     with BlenderClient.spawn(executable=executable, timeout=60, log=tmp_path / "logs") as client:
         client.initialize(scene.resolve(), tmp_path.resolve())
@@ -256,3 +261,9 @@ def test_nonthermal_render_without_thermal_dependencies(tmp_path, executable):
         client.include_frames()
         client.render_frame(10, allow_skips=False)
     assert len(list((tmp_path / "frames").glob("**/*.png"))) == 1
+
+    # No thermal outputs, and no solve cache: `prepare_thermal` is what creates either.
+    assert not (tmp_path / "temperature").exists()
+    assert not (tmp_path / "thermal_radiance").exists()
+    assert not (tmp_path / "previews" / "temperature").exists()
+    assert not Path(f"{scene}.heatsim").exists()
