@@ -26,7 +26,7 @@ dependencies = [
     "torch",
     "matplotlib",
     "scipy",
-    "robust-laplacian; sys_platform != 'win32'",
+    "robust-laplacian==1.1.0; sys_platform != 'win32'",
     "robust-laplacian!=1.1.0; sys_platform == 'win32'",  # 1.1.0 crashes inside Windows Blender.
     "invoke",
     "natsort",
@@ -65,6 +65,13 @@ exclude = ["visionsim/interpolate/rife/*"]
 [tool.mypy]
 exclude = ["visionsim/interpolate/rife/*"]
 follow_imports = "skip"
+
+[tool.uv]
+# Non-Windows pins `robust-laplacian==1.1.0`, which ships 3.14 wheels. Windows must
+# stay on 1.0.0 (1.1.0 crashes inside Blender) and 1.0.0's sdist declares
+# `cmake_minimum_required(<3.5)`, which CMake 4+ rejects, so let its CMake build
+# accept the old policy floor.
+extra-build-variables = { robust-laplacian = { CMAKE_ARGS = "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" } }
 
 [dependency-groups]
 dev = [
