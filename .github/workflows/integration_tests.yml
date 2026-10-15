@@ -14,10 +14,10 @@ jobs:
         os: ["ubuntu-latest", "windows-latest"]
     steps:
       - name: Checkout Codebase
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -65,7 +65,7 @@ jobs:
 
       - name: Cache RIFE weights
         id: cache-rife
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/torch/hub/flownet.pkl
           key: flownet-weights
