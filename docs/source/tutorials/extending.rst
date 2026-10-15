@@ -21,7 +21,7 @@ Pass the service's location to :meth:`BlenderClient.spawn <visionsim.simulate.bl
 
 Pass ``factory_startup=True`` when the render must not depend on the machine's Blender preferences and startup file, and ``env=...`` to modify the environment the blender subprocess runs in.
 
-The same arguments are available on :meth:`BlenderServer.spawn <visionsim.simulate.blender.BlenderServer.spawn>` and :meth:`BlenderClients.spawn <visionsim.simulate.blender.BlenderClients.spawn>` if you need to manage the process yourself or spawn several. Omitted, ``service`` defaults to the base :class:`BlenderService <visionsim.simulate.blender.BlenderService>`.
+The same arguments are available on :meth:`BlenderServer.spawn <visionsim.simulate.blender.BlenderServer.spawn>`, :meth:`BlenderClients.spawn <visionsim.simulate.blender.BlenderClients.spawn>` and :meth:`BlenderClients.pool <visionsim.simulate.blender.BlenderClients.pool>` if you need to manage the process yourself or spawn several. Omitted, ``service`` defaults to the base :class:`BlenderService <visionsim.simulate.blender.BlenderService>`.
 
 To connect to a service you started yourself, launch it manually and use :meth:`BlenderClient.auto_connect <visionsim.simulate.blender.BlenderClient.auto_connect>`: 
 
@@ -37,9 +37,9 @@ To connect to a service you started yourself, launch it manually and use :meth:`
 
 ``examples/blender/imu_preview_service.py`` and ``examples/blender/imu_preview.py`` are a
 fuller example of the same split: the service exposes a method that draws camera
-trajectories into the loaded scene, and the script spawns it the way shown above, picks
-the port to connect on, and drives it as a client. The :doc:`IMU tutorial <imu>` walks
-through what it renders.
+trajectories into the loaded scene, and the script spawns it through the same ``service``
+file target and drives it as a client. The :doc:`IMU tutorial <imu>` walks through what it
+renders.
 
 |
 

@@ -3198,6 +3198,10 @@ class BlenderClients(tuple):
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        service: str | None = None,
+        background: bool = True,
+        factory_startup: bool = False,
+        env: dict[str, str] | None = None,
         conns: list[tuple[str, int]] | None = None,
     ) -> Generator[multiprocess.Pool]:
         """Spawns a multiprocessing-like worker pool, each with their own :class:`BlenderClient` instance.
@@ -3236,6 +3240,17 @@ class BlenderClients(tuple):
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
+            service (str | None, optional): path of the :class:`BlenderService` subclass each spawned
+                server should expose, either dotted (``module:ClassName``) or a ``/path/to/service.py:ClassName``
+                file. Defaults to None (the base :class:`BlenderService`).
+            background (bool, optional): if true, spawn blender instances in background mode (``-b``). Background
+                mode has no OpenGL context, so viewport renders (playblasts) require ``background=False``, which
+                also requires a display. Defaults to True.
+            factory_startup (bool, optional): if true, pass ``--factory-startup`` so the runs ignore the
+                machine's blender preferences and startup file. Defaults to False.
+            env (dict[str, str] | None, optional): extra environment variables for the spawned blender
+                instances, such as ``PYTHONPATH``. Merged over the parent's ``os.environ``, which is
+                inherited by default. Defaults to None.
             conns: List of connection tuples containing the hostnames and ports of existing servers.
                 If specified, the pool will use these servers (and ``jobs`` and other spawn arguments will
                 be ignored) instead of spawning new ones.
@@ -3273,7 +3288,17 @@ class BlenderClients(tuple):
             return inner
 
         context_manager = (
-            BlenderServer.spawn(jobs=jobs, timeout=timeout, log=log, autoexec=autoexec, executable=executable)
+            BlenderServer.spawn(
+                jobs=jobs,
+                timeout=timeout,
+                log=log,
+                autoexec=autoexec,
+                executable=executable,
+                service=service,
+                background=background,
+                factory_startup=factory_startup,
+                env=env,
+            )
             if conns is None
             else nullcontext(enter_result=(None, conns))
         )

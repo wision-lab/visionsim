@@ -6,27 +6,24 @@ markers, seen from the scene's own overview camera.
 
 This script runs in a normal python environment rather than inside blender: the
 integration needs scipy, which blender's interpreter does not ship. It computes the
-trajectories here, starts ``examples/blender/imu_preview_service.py`` in blender and
-hands the trajectories over RPC.
+trajectories here, spawns ``examples/blender/imu_preview_service.py`` in blender (as the
+``/path/to/imu_preview_service.py:ImuPreviewService`` file target) and hands the
+trajectories over RPC.
 
 The room is rendered once, then the markers and their trails are rendered over that
 still, which the renderer uses as the world background. Only the markers move, so this
 costs one render of the scene instead of one per frame.
 
 :func:`render` reads the ultramodern scene and the quick-start poses from the working
-directory and writes to ``imu-preview/``. ``$VSIM_BLENDER`` selects the blender
-installation the service runs in, falling back to a ``blender`` on ``$PATH``.
+directory, spawns a ``blender`` on ``$PATH``, and writes to ``imu-preview/``.
 """
 
 from __future__ import annotations
 
-import os
-import subprocess
 from pathlib import Path
 
 import numpy as np
 
-import visionsim
 from visionsim.dataset import Metadata
 from visionsim.emulate.imu import emulate_imu, imu_integration
 from visionsim.interpolate.pose import pose_interp
@@ -36,32 +33,14 @@ from visionsim.utils.pose import camcoord_blender_to_opengl, camcoord_opengl_to_
 GRAVITY = np.array([0.0, 0.0, -9.8])
 """Gravity vector in the world frame, in m/s^2."""
 
-SERVICE = Path(__file__).with_name("imu_preview_service.py")
-"""Service the driver starts inside blender."""
 
-CHECKOUT = Path(visionsim.__file__).resolve().parents[1]
-"""Root of the checkout this script runs from, put on the blender process's ``PYTHONPATH``."""
-
-# Defaults of :func:`render`, all relative to the working directory it is called from.
-BLEND = Path("ultramodern.blend")
-POSES = Path("quickstart/ultramodern-gt/frames/transforms.db")
-OUTPUT_DIR = Path("imu-preview")
-
-TRAJECTORIES = 5
-DT = 0.02  # seconds between the quick-start's consecutive poses
-SEED = 0
-# Sensor noise is quoted for trajectories minutes long; x10 makes the drift visible
-# over the four seconds of the quick-start dataset.
-NOISE_MULT = 10.0
-
-WIDTH = 512  # rendered square, at the size the figure's gif is built for
-HEIGHT = 512
-SAMPLES = 128  # maximum cycles samples per pixel
-DEVICE_TYPE = "optix"  # cycles device the frames are rendered on
-SERVICE_TIMEOUT = 60.0  # seconds to wait for the service to connect
-
-
-def integrate(poses: np.ndarray, dt: float, count: int, seed: int, noise_mult: float = NOISE_MULT) -> list[np.ndarray]:
+def integrate(
+    poses: np.ndarray,
+    dt: float = 0.02,
+    count: int = 5,
+    seed: int = 0,
+    noise_mult: float = 10.0,
+) -> list[np.ndarray]:
     """Integrate emulated IMU readings into ``count`` trajectories.
 
     Every trajectory starts on the ground truth with its true initial velocity, then
@@ -116,91 +95,46 @@ def integrate(poses: np.ndarray, dt: float, count: int, seed: int, noise_mult: f
     return trajectories
 
 
-def spawn_service(port: int, log) -> subprocess.Popen:
-    """Start the preview service in its own blender process.
-
-    The service is started by hand, which is the documented way of running a
-    :class:`BlenderService <visionsim.simulate.blender.BlenderService>` subclass, and
-    the checkout this script runs from is prepended to ``PYTHONPATH`` so that blender
-    imports the same code rather than whichever copy it happens to have installed.
-
-    Args:
-        port: Port the server listens on, which the client connects to directly.
-        log: Open file the process's output is written to.
-
-    Returns:
-        The running blender process.
-    """
-    cmd = [
-        os.environ.get("VSIM_BLENDER") or "blender",
-        "--background",
-        "--enable-autoexec",
-        "--python-use-system-env",
-        "--python",
-        str(SERVICE),
-        "--",
-        "--port",
-        str(port),
-    ]
-    env = os.environ.copy()
-    env["PYTHONPATH"] = os.pathsep.join(part for part in (str(CHECKOUT), env.get("PYTHONPATH")) if part)
-
-    print(f"Starting {cmd[0]} on port {port}")
-    return subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT)
-
-
-def render(blend: Path = BLEND, poses: Path = POSES, output_dir: Path = OUTPUT_DIR) -> None:
+def render() -> None:
     """Compute the trajectories, build the preview and render it."""
-    from ephemeral_port_reserve import reserve as port_reserve
-
-    blend = Path(blend).resolve()
-    output_dir = Path(output_dir).resolve()
+    output_dir = Path("imu-preview").resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    log_path = output_dir / "logs" / "service.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
 
     # The stored matrices map the camera frame straight into blender's world axes, which
     # is exactly what a blender camera's ``matrix_world`` expects, so they are used as
     # they are.
-    ground_truth = np.array(Metadata.from_path(Path(poses).resolve()).poses)
+    ground_truth = np.array(Metadata.from_path(Path("quickstart/ultramodern-gt/frames/transforms.db").resolve()).poses)
     print(f"Loaded {len(ground_truth)} ground truth poses")
-    trajectories = integrate(ground_truth, dt=DT, count=TRAJECTORIES, seed=SEED)
+    trajectories = integrate(ground_truth)
 
-    port = port_reserve("localhost")
-    with open(log_path, "w") as log:
-        process = spawn_service(port, log)
-        try:
-            with BlenderClient(("localhost", port), timeout=SERVICE_TIMEOUT) as client:
-                client.initialize(blend, output_dir)
-                client.set_resolution(height=HEIGHT, width=WIDTH)
-                client.cycles_settings(
-                    device_type=DEVICE_TYPE,
-                    use_cpu=True,
-                    max_samples=SAMPLES,
-                    adaptive_threshold=0.05,
-                    use_denoising=True,
-                )
-                preview = client.add_trajectories(
-                    [trajectory.tolist() for trajectory in trajectories],
-                    ground_truth.tolist(),
-                    start_frame=1,
-                )
-                start, stop = preview["frame_range"]
-                backdrop = output_dir / "backdrop.png"
-                print("Rendering the room once, for the markers to be rendered over")
-                client.render_backdrop(str(backdrop))
+    with BlenderClient.spawn(
+        service=f"{Path(__file__).resolve().with_name('imu_preview_service.py')}:ImuPreviewService",
+        log=output_dir / "logs",
+    ) as client:
+        client.initialize(Path("ultramodern.blend").resolve(), output_dir)
+        # Rendered square, at the size the figure's gif is built for.
+        client.set_resolution(height=512, width=512)
+        client.cycles_settings(
+            device_type="optix",
+            use_cpu=True,
+            max_samples=128,
+            adaptive_threshold=0.05,
+            use_denoising=True,
+        )
+        preview = client.add_trajectories(
+            [trajectory.tolist() for trajectory in trajectories],
+            ground_truth.tolist(),
+            start_frame=1,
+        )
+        start, stop = preview["frame_range"]
+        backdrop = output_dir / "backdrop.png"
+        print("Rendering the room once, for the markers to be rendered over")
+        client.render_backdrop(str(backdrop))
 
-                print(f"Drew {len(preview['markers'])} markers, rendering frames {start} to {stop}")
-                client.render_over_backdrop(str(backdrop))
-                client.include_frames()
-                client.render_animation()
-        finally:
-            process.terminate()
-            try:
-                process.wait(timeout=30)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+        print(f"Drew {len(preview['markers'])} markers, rendering frames {start} to {stop}")
+        client.render_over_backdrop(str(backdrop))
+        client.include_frames()
+        client.render_animation()
 
     print(f"Rendered to {output_dir / 'frames'}")
 

@@ -8,9 +8,11 @@ the camera's own optical axis once per revolution. It renders the example's own
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 
-from ..._page import BLENDER_SERVICE, Node, blender_service, cached, dataset_check, page_task, static, video_recipe
+from ..._page import CACHE, Node, cached, dataset_check, page_task, static, video_recipe
 
 # The example's trajectory: orbit at this radius and height, one turn per revolution.
 RADIUS = 5.0
@@ -29,7 +31,13 @@ def _render(executable: str | None, force: bool = False) -> None:
         force: Ignored; the render overwrites unconditionally.
     """
     root = cached("keyframing")
-    with blender_service(BLENDER_SERVICE, executable) as client:
+    from visionsim.simulate.blender import BlenderClient
+
+    with BlenderClient.spawn(
+        executable=executable or os.environ.get("VSIM_BLENDER"),
+        log=CACHE / "logs",
+        factory_startup=True,
+    ) as client:
         client.initialize(cached("monkey.blend"), root)
         client.set_resolution(height=RENDER_SIZE, width=RENDER_SIZE)
         client.include_frames()

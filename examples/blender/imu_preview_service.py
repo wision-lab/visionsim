@@ -14,9 +14,12 @@ export (``examples/blender/mesh_camera.json``) and is imported from there, so th
 marker geometry is text that can be diffed and reopened in blender.
 
 Run it from blender, as the docs on
-:doc:`extending the simulator <../../../docs/source/tutorials/extending>` describe::
+:doc:`extending the simulator <../../../docs/source/tutorials/extending>` describe, by handing
+:class:`BlenderClient <visionsim.simulate.blender.BlenderClient>` the service's
+``/path/to/imu_preview_service.py:ImuPreviewService`` file target::
 
-    blender --background --python-use-system-env --python examples/blender/imu_preview_service.py
+    with BlenderClient.spawn(service=f"{SERVICE}:ImuPreviewService") as client:
+        ...
 
 ``examples/blender/imu_preview.py`` is the client side: it computes the trajectories
 from the ultramodern ground truth, calls
@@ -26,8 +29,6 @@ overview of the result.
 
 from __future__ import annotations
 
-import argparse
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -35,7 +36,7 @@ import bpy
 import mathutils
 import numpy as np
 
-from visionsim.simulate.blender import BlenderServer, BlenderService
+from visionsim.simulate.blender import BlenderService
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -447,17 +448,3 @@ def _set_socket(modifier: bpy.types.NodesModifier, socket_name: str, value: obje
             return
 
     raise KeyError(f"geometry nodes group {node_group.name!r} has no {socket_name!r} input socket")
-
-
-if __name__ == "__main__":
-    try:
-        index = sys.argv.index("--") + 1
-    except ValueError:
-        index = len(sys.argv)
-
-    parser = argparse.ArgumentParser("Start a BlenderServer exposing ImuPreviewService.")
-    parser.add_argument("-p", "--port", type=int, default=0)
-    args, unknown = parser.parse_known_args(sys.argv[index:])
-
-    server = BlenderServer(service=ImuPreviewService, port=args.port)
-    server.start()

@@ -17,19 +17,15 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from invoke import Exit, task
 from rich.console import Console
-
-if TYPE_CHECKING:
-    from visionsim.simulate.blender import BlenderClient
 
 console = Console()
 
@@ -37,9 +33,9 @@ ROOT = Path(__file__).resolve().parents[2]
 CACHE = ROOT / "cache"
 STATIC = ROOT / "docs" / "source" / "_static"
 
-NODE_TREE_SERVICE = ROOT / "tasks" / "figures" / "node_trees.py"
-"""BlenderService subclass that exports node trees and lays those exports out, spawned by
-:func:`export_node_trees` and :func:`arrange_node_trees`."""
+NODE_TREE_SERVICE = f"{ROOT / 'tasks' / 'figures' / 'node_trees.py'}:NodeTreeService"
+"""File target of the BlenderService subclass that exports node trees and lays those exports
+out, spawned by :func:`export_node_trees` and :func:`arrange_node_trees`."""
 
 NODE_TREES = (
     *(STATIC / "blender" / "nodes").glob("*.json"),
@@ -47,9 +43,6 @@ NODE_TREES = (
 )
 """The Tree Clipper exports the documentation draws its node graphs from: the compositor
 trees the ground-truth figures show, and the geometry nodes group the IMU page shows."""
-
-BLENDER_SERVICE = ROOT / "visionsim" / "simulate" / "blender.py"
-"""The library's own BlenderService, for figures that drive it through the client API."""
 
 
 @dataclass(frozen=True)
@@ -544,70 +537,6 @@ def encode_video(pattern: str, step: int, out: Path, size: int = 320, fps: int =
     subprocess.run(cmd, shell=True, check=True, cwd=CACHE)
 
 
-@contextmanager
-def blender_service(
-    service: Path,
-    executable: str | None = None,
-    timeout: float = 300.0,
-) -> Iterator[BlenderClient]:
-    """Run a BlenderService subclass in its own blender and connect to it.
-
-    The service is started by hand, which is the documented way of running a service
-    subclass, and this checkout is prepended to ``PYTHONPATH`` so blender imports it
-    rather than whichever copy its installation points at. ``--factory-startup`` keeps
-    a run independent of the machine's blender preferences.
-
-    Args:
-        service: Script holding the ``BlenderService`` subclass to run.
-        executable: Blender to run, ``None`` for ``$VSIM_BLENDER``, or ``blender`` on ``$PATH``.
-        timeout: Seconds to wait for the spawned blender to accept connections.
-
-    Yields:
-        The connected :class:`BlenderClient <visionsim.simulate.blender.BlenderClient>`.
-    """
-    from ephemeral_port_reserve import reserve as port_reserve  # type: ignore
-
-    from visionsim.simulate.blender import BlenderClient
-
-    blender = executable or os.environ.get("VSIM_BLENDER") or "blender"
-    pythonpath = os.pathsep.join(part for part in (str(ROOT), os.environ.get("PYTHONPATH")) if part)
-    port = port_reserve("localhost")
-    log = CACHE / "logs" / f"{service.stem}.log"
-    log.parent.mkdir(parents=True, exist_ok=True)
-
-    # `--python-use-system-env` is what lets the PYTHONPATH below reach blender.
-    command = [
-        blender,
-        "--background",
-        "--factory-startup",
-        "--enable-autoexec",
-        "--python-use-system-env",
-        "--python",
-        str(service),
-        "--",
-        "--port",
-        str(port),
-    ]
-    console.print(f"Starting {blender} on port {port}, logging to {log.relative_to(ROOT)}")
-    with log.open("w") as handle:
-        process = subprocess.Popen(
-            command,
-            env=os.environ | {"PYTHONPATH": pythonpath},
-            stdout=handle,
-            stderr=subprocess.STDOUT,
-        )
-        try:
-            with BlenderClient(("localhost", port), timeout=timeout) as client:
-                yield client
-        finally:
-            process.terminate()
-            try:
-                process.wait(timeout=30)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-
-
 def encode_webp(source: str | Path, out: Path, quality: int = 90) -> None:
     """Encode a rendered still into ``out`` as WebP.
 
@@ -653,8 +582,17 @@ def export_node_trees(
         passes: ``(figure, client method, its arguments)`` per tree to write.
         timeout: Seconds to wait for the spawned blender to accept connections.
     """
+    from visionsim.simulate.blender import BlenderClient
+
     root = Path(tempfile.gettempdir()) / "visionsim-node-trees" / dataset
-    with blender_service(NODE_TREE_SERVICE, executable, timeout) as client:
+    with BlenderClient.spawn(
+        service=NODE_TREE_SERVICE,
+        executable=executable or os.environ.get("VSIM_BLENDER"),
+        timeout=timeout,
+        log=CACHE / "logs",
+        autoexec=True,
+        factory_startup=True,
+    ) as client:
         for figure, method, kwargs in passes:
             client.initialize(blend, root)
             if method is not None:
@@ -670,7 +608,15 @@ def arrange_node_trees(c, executable=None):
     is handed to it in turn. The blender it starts needs 5.0 or newer and has to carry Tree
     Clipper and the Node Arrange extension.
     """
-    with blender_service(NODE_TREE_SERVICE, executable) as client:
+    from visionsim.simulate.blender import BlenderClient
+
+    with BlenderClient.spawn(
+        service=NODE_TREE_SERVICE,
+        executable=executable or os.environ.get("VSIM_BLENDER"),
+        log=CACHE / "logs",
+        autoexec=True,
+        factory_startup=True,
+    ) as client:
         for path in sorted(NODE_TREES):
             print(client.arrange_tree(str(path)))
 

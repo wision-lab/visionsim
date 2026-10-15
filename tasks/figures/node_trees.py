@@ -1,11 +1,9 @@
 """Export and arrange the node trees the documentation shows, as Tree Clipper JSON.
 
-This is a :class:`~visionsim.simulate.blender.BlenderService` subclass, spawned the way
-:doc:`the extending tutorial <../../../docs/source/tutorials/extending>` describes for
-subclasses::
-
-    blender --background --enable-autoexec --python-use-system-env \\
-        --python tasks/figures/node_trees.py -- --port <port>
+This is a :class:`~visionsim.simulate.blender.BlenderService` subclass, spawned by the figure
+tasks through :meth:`BlenderClient.spawn
+<visionsim.simulate.blender.BlenderClient.spawn>` with the
+``tasks/figures/node_trees.py:NodeTreeService`` file target.
 
 The figure tasks initialize it on a blend file and call :meth:`export_tree
 <NodeTreeService.exposed_export_tree>` for the pass whose tree they want, while ``inv
@@ -23,15 +21,13 @@ roots up by name.
 
 from __future__ import annotations
 
-import argparse
 import importlib.util
 import random
-import sys
 from pathlib import Path
 
 import bpy  # type: ignore
 
-from visionsim.simulate.blender import BlenderServer, BlenderService
+from visionsim.simulate.blender import BlenderService
 
 NODE_ARRANGE = "bl_ext.user_default.node_arrange"
 
@@ -262,16 +258,3 @@ class NodeTreeService(BlenderService):
 
         _export(names[-1], output=export)
         return f"{export.name} <- {len(names)} trees, {len(bpy.data.node_groups)} arranged"
-
-
-if __name__ == "__main__":
-    try:
-        index = sys.argv.index("--") + 1
-    except ValueError:
-        index = len(sys.argv)
-
-    parser = argparse.ArgumentParser("Start a BlenderServer exposing NodeTreeService.")
-    parser.add_argument("-p", "--port", type=int, default=0)
-    arguments, _ = parser.parse_known_args(sys.argv[index:])
-
-    BlenderServer(service=NodeTreeService, port=arguments.port).start()
