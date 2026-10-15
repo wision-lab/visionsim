@@ -452,7 +452,9 @@ def _ensure_temperature_material_slots(obj: Any) -> int:
     all, so it came out solid black.
 
     Faces on an empty slot render with the default surface too, so those are filled in
-    place rather than only handling the zero-slot case.
+    place rather than only handling the zero-slot case. DATA-linked slots mirror
+    ``mesh.materials`` and their ``material`` property is read-only on older Blender
+    builds (eg. 3.6), so those are written through the mesh instead.
     """
     mesh = getattr(obj, "data", None)
     if mesh is None or not hasattr(mesh, "materials"):
@@ -462,10 +464,17 @@ def _ensure_temperature_material_slots(obj: Any) -> int:
             mesh.materials.append(_get_default_surface_material())
             return 1
         filled = 0
-        for slot in obj.material_slots:
-            if slot.material is None:
-                slot.material = _get_default_surface_material()
-                filled += 1
+        for index, slot in enumerate(obj.material_slots):
+            if slot.material is not None:
+                continue
+            material = _get_default_surface_material()
+            # An unknown/absent link is treated as OBJECT-linked, where slot.material is
+            # always writable.
+            if getattr(slot, "link", "OBJECT") == "DATA" and index < len(mesh.materials):
+                mesh.materials[index] = material
+            else:
+                slot.material = material
+            filled += 1
         return filled
     except Exception as exc:  # noqa: BLE001
         _log.warning("thermal: could not assign a default surface to %r: %s", obj.name, exc)

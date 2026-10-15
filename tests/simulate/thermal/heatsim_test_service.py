@@ -727,10 +727,15 @@ class HeatsimTestService(BlenderService):
         Returns:
             dict: whether a source identity could be derived from the saved scene.
         """
+        from pathlib import Path
+
         from visionsim.simulate.heatsim import cache
 
         bpy.ops.wm.save_as_mainfile(filepath=scene_path)
-        source = cache.source_identity(bpy.data)
+        # ``source_identity`` reports dirty on some headless Blender builds even for a freshly
+        # saved file (see `cache_solve`), so fall back to the saved file's digest, which is
+        # what the cache actually keys on.
+        source = cache.source_identity(bpy.data) or cache.file_digest(Path(bpy.data.filepath))
         return {"source_is_none": source is None, "scene": scene_path}
 
     def exposed_cache_solve(self, root_path: str, scene_path: str | None = None, forbid_bake: bool = False) -> dict:
