@@ -83,6 +83,7 @@ dev = [
     "psutil",
     "types-peewee",
     "syrupy>=4.9.1",
+    "pytest-skip-slow>=1.1.0",
 ]
 docs = [
     "invoke",

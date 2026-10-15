@@ -342,12 +342,16 @@ class HeatsimTestService(BlenderService):
             result["texels"] = sorted(plan.texels)
         return result
 
-    def exposed_solve_twice(self, root_path: str, object_name: str) -> dict:
+    def exposed_solve_twice(
+        self, root_path: str, object_name: str, bake_samples: int = 1024, irradiance_texture_size: int = 512
+    ) -> dict:
         """Solve the same scene twice and report whether the fields are identical.
 
         Args:
             root_path: cache root directory.
             object_name: object whose field to compare.
+            bake_samples: Cycles samples for the irradiance bake.
+            irradiance_texture_size: bake texture size.
 
         Returns:
             dict: determinism flag and the two key sets.
@@ -356,7 +360,9 @@ class HeatsimTestService(BlenderService):
 
         self._register()
         defaults = self._defaults()
-        solver_cfg = self._solver_cfg(sim_time_s=0.15)
+        solver_cfg = self._solver_cfg(
+            sim_time_s=0.15, bake_samples=bake_samples, irradiance_texture_size=irradiance_texture_size
+        )
         cache_root = Path(root_path)
         first = adapter.solve_scene(bpy.context.scene, defaults=defaults, solver_cfg=solver_cfg, cache_root=cache_root)
         second = adapter.solve_scene(bpy.context.scene, defaults=defaults, solver_cfg=solver_cfg, cache_root=cache_root)
@@ -462,8 +468,15 @@ class HeatsimTestService(BlenderService):
             "texels": sorted(plan.texels),
         }
 
-    def exposed_absorbed_flux(self, object_name: str = "ThermalPlane") -> dict:
+    def exposed_absorbed_flux(
+        self, object_name: str = "ThermalPlane", bake_samples: int = 1024, irradiance_texture_size: int = 512
+    ) -> dict:
         """Compute absorbed flux for the active object via ``adapter._compute_irradiance_cycles``.
+
+        Args:
+            object_name: object whose flux to compute.
+            bake_samples: Cycles samples for the irradiance bake.
+            irradiance_texture_size: bake texture size.
 
         Returns:
             dict: shape, finiteness and spread of the absorbed-flux field.
@@ -472,7 +485,8 @@ class HeatsimTestService(BlenderService):
 
         self._register()
         obj = bpy.data.objects[object_name]
-        flux = adapter._compute_irradiance_cycles(bpy.context.scene, [obj], self._solver_cfg(), self._defaults())[obj]
+        solver_cfg = self._solver_cfg(bake_samples=bake_samples, irradiance_texture_size=irradiance_texture_size)
+        flux = adapter._compute_irradiance_cycles(bpy.context.scene, [obj], solver_cfg, self._defaults())[obj]
         return {
             "shape": list(flux.shape),
             "vertices": len(obj.data.vertices),

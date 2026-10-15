@@ -4838,6 +4838,19 @@ wheels = [
 ]
 
 [[package]]
+name = "pytest-skip-slow"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "pytest", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/30/fa/a7076ece17720b9164cbb93f81403c5b62ca86fe14419b8be6ad4341648f/pytest_skip_slow-1.1.0.tar.gz", hash = "sha256:b56efd39a6e2f333c01774767a76d2c1328139a635bbafc23e2e599c129dd0f2", size = 2196, upload-time = "2026-05-27T19:11:46.311Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/61/dd/8bacb16ecdae7132c21effdf5bb9a41dcf797838c442cd1757277b2d8e7b/pytest_skip_slow-1.1.0-py3-none-any.whl", hash = "sha256:d22c4c40831347aeb6d9cafa40219ae5d75103badf32080bb60317cee00bf10d", size = 3066, upload-time = "2026-05-27T19:11:45.523Z" },
+]
+
+[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.org/simple" }
@@ -7003,6 +7016,7 @@ dev = [
     { name = "psutil" },
     { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "pytest", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "pytest-skip-slow" },
     { name = "ruff" },
     { name = "scipy-stubs", version = "1.15.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
     { name = "scipy-stubs", version = "1.17.1.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
@@ -7071,6 +7085,7 @@ dev = [
     { name = "pre-commit" },
     { name = "psutil" },
     { name = "pytest" },
+    { name = "pytest-skip-slow", specifier = ">=1.1.0" },
     { name = "ruff" },
     { name = "scipy-stubs", marker = "python_full_version >= '3.10'" },
     { name = "syrupy", specifier = ">=4.9.1" },

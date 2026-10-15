@@ -18,7 +18,8 @@ def test_bake_albedo_map_returns_varying_pixels(executable):
 def test_cycles_absorbed_flux_varies_with_albedo(executable):
     with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
         call_service(client, "build_scene", "grid", "ThermalPlane", subdivisions=20, material="checker")
-        result = call_service(client, "absorbed_flux")
+        # Coarse bake: this checks that flux tracks the checker albedo, not bake quality.
+        result = call_service(client, "absorbed_flux", bake_samples=32, irradiance_texture_size=64)
 
     assert result["shape"] == [result["vertices"]]
     assert result["finite"], "absorbed flux contains non-finite values"

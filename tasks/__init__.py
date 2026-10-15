@@ -116,7 +116,7 @@ def lint(c):
 
 
 @task(iterable=["paths"])
-def test(c, executable=None, paths=None):
+def test(c, executable=None, paths=None, slow=False):
     """Run the test suite with pytest.
 
     Passes ``-s`` so test output, including anything printed by a failing test,
@@ -130,12 +130,16 @@ def test(c, executable=None, paths=None):
         paths: Optional test files or directories to run, relative to the repo
             root. May be given more than once. Defaults to the whole ``tests/``
             tree.
+        slow: Also run tests marked ``slow`` (the production-scale thermal bake),
+            which pytest-skip-slow skips by default. Defaults to False.
     """
     executable = executable or os.environ.get("VSIM_BLENDER")
     targets = [shlex.quote(str(ROOT_DIR / path)) for path in paths or []] or [shlex.quote(str(TEST_DIR))]
     command = f"pytest -s --durations=0 -c {shlex.quote(str(ROOT_DIR / 'pyproject.toml'))} {' '.join(targets)}"
     if executable:
         command += f" --executable {shlex.quote(executable)}"
+    if slow:
+        command += " --slow"
     _run(c, command)
 
 

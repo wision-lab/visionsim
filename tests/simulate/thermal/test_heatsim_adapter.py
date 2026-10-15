@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from tests.simulate.thermal.heatsim_test_service import SERVICE_PATH, call_service
 from visionsim.simulate.blender import BlenderClient
 from visionsim.simulate.heatsim import adapter
@@ -97,12 +99,17 @@ def test_solve_writes_finite_sim_temperature(executable, tmp_path):
     Builds a tiny lit scene (subdivided plane + overhead sun + a world with some
     background light), runs the thermal solve via the adapter, writes the last-timestep
     ``sim_temperature`` attribute, and asserts the result is finite and physical. A
-    second solve must return the same field.
+    second solve must return the same field. Bake settings are tiny here; the production
+    defaults are covered by ``test_solve_with_default_bake_settings``.
     """
     with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
         call_service(client, "build_scene", "grid", "ThermalPlane", subdivisions=15)
-        solved = call_service(client, "solve", str(tmp_path), "ThermalPlane", sim_time_s=0.15)
-        twice = call_service(client, "solve_twice", str(tmp_path), "ThermalPlane")
+        solved = call_service(
+            client, "solve", str(tmp_path), "ThermalPlane", sim_time_s=0.15, bake_samples=4, irradiance_texture_size=64
+        )
+        twice = call_service(
+            client, "solve_twice", str(tmp_path), "ThermalPlane", bake_samples=4, irradiance_texture_size=64
+        )
 
     assert solved["keys"] == ["ThermalPlane"], solved["keys"]
     assert twice["keys2"] == twice["keys"] == solved["keys"], (twice["keys2"], twice["keys"])
@@ -118,6 +125,24 @@ def test_solve_writes_finite_sim_temperature(executable, tmp_path):
     )
     assert abs(solved["emissivity"] - 0.9) < 1e-6, solved["emissivity"]
     assert solved["rose"], "Cycles heating produced no temperature rise"
+
+
+@pytest.mark.slow
+def test_solve_with_default_bake_settings(executable, tmp_path):
+    """One solve at the production irradiance-bake defaults (1024 samples, 512²).
+
+    The only guard on the default bake path; skipped unless ``--slow``.
+    """
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        call_service(client, "build_scene", "grid", "ThermalPlane", subdivisions=15)
+        solved = call_service(client, "solve", str(tmp_path), "ThermalPlane", sim_time_s=0.15)
+
+    assert solved["finite"], "non-finite temperatures"
+    assert solved["rose"], "Cycles heating produced no temperature rise"
+    assert 200 < solved["written_min"] and solved["written_max"] < 2000, (
+        solved["written_min"],
+        solved["written_max"],
+    )
 
 
 def test_shared_mesh_objects_get_independent_copies(executable, tmp_path):

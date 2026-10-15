@@ -406,7 +406,10 @@ def test_prepare_and_include_thermal_texel_mode_end_to_end(executable, tmp_path)
         # A coarse (4-vertex) plane spanning 4 m^2: well under any reasonable
         # atlas_texel_density, so it must join the atlas.
         call_service(client, "build_scene", "plane", "CoarsePlane", material="plain")
-        configured = call_service(client, "configure_thermal", str(tmp_path), blend)
+        # Coarse bake: this asserts atlas wiring/coverage, not bake quality.
+        configured = call_service(
+            client, "configure_thermal", str(tmp_path), blend, bake_samples=4, irradiance_texture_size=64
+        )
         frozen = call_service(client, "freeze", blend, str(tmp_path / "thermal_frozen.blend"))
 
     assert configured["in_plan"] and configured["obj_name"] == "CoarsePlane", configured["texels"]
