@@ -16,7 +16,7 @@ import socket
 import subprocess
 import sys
 import time
-from contextlib import ExitStack, contextmanager, nullcontext
+from contextlib import ExitStack, closing, contextmanager, nullcontext
 from multiprocessing import Process
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -442,11 +442,31 @@ class BlenderServer(rpyc.utils.server.Server):
         global REGISTRY
 
         if not REGISTRY or not REGISTRY[0].is_alive():
+            BlenderServer._require_free_registry_port()
             registry = Process(target=BlenderServer._launch_registry, daemon=True)
             client = rpyc.utils.registry.UDPRegistryClient()
             registry.start()
             REGISTRY = (registry, client)
         return REGISTRY
+
+    @staticmethod
+    def _require_free_registry_port() -> None:
+        """Fail loudly if another process already holds the rpyc registry port.
+
+        The registry binds in a child process that cannot report a bind failure, so without this
+        check our queries silently go to whatever else is holding the port.
+        """
+        port = rpyc.utils.registry.REGISTRY_PORT
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as sock:
+            try:
+                sock.bind(("0.0.0.0", port))
+            except OSError as e:
+                raise RuntimeError(
+                    f"UDP port {port} is already in use, so the rpyc registry started here would be "
+                    f"ignored and servers would register elsewhere instead. Another process is holding "
+                    f"it, often an orphaned registry from a killed test run; find it with "
+                    f"`ss -ulpn | grep {port}` and kill it."
+                ) from e
 
     @staticmethod
     def _launch_registry():
