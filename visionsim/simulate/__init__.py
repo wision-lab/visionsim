@@ -16,6 +16,7 @@ def install_dependencies(
     editable: bool = False,
     version: str | None = None,
     path: str | None = None,
+    torch_index_url: str | None = None,
 ) -> subprocess.CompletedProcess:
     """Install additional packages into blender`s runtime.
 
@@ -27,6 +28,8 @@ def install_dependencies(
             when pip installing. If set, a fresh copy from PyPI will be installed inside blender's runtime environment,
             which might not match the currently installed version. Defaults to None (use currently installed version).
         path (str | None, optional): The path to the visionsim source code to install, only used when --version is not set.
+        torch_index_url (str | None, optional): PyTorch wheel index to install torch from, e.g.
+            ``https://download.pytorch.org/whl/cpu``. Defaults to None (whatever PyPI resolves to).
     """
     if version and editable:
         raise ValueError("Cannot specify both version and editable.")
@@ -44,4 +47,8 @@ def install_dependencies(
         if editable:
             cmd.append("--editable")
         cmd.append(str(path))
+
+    if torch_index_url:
+        cmd.append(f"--torch-index-url={torch_index_url}")
+
     return subprocess.run(cmd, stdout=sys.stdout, stderr=subprocess.STDOUT, text=True, check=True)
