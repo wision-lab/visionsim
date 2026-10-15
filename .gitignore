@@ -71,9 +71,6 @@ target/
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# pyenv
-.python-version
-
 # celery beat schedule file
 celerybeat-schedule
 
@@ -122,8 +119,6 @@ examples/*.blend*
 examples/quickstart/
 docs/source/_build/
 examples/assets/
-uv.lock
-
 # AI coding stuffs
 .claude/
 CLAUDE.md

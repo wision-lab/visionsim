@@ -9,31 +9,31 @@ from .._page import Node, gif_recipe, page_task, static
 NODES = (
     Node(
         name="lego0025-interp",
-        files=(static("lego0025-interp.gif"),),
+        files=(static("interpolation/lego0025-interp.gif"),),
         is_figure=True,
         requires=("lego-0025",),
-        recipe=gif_recipe("interpolation/lego0025-interp/*/*.png", 8, "lego0025-interp"),
+        recipe=gif_recipe("interpolation/lego0025-interp/*/*.png", 8, "interpolation/lego0025-interp"),
     ),
     Node(
         name="lego0050-interp",
-        files=(static("lego0050-interp.gif"),),
+        files=(static("interpolation/lego0050-interp.gif"),),
         is_figure=True,
         requires=("lego-0050",),
-        recipe=gif_recipe("interpolation/lego0050-interp/*/*.png", 8, "lego0050-interp"),
+        recipe=gif_recipe("interpolation/lego0050-interp/*/*.png", 8, "interpolation/lego0050-interp"),
     ),
     Node(
         name="lego0100-interp",
-        files=(static("lego0100-interp.gif"),),
+        files=(static("interpolation/lego0100-interp.gif"),),
         is_figure=True,
         requires=("lego-0100",),
-        recipe=gif_recipe("interpolation/lego0100-interp/*/*.png", 8, "lego0100-interp"),
+        recipe=gif_recipe("interpolation/lego0100-interp/*/*.png", 8, "interpolation/lego0100-interp"),
     ),
     Node(
         name="lego0200-interp",
-        files=(static("lego0200-interp.gif"),),
+        files=(static("interpolation/lego0200-interp.gif"),),
         is_figure=True,
         requires=("lego-0200",),
-        recipe=gif_recipe("interpolation/lego0200-interp/*/*.png", 8, "lego0200-interp"),
+        recipe=gif_recipe("interpolation/lego0200-interp/*/*.png", 8, "interpolation/lego0200-interp"),
     ),
 )
 

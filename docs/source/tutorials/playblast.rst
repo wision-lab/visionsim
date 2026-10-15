@@ -15,13 +15,13 @@ The two modes side by side, both rendered from ``loft.blend``:
 
     .. grid-item::
 
-        .. figure:: ../_static/playblast-preview.gif
+        .. figure:: ../_static/playblast/playblast-preview.gif
 
             Playblast (viewport render)
 
     .. grid-item::
 
-        .. figure:: ../_static/playblast-full-preview.gif
+        .. figure:: ../_static/playblast/playblast-full-preview.gif
 
             Full render (Cycles)
 

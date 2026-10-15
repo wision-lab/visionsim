@@ -8,9 +8,6 @@ matplotlib.use("Agg")  # headless: this task only writes files
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Registers the "science"/"nature"/"ieee" matplotlib styles; the import has no stubs.
-import scienceplots  # type: ignore[import-untyped]  # noqa: F401
-
 from visionsim.emulate.itof.coding import CodingScheme, make_coding_functions
 from visionsim.emulate.itof.simulation import compute_correlation_function
 
@@ -53,6 +50,11 @@ _TAP_COLORS = TAP_COLORS_LIGHT
 def _apply_theme(dark: bool) -> None:
     """Select the matplotlib style and tap palette for the requested theme."""
     global _TAP_COLORS
+
+    # Registers the "science"/"nature"/"ieee" matplotlib styles; the import has no
+    # stubs. Kept here so importing this module does not need the docs-only dep.
+    import scienceplots  # type: ignore[import-untyped]  # noqa: F401
+
     if dark:
         plt.style.use(["science", "no-latex", "dark_background"])
         plt.rcParams.update(
@@ -179,21 +181,22 @@ def make_grid(schemes: list[tuple[CodingScheme, int, dict]]):
 
 
 def plot_codes() -> None:
-    """Write the light and dark iToF coding-scheme figures into ``_static``."""
-    STATIC.mkdir(parents=True, exist_ok=True)
+    """Write the light and dark iToF coding-scheme figures into ``_static/sensors``."""
+    out = STATIC / "sensors"
+    out.mkdir(parents=True, exist_ok=True)
 
     # The docs pick between the two with the only-light / only-dark classes.
     for dark, suffix in ((False, ""), (True, "-dark")):
         _apply_theme(dark)
         fig = make_grid(SCHEMES)
-        fig.savefig(STATIC / f"itof-codes-all{suffix}.svg", dpi=200, bbox_inches="tight")
+        fig.savefig(out / f"itof-codes-all{suffix}.svg", dpi=200, bbox_inches="tight")
         plt.close(fig)
 
 
 NODES = (
     Node(
         name="itof-codes-all",
-        files=(STATIC / "itof-codes-all.svg", STATIC / "itof-codes-all-dark.svg"),
+        files=(STATIC / "sensors" / "itof-codes-all.svg", STATIC / "sensors" / "itof-codes-all-dark.svg"),
         # The recipe writes both files above; the coding schemes and correlation
         # model it imports are not tracked, so pass --force to rebuild after
         # changing them.

@@ -105,12 +105,12 @@ The modulation and reference waveforms determine how well a sensor separates dep
 
 The figure below shows each scheme as a row, with the emitter waveform, the demodulation waveform of each tap, and the correlation function that tap measures over depth:
 
-.. figure:: ../../_static/itof-codes-all.svg
+.. figure:: ../../_static/sensors/itof-codes-all.svg
     :alt: Modulation, demodulation and correlation functions for every coding scheme
     :align: center
     :class: only-light
 
-.. figure:: ../../_static/itof-codes-all-dark.svg
+.. figure:: ../../_static/sensors/itof-codes-all-dark.svg
     :alt: Modulation, demodulation and correlation functions for every coding scheme
     :align: center
     :class: only-dark
@@ -163,6 +163,8 @@ With :math:`K = 4` captures and quarter-period offsets the phase has a closed fo
 For an arbitrary number of uniformly shifted captures, the offset and the two quadrature components follow from a linear least-squares fit of the taps onto the basis :math:`\{1, \cos\varphi_k, \sin\varphi_k\}`, giving :math:`\varphi = \operatorname{atan2}(\sum_k m_k \sin\varphi_k, \sum_k m_k \cos\varphi_k)`. That is what :func:`decode_sinusoid <visionsim.emulate.itof.decoding.decode_sinusoid>` implements, and the same interval-wise fitting idea underlies the square, ramp and Hilbert decoders, which fit their own piecewise-linear code instead.
 
 Because the phase is only defined modulo :math:`2\pi`, the recovered depth is ambiguous beyond :math:`d_\text{max} = c/2f`. Multi-frequency coding removes that ambiguity: each frequency yields a wrapped phase, and unwrapping them coarse-to-fine extends the range to that of the widest multi-shift group (see :func:`decode_mult_freq_sinusoid <visionsim.emulate.itof.decoding.decode_mult_freq_sinusoid>`).
+
+A pixel whose taps are all equal carries no phase information -- no light returned (for example the renderer's sky sentinel, which the emulator resolves to the ambient term) or the surface is black. The decoders do not flag such pixels; the depth they return is an artefact of the least-squares or interval fit, so downstream code has to check the modulation amplitude itself.
 
 Decoding emulated frames
 ^^^^^^^^^^^^^^^^^^^^^^^^

@@ -7,17 +7,17 @@ from .._page import Node, gif_recipe, page_task, static
 NODES = (
     Node(
         name="playblast-preview",
-        files=(static("playblast-preview.gif"),),
+        files=(static("playblast/playblast-preview.gif"),),
         is_figure=True,
         requires=("playblast",),
-        recipe=gif_recipe("playblast/playblast/*.png", 5, "playblast-preview"),
+        recipe=gif_recipe("playblast/playblast/*.png", 5, "playblast/playblast-preview"),
     ),
     Node(
         name="playblast-full-preview",
-        files=(static("playblast-full-preview.gif"),),
+        files=(static("playblast/playblast-full-preview.gif"),),
         is_figure=True,
         requires=("playblast-full",),
-        recipe=gif_recipe("playblast/full/frames/*/*.png", 5, "playblast-full-preview"),
+        recipe=gif_recipe("playblast/full/frames/*/*.png", 5, "playblast/playblast-full-preview"),
     ),
 )
 

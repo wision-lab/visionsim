@@ -50,5 +50,4 @@ def install_dependencies(
 
     if torch_index_url:
         cmd.append(f"--torch-index-url={torch_index_url}")
-
     return subprocess.run(cmd, stdout=sys.stdout, stderr=subprocess.STDOUT, text=True, check=True)

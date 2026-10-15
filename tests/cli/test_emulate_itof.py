@@ -7,9 +7,13 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 import scipy.constants
+from scipy.interpolate import PchipInterpolator
 
 from visionsim.cli import emulate
 from visionsim.dataset.models import Metadata
+from visionsim.emulate.itof.coding import make_coding_functions
+from visionsim.emulate.itof.simulation import compute_correlation_function
+from visionsim.utils.color import srgb_to_linearrgb
 
 _FREQ = 120e6
 _D_MAX = scipy.constants.c / (2 * _FREQ)  # unambiguous range of a single-period scheme, ~1.25 m
@@ -132,3 +136,55 @@ def test_itof_input_output_must_differ(tmp_path: Path):
     input_dir = _write_dataset(tmp_path / "in", [0.4])
     with pytest.raises(RuntimeError, match="cannot be the same"):
         emulate.itof(input_dir=input_dir, output_dir=input_dir, num_bins=100, force=True)
+
+
+def test_itof_failed_run_leaves_no_output(tmp_path: Path):
+    """A run that fails during argument validation must not create a partial tree.
+
+    Otherwise the retry hits ``FileExistsError`` and demands ``--force`` even
+    though nothing usable was produced.
+    """
+    input_dir = _write_dataset(tmp_path / "in", [0.4])
+    output_dir = tmp_path / "out"
+    with pytest.raises(ValueError):
+        emulate.itof(input_dir=input_dir, output_dir=output_dir, scheme="multFreqSin", num_bins=100)
+    assert not output_dir.exists()
+
+    emulate.itof(input_dir=input_dir, output_dir=output_dir, scheme="convSin", n_captures=3, num_bins=100)
+    assert (output_dir / "params.json").is_file()
+
+
+def test_itof_measurement_matches_analytic_model(tmp_path: Path):
+    """The written taps must equal the analytic model of the known depth and albedo.
+
+    Finiteness and shape checks alone would pass for an all-zero regression, so
+    this pins the actual value against the depth and albedo the frame was
+    generated from.
+    """
+    depth = 0.4
+    num_bins = 200
+    input_dir = _write_dataset(tmp_path / "in", [depth])
+    output_dir = tmp_path / "out"
+    emulate.itof(input_dir=input_dir, output_dir=output_dir, scheme="convSin", n_captures=3, num_bins=num_bins)
+
+    measurements = np.load(output_dir / "0000.npy")
+    assert np.any(measurements > 0)
+
+    # Reconstruct the albedo exactly as the CLI derives it: sRGB PNG -> linear -> luma.
+    image = iio.imread(input_dir / "0000.png").astype(float) / 255.0
+    linear = srgb_to_linearrgb(image)
+    r, g, b = linear[..., 0], linear[..., 1], linear[..., 2]
+    albedo = 0.0722 * b + 0.7152 * g + 0.2126 * r
+
+    n_bins = num_bins + 1
+    period = 1.0 / _FREQ
+    time_resolution = period / n_bins
+    max_depth = scipy.constants.c * period / 2
+    distances = np.linspace(0, max_depth, n_bins, endpoint=False)
+    modulation_codes, reference_codes = make_coding_functions("convSin", 3, n_bins)
+    for tap in range(3):
+        correlation = compute_correlation_function(
+            modulation_codes[tap], reference_codes[tap], time_resolution, n_depths=n_bins
+        )
+        expected = (1.0 / period) * (albedo / depth**2) * PchipInterpolator(distances, correlation)(depth % max_depth)
+        assert measurements[tap] == pytest.approx(expected, rel=1e-5)

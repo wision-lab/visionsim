@@ -78,7 +78,7 @@ The two eye views can be combined into a red/cyan anaglyph, which you can view w
 standard red/cyan glasses. With the 6.5 cm interpupillary distance above, the pair
 rendered from a kitchen scene looks like this:
 
-.. video:: ../_static/stereo-anaglyph.mp4
+.. video:: ../_static/stereo/stereo-anaglyph.mp4
    :loop:
    :autoplay:
    :nocontrols:

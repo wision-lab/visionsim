@@ -60,6 +60,9 @@ def _resolve_autoscale(config: RenderConfig) -> RenderConfig:
     if not config.autoscale:
         return config
 
+    if config.max_job_vram is not None and config.max_job_vram <= 0:
+        raise ValueError(f"`max_job_vram` must be positive, got {config.max_job_vram}.")
+
     config = deepcopy(config)
 
     if not torch.cuda.is_available():
@@ -151,11 +154,14 @@ def render_animation(
     """
     from visionsim.simulate.job import render_job
 
+    blend_file, output_dir, output_file = _validate_inputs(blend_file, output_dir, output_file)
+    config = _resolve_autoscale(config)
+
+    # Autoscaling divides free VRAM by ``max_job_vram`` and can resolve to zero, so the
+    # check has to run after it, on the number that was actually resolved.
     if config.jobs <= 0:
         raise RuntimeError(f"At least one render job is needed, got `config.jobs={config.jobs}`.")
 
-    blend_file, output_dir, output_file = _validate_inputs(blend_file, output_dir, output_file)
-    config = _resolve_autoscale(config)
     _require_blender(config.executable)
 
     with _spawn_clients(config=config) as (clients, progress):

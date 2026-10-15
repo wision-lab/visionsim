@@ -70,7 +70,7 @@ def _anaglyph(executable: str | None, force: bool = False) -> None:
         f" -filter_complex"
         f" '[0:v][1:v]hstack=inputs=2[stacked];[stacked]stereo3d=in=sbsl:out=arcd[out]'"
         f" -map '[out]' -c:v libx264 -crf {VIDEO_CRF} -pix_fmt yuv420p"
-        f" -movflags +faststart {static('stereo-anaglyph.mp4')}"
+        f" -movflags +faststart {static('stereo/stereo-anaglyph.mp4')}"
     )
     print(f"provisioning anaglyph: {cmd}")
     subprocess.run(cmd, shell=True, check=True, cwd=CACHE)
@@ -91,7 +91,7 @@ NODES = (
     ),
     Node(
         name="stereo-anaglyph",
-        files=(static("stereo-anaglyph.mp4"),),
+        files=(static("stereo/stereo-anaglyph.mp4"),),
         is_figure=True,
         requires=("stereo-left", "stereo-right"),
         recipe=_anaglyph,

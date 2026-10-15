@@ -29,7 +29,7 @@ repos:
 
   - id: inv-tests
     name: Run Tests
-    entry: uv run --all-groups invoke test
+    entry: uv run --no-group docs --group dev invoke test
     pass_filenames: False
     language: system
     # The suite renders through Blender and takes minutes; keep it off the commit path.
@@ -38,7 +38,7 @@ repos:
 
   - id: inv-docs
     name: Build Docs
-    entry: uv run --all-groups invoke build-docs
+    entry: uv run --all-groups invoke clean-docs build-docs
     pass_filenames: False
     language: system
     files: ^(docs/|tasks/figures/)

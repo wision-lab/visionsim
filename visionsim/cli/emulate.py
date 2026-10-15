@@ -477,11 +477,6 @@ def itof(
         raise RuntimeError("Input and output directory cannot be the same!")
     if output_dir.exists() and not force:
         raise FileExistsError("Output directory already exists.")
-    shutil.rmtree(output_dir, ignore_errors=True)
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    if preview:
-        (output_dir / "preview").mkdir(parents=True, exist_ok=True)
 
     dataset_albedo = None
     dataset_depth = None
@@ -538,6 +533,13 @@ def itof(
         params["freq_vec"] = list(freq_vec)
     if shifts_vec is not None:
         params["shifts_vec"] = list(shifts_vec)
+
+    # A failed run must not leave a partial tree, which would make the retry
+    # demand --force for nothing usable.
+    shutil.rmtree(output_dir, ignore_errors=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if preview:
+        (output_dir / "preview").mkdir(parents=True, exist_ok=True)
 
     with open(output_dir / "params.json", "w") as f:
         json.dump(params, f, indent=2)
