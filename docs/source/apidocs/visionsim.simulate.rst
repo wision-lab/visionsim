@@ -1,6 +1,14 @@
 visionsim.simulate package
 ==========================
 
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   visionsim.simulate.heatsim
+
 Submodules
 ----------
 

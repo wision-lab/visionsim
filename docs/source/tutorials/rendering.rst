@@ -10,3 +10,4 @@ Rendering & Simulation
    varying-focal-lengths
    playblast
    extending
+   thermal-assignments

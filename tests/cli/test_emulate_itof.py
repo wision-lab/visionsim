@@ -2,6 +2,7 @@ import json
 import logging
 from pathlib import Path
 
+import imageio.v3 as iio
 import numpy as np
 import pytest
 import scipy.constants
@@ -101,13 +102,13 @@ def test_itof_input_output_must_differ(tmp_path: Path, write_dataset):
         emulate.itof(input_dir=input_dir, output_dir=input_dir, num_bins=100, force=True)
 
 
-def test_itof_failed_run_leaves_no_output(tmp_path: Path):
+def test_itof_failed_run_leaves_no_output(tmp_path: Path, write_dataset):
     """A run that fails during argument validation must not create a partial tree.
 
     Otherwise the retry hits ``FileExistsError`` and demands ``--force`` even
     though nothing usable was produced.
     """
-    input_dir = _write_dataset(tmp_path / "in", [0.4])
+    input_dir = write_dataset(tmp_path / "in", depths=[0.4])
     output_dir = tmp_path / "out"
     with pytest.raises(ValueError):
         emulate.itof(input_dir=input_dir, output_dir=output_dir, scheme="multFreqSin", num_bins=100)
@@ -117,7 +118,7 @@ def test_itof_failed_run_leaves_no_output(tmp_path: Path):
     assert (output_dir / "params.json").is_file()
 
 
-def test_itof_measurement_matches_analytic_model(tmp_path: Path):
+def test_itof_measurement_matches_analytic_model(tmp_path: Path, write_dataset):
     """The written taps must equal the analytic model of the known depth and albedo.
 
     Finiteness and shape checks alone would pass for an all-zero regression, so
@@ -126,7 +127,7 @@ def test_itof_measurement_matches_analytic_model(tmp_path: Path):
     """
     depth = 0.4
     num_bins = 200
-    input_dir = _write_dataset(tmp_path / "in", [depth])
+    input_dir = write_dataset(tmp_path / "in", depths=[depth])
     output_dir = tmp_path / "out"
     emulate.itof(input_dir=input_dir, output_dir=output_dir, scheme="convSin", n_captures=3, num_bins=num_bins)
 

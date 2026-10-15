@@ -10,3 +10,4 @@ World Simulation
    blender/rendering
    blender/optimize-rate
    blender/troubleshooting
+   blender/thermal

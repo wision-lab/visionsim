@@ -39,7 +39,9 @@ def colorize_depths(
         input_dir: directory in which to look for frames
         output_dir: directory in which to save colorized frames
         pattern: filenames of frames should match this
-        cmap: which matplotlib colormap to use
+        cmap: which matplotlib colormap to use, either a built-in name (eg. ``turbo``) or a
+            bundled FLIR-style thermal palette (eg. ``ironbow``); see
+            :func:`visionsim.utils.colormaps.list_palettes`
         ext: which format to save colorized frames as
         vmin: minimum expected depth used to normalize colormap
         vmax: maximum expected depth used to normalize colormap
@@ -50,10 +52,10 @@ def colorize_depths(
     # Lazy load imports to improve CLI responsiveness
     import imageio.v3 as iio
     import matplotlib as mpl
-    from matplotlib import cm
 
     from visionsim.cli import _log, _validate_directories
     from visionsim.dataset import Dataset
+    from visionsim.utils import colormaps
 
     DEPTH_CUTOFF = 10000000000
 
@@ -74,7 +76,7 @@ def colorize_depths(
         _log.info(f"Found depth range [{vmin_:0.2f}, {vmax_:0.2f}]")
         _log.info(f"Using depth range [{vmin:0.2f}, {vmax:0.2f}]\n")
 
-    colormap = getattr(cm, cmap)
+    colormap = colormaps.colormap(cmap)
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
 
     for in_file in track(in_files):
@@ -84,6 +86,37 @@ def colorize_depths(
         img = (colormap(norm(depth)) * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
         iio.imwrite(str(path.with_suffix(ext)), img)
+
+
+def colorize_temperatures(
+    input_dir: Path,
+    output_dir: Path,
+    pattern: str = "**/*.exr",
+    cmap: str = "ironbow",
+    ext: str = ".png",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    quantile: float = 0.01,
+    step: int = 1,
+) -> None:
+    """Convert .exr temperature fields into color-coded images for visualization
+
+    A temperature field is just another scalar field, so this is
+    :func:`colorize_depths` with the ``ironbow`` thermal palette as its default.
+
+    Args:
+        input_dir: directory in which to look for frames
+        output_dir: directory in which to save colorized frames
+        pattern: filenames of frames should match this
+        cmap: which colormap to use, ``ironbow`` by default; a bundled FLIR-style palette or a
+            built-in matplotlib name (see :func:`visionsim.utils.colormaps.list_palettes`)
+        ext: which format to save colorized frames as
+        vmin: minimum expected temperature used to normalize colormap
+        vmax: maximum expected temperature used to normalize colormap
+        quantile: if vmin/vmax are None, use this quantile to estimate them
+        step: drop some frames when colorizing, use frames 0+step*n
+    """
+    colorize_depths(input_dir, output_dir, pattern, cmap, ext, vmin, vmax, quantile, step)
 
 
 def colorize_flows(
@@ -281,7 +314,14 @@ def tonemap_frames(
     hdrs = []
 
     for in_file in track(in_files):
-        img = Dataset.load_data(in_file)
+        img = cast(npt.NDArray, Dataset.load_data(in_file))
+        if img.ndim != 3 or img.shape[-1] != 3:
+            raise ValueError(
+                f"`tonemap-frames` expects 3-channel linear-RGB frames, but {in_file} has shape {img.shape}. "
+                "Use `transforms.colorize-depths` (or `transforms.colorize-temperatures`, which defaults to the "
+                "ironbow thermal palette) for single-channel fields, `transforms.colorize-flows` for optical flow, "
+                "`transforms.colorize-normals` for normals and `transforms.colorize-segmentations` for labels."
+            )
         high, low = cast(list[float], np.quantile(img, [1 - hdr_quantile, hdr_quantile]))
         img = linearrgb_to_srgb(img)
         img = (np.clip(img, 0, 1) * 255).astype(np.uint8)

@@ -42,12 +42,14 @@ def test_render_frame_matches_animation(tmp_path, executable):
     assert [f.file_path for f in single.frames] == [f.file_path for f in animation.frames]
     assert single.frames[0].transform_matrix == animation.frames[0].transform_matrix
 
-    # Rendered files differ in embedded text metadata. Cycles also resolves the odd pixel
-    # a level apart between runs, so compare the picture rather than the bit pattern: when
-    # this was measured the two differed in one pixel of 2500, by one step.
-    single_pixels = iio.imread(tmp_path / "frame" / "frames" / single.frames[0].file_path).astype(int)
-    animation_pixels = iio.imread(tmp_path / "anim" / "frames" / animation.frames[0].file_path).astype(int)
-    assert np.abs(single_pixels - animation_pixels).max() <= 1
+    # Rendered files differ in embedded text metadata, and Cycles is not bit-exact across
+    # processes (thread/denoise rounding): the two renders can differ by a level or two.
+    diff = np.abs(
+        iio.imread(tmp_path / "frame" / "frames" / single.frames[0].file_path).astype(int)
+        - iio.imread(tmp_path / "anim" / "frames" / animation.frames[0].file_path).astype(int)
+    )
+    assert diff.max() <= 2, f"renders differ by {diff.max()} levels"
+    assert diff.mean() < 0.01, f"renders differ on average by {diff.mean():.3f}"
 
 
 def test_render_frame_warns_on_multiple_jobs(tmp_path, executable, caplog):

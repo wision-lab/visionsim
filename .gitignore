@@ -109,6 +109,7 @@ TODO.md
 NOTES.md
 *.pkl
 *.DS_store
+*.heatsim/
 scenes/
 data/
 cache
@@ -118,3 +119,28 @@ examples/*.blend*
 examples/quickstart/
 docs/source/_build/
 examples/assets/
+# AI coding stuffs
+.claude/
+CLAUDE.md
+.claudeignore
+.cursor/
+.cursorrules
+.windsurf/
+.codex/
+.gemini/
+GEMINI.md
+.copilot/
+.aider*
+.continue/
+.tabnine*
+.ollama/
+.llm/
+skills/
+docs/superpowers/
+.superpowers/
+memory-bank/
+AGENTS.md
+
+# Local planning 
+docs/thermal_integration/
+docs/notes/
