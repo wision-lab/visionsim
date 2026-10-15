@@ -1,0 +1,282 @@
+"""FLIR-style thermal color palettes.
+
+Vendored from https://github.com/MickTheMechanic/FLIR-style-thermal-color-palettes
+(MIT License, (c) 2020 Michael Wilkinson). Each palette is 433 24-bit RGB entries
+that the upstream project sampled from FLIR's camera palettes.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import numpy as np
+import numpy.typing as npt
+
+if TYPE_CHECKING:
+    from matplotlib.colors import Colormap
+
+_PALETTE_HEX: dict[str, str] = {
+    "arctic": """
+        003c96 003e97 013f98 024198 034399 04449a 05469b 06479c 07499d 084b9d 094c9e 0a4e9f 0b50a0 0c51a1
+        0d53a1 0e54a2 0f56a3 1058a4 1159a5 125ba5 135da6 145ea7 1560a8 1661a9 1763aa 1865aa 1966ab 1968ac
+        1a6aad 1b6bae 1c6dae 1d6eaf 1e70b0 1f72b1 2073b2 2175b2 2277b3 2378b4 247ab5 257bb6 267db7 277fb7
+        2880b8 2982b9 2a84ba 2b85bb 2c87bb 2d89bc 2e8abd 2f8cbe 308dbf 318fc0 3291c0 3392c1 3394c2 3496c3
+        3597c4 3699c4 379ac5 389cc6 399ec7 3a9fc8 3ba1c8 3ca3c9 3da4ca 3ea6cb 3fa7cc 40a9cd 41abcd 42acce
+        43aecf 44b0d0 45b1d1 46b3d1 47b4d2 48b6d3 49b8d4 4ab9d5 4bbbd5 4cbdd6 4cbed7 4dc0d8 4ec1d9 4fc3da
+        50c5da 51c6db 52c8dc 53c8dc 54c7da 55c7d9 56c6d8 57c5d6 58c4d5 59c4d4 5ac3d3 5bc2d1 5cc1d0 5dc1cf
+        5ec0cd 5fbfcc 60becb 61bdc9 62bdc8 63bcc7 64bbc5 65bac4 66bac3 66b9c2 67b8c0 68b7bf 69b7be 6ab6bc
+        6bb5bb 6cb4ba 6db3b8 6eb3b7 6fb2b6 70b1b4 71b0b3 72b0b2 73afb1 74aeaf 75adae 76adad 77acab 78abaa
+        79aaa9 7aa9a7 7ba9a6 7ca8a5 7da7a3 7ea6a2 7fa6a1 7fa5a0 80a49e 81a39d 82a39c 83a29a 84a199 85a098
+        869f96 879f95 889e94 899d92 8a9c91 8b9c90 8c9b8f 8d9a8d 8e998c 8f998b 909889 919788 929687 939585
+        949584 959483 969381 979280 98927f 99917e 99907c 9a8f7b 9b8f7a 9c8e78 9d8d77 9e8c76 9f8b74 a08b73
+        a18a72 a28970 a3886f a4886e a5876d a6866b a7856a a88569 a98467 aa8366 ab8265 ac8163 ad8162 ae8061
+        af7f5f b07e5e b17e5d b27d5c b27c5a b37b59 b47b58 b57a56 b67955 b77854 b87752 b97751 ba7650 bb754e
+        bc744d bd744c be734b bf7249 c07148 c17147 c27045 c36f44 c46e43 c56d41 c66d40 c76c3f c86b3d c96a3c
+        ca6a3b cb693a cc6838 cc6737 cd6736 ce6634 cf6533 d06432 d16432 d26432 d36432 d46432 d56432 d66432
+        d76432 d86432 d96432 da6432 db6432 dc6432 dd6432 de6432 df6432 e06432 e16432 e26432 e36432 e46432
+        e56432 e56432 e66432 e76432 e86432 e96432 ea6432 eb6432 ec6432 ed6432 ee6432 ef6432 f06432 f16432
+        f26432 f36432 f46432 f56432 f66432 f76432 f86432 f96432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432
+        fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432
+        fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432
+        fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432 fa6432
+        fa6432 fa6432 fa6432 fa6432 fa6433 fa6434 fa6435 fa6436 fa6437 fa6438 fa6439 fa643a fa643b fa643c
+        fa643d fa663e fa673f fa693f fa6b40 fa6c41 fa6e42 fa6f43 fa7144 fa7345 fa7446 fa7647 fa7748 fa7949
+        fa7b4a fa7c4b fa7e4c fa804d fa814e fa834f fa8450 fa8651 fa8852 fa8953 fa8b54 fa8c55 fa8e56 fa9057
+        fa9158 fa9359 fa955a fa965b fa985c fa995d fa9b5e fa9d5f fa9e60 faa061 faa162 faa363 faa564 faa665
+        faa866 faaa67 faab68 faad69 faae6a fab06b fab26c fab36d fab56e fab76f fab870 faba71 fabb72 fabd73
+        fabf74 fac074 fac275 fac376 fac577 fac778 fac879 faca7a facc7b facd7c facf7d fad07e fad27f fad480
+        fad581 fad782 fad883 fada84 fadc85 fadd86 fadf87 fae188 fae289 fae48a fae58b fae78c fae98d faea8e
+        faec8f faed90 faef91 faf092 faf093 faf094 faf095 faf096 faf097 faf098 faf099 faf09a faf09b faf09c
+        faf09d faf09e faf09f faf0a0 faf0a1 faf0a2 faf0a3 faf0a4 faf0a5 faf0a6 faf0a7 faf0a8 faf0a9
+    """,
+    "black-hot": """
+        ebebeb eaeaea e9e9e9 e9e9e9 e8e8e8 e8e8e8 e7e7e7 e7e7e7 e6e6e6 e6e6e6 e5e5e5 e5e5e5 e4e4e4 e3e3e3
+        e3e3e3 e2e2e2 e2e2e2 e1e1e1 e1e1e1 e0e0e0 e0e0e0 dfdfdf dfdfdf dedede dddddd dddddd dcdcdc dcdcdc
+        dbdbdb dbdbdb dadada dadada d9d9d9 d9d9d9 d8d8d8 d8d8d8 d7d7d7 d6d6d6 d6d6d6 d5d5d5 d5d5d5 d4d4d4
+        d4d4d4 d3d3d3 d3d3d3 d2d2d2 d2d2d2 d1d1d1 d0d0d0 d0d0d0 cfcfcf cfcfcf cecece cecece cdcdcd cdcdcd
+        cccccc cccccc cbcbcb cacaca cacaca c9c9c9 c9c9c9 c8c8c8 c8c8c8 c7c7c7 c7c7c7 c6c6c6 c6c6c6 c5c5c5
+        c5c5c5 c4c4c4 c3c3c3 c3c3c3 c2c2c2 c2c2c2 c1c1c1 c1c1c1 c0c0c0 c0c0c0 bfbfbf bfbfbf bebebe bdbdbd
+        bdbdbd bcbcbc bcbcbc bbbbbb bbbbbb bababa bababa b9b9b9 b9b9b9 b8b8b8 b7b7b7 b7b7b7 b6b6b6 b6b6b6
+        b5b5b5 b5b5b5 b4b4b4 b4b4b4 b3b3b3 b3b3b3 b2b2b2 b2b2b2 b1b1b1 b0b0b0 b0b0b0 afafaf afafaf aeaeae
+        aeaeae adadad adadad acacac acacac ababab aaaaaa aaaaaa a9a9a9 a9a9a9 a8a8a8 a8a8a8 a7a7a7 a7a7a7
+        a6a6a6 a6a6a6 a5a5a5 a4a4a4 a4a4a4 a3a3a3 a3a3a3 a2a2a2 a2a2a2 a1a1a1 a1a1a1 a0a0a0 a0a0a0 9f9f9f
+        9f9f9f 9e9e9e 9d9d9d 9d9d9d 9c9c9c 9c9c9c 9b9b9b 9b9b9b 9a9a9a 9a9a9a 999999 999999 989898 979797
+        979797 969696 969696 959595 959595 949494 949494 939393 939393 929292 919191 919191 909090 909090
+        8f8f8f 8f8f8f 8e8e8e 8e8e8e 8d8d8d 8d8d8d 8c8c8c 8c8c8c 8b8b8b 8a8a8a 8a8a8a 898989 898989 888888
+        888888 878787 878787 868686 868686 858585 848484 848484 838383 838383 828282 828282 818181 818181
+        808080 808080 7f7f7f 7e7e7e 7e7e7e 7d7d7d 7d7d7d 7c7c7c 7c7c7c 7b7b7b 7b7b7b 7a7a7a 7a7a7a 797979
+        797979 787878 777777 777777 767676 767676 757575 757575 747474 747474 737373 737373 727272 717171
+        717171 707070 707070 6f6f6f 6f6f6f 6e6e6e 6e6e6e 6d6d6d 6d6d6d 6c6c6c 6c6c6c 6b6b6b 6a6a6a 6a6a6a
+        696969 696969 686868 686868 676767 676767 666666 666666 656565 646464 646464 636363 636363 626262
+        626262 616161 616161 606060 606060 5f5f5f 5e5e5e 5e5e5e 5d5d5d 5d5d5d 5c5c5c 5c5c5c 5b5b5b 5b5b5b
+        5a5a5a 5a5a5a 595959 595959 585858 575757 575757 565656 565656 555555 555555 545454 545454 535353
+        535353 525252 515151 515151 505050 505050 4f4f4f 4f4f4f 4e4e4e 4e4e4e 4d4d4d 4d4d4d 4c4c4c 4b4b4b
+        4b4b4b 4a4a4a 4a4a4a 494949 494949 484848 484848 474747 474747 464646 464646 454545 444444 444444
+        434343 434343 424242 424242 414141 414141 404040 404040 3f3f3f 3e3e3e 3e3e3e 3d3d3d 3d3d3d 3c3c3c
+        3c3c3c 3b3b3b 3b3b3b 3a3a3a 3a3a3a 393939 383838 383838 373737 373737 363636 363636 353535 353535
+        343434 343434 333333 333333 323232 313131 313131 303030 303030 2f2f2f 2f2f2f 2e2e2e 2e2e2e 2d2d2d
+        2d2d2d 2c2c2c 2b2b2b 2b2b2b 2a2a2a 2a2a2a 292929 292929 282828 282828 272727 272727 262626 252525
+        252525 242424 242424 232323 232323 222222 222222 212121 212121 202020 202020 1f1f1f 1e1e1e 1e1e1e
+        1d1d1d 1d1d1d 1c1c1c 1c1c1c 1b1b1b 1b1b1b 1a1a1a 1a1a1a 191919 181818 181818 171717 171717 161616
+        161616 151515 151515 141414 141414 131313 121212 121212 111111 111111 101010 101010 0f0f0f 0f0f0f
+        0e0e0e 0e0e0e 0d0d0d 0d0d0d 0c0c0c 0b0b0b 0b0b0b 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a
+        0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a
+    """,
+    "ironbow": """
+        00000a 000014 00001e 000025 00002a 00002e 000032 000036 00003a 00003e 000042 000046 00004a 00004f
+        000052 010055 010057 020059 02005c 03005e 040061 040063 050065 060067 070069 08006b 09006e 0a0070
+        0b0073 0c0074 0d0075 0d0076 0e0077 100078 120079 13007b 15007c 17007d 19007e 1b0080 1c0081 1e0083
+        200084 220085 240086 260087 280089 2a0089 2c008a 2e008b 30008c 32008d 34008e 36008e 38008f 390090
+        3b0091 3c0092 3e0093 3f0093 410094 420095 440095 450096 470096 490096 4a0096 4c0097 4e0097 4f0097
+        510097 520098 540098 560098 580099 5a0099 5c0099 5d009a 5f009a 61009b 63009b 64009b 66009b 68009b
+        6a009b 6c009c 6d009c 6f009c 70009c 71009d 73009d 75009d 77009d 78009d 7a009d 7c009d 7e009d 7f009d
+        81009d 83009d 84009d 86009d 87009d 89009d 8a009d 8b009d 8d009d 8f009c 91009c 93009c 95009c 96009b
+        98009b 99009b 9b009b 9c009b 9d009b 9f009b a0009b a2009b a3009b a4009b a6009a a7009a a8009a a90099
+        aa0099 ab0099 ad0099 ae0198 af0198 b00198 b00198 b10197 b20197 b30196 b40296 b50295 b60295 b70395
+        b80395 b90495 ba0495 ba0494 bb0593 bc0593 bd0593 be0692 bf0692 bf0692 c00791 c00791 c10890 c10990
+        c20a8f c30a8e c30b8e c40c8d c50c8c c60d8b c60e8a c70f89 c81088 c91187 ca1286 ca1385 cb1385 cb1484
+        cc1582 cd1681 ce1780 ce187e cf187c cf197b d01a79 d11b78 d11c76 d21c75 d21d74 d31e72 d32071 d4216f
+        d4226e d5236b d52469 d62567 d72665 d82764 d82862 d92a60 da2b5e da2c5c db2e5a db2f57 dc2f54 dd3051
+        dd314e de324a de3347 df3444 df3541 df363d e0373a e03837 e03933 e13a30 e23b2d e23c2a e33d26 e33e23
+        e43f20 e4411d e4421c e5431b e54419 e54518 e64616 e74715 e74814 e74913 e84a12 e84c10 e84c0f e94d0e
+        e94d0d ea4e0c ea4f0c eb500b eb510a eb520a eb5309 ec5409 ec5608 ec5708 ec5808 ed5907 ed5a07 ed5b06
+        ee5c06 ee5c05 ee5d05 ee5e05 ef5f04 ef6004 ef6104 ef6204 f06303 f06403 f06503 f16603 f16603 f16703
+        f16803 f16902 f16a02 f16b02 f16b02 f26c01 f26d01 f26e01 f36f01 f37001 f37101 f37201 f47300 f47400
+        f47500 f47600 f47700 f47800 f47a00 f57b00 f57c00 f57e00 f57f00 f68000 f68100 f68200 f78300 f78400
+        f78500 f78600 f88700 f88800 f88800 f88900 f88a00 f88b00 f88c00 f98d00 f98d00 f98e00 f98f00 f99000
+        f99100 f99200 f99300 fa9400 fa9500 fa9600 fb9800 fb9900 fb9a00 fb9c00 fc9d00 fc9f00 fca000 fca100
+        fda200 fda300 fda400 fda600 fda700 fda800 fdaa00 fdab00 fdac00 fdad00 fdae00 feaf00 feb000 feb100
+        feb200 feb300 feb400 feb500 feb600 feb800 feb900 feb900 feba00 febb00 febc00 febd00 febe00 fec000
+        fec100 fec200 fec300 fec400 fec500 fec600 fec700 fec800 fec901 feca01 feca01 fecb01 fecc02 fecd02
+        fece03 fecf04 fecf04 fed005 fed106 fed308 fed409 fed50a fed60a fed70b fed80c fed90d ffda0e ffda0e
+        ffdb10 ffdc12 ffdc14 ffdd16 ffde19 ffde1b ffdf1e ffe020 ffe122 ffe224 ffe226 ffe328 ffe42b ffe42e
+        ffe531 ffe635 ffe638 ffe73c ffe83f ffe943 ffea46 ffeb49 ffeb4d ffec50 ffed54 ffee57 ffee5b ffee5f
+        ffef63 ffef67 fff06a fff06e fff172 fff177 fff17b fff280 fff285 fff28a fff38e fff492 fff496 fff49a
+        fff59e fff5a2 fff5a6 fff6aa fff6af fff7b3 fff7b6 fff8ba fff8bd fff8c1 fff8c4 fff9c7 fff9ca fff9cd
+        fffad1 fffad4 fffbd8 fffcdb fffcdf fffde2 fffde5 fffde8 fffeeb fffeee fffef1 fffef4 fffff6
+    """,
+    "outdoor-alert": """
+        f5f5f5 f4f4f4 f3f3f3 f2f2f2 f1f1f1 f1f1f1 f0f0f0 efefef eeeeee eeeeee ededed ececec ebebeb ebebeb
+        eaeaea e9e9e9 e8e8e8 e8e8e8 e7e7e7 e6e6e6 e5e5e5 e5e5e5 e4e4e4 e3e3e3 e2e2e2 e2e2e2 e1e1e1 e0e0e0
+        dfdfdf dfdfdf dedede dddddd dcdcdc dcdcdc dbdbdb dadada d9d9d9 d9d9d9 d8d8d8 d7d7d7 d6d6d6 d6d6d6
+        d5d5d5 d4d4d4 d3d3d3 d3d3d3 d2d2d2 d1d1d1 d0d0d0 d0d0d0 cfcfcf cecece cdcdcd cdcdcd cccccc cbcbcb
+        cacaca c9c9c9 c9c9c9 c8c8c8 c7c7c7 c6c6c6 c6c6c6 c5c5c5 c4c4c4 c3c3c3 c3c3c3 c2c2c2 c1c1c1 c0c0c0
+        c0c0c0 bfbfbf bebebe bdbdbd bdbdbd bcbcbc bbbbbb bababa bababa b9b9b9 b8b8b8 b7b7b7 b7b7b7 b6b6b6
+        b5b5b5 b4b4b4 b4b4b4 b3b3b3 b2b2b2 b1b1b1 b1b1b1 b0b0b0 afafaf aeaeae aeaeae adadad acacac ababab
+        ababab aaaaaa a9a9a9 a8a8a8 a8a8a8 a7a7a7 a6a6a6 a5a5a5 a5a5a5 a4a4a4 a3a3a3 a2a2a2 a2a2a2 a1a1a1
+        a0a0a0 9f9f9f 9e9e9e 9e9e9e 9d9d9d 9c9c9c 9b9b9b 9b9b9b 9a9a9a 999999 989898 989898 979797 969696
+        959595 959595 949494 939393 929292 929292 919191 909090 8f8f8f 8f8f8f 8e8e8e 8d8d8d 8c8c8c 8c8c8c
+        8b8b8b 8a8a8a 898989 898989 888888 878787 868686 868686 858585 848484 838383 838383 828282 818181
+        808080 808080 7f7f7f 7e7e7e 7d7d7d 7d7d7d 7c7c7c 7b7b7b 7a7a7a 7a7a7a 797979 787878 777777 777777
+        767676 757575 747474 737373 737373 727272 717171 707070 707070 6f6f6f 6e6e6e 6d6d6d 6d6d6d 6c6c6c
+        6b6b6b 6a6a6a 6a6a6a 696969 686868 676767 676767 666666 656565 646464 646464 636363 626262 616161
+        616161 606060 5f5f5f 5e5e5e 5e5e5e 5d5d5d 5c5c5c 5b5b5b 5b5b5b 5a5a5a 595959 585858 585858 575757
+        565656 555555 555555 545454 535353 525252 525252 515151 505050 4f4f4f 4f4f4f 4e4e4e 4d4d4d 4c4c4c
+        4c4c4c 4b4b4b 4a4a4a 494949 484848 484848 474747 464646 454545 454545 444444 434343 424242 424242
+        414141 404040 3f3f3f 3f3f3f 3e3e3e 3d3d3d 3c3c3c 3c3c3c 3b3b3b 3a3a3a 393939 393939 383838 373737
+        363636 363636 353535 343434 333333 333333 323232 313131 303030 303030 2f2f2f 2e2e2e 2d2d2d 2d2d2d
+        2c2c2c 2b2b2b 2a2a2a 2a2a2a 292929 282828 272727 272727 262626 252525 242424 242424 232323 222222
+        212121 212121 202020 1f1f1f 1e1e1e 1d1d1d 1d1d1d 1c1c1c 1b1b1b 1a1a1a 1a1a1a 191919 181818 171717
+        171717 161616 151515 141414 141414 131313 121212 111111 111111 101010 0f0f0f 0e0e0e 0e0e0e 0d0d0d
+        0c0c0c 0b0b0b 0b0b0b 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a
+        0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 3c0a0a 410a0a 460a0a 4b0a0a 500b0b 550b0b 5a0c0c 5f0d0d 640e0e
+        690e0e 6e0f0f 731010 781010 7d1111 821212 871212 8c1313 911414 961414 9b1515 a01616 a51717 aa1717
+        af1818 b31919 b81919 bd1a1a c21b1b c71b1b cc1c1c d11d1d d61d1d e12805 e12805 e12805 e12805 e12805
+        e23835 e53b30 e83e2a eb4125 ee4420 f0461a f34915 f64c10 f94f0a fc5205 ff5500 ff5700 ff5a00 ff5d00
+        ff6000 ff6300 ff6600 ff6800 ff6b00 ff6e00 ff7100 ff7400 ff7700 ff7900 ff7c00 ff7f00 ff8200 ff8500
+        ff8800 ff8a00 ff8d00 ff9000 ff9300 ff9600 ff9900 ff9b00 ff9e00 ffa100 ffa400 ffa700 ffaa00 ffac07
+        ffaf0f ffb216 ffb51e ffb825 ffbb2d ffbd34 ffc03c ffc343 ffc64b ffc952 ffcc5a ffce61 ffd169 ffd470
+        ffd778 ffda7f ffdd87 ffdf8e ffe296 ffe59d ffe8a5 ffebac ffeeb4 fff0bb fff3c3 fff6ca fff9d2
+    """,
+    "rainbow": """
+        0000ff 0002ff 0005ff 0008ff 000bff 000eff 0011ff 0014ff 0017ff 001aff 001dff 0020ff 0023ff 0026ff
+        0029ff 002cff 002fff 0032ff 0035ff 0037ff 003aff 003dff 0040ff 0043ff 0046ff 0049ff 004cff 004fff
+        0052ff 0055ff 0058ff 005bff 005eff 0061ff 0064ff 0067ff 006aff 006cff 006fff 0072ff 0075ff 0078ff
+        007bff 007eff 0081ff 0084ff 0087ff 008aff 008dff 0090ff 0093ff 0096ff 0099ff 009cff 009fff 00a1ff
+        00a4ff 00a7ff 00aaff 00adff 00b0ff 00b3ff 00b6ff 00b9ff 00bcff 00bfff 00c2ff 00c5ff 00c8ff 00cbff
+        00ceff 00d1ff 00d4ff 00d6ff 00d9ff 00dcff 00dfff 00e2ff 00e5ff 00e8ff 00ebff 00eeff 00f1ff 00f4ff
+        00f7ff 00faff 00fdff 00fffd 00fffa 00fff7 00fff4 00fff2 00ffef 00ffec 00ffe9 00ffe6 00ffe3 00ffe0
+        00ffdd 00ffda 00ffd7 00ffd4 00ffd1 00ffce 00ffcb 00ffc8 00ffc5 00ffc2 00ffbf 00ffbd 00ffba 00ffb7
+        00ffb4 00ffb1 00ffae 00ffab 00ffa8 00ffa5 00ffa2 00ff9f 00ff9c 00ff99 00ff96 00ff93 00ff90 00ff8d
+        00ff8a 00ff88 00ff85 00ff82 00ff7f 00ff7c 00ff79 00ff76 00ff73 00ff70 00ff6d 00ff6a 00ff67 00ff64
+        00ff61 00ff5e 00ff5b 00ff58 00ff55 00ff53 00ff50 00ff4d 00ff4a 00ff47 00ff44 00ff41 00ff3e 00ff3b
+        00ff38 00ff35 00ff32 00ff2f 00ff2c 00ff29 00ff26 00ff23 00ff20 00ff1e 00ff1b 00ff18 00ff15 00ff12
+        00ff0f 00ff0c 00ff09 00ff06 00ff03 00ff00 02ff00 05ff00 08ff00 0bff00 0eff00 11ff00 14ff00 16ff00
+        19ff00 1cff00 1fff00 22ff00 25ff00 28ff00 2bff00 2eff00 31ff00 34ff00 37ff00 3aff00 3dff00 40ff00
+        43ff00 46ff00 49ff00 4bff00 4eff00 51ff00 54ff00 57ff00 5aff00 5dff00 60ff00 63ff00 66ff00 69ff00
+        6cff00 6fff00 72ff00 75ff00 78ff00 7bff00 7eff00 80ff00 83ff00 86ff00 89ff00 8cff00 8fff00 92ff00
+        95ff00 98ff00 9bff00 9eff00 a1ff00 a4ff00 a7ff00 aaff00 adff00 b0ff00 b3ff00 b5ff00 b8ff00 bbff00
+        beff00 c1ff00 c4ff00 c7ff00 caff00 cdff00 d0ff00 d3ff00 d6ff00 d9ff00 dcff00 dfff00 e2ff00 e5ff00
+        e8ff00 eaff00 edff00 f0ff00 f3ff00 f6ff00 f9ff00 fcff00 fffe00 fffb00 fff800 fff500 fff200 ffef00
+        ffec00 ffe900 ffe600 ffe300 ffe000 ffde00 ffdb00 ffd800 ffd500 ffd200 ffcf00 ffcc00 ffc900 ffc600
+        ffc300 ffc000 ffbd00 ffba00 ffb700 ffb400 ffb100 ffae00 ffab00 ffa900 ffa600 ffa300 ffa000 ff9d00
+        ff9a00 ff9700 ff9400 ff9100 ff8e00 ff8b00 ff8800 ff8500 ff8200 ff7f00 ff7c00 ff7900 ff7600 ff7400
+        ff7100 ff6e00 ff6b00 ff6800 ff6500 ff6200 ff5f00 ff5c00 ff5900 ff5600 ff5300 ff5000 ff4d00 ff4a00
+        ff4700 ff4400 ff4100 ff3f00 ff3c00 ff3900 ff3600 ff3300 ff3000 ff2d00 ff2a00 ff2700 ff2400 ff2100
+        ff1e00 ff1b00 ff1800 ff1500 ff1200 ff0f00 ff0c00 ff0a00 ff0700 ff0400 ff0100 ff0001 ff0004 ff0007
+        ff0009 ff000c ff000f ff0012 ff0015 ff0017 ff001a ff001d ff0020 ff0022 ff0025 ff0028 ff002b ff002e
+        ff0030 ff0033 ff0036 ff0039 ff003b ff003e ff0041 ff0044 ff0046 ff0049 ff004c ff004f ff0052 ff0054
+        ff0057 ff005a ff005d ff005f ff0062 ff0065 ff0068 ff006a ff006d ff0070 ff0073 ff0076 ff0078 ff007b
+        ff007e ff0081 ff0083 ff0086 ff0089 ff008c ff008f ff0091 ff0094 ff0097 ff009a ff009c ff009f ff00a2
+        ff00a5 ff00a7 ff00aa ff00ad ff00b0 ff00b3 ff00b5 ff00b8 ff00bb ff00be ff00c0 ff00c3 ff00c6 ff00c9
+        ff00cb ff00ce ff00d1 ff00d4 ff00d7 ff00d9 ff00dc ff00df ff00e2 ff00e4 ff00e7 ff00ea ff00ed
+    """,
+    "rainbow-hc": """
+        000096 310296 310496 300696 300896 2f0b96 2f0d96 2e0f96 2e1196 2d1396 2d1696 2c1896 2c1a96 2b1c96
+        2b1f96 2b2196 2a2396 2a2596 292796 292a96 282c96 282e96 273096 273296 263596 263796 253996 253b96
+        253e96 244096 244296 234496 234696 224996 224b96 214d96 214f96 205296 205496 1f5696 1f5896 1f5a96
+        1e5d96 1e5f96 1d6196 1d6396 1c6596 1c6896 1b6a96 1b6c96 1a6e96 1a7196 197396 197596 197796 187996
+        187c96 177e96 178096 168296 168596 158796 158996 148b96 148d96 139096 139296 139496 129696 129896
+        119b96 119d96 109f96 10a196 0fa496 0fa696 0ea896 0eaa96 0dac96 0daf96 0db196 0cb396 0cb596 0bb896
+        0bba96 0abc96 0abe96 09c096 09c396 08c596 08c796 07c996 07cb96 07ce96 06d096 06d296 05d496 05d796
+        04d996 04db96 03dd96 03df96 02e296 02e496 01e696 01e896 01eb96 00ed96 00ef96 00f094 00f091 00f08f
+        00f08d 00f08b 00f088 00f086 00f084 00f081 00f07f 00f07d 00f07a 00f078 00f076 00f073 00f071 00f06f
+        00f06d 00f06a 00f068 00f066 00f063 00f061 00f05f 00f05c 00f05a 00f058 00f055 00f053 00f051 00f04e
+        00f04c 00f04a 00f048 00f045 00f043 00f041 00f03e 00f03c 00f03a 00f037 00f035 00f033 00f030 00f02e
+        00f02c 00f02a 00f027 00f025 00f023 00f020 00f01e 00f01c 00f019 00f017 00f015 00f012 00f010 00f00e
+        00f00c 00f009 00f007 00f005 00f002 00f000 03f000 07f000 0af000 0ef000 12f000 16f000 1af000 1ef000
+        22f000 26f000 2af000 2ef000 32f000 36f000 3af000 3ef000 41f000 45f000 49f000 4df000 51f000 55f000
+        59f000 5df000 61f000 65f000 69f000 6df000 71f000 74f000 78f000 7cf000 80f000 84f000 88f000 8cf000
+        90f000 94f000 98f000 9cf000 a0f000 a4f000 a8f000 abf000 aff000 b3f000 b7f000 bbf000 bff000 c3f000
+        c7f000 cbf000 cff000 d3f000 d7f000 dbf000 dff000 e2f000 e6f000 eaf000 eef000 f2f000 f6f000 faf000
+        fef000 ffec00 ffe900 ffe500 ffe100 ffde00 ffda00 ffd600 ffd200 ffcf00 ffcb00 ffc700 ffc400 ffc000
+        ffbc00 ffb900 ffb500 ffb100 ffae00 ffaa00 ffa600 ffa200 ff9f00 ff9b00 ff9700 ff9400 ff9000 ff8c00
+        ff8900 ff8500 ff8100 ff7e00 ff7a00 ff7600 ff7200 ff6f00 ff6b00 ff6700 ff6400 ff6000 ff5c00 ff5900
+        ff5500 ff5100 ff4d00 ff4a00 ff4600 ff4200 ff3f00 ff3b00 ff3700 ff3400 ff3000 ff2c00 ff2900 ff2500
+        ff2100 ff1d00 ff1a00 ff1600 ff1200 ff0f00 ff0b00 ff0700 ff0400 ff0000 ff0101 ff0303 ff0504 ff0706
+        ff0908 ff0b09 ff0d0b ff0f0d ff110f ff1310 ff1412 ff1614 ff1815 ff1a17 ff1c19 ff1e1a ff201c ff221e
+        ff2420 ff2621 ff2823 ff2a25 ff2c26 ff2d28 ff2f2a ff312b ff332d ff352f ff3730 ff3932 ff3b34 ff3d36
+        ff3f37 ff4139 ff433b ff453c ff473e ff4840 ff4a41 ff4c43 ff4e45 ff5046 ff5248 ff544a ff564c ff584d
+        ff5a4f ff5c51 ff5e52 ff6054 ff6156 ff6357 ff6559 ff675b ff695c ff6b5e ff6d60 ff6f62 ff7163 ff7365
+        ff7567 ff7768 ff796a ff7a6c ff7c6d ff7e6f ff8071 ff8272 ff8474 ff8676 ff8878 ff8a79 ff8c7b ff8e7d
+        ff907e ff9280 ff9382 ff9583 ff9785 ff9987 ff9b89 ff9d8a ff9f8c ffa18e ffa38f ffa591 ffa793 ffa994
+        ffab96 ffad98 ffae99 ffb09b ffb29d ffb49f ffb6a0 ffb8a2 ffbaa4 ffbca5 ffbea7 ffc0a9 ffc2aa ffc4ac
+        ffc6ae ffc7af ffc9b1 ffcbb3 ffcdb5 ffcfb6 ffd1b8 ffd3ba ffd5bb ffd7bd ffd9bf ffdbc0 ffddc2 ffdfc4
+        ffe0c5 ffe2c7 ffe4c9 ffe6cb ffe8cc ffeace ffecd0 ffeed1 fff0d3 fff2d5 fff4d6 fff6d8 fff8da
+    """,
+    "white-hot": """
+        0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a
+        0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0a0a0a 0b0b0b 0b0b0b 0c0c0c 0d0d0d 0d0d0d 0e0e0e 0e0e0e
+        0f0f0f 0f0f0f 101010 101010 111111 111111 121212 121212 131313 141414 141414 151515 151515 161616
+        161616 171717 171717 181818 181818 191919 1a1a1a 1a1a1a 1b1b1b 1b1b1b 1c1c1c 1c1c1c 1d1d1d 1d1d1d
+        1e1e1e 1e1e1e 1f1f1f 202020 202020 212121 212121 222222 222222 232323 232323 242424 242424 252525
+        252525 262626 272727 272727 282828 282828 292929 292929 2a2a2a 2a2a2a 2b2b2b 2b2b2b 2c2c2c 2d2d2d
+        2d2d2d 2e2e2e 2e2e2e 2f2f2f 2f2f2f 303030 303030 313131 313131 323232 333333 333333 343434 343434
+        353535 353535 363636 363636 373737 373737 383838 383838 393939 3a3a3a 3a3a3a 3b3b3b 3b3b3b 3c3c3c
+        3c3c3c 3d3d3d 3d3d3d 3e3e3e 3e3e3e 3f3f3f 404040 404040 414141 414141 424242 424242 434343 434343
+        444444 444444 454545 464646 464646 474747 474747 484848 484848 494949 494949 4a4a4a 4a4a4a 4b4b4b
+        4b4b4b 4c4c4c 4d4d4d 4d4d4d 4e4e4e 4e4e4e 4f4f4f 4f4f4f 505050 505050 515151 515151 525252 535353
+        535353 545454 545454 555555 555555 565656 565656 575757 575757 585858 595959 595959 5a5a5a 5a5a5a
+        5b5b5b 5b5b5b 5c5c5c 5c5c5c 5d5d5d 5d5d5d 5e5e5e 5e5e5e 5f5f5f 606060 606060 616161 616161 626262
+        626262 636363 636363 646464 646464 656565 666666 666666 676767 676767 686868 686868 696969 696969
+        6a6a6a 6a6a6a 6b6b6b 6c6c6c 6c6c6c 6d6d6d 6d6d6d 6e6e6e 6e6e6e 6f6f6f 6f6f6f 707070 707070 717171
+        717171 727272 737373 737373 747474 747474 757575 757575 767676 767676 777777 777777 787878 797979
+        797979 7a7a7a 7a7a7a 7b7b7b 7b7b7b 7c7c7c 7c7c7c 7d7d7d 7d7d7d 7e7e7e 7e7e7e 7f7f7f 808080 808080
+        818181 818181 828282 828282 838383 838383 848484 848484 858585 868686 868686 878787 878787 888888
+        888888 898989 898989 8a8a8a 8a8a8a 8b8b8b 8c8c8c 8c8c8c 8d8d8d 8d8d8d 8e8e8e 8e8e8e 8f8f8f 8f8f8f
+        909090 909090 919191 919191 929292 939393 939393 949494 949494 959595 959595 969696 969696 979797
+        979797 989898 999999 999999 9a9a9a 9a9a9a 9b9b9b 9b9b9b 9c9c9c 9c9c9c 9d9d9d 9d9d9d 9e9e9e 9f9f9f
+        9f9f9f a0a0a0 a0a0a0 a1a1a1 a1a1a1 a2a2a2 a2a2a2 a3a3a3 a3a3a3 a4a4a4 a4a4a4 a5a5a5 a6a6a6 a6a6a6
+        a7a7a7 a7a7a7 a8a8a8 a8a8a8 a9a9a9 a9a9a9 aaaaaa aaaaaa ababab acacac acacac adadad adadad aeaeae
+        aeaeae afafaf afafaf b0b0b0 b0b0b0 b1b1b1 b2b2b2 b2b2b2 b3b3b3 b3b3b3 b4b4b4 b4b4b4 b5b5b5 b5b5b5
+        b6b6b6 b6b6b6 b7b7b7 b7b7b7 b8b8b8 b9b9b9 b9b9b9 bababa bababa bbbbbb bbbbbb bcbcbc bcbcbc bdbdbd
+        bdbdbd bebebe bfbfbf bfbfbf c0c0c0 c0c0c0 c1c1c1 c1c1c1 c2c2c2 c2c2c2 c3c3c3 c3c3c3 c4c4c4 c5c5c5
+        c5c5c5 c6c6c6 c6c6c6 c7c7c7 c7c7c7 c8c8c8 c8c8c8 c9c9c9 c9c9c9 cacaca cacaca cbcbcb cccccc cccccc
+        cdcdcd cdcdcd cecece cecece cfcfcf cfcfcf d0d0d0 d0d0d0 d1d1d1 d2d2d2 d2d2d2 d3d3d3 d3d3d3 d4d4d4
+        d4d4d4 d5d5d5 d5d5d5 d6d6d6 d6d6d6 d7d7d7 d8d8d8 d8d8d8 d9d9d9 d9d9d9 dadada dadada dbdbdb dbdbdb
+        dcdcdc dcdcdc dddddd dddddd dedede dfdfdf dfdfdf e0e0e0 e0e0e0 e1e1e1 e1e1e1 e2e2e2 e2e2e2 e3e3e3
+        e3e3e3 e4e4e4 e5e5e5 e5e5e5 e6e6e6 e6e6e6 e7e7e7 e7e7e7 e8e8e8 e8e8e8 e9e9e9 e9e9e9 eaeaea
+    """,
+}
+
+
+def _decode(hexes: str) -> npt.NDArray[np.float64]:
+    """Decode a whitespace-separated list of 24-bit hex colours into an ``(N, 3)`` RGB array in [0, 1]."""
+    values = np.array([int(h, 16) for h in hexes.split()], dtype=np.uint32)
+    rgb = np.stack([(values >> 16) & 0xFF, (values >> 8) & 0xFF, values & 0xFF], axis=1)
+    return rgb.astype(np.float64) / 255.0
+
+
+PALETTES: dict[str, npt.NDArray[np.float64]] = {name: _decode(hexes) for name, hexes in _PALETTE_HEX.items()}
+
+
+def list_palettes() -> list[str]:
+    """Names of the bundled thermal palettes, sorted."""
+    return sorted(PALETTES)
+
+
+def colormap(name: str) -> Colormap:
+    """Return a matplotlib ``Colormap`` for ``name``.
+
+    Bundled thermal palettes resolve to a ``LinearSegmentedColormap`` built from the
+    vendored data; any other name is looked up in matplotlib's registry, so built-in
+    colormaps such as ``inferno`` or ``turbo`` keep working.
+    """
+    import matplotlib as mpl
+    from matplotlib.colors import LinearSegmentedColormap
+
+    if name in PALETTES:
+        data = PALETTES[name]
+        # Keep the vendored resolution (matplotlib would otherwise resample to 256).
+        return LinearSegmentedColormap.from_list(name, data, N=len(data))
+    return mpl.colormaps[name]
