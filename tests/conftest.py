@@ -26,14 +26,12 @@ def pytest_addoption(parser):
 
 @pytest.fixture(scope="session")
 def executable(pytestconfig):
-    # Resolve the path first, with the same precedence as `inv test` (--executable, then
-    # $VSIM_BLENDER, then $PATH, see docs/source/development.rst). `--executable` defaults
-    # to None, and CI invokes a bare `pytest`, so tests that interpolate this into an argv
-    # (subprocess.run([str(exe), ...])) would otherwise spawn the literal string "None" and
-    # fail with FileNotFoundError. Tests that pass it to BlenderClient.spawn() tolerate None
-    # because that resolves against $PATH itself; argv-interpolating tests do not.
-    # Resolving before install_dependencies() matters: that call raises on a missing
-    # executable, so doing it first would hide the skip below behind a hard error.
+    # Resolve first, in the same order as `inv test` (--executable, $VSIM_BLENDER, $PATH;
+    # docs/source/development.rst). `--executable` defaults to None and CI runs a bare
+    # `pytest`, so tests that interpolate this into an argv (subprocess.run([str(exe), ...]))
+    # would spawn the literal "None"; tests that hand it to BlenderClient.spawn() accept None
+    # because that resolves against $PATH. This runs before install_dependencies(), which
+    # raises on a missing executable and would otherwise hide the skip below.
     executable_path = pytestconfig.getoption("--executable")
     resolved = executable_path or os.environ.get("VSIM_BLENDER") or shutil.which("blender")
     if resolved is None:
@@ -63,7 +61,7 @@ def executable(pytestconfig):
             "to ensure we do not connect to a stale one."
         )
 
-    # Pass the resolved path: install_dependencies() would otherwise fall back to a bare
+    # Hand install_dependencies() the resolved path: it would otherwise fall back to a bare
     # `blender` on $PATH and fail under a $VSIM_BLENDER-only configuration.
     install_dependencies(executable=resolved, editable=True)
 

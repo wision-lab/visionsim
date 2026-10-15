@@ -39,6 +39,9 @@ MAX_DIRICHLET_K = 500.0
 
 _SCHEMA_VERSION = 1
 _ROLES = ("FEM_PARTICIPANT", "DIRICHLET_SOURCE")
+# Fields a per-material entry may carry. Anything else is a typo, and warning about it is
+# the only signal, since a misspelled "presett" otherwise loads as an unassigned slot.
+_ENTRY_FIELDS = frozenset({"preset", "role", "dirichlet_K", "confidence", "reason"})
 
 # Degenerate (zero-area) faces still have to vote, otherwise their vertices end up
 # with no incident area and fall back to the object defaults - which reads as
@@ -266,9 +269,10 @@ def _lookup_preset(key: Any, where: str) -> ThermalPreset | None:
 def load_assignments(path: Path) -> SceneAssignment:
     """Parse and validate the sidecar at *path*.
 
-    Every recoverable inconsistency degrades to the global defaults **with a
-    warning** rather than a silent guess: an unknown preset key, an unknown role,
-    or an out-of-band Dirichlet temperature. Structural problems raise.
+    Recoverable inconsistencies degrade to the global defaults with a warning: an unknown
+    preset key, role, material field, or an out-of-band Dirichlet temperature. Structural
+    problems raise: a bad schema version, a malformed block, or a non-numeric
+    ``dirichlet_K``/``confidence``.
     """
     path = Path(path)
     raw_bytes = path.read_bytes()
@@ -300,6 +304,14 @@ def load_assignments(path: Path) -> SceneAssignment:
         if not isinstance(spec, dict):
             raise ValueError(  # noqa: TRY004
                 f"{path}: material {name!r} spec must be an object, got {type(spec).__name__}"
+            )
+        unknown_fields = set(spec) - _ENTRY_FIELDS
+        if unknown_fields:
+            warnings.warn(
+                f"thermal assignment {where}: unknown field(s) "
+                f"{', '.join(sorted(str(field) for field in unknown_fields))}; ignoring them",
+                UserWarning,
+                stacklevel=2,
             )
         preset = _lookup_preset(spec.get("preset"), where)
 
@@ -347,11 +359,21 @@ def load_assignments(path: Path) -> SceneAssignment:
                     stacklevel=2,
                 )
 
+        confidence = 0.0
+        raw_confidence = spec.get("confidence")
+        if raw_confidence is not None:
+            if isinstance(raw_confidence, bool):  # JSON true/false is not a confidence
+                raise ValueError(f"{path}: material {name!r} has non-numeric confidence {raw_confidence!r}")
+            try:
+                confidence = float(raw_confidence)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{path}: material {name!r} has non-numeric confidence {raw_confidence!r}") from exc
+
         entries[str(name)] = MaterialEntry(
             preset=preset,
             role=role,
             dirichlet_K=dirichlet_K,
-            confidence=float(spec.get("confidence", 0.0)),
+            confidence=confidence,
             reason=str(spec.get("reason") or ""),
         )
 

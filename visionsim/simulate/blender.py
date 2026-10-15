@@ -3051,9 +3051,18 @@ class BlenderClients(tuple):
     def __getattr__(self, name: str) -> Callable[..., Any]:
         """Dispatch a remote service method across the connected clients.
 
-        Prefer :class:`BlenderService` so an unconnected client list still exposes the
-        standard API, but let the connected servers have the final say: a service passed to
-        :meth:`spawn` may add ``exposed_`` methods of its own.
+        Names resolve against :class:`BlenderService` so an unconnected client list still
+        offers the standard API; the connected servers answer for anything else, such as the
+        ``exposed_`` methods a service passed to :meth:`spawn` adds.
+
+        Args:
+            name (str): Name of the method, without the ``exposed_`` prefix.
+
+        Raises:
+            AttributeError: raised if no connected service exposes the method.
+
+        Returns:
+            Callable[..., Any]: Function calling the method on every connected client.
         """
         method: Any = getattr(BlenderService, EXPOSED_PREFIX + name, None)
         if method is None:

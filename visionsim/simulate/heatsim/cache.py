@@ -154,7 +154,7 @@ def read_temperatures(
                     return None
             return result
     except (OSError, ValueError, KeyError, TypeError, EOFError, zipfile.BadZipFile) as exc:
-        # BadZipFile is not an OSError: an interrupted write leaves a truncated archive
-        # that must count as a cache miss, not abort the solve that wanted a cached result.
+        # An interrupted write leaves a truncated archive, whose BadZipFile is not an
+        # OSError; count it as a cache miss like the other corruption cases.
         reject(str(exc))
         return None

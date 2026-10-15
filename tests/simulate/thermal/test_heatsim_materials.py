@@ -164,6 +164,29 @@ def test_role_defaults_to_fem_participant(tmp_path):
     assert entry is not None and entry.role == "FEM_PARTICIPANT"
 
 
+def test_unknown_material_field_warns_and_is_ignored(tmp_path):
+    """A misspelled key such as `presett` warns instead of loading a silent unassigned slot."""
+    path = _write(tmp_path, {"LADRILLO": {"presett": "brick"}})
+    with pytest.warns(UserWarning, match="unknown field"):
+        sa = materials.load_assignments(path)
+    entry = sa.entry_for("LADRILLO")
+    assert entry is not None and entry.preset is None  # falls back to defaults.preset
+
+
+def test_null_confidence_is_treated_as_absent(tmp_path):
+    """JSON null means the authoring tool left confidence unestimated."""
+    path = _write(tmp_path, {"x": {"preset": "wood", "confidence": None}})
+    entry = materials.load_assignments(path).entry_for("x")
+    assert entry is not None and entry.confidence == 0.0
+
+
+@pytest.mark.parametrize("bad", ["high", True])
+def test_non_numeric_confidence_raises_naming_the_sidecar(tmp_path, bad):
+    path = _write(tmp_path, {"x": {"preset": "wood", "confidence": bad}})
+    with pytest.raises(ValueError, match="confidence"):
+        materials.load_assignments(path)
+
+
 def test_unknown_default_preset_warns_and_disables_the_default(tmp_path):
     path = _write(tmp_path, {"x": {"preset": "wood"}}, default_preset="nonsense")
     with pytest.warns(UserWarning, match="nonsense"):
