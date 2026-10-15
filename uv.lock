@@ -5112,48 +5112,8 @@ wheels = [
 
 [[package]]
 name = "robust-laplacian"
-version = "1.0.0"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.12' and sys_platform == 'win32'",
-    "python_full_version == '3.11.*' and sys_platform == 'win32'",
-    "python_full_version == '3.10.*' and sys_platform == 'win32'",
-    "python_full_version > '3.9' and python_full_version < '3.10' and sys_platform == 'win32'",
-    "python_full_version <= '3.9' and sys_platform == 'win32'",
-]
-dependencies = [
-    { name = "numpy", version = "2.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
-    { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/16/fb/3d8be3fd72d1183b55bd79603d9bb6c15093f803cbe0c760c38ac4742e3b/robust_laplacian-1.0.0.tar.gz", hash = "sha256:a00d7c225e40b6f9a1b9c8de0c5cb51dadd35367e3fe61b265a4643165b4e08d", size = 29411838, upload-time = "2024-11-21T02:58:07.148Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/de/a5/a94fbf60dfa70b6953774b5b9008f192cb162f6c6e9b711761d9c9046384/robust_laplacian-1.0.0-cp310-cp310-win32.whl", hash = "sha256:186b85163a4c7a24f1c5157a6c44e09944fe32fa9b2a935fa1b35ae153b3d34a", size = 3729758, upload-time = "2024-11-21T02:55:49.639Z" },
-    { url = "https://files.pythonhosted.org/packages/4b/0d/fa8582813df49369b4f34974556f283b93d4e09fcb3fd83d82e4f8abe3d7/robust_laplacian-1.0.0-cp310-cp310-win_amd64.whl", hash = "sha256:a3e90479107054442259b96418579b460e3d3a1d519510f7c59c6d76622ae350", size = 5234975, upload-time = "2024-11-21T02:55:51.362Z" },
-    { url = "https://files.pythonhosted.org/packages/ad/ff/80ec32cbf3aab5f1f8fca02d4d0099edf0e64e2d2365b03b6d1b0ae68595/robust_laplacian-1.0.0-cp311-cp311-win32.whl", hash = "sha256:ccf009449d1179263f59f2069efe3dbdb35572e8cf2e1f292309386c1378f575", size = 3730909, upload-time = "2024-11-21T02:56:06.377Z" },
-    { url = "https://files.pythonhosted.org/packages/fe/43/68dfc391e9d3d329483a22f38f17734789cdf29ec2493735d59af3efd80b/robust_laplacian-1.0.0-cp311-cp311-win_amd64.whl", hash = "sha256:478cf2ca7abc094fe9a26d21d589eede8b3f442848444d35aae08882df1899b9", size = 5236543, upload-time = "2024-11-21T02:56:08.74Z" },
-    { url = "https://files.pythonhosted.org/packages/7c/ef/7b60577f0848659c7f2cbc1172f238835adebffdd383a73df5d3a70131c4/robust_laplacian-1.0.0-cp312-cp312-win32.whl", hash = "sha256:a2bf9823e7aadf4ed56bca1507931b64d526f28ac06e180e87c45ece92cf0a36", size = 3731037, upload-time = "2024-11-21T02:56:22.552Z" },
-    { url = "https://files.pythonhosted.org/packages/2d/cb/b9f5c60377759181a70140ef387634ec99984d27d2a7753ebbb7367cbc09/robust_laplacian-1.0.0-cp312-cp312-win_amd64.whl", hash = "sha256:bf8ca367814e85a4ae915338e5d092c7ffd6c6a4f2450dd56bc904aebee5618f", size = 5236638, upload-time = "2024-11-21T02:56:24.818Z" },
-    { url = "https://files.pythonhosted.org/packages/22/e5/25274943c6473b4aad73b2cdfa94c2b5938dca143b4926d9ee8ef5ae0c06/robust_laplacian-1.0.0-cp313-cp313-win32.whl", hash = "sha256:7033f1779971bbaf5fd713e790ec72278b587a341a7d91ca1591a1a64170cb3d", size = 3731116, upload-time = "2024-11-21T02:56:38.304Z" },
-    { url = "https://files.pythonhosted.org/packages/c1/d2/a674eb08c56bfb94c4aac27856d33effa365936acbb9ac372add0e8e18b3/robust_laplacian-1.0.0-cp313-cp313-win_amd64.whl", hash = "sha256:1720bab4b83943956f8bd6cc7722a699529d3c498e8ae3d820b0f0592c445812", size = 5236703, upload-time = "2024-11-21T02:56:40.709Z" },
-    { url = "https://files.pythonhosted.org/packages/4e/2f/e19398c0a20d346b31a1edb07f013eb3b86cd0444d2ec0e6550c67124a7d/robust_laplacian-1.0.0-cp39-cp39-win32.whl", hash = "sha256:52e349a198b9bc63a3d523be61e4c8b6215bd7189aedaf8e64a4116d5657a37e", size = 3729936, upload-time = "2024-11-21T02:57:24.818Z" },
-    { url = "https://files.pythonhosted.org/packages/b8/36/8f142e6248042ef827af642e84941c96cd61cb33df7cc696f980831fd8de/robust_laplacian-1.0.0-cp39-cp39-win_amd64.whl", hash = "sha256:9380f9cb764f45e8f1877819722df7fc2d481880b37b4868e74aff72b19c6fc1", size = 5235205, upload-time = "2024-11-21T02:57:27.355Z" },
-    { url = "https://files.pythonhosted.org/packages/3a/16/1a8a00c68b790bcd33487b8c088bd9025fdfe2ae4707fd2e4b1d1510b7c4/robust_laplacian-1.0.0-pp310-pypy310_pp73-win_amd64.whl", hash = "sha256:d4b7f1229f149166e4133bea180f609598e653e83e21d602664a176305cc8324", size = 5235180, upload-time = "2024-11-21T02:57:37.395Z" },
-    { url = "https://files.pythonhosted.org/packages/d6/ad/96b0f8c0a06b7d6a37dbbd4fbc755b01cfb3965cc778b7322a03d809acb2/robust_laplacian-1.0.0-pp39-pypy39_pp73-win_amd64.whl", hash = "sha256:52ac361f6551df86b14017d93b0232b7c2b668228bfc1e28cb07cfc62437e4a2", size = 5235099, upload-time = "2024-11-21T02:58:04.755Z" },
-]
-
-[[package]]
-name = "robust-laplacian"
 version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.12' and sys_platform != 'win32'",
-    "python_full_version == '3.11.*' and sys_platform != 'win32'",
-    "python_full_version == '3.10.*' and sys_platform != 'win32'",
-    "python_full_version > '3.9' and python_full_version < '3.10' and sys_platform != 'win32'",
-    "python_full_version <= '3.9' and sys_platform != 'win32'",
-]
 dependencies = [
     { name = "numpy", version = "2.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
@@ -7016,8 +6976,7 @@ dependencies = [
     { name = "peewee" },
     { name = "pydantic" },
     { name = "rich" },
-    { name = "robust-laplacian", version = "1.0.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "robust-laplacian", version = "1.1.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "robust-laplacian", marker = "sys_platform != 'win32'" },
     { name = "rpyc" },
     { name = "scipy", version = "1.13.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
@@ -7096,7 +7055,6 @@ requires-dist = [
     { name = "pydantic" },
     { name = "rich" },
     { name = "robust-laplacian", marker = "sys_platform != 'win32'", specifier = "==1.1.0" },
-    { name = "robust-laplacian", marker = "sys_platform == 'win32'", specifier = "!=1.1.0" },
     { name = "rpyc" },
     { name = "scipy" },
     { name = "torch" },

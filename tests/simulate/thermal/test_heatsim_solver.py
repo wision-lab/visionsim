@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from visionsim.simulate.heatsim import laplacian
 from visionsim.simulate.heatsim.solver import HeatSimFEM
 
 # Minimal surrogates for HeatSimFEM's two positional param objects: gen_params
@@ -35,6 +36,10 @@ def _make_params(n: int):
     return gen_params, sim_params
 
 
+@pytest.mark.skipif(
+    not laplacian.HAS_ROBUST_LAPLACIAN,
+    reason="robust_laplacian lives in Blender's Python; it is not a host dependency on Windows",
+)
 def test_solver_produces_finite_physical_temperatures():
     """
     Run a 5-step implicit-Euler FEM solve on a tiny random point cloud (POINTS/ROBUST).
