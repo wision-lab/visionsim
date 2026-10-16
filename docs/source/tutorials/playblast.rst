@@ -8,22 +8,30 @@ Sometimes you don't need a full render. While iterating on camera moves or a lay
 Playblast vs. Full Render
 -------------------------
 
-The two modes side by side, both rendered from ``loft.blend``:
+The two modes side by side, both rendered from `loft.blend <https://drive.google.com/drive/folders/1gRxhL3rbGDTfgKytre8WkbBu-QDJFy15?usp=sharing>`_:
 
 .. grid:: 2
     :gutter: 2
 
     .. grid-item::
 
-        .. figure:: ../_static/playblast/playblast-preview.gif
-
-            Playblast (viewport render)
+        .. video:: ../_static/playblast/playblast-preview.mp4
+            :loop:
+            :autoplay:
+            :nocontrols:
+            :playsinline:
+            :align: center
+            :caption: Playblast (viewport render)
 
     .. grid-item::
 
-        .. figure:: ../_static/playblast/playblast-full-preview.gif
-
-            Full render (Cycles)
+        .. video:: ../_static/playblast/playblast-full-preview.mp4
+            :loop:
+            :autoplay:
+            :nocontrols:
+            :playsinline:
+            :align: center
+            :caption: Full render (Cycles)
 
 The playblast gives up shading fidelity: the walls and paintings are untextured and there are no ray-traced shadows or reflections, which is the tradeoff you accept for iteration speed.
 
@@ -76,3 +84,10 @@ Viewport settings come from the blend-file. Engine, shading, anti-aliasing and s
 Playblasts always run in a single job. ``config.jobs`` and ``config.autoscale`` are ignored, because the output is a single shared file that isn't safe to write from multiple processes. Parallelizing across scenes with :meth:`BlenderClients.pool <visionsim.simulate.blender.BlenderClients.pool>` still works.
 
 The scene is mutated in place. Like the other render methods, the frame range, output filepath and image format are overwritten on the loaded scene and not restored. Reopen the blend-file if you need the originals back.
+
+|
+
+.. seealso::
+
+    - :doc:`../sections/blender/rendering` for the full render API.
+    - :doc:`light-passes` for passes a viewport render cannot produce.

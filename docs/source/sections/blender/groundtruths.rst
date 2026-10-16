@@ -13,7 +13,7 @@ Many types of ground truth annotations can be generated, some during the main re
 - **Diffuse Passes:** Light reflected off surfaces in a non-directional way. For CYCLES, this includes Direct, Indirect, and Color passes. For EEVEE, this includes Light and Color passes. These are saved as 3-channel EXR files.
 - **Specular Passes:** Light reflected off surfaces in a directional/shiny way. For CYCLES, this refers to Glossy Direct, Indirect, and Color passes. For EEVEE, this includes Specular Light and Color passes. These are saved as 3-channel EXR files.
 - **Point Maps:** World-space positions (X, Y, Z) for each pixel. These are saved as 3-channel floating point EXR files.
-- **Camera Intrinsics & Extrinsics:** Camera intrinsic parameters such as focal lengths, camera model, distortion coefficients, principal point, and camera positions (extrinsics) are automatically recorded for every rendered frame and saved in a ``transforms.json`` file.
+- **Camera Intrinsics & Extrinsics:** Camera intrinsic parameters such as focal lengths, camera model, distortion coefficients, principal point, and camera positions (extrinsics) are automatically recorded for every rendered frame and saved in a ``transforms.db`` file.
 
 .. admonition:: Note
 
@@ -28,15 +28,7 @@ Many types of ground truth annotations can be generated, some during the main re
 Composite Frames
 ----------------
 
-.. image:: ../../_static/blender/nodes/Composites-TopLevel.png
-   :align: right 
-   :width: 50% 
-   :class: only-light
-
-.. image:: ../../_static/blender/nodes/Composites-TopLevel-dark.png
-   :align: right 
-   :width: 50% 
-   :class: only-dark
+.. node-graph:: ../../_static/blender/nodes/Composites-TopLevel.json
 
 Composite outputs correspond to the group output node of the compositor node tree. These are saved by Blender's output settings, and not a file output node (as opposed to the other ground truth types).
 
@@ -45,34 +37,18 @@ Composite outputs correspond to the group output node of the compositor node tre
 RGB Frames
 ----------
 
-.. image:: ../../_static/blender/nodes/RGB-TopLevel.png
-   :align: right 
-   :width: 50% 
-   :class: only-light
+.. node-graph:: ../../_static/blender/nodes/RGB-TopLevel.json
 
-.. image:: ../../_static/blender/nodes/RGB-TopLevel-dark.png
-   :align: right 
-   :width: 50% 
-   :class: only-dark
-
-To render out RGB images, at a minimum, the "Image" render layer needs to be connected to the composite output node as shown on the right. These nodes are automatically added and enabled if they aren't already in the blend file. However, if a more complex compositing setup is present, it will not be modified.   
+To render out RGB images, at a minimum, the "Image" render layer needs to be connected to the composite output node as shown above. These nodes are automatically added and enabled if they aren't already in the blend file. However, if a more complex compositing setup is present, it will not be modified.   
 
 | 
 
 Depth Maps
 ----------
 
-.. image:: ../../_static/blender/nodes/Depth-TopLevel.png
-   :align: right 
-   :width: 50% 
-   :class: only-light
+.. node-graph:: ../../_static/blender/nodes/Depth-TopLevel.json
 
-.. image:: ../../_static/blender/nodes/Depth-TopLevel-dark.png
-   :align: right 
-   :width: 50% 
-   :class: only-dark
-
-To generate ground truth depth maps, a Z-buffer render layer is added as well as the following compositor nodes. The depth map is saved directly as an EXR file, and if ``debug`` is enabled, it is normalized and saved as a grayscale PNG too. 
+To generate ground truth depth maps, a Z-buffer render layer is added as well as the compositor nodes shown above. The depth map is saved directly as an EXR file, and if ``debug`` is enabled, it is normalized and saved as a grayscale PNG too. 
 
 See :meth:`include_depths <visionsim.simulate.blender.BlenderService.exposed_include_depths>` for more. 
 
@@ -83,87 +59,39 @@ See :meth:`include_depths <visionsim.simulate.blender.BlenderService.exposed_inc
 Normal Maps
 -----------
 
-.. image:: ../../_static/blender/nodes/Normal-TopLevel.png
-   :align: right 
-   :width: 50% 
-   :class: only-light
+.. node-graph:: ../../_static/blender/nodes/Normal-TopLevel.json
 
-.. image:: ../../_static/blender/nodes/Normal-TopLevel-dark.png
-   :align: right 
-   :width: 50% 
-   :class: only-dark
+To render normal maps, the compositor nodes shown above are added. However, Blender's surface normal render layer outputs normals that are in world coordinates, yet normals maps are typically expressed in the camera coordinate frame. 
 
-To render normal maps, the following compositor nodes are added. However, Blender's surface normal render layer outputs normals that are in world coordinates, yet normals maps are typically expressed in the camera coordinate frame. 
-
-This conversion is ensured by the ``Normal Debug`` node, seen below, which takes the normals in world coordinates and maps them to the camera's coordinate frame. This node group outputs both the raw normals in camera space, and a colorized version for easy debugging, which maps XYZ coordinates to RGB.
+This conversion is ensured by the ``Normal Debug`` node, which takes the normals in world coordinates and maps them to the camera's coordinate frame. Click into it from the graph above to see how. This node group outputs both the raw normals in camera space, and a colorized version for easy debugging, which maps XYZ coordinates to RGB.
 
 As there is no matrix multiply compositor node, three dot product nodes and a combine-XYZ node are used to perform a matrix multiplier. The rows of the camera rotation matrix are automatically updated using `drivers <https://docs.blender.org/manual/en/latest/animation/drivers/index.html>`_ (purple). 
 
 See :meth:`include_normals <visionsim.simulate.blender.BlenderService.exposed_include_normals>` for more. 
-
-.. image:: ../../_static/blender/nodes/NormalDebug.png
-   :align: center 
-   :class: only-light
-
-.. image:: ../../_static/blender/nodes/NormalDebug-dark.png
-   :align: center 
-   :class: only-dark
 
 |
 
 Optical Flow
 ------------ 
 
-.. image:: ../../_static/blender/nodes/Flow-TopLevel.png
-   :align: right 
-   :width: 50% 
-   :class: only-light
+.. node-graph:: ../../_static/blender/nodes/Flow-TopLevel.json
 
-.. image:: ../../_static/blender/nodes/Flow-TopLevel-dark.png
-   :align: right 
-   :width: 50% 
-   :class: only-dark
+The vector pass adds both forward and backward optical flow. To save these, we add the compositor nodes shown above, the top branch saves the optical flow directly as an EXR while the bottom branch colorizes it and saves a preview of both the forward and backward flow as PNGs. 
 
-The vector pass adds both forward and backward optical flow. To save these, we add the following compositor nodes, the top branch saves the optical flow directly as an EXR while the bottom branch colorizes it and saves a preview of both the forward and backward flow as PNGs. 
-
-The ``FlowDebug`` group node, seen below, colorizes optical flow by expressing the normal vectors in polar coordinates :math:`(\theta, r)` and using an HSV colormap, with the hue being determined by :math:`\theta` and saturation by a normalized :math:`r`. 
+The ``FlowDebug`` group node colorizes optical flow by expressing the normal vectors in polar coordinates :math:`(\theta, r)` and using an HSV colormap, with the hue being determined by :math:`\theta` and saturation by a normalized :math:`r`. Click into it from the graph above to see how. 
 
 See :meth:`include_flows <visionsim.simulate.blender.BlenderService.exposed_include_flows>` for more. 
-
-.. image:: ../../_static/blender/nodes/FlowDebug.png
-   :align: center 
-   :class: only-light
-
-.. image:: ../../_static/blender/nodes/FlowDebug-dark.png
-   :align: center
-   :class: only-dark
 
 |
 
 Segmentation Maps
 -----------------
 
-.. image:: ../../_static/blender/nodes/Segmentation-TopLevel.png
-   :align: right 
-   :width: 50% 
-   :class: only-light
+.. node-graph:: ../../_static/blender/nodes/Segmentation-TopLevel.json
 
-.. image:: ../../_static/blender/nodes/Segmentation-TopLevel-dark.png
-   :align: right 
-   :width: 50% 
-   :class: only-dark
-
-To generate segmentation maps, the following compositor nodes are added. The object index pass is enabled, which is directly saved as an EXR, or optionally colorized using the ``ColorizeIndices`` node shown below which assigns a unique color to each object index. 
+To generate segmentation maps, the compositor nodes shown above are added. The object index pass is enabled, which is directly saved as an EXR, or optionally colorized using the ``ColorizeIndices`` node in the graph above, which assigns a unique color to each object index. Click into it to see how. 
 
 See :meth:`include_segmentations <visionsim.simulate.blender.BlenderService.exposed_include_segmentations>` for more. 
-
-.. image:: ../../_static/blender/nodes/SegmentationDebug.png
-   :align: center 
-   :class: only-light
-
-.. image:: ../../_static/blender/nodes/SegmentationDebug-dark.png
-   :align: center
-   :class: only-dark
 
 .. caution:: The ``From Max`` value of the Map Range node above determines which colors to sample. Internally, upon initialization this value is set to ``len(bpy.data.objects)``, however, if more objects are added after the fact then their colors might coincide. 
 
@@ -240,7 +168,10 @@ Camera Intrinsics & Extrinsics
 
 Intrinsics refer to camera parameters such as focal length, width and height, and any optical distortion parameters needed to map a pixel location to a ray in 3D space. Extrinsics, on the other hand, refers to camera pose, both rotation and position. These can be accessed using :meth:`camera_info <visionsim.simulate.blender.BlenderService.exposed_camera_info>` and :meth:`camera_extrinsics <visionsim.simulate.blender.BlenderService.exposed_camera_extrinsics>`, and will be saved to disk when using methods such as :meth:`render_animation <visionsim.simulate.blender.BlenderService.exposed_render_animation>`.
 
-.. seealso:: :doc:`../datasets`
+.. seealso::
+
+    - :doc:`../datasets` for the dataset formats these annotations are written to.
+    - :doc:`cameras` for the camera models and intrinsics the metadata carries.
 
 |
 

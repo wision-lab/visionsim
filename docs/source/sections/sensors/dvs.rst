@@ -5,7 +5,12 @@ Event cameras, also known as Dynamic Vision Sensors (DVS), are bio-inspired sens
 
 These sensors offer several advantages over conventional cameras, including very high temporal resolution (in the order of microseconds), high dynamic range (up to 140 dB), and low power consumption.
 
-.. image:: ../../_static/quick-start/lego-dvs125fps-preview.gif
+.. video:: ../../_static/quick-start/ultramodern-dvs1600fps-preview.mp4
+   :loop:
+   :autoplay:
+   :nocontrols:
+   :playsinline:
+   :width: 80%
    :align: center
 
 | 
@@ -57,12 +62,18 @@ Parameters such as thresholds and noise rates can be adjusted:
 
 The output directory will contain:
 
-* ``events.txt``: A text file where each line is an event in the format ``t x y p`` (time in microseconds, x-coordinate, y-coordinate, polarity).
-* ``frames/``: A set of visualization frames showing ON events in blue and OFF events in red.
+* ``events.txt``: A text file where each line is an event in the format ``t,x,y,p`` (time in microseconds, x-coordinate, y-coordinate, polarity).
+* ``preview/``: When ``--preview-step`` is set, a set of visualization frames showing ON events in blue and OFF events in red, accumulated over that many input frames.
 * ``params.json``: The parameters used for the emulation.
 
 .. note::
     For this to give meaningful results, the input framerate should be high enough to capture the dynamics of the scene. We recommend using a framerate of at least 500 fps. These can be acheived using :doc:`../interpolation`.  
+
+|
+
+.. seealso::
+
+    A worked example that runs the emulator from the command line and through the Python API, and shows how the threshold and noise parameters change the output, is in :doc:`../../tutorials/dvs`.
 
 |
 

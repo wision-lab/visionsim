@@ -1,28 +1,39 @@
 #!/usr/bin/env bash
 
-visionsim blender.render-animation lego.blend quickstart/lego-gt/ \
-    --config.keyframe-multiplier=5.0 --config.include-depths
+visionsim blender.render-animation ultramodern.blend quickstart/ultramodern-gt/ \
+    --frame-start=150 --frame-end=350 \
+    --config.keyframe-multiplier=1.0 --config.include-depths
 visionsim ffmpeg.animate \
-    --input-dir=quickstart/lego-gt/frames \
-    --outfile=quickstart/preview.mp4 --step=5 --fps=25 --force
+    --input-dir=quickstart/ultramodern-gt/frames \
+    --outfile=quickstart/preview.mp4 --step=2 --fps=25 --force
 visionsim ffmpeg.animate \
-    --input-dir=quickstart/lego-gt/previews/depths \
-    --outfile=quickstart/preview-depths.mp4 --step=5 --fps=25 --force
+    --input-dir=quickstart/ultramodern-gt/previews/depths \
+    --outfile=quickstart/preview-depths.mp4 --step=2 --fps=25 --force
 visionsim interpolate.dataset \
-    --input-dir=quickstart/lego-gt/frames \
-    --output-dir=quickstart/lego-interp/ --n=32
+    --input-dir=quickstart/ultramodern-gt/frames \
+    --output-dir=quickstart/ultramodern-interp/ --n=32
 visionsim emulate.rgb \
-    --input-dir=quickstart/lego-interp/ \
-    --output-dir=quickstart/lego-rgb25fps/ \
-    --chunk-size=160 --readout-std=0
+    --input-dir=quickstart/ultramodern-interp/ \
+    --output-dir=quickstart/ultramodern-rgb25fps/ \
+    --chunk-size=64 --readout-std=0
 visionsim emulate.spad \
-    --input-dir=quickstart/lego-interp/ \
-    --output-dir=quickstart/lego-spc4kHz/
+    --input-dir=quickstart/ultramodern-interp/ \
+    --output-dir=quickstart/ultramodern-spc1600fps/
 visionsim emulate.events \
-    --input-dir=quickstart/lego-gt/frames \
-    --output-dir=quickstart/lego-dvs125fps/ --fps=125 --preview-step=1
+    --input-dir=quickstart/ultramodern-interp/ \
+    --output-dir=quickstart/ultramodern-dvs1600fps/ --fps=1600 --preview-step=1
 visionsim emulate.itof \
-    --input-dir=quickstart/lego-gt/frames \
-    --depth-dir=quickstart/lego-gt/depths \
-    --output-dir=quickstart/lego-itof/ \
+    --input-dir=quickstart/ultramodern-gt/frames \
+    --depth-dir=quickstart/ultramodern-gt/depths \
+    --output-dir=quickstart/ultramodern-itof/ \
     --scheme=convSin --n-captures=4 --freq=120e6 --preview
+visionsim emulate.imu \
+    --input-dir=quickstart/ultramodern-gt/frames \
+    --output-file=quickstart/imu.csv --dt=0.02
+visionsim blender.render-animation ultramodern.blend quickstart/ultramodern-thermal/ \
+    --frame-start=150 --frame-end=350 \
+    --config.keyframe-multiplier=1.0 --config.no-include-frames \
+    --config.include-thermal --config.thermal.no-radiance
+visionsim transforms.colorize-temperatures \
+    --input-dir=quickstart/ultramodern-thermal/temperature \
+    --output-dir=quickstart/ultramodern-thermal/temperature-colorized
