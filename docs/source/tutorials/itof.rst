@@ -45,6 +45,29 @@ The CLI warns when the scene contains depths beyond the unambiguous range of the
 
 |
 
+Frequency and Folding
+---------------------
+
+The modulation frequency sets the unambiguous range (usually ``c/2f``), so the same room folds differently across a frequency sweep. The figure below runs ``convSin`` with four captures at 40, 60, 80 and 120 MHz, one frequency per column: the top row is tap 0 of the four captures, the bottom row is the depth decoded from all four, and the single colorbar is shared across the sweep and spans the widest range. 
+
+The room is 3.34 m deep, so the 40 MHz range of 3.75 m recovers it whole; each step up folds more of it, and 120 MHz wraps it several times over in 1.25 m. Tap 0 shows the same folding as progressively finer fringes.
+
+.. figure:: ../_static/sensors/itof/sweep.webp
+    :width: 100%
+    :align: center
+    :class: only-light
+
+.. figure:: ../_static/sensors/itof/sweep-dark.webp
+    :width: 100%
+    :align: center
+    :class: only-dark
+
+    ``convSin`` at 40, 60, 80 and 120 MHz: tap 0 above, decoded depth below, on a shared depth scale.
+
+:doc:`The sensor section <../sections/sensors/itof>` derives the model behind this and lists the frequencies and capture counts each decoder accepts.
+
+|
+
 Decoding Measurements
 ---------------------
 

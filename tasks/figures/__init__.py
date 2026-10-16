@@ -18,6 +18,7 @@ from .sections import interpolation
 from .sections.blender import groundtruths
 from .sections.sensors import imu, itof, rgb
 from .tutorials import dvs, hdr, light_passes, playblast, stereo, varying_focal_lengths
+from .tutorials import itof as tutorial_itof
 
 ns = Collection()
 ns.add_task(
@@ -35,6 +36,7 @@ ns.add_task(
             playblast,
             stereo,
             varying_focal_lengths,
+            tutorial_itof,
         )
     )
 )

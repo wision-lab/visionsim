@@ -107,11 +107,13 @@ The figure below shows each scheme as a row, with the emitter waveform, the demo
 
 .. figure:: ../../_static/sensors/itof-codes-all.svg
     :alt: Modulation, demodulation and correlation functions for every coding scheme
+    :width: 100%
     :align: center
     :class: only-light
 
 .. figure:: ../../_static/sensors/itof-codes-all-dark.svg
     :alt: Modulation, demodulation and correlation functions for every coding scheme
+    :width: 100%
     :align: center
     :class: only-dark
 
