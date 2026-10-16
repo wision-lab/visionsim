@@ -22,11 +22,12 @@ Then you can **install the latest stable release** via `pip <https://pip.pypa.io
 Generating a dataset
 --------------------
 
-We will create a small scale dataset of a furnished living room as if it was captured by a realistic 25fps conventional RGB camera, a 1.6kHz single photon camera, an event camera, an indirect time-of-flight camera and an inertial measurement unit, for 4 seconds. To achieve this, we will:
+We will create a small scale dataset of a furnished living room as if it was captured by a realistic 25fps conventional RGB camera, a 1.6kHz single photon camera, an event camera, an indirect time-of-flight camera, an inertial measurement unit and a thermal camera, for 4 seconds. To achieve this, we will:
 
 - Render a small dataset of 201 ground truth frames, plus depth maps, using the :func:`blender.render-animation <visionsim.cli.blender.render_animation>` CLI,
 - Interpolate this dataset 32-fold using the :func:`interpolate.dataset <visionsim.cli.interpolate.dataset>` CLI,
-- And emulate different cameras and an IMU using the :func:`emulate.rgb <visionsim.cli.emulate.rgb>` / :func:`emulate.spad <visionsim.cli.emulate.spad>` / :func:`emulate.events <visionsim.cli.emulate.events>` / :func:`emulate.itof <visionsim.cli.emulate.itof>` / :func:`emulate.imu <visionsim.cli.emulate.imu>` CLIs.
+- And emulate different cameras and an IMU using the :func:`emulate.rgb <visionsim.cli.emulate.rgb>` / :func:`emulate.spad <visionsim.cli.emulate.spad>` / :func:`emulate.events <visionsim.cli.emulate.events>` / :func:`emulate.itof <visionsim.cli.emulate.itof>` / :func:`emulate.imu <visionsim.cli.emulate.imu>` CLIs,
+- And simulate the scene's heating to render a thermal camera, again using the :func:`blender.render-animation <visionsim.cli.blender.render_animation>` CLI.
 
 |
 
@@ -47,7 +48,7 @@ To create the dataset, we render the 201 frames between 150 and 350, leaving the
 
         visionsim blender.render-animation --help
 
-    ``--config.keyframe-multiplier`` stretches every keyframe in the file, so ``2.0`` plays the animation back at half speed and ``0.5`` at double speed. The command above leaves it at its default of ``1.0``, which keeps the camera moving at the speed it was keyed at.
+    The ``--config.keyframe-multiplier`` option stretches every keyframe in the file, so ``2.0`` plays the animation back at half speed and ``0.5`` at double speed. The command above leaves it at its default of ``1.0``, which keeps the camera moving at the speed it was keyed at.
 
     If the above command does not work, you might have to change some settings, notably the ``device-type``. For instance on older GPUs that do not support Optix you can do ``--config.device-type=cuda`` to use CUDA.
     
@@ -97,7 +98,7 @@ Let's create a quick preview of this dataset by animating every 2nd frame into a
             :caption: Ground truth depth
 
 .. note::
-    The depth preview flickers, and this is an artifact of how the renderer produces it rather than something in the data. ``--config.depths.preview`` normalizes each frame independently so the colormap stretches to fill the near/far range of that frame alone, which makes a depth map that changes little between frames appear to change a lot. The underlying ``.exr`` maps in ``quickstart/ultramodern-gt/depths`` hold absolute distances and are unaffected.
+    The depth preview flickers, and this is an artifact of how the renderer produces it rather than something in the data. The ``--config.depths.preview`` option normalizes each frame independently so the colormap stretches to fill the near/far range of that frame alone, which makes a depth map that changes little between frames appear to change a lot. The underlying ``.exr`` maps in ``quickstart/ultramodern-gt/depths`` hold absolute distances and are unaffected.
 
     To normalize across the whole sequence instead, colorize after rendering with :func:`transforms.colorize-depths <visionsim.cli.transforms.colorize_depths>`, which estimates a single depth range from every frame and reuses it:
 
@@ -187,7 +188,7 @@ An IMU measures acceleration and angular velocity rather than light, so :func:`e
    :language: bash
    :lines: 30-32
 
-``--dt`` is the time between consecutive poses, 0.02s for the 50fps render above, and the output is a CSV with one row per pose:
+The ``--dt`` option is the time between consecutive poses, 0.02s for the 50fps render above, and the output is a CSV with one row per pose:
 
 +------------+------------------------------------------------------------------+
 | Column     | Meaning                                                          |
@@ -202,6 +203,19 @@ An IMU measures acceleration and angular velocity rather than light, so :func:`e
 +------------+------------------------------------------------------------------+
 
 The readings are what a real IMU would report, so integrating them back into a trajectory reproduces the camera's motion only approximately: the biases are carried forward at every step, which makes the estimate drift away from the ground truth the longer it runs. The :doc:`IMU section <sections/sensors/imu>` derives the model and shows how large that drift gets.
+
+|
+
+Thermal Camera
+--------------
+
+A thermal camera measures the heat surfaces radiate rather than the light they reflect, so the emulations above do not apply to it and VisionSim instead simulates the scene's heating. :func:`blender.render-animation <visionsim.cli.blender.render_animation>` enables this with ``--config.include-thermal``, which bakes the scene's lighting with Cycles, integrates a temperature field for the requested simulation time, and renders that field from each camera pose:
+
+.. literalinclude:: ../../examples/quickstart.sh
+   :language: bash
+   :lines: 33-39
+
+The solve writes a single-channel OpenEXR per frame under ``quickstart/ultramodern-thermal/temperature``, holding absolute temperature in Kelvin. Passing ``--config.thermal.no-radiance`` skips the second render that would also produce a thermal-radiance image. :func:`transforms.colorize-temperatures <visionsim.cli.transforms.colorize_temperatures>` then estimates one temperature range across the whole sequence and maps it through the ``ironbow`` thermal palette by default, so ``temperature-colorized`` holds a viewable PNG per frame. The :doc:`thermal rendering section <sections/blender/thermal>` covers the heat-solve parameters, the radiance pass and how to assign materials and heat sources.
 
 |
 
@@ -262,6 +276,16 @@ Four seconds of the same living room, as seen by each camera, plus the trajector
             :playsinline:
             :align: center
             :caption: IMU, integrated trajectories
+
+    .. grid-item::
+
+        .. video:: _static/quick-start/ultramodern-thermal-preview.mp4
+            :loop:
+            :autoplay:
+            :nocontrols:
+            :playsinline:
+            :align: center
+            :caption: Thermal Camera
 
 |
 

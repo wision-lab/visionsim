@@ -196,6 +196,22 @@ INTERMEDIATES: dict[str, Node] = {
             " --scheme=convSin --n-captures=4 --freq=120e6 --preview --force",
         ),
     ),
+    "ultramodern-thermal": Node(
+        name="ultramodern-thermal",
+        # Thermal solves the scene's heat once, then renders that field; the guide
+        # colorizes the temperature EXRs with the ironbow palette for viewing.
+        files=(CACHE / "quickstart" / "ultramodern-thermal" / "temperature-colorized",),
+        recipe=_command_recipe(
+            "ultramodern-thermal",
+            "visionsim blender.render-animation ultramodern.blend quickstart/ultramodern-thermal/"
+            " --frame-start=150 --frame-end=350"
+            " --config.keyframe-multiplier=1.0 --config.no-include-frames"
+            " --config.include-thermal --config.thermal.no-radiance{executable}{force}",
+            "visionsim transforms.colorize-temperatures"
+            " --input-dir=quickstart/ultramodern-thermal/temperature"
+            " --output-dir=quickstart/ultramodern-thermal/temperature-colorized",
+        ),
+    ),
     # Used for the playblast tutorial
     "playblast-full": Node(
         name="playblast-full",

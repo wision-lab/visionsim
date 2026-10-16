@@ -28,7 +28,7 @@ Run the emulator over an interpolated sequence:
         --output-dir=quickstart/ultramodern-rgb25fps/ \
         --chunk-size=64 --readout-std=0
 
-``--chunk-size`` is the number of consecutive input frames averaged into one output frame, so it sets the exposure length; ``--readout-std`` is the standard deviation of the Gaussian read noise added after the accumulation. The remaining flags are ``--factor`` to scale the linear intensity, ``--fwc`` to override the full well capacity (it defaults to the chunk size), ``--duplicate`` to repeat each input frame ``duplicate`` times when the chunk size is too small to average a realistic signal, and ``--pattern`` to select the input files. ``--force`` overwrites an output directory that already exists. Frames are written under the output directory, and ``transforms.json`` records the resulting sequence.
+The ``--chunk-size`` option is the number of consecutive input frames averaged into one output frame, so it sets the exposure length; ``--readout-std`` is the standard deviation of the Gaussian read noise added after the accumulation. The remaining flags are ``--factor`` to scale the linear intensity, ``--fwc`` to override the full well capacity (it defaults to the chunk size), ``--duplicate`` to repeat each input frame ``duplicate`` times when the chunk size is too small to average a realistic signal, and ``--pattern`` to select the input files. The ``--force`` flag overwrites an output directory that already exists. Frames are written under the output directory, and ``transforms.json`` records the resulting sequence.
 
 The API takes the loaded frames directly:
 

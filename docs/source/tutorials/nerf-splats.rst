@@ -54,9 +54,9 @@ Some NeRF and splatting tools read one file that points at both the color image 
         --output-file=lego-nobkg-gt/transforms.json \
         --up-axis=y
 
-``--names`` renames the data key of each input, so the frames become the frame's ``file_path`` and the depths become its ``depth_file_path``. Paths are rewritten relative to the output file, giving ``lego-nobkg-gt/transforms.json`` with entries such as ``frames/0000/000.png`` and ``depths/0000/000.exr``. ``merge`` accepts the dataset directories as well as their metadata files, and only rewrites metadata; the images stay put.
+The ``--names`` flag renames the data key of each input, so the frames become the frame's ``file_path`` and the depths become its ``depth_file_path``. Paths are rewritten relative to the output file, giving ``lego-nobkg-gt/transforms.json`` with entries such as ``frames/0000/000.png`` and ``depths/0000/000.exr``. ``merge`` accepts the dataset directories as well as their metadata files, and only rewrites metadata; the images stay put.
 
-``--up-axis=y`` rotates the poses into a Y-up world. The renderer works in Blender's Z-up world, while nerfstudio-family trainers assume Y-up: they lay their ground plane on ``XZ`` and look down ``-Y``, so an orbit that is horizontal in the render comes out as a vertical ring. Every command that writes poses or points from this dataset needs the same flag, so the training file and the point cloud below agree.
+The ``--up-axis=y`` flag rotates the poses into a Y-up world. The renderer works in Blender's Z-up world, while nerfstudio-family trainers assume Y-up: they lay their ground plane on ``XZ`` and look down ``-Y``, so an orbit that is horizontal in the render comes out as a vertical ring. Every command that writes poses or points from this dataset needs the same flag, so the training file and the point cloud below agree.
 
 Both inputs are directories, so ``merge`` reads their ``transforms.db`` files directly. :func:`dataset.convert <visionsim.cli.dataset.convert>` rewrites one dataset's metadata between ``.db`` and ``.json`` if another tool wants it on its own, and takes the same ``--up-axis`` option.
 
@@ -107,7 +107,7 @@ Seed the splat with the rendered depths
         --colors=lego-nobkg-gt/frames --depths=lego-nobkg-gt/depths \
         --output=lego-nobkg-gt/init.ply --up-axis=y
 
-``--p`` sets the fraction of pixels to sample. The 0.15 default samples about 9.6 million pixels across these 800x800 frames, and roughly 1.4 million of them land in the cloud; the rest have no rendered surface behind them, carry the sentinel depth CYCLES writes, and are dropped. ``--up-axis=y`` puts the points in the same Y-up world as the merged poses, and records that in the file header, where Brush reads the vertical axis instead of guessing it. Brush picks up a file named ``init.ply``, so training starts from the geometry the renderer actually saw rather than from noise.
+The ``--p`` flag sets the fraction of pixels to sample. The 0.15 default samples about 9.6 million pixels across these 800x800 frames, and roughly 1.4 million of them land in the cloud; the rest have no rendered surface behind them, carry the sentinel depth CYCLES writes, and are dropped. ``--up-axis=y`` puts the points in the same Y-up world as the merged poses, and records that in the file header, where Brush reads the vertical axis instead of guessing it. Brush picks up a file named ``init.ply``, so training starts from the geometry the renderer actually saw rather than from noise.
 
 The result is an ordinary point cloud, so any point-cloud viewer opens it, `MeshLab <https://www.meshlab.net/>`_ included:
 

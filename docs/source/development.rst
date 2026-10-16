@@ -15,9 +15,9 @@ Then prefix every command with ``uv run --all-groups``, for example::
 
     uv run --all-groups inv test
 
-``--all-groups`` is not optional: the toolchain (``invoke``, ruff, mypy, pytest) lives in the
-``dev`` group and the documentation build in ``docs``, so a bare ``uv run invoke`` may not find
-``invoke`` at all.
+The ``--all-groups`` flag is not optional: the toolchain (``invoke``, ruff, mypy, pytest) lives
+in the ``dev`` group and the documentation build in ``docs``, so a bare ``uv run invoke`` may not
+find ``invoke`` at all.
 
 If you would rather not type ``uv run --all-groups`` for every command, source the environment
 instead and drop the prefix::

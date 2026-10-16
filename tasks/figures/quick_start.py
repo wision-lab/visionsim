@@ -73,6 +73,17 @@ NODES = (
             "quickstart/ultramodern-itof/preview/tap_0/*.png", 2, "quick-start/ultramodern-itof-preview"
         ),
     ),
+    Node(
+        name="ultramodern-thermal-preview",
+        files=(static("quick-start/ultramodern-thermal-preview.mp4"),),
+        is_figure=True,
+        # The thermal frame rate follows the render's 50fps, so step by two to play
+        # the four-second pass at 25fps like the other quick-start clips.
+        requires=("ultramodern-thermal",),
+        recipe=video_recipe(
+            "quickstart/ultramodern-thermal/temperature-colorized/*.png", 2, "quick-start/ultramodern-thermal-preview"
+        ),
+    ),
 )
 
 build = page_task(NODES, "quick-start", "Regenerate the quick-start preview figures.")

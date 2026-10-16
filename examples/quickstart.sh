@@ -30,3 +30,10 @@ visionsim emulate.itof \
 visionsim emulate.imu \
     --input-dir=quickstart/ultramodern-gt/frames \
     --output-file=quickstart/imu.csv --dt=0.02
+visionsim blender.render-animation ultramodern.blend quickstart/ultramodern-thermal/ \
+    --frame-start=150 --frame-end=350 \
+    --config.keyframe-multiplier=1.0 --config.no-include-frames \
+    --config.include-thermal --config.thermal.no-radiance
+visionsim transforms.colorize-temperatures \
+    --input-dir=quickstart/ultramodern-thermal/temperature \
+    --output-dir=quickstart/ultramodern-thermal/temperature-colorized

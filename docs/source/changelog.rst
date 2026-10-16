@@ -36,7 +36,7 @@ Changed
   defaults tuned for long jobs.
 - IMU emulation converts ``transforms.json`` pose matrices out of the OpenGL camera frame
   by default, since those matrices map OpenGL camera coordinates directly into Blender's
-  world axes and are not plain rotations. ``--no-convert-coords`` emulates them as-is, and
+  world axes and are not plain rotations. Passing ``--no-convert-coords`` emulates them as-is, and
   the coordinate helpers were renamed to ``camcoord_opengl_to_blender`` and
   ``camcoord_blender_to_opengl``.
 - Split CI into separate docs and tests workflows, build the Docker image on push, and run

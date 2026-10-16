@@ -21,7 +21,7 @@ Run the emulator over a dataset:
 
     visionsim emulate.imu --input-dir=transforms.db --output-file=imu.csv --dt=0.02
 
-``--input-dir`` takes either file, and ``--dt`` is the sampling period in seconds, here 50 Hz. It has to match the real spacing between consecutive poses, since the emulator differentiates the pose spline at those times instead of resampling it. The remaining flags set ``--gravity`` (in the world frame, in m/s^2), the constant parts of the biases with ``--init-bias-acc`` and ``--init-bias-gyro``, the noise parameters ``--std-acc``, ``--std-gyro``, ``--std-bias-acc`` and ``--std-bias-gyro``, and ``--seed`` for reproducible noise.
+The ``--input-dir`` option takes either file, and ``--dt`` is the sampling period in seconds, here 50 Hz. It has to match the real spacing between consecutive poses, since the emulator differentiates the pose spline at those times instead of resampling it. The remaining flags set ``--gravity`` (in the world frame, in m/s^2), the constant parts of the biases with ``--init-bias-acc`` and ``--init-bias-gyro``, the noise parameters ``--std-acc``, ``--std-gyro``, ``--std-bias-acc`` and ``--std-bias-gyro``, and ``--seed`` for reproducible noise.
 
 The output is a CSV table with one row per sample:
 
