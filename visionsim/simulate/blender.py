@@ -877,9 +877,6 @@ class BlenderService(rpyc.Service):
     def exposed_iter_fcurves(self, actions: list[bpy.types.Action] | None = None) -> Iterator[bpy.types.FCurve]:
         """Yield fcurves of all actions.
 
-        This abstracts away the API for accessing fcurves which changed to using channelbags in v4.4, see
-        `release notes here <https://developer.blender.org/docs/release_notes/4.4/upgrading/slotted_actions/>`_.
-
         Args:
             actions (list[bpy.types.Action] | None, optional): Only yield fcurves from these actions if specified,
                 otherwise use all actions. Defaults to None.
@@ -887,17 +884,36 @@ class BlenderService(rpyc.Service):
         Yields:
             Iterator[bpy.types.FCurve]: an fcurve object from the scene or action
         """
-        if bpy.app.version >= (4, 4, 0):
-            for action in actions or bpy.data.actions:
+        for _, fcurve in self._iter_fcurves_by_owner(actions):
+            yield fcurve
+
+    def _iter_fcurves_by_owner(
+        self, actions: list[bpy.types.Action] | None = None
+    ) -> Iterator[tuple[Any, bpy.types.FCurve]]:
+        """Yield ``(owner, fcurve)`` pairs where owner identifies the animated data-block.
+
+        This abstracts the fcurve API which changed to using channelbags in v4.4, see
+        `release notes here <https://developer.blender.org/docs/release_notes/4.4/upgrading/slotted_actions/>`_.
+        Since then an action can drive several data-blocks, one per slot, so the slot is the owner;
+        before that an action owns exactly one data-block.
+
+        Args:
+            actions (list[bpy.types.Action] | None, optional): Only yield fcurves from these actions if specified,
+                otherwise use all actions. Defaults to None.
+
+        Yields:
+            Iterator[tuple[Any, bpy.types.FCurve]]: an owner and one of the fcurves it owns.
+        """
+        for action in actions or bpy.data.actions:
+            if bpy.app.version >= (4, 4, 0):
                 for slot in action.slots:
                     channelbag = anim_utils.action_get_channelbag_for_slot(action, slot)
 
                     for fcurve in channelbag.fcurves or []:
-                        yield fcurve
-        else:
-            for action in actions or bpy.data.actions:
+                        yield slot, fcurve
+            else:
                 for fcurve in action.fcurves or []:
-                    yield fcurve
+                    yield action, fcurve
 
     @require_initialized_service
     def exposed_get_original_fps(self) -> float:
@@ -2192,7 +2208,48 @@ class BlenderService(rpyc.Service):
                 kfp.handle_left.x = kfp.handle_left.x * scale + shift
                 kfp.handle_right.x = kfp.handle_right.x * scale + shift
                 kfp.period *= scale
+
+        # Only scaling samples frames between keyframes, so only scaling can expose a wrap.
+        if scale != 1.0:
+            self._make_rotations_compatible()
         self.scene.render.motion_blur_shutter /= scale
+
+    def _make_rotations_compatible(self) -> None:
+        """Make each rotation's keyframes interpolate the short way around.
+
+        Rotations are keyed as independent per-component fcurves, but interpolating between two
+        of them is only well-defined for the rotation as a whole: a component that wrapped across
+        ±π, or a quaternion that flipped sign, makes blender turn the long way between adjacent
+        keyframes. Rebuilding each keyframe's rotation and making it compatible with the previous
+        one is what blender's euler filter does.
+        """
+        # The last data_path component tells us which type compares this rotation, and how many
+        # fcurves it has. A shared action can key rotations under several slots, hence the owner.
+        kinds = {"rotation_euler": (mathutils.Euler, 3), "rotation_quaternion": (mathutils.Quaternion, 4)}
+        groups: dict[tuple[Any, str], dict[int, bpy.types.FCurve]] = collections.defaultdict(dict)
+        for owner, fcurve in self._iter_fcurves_by_owner():
+            kind = fcurve.data_path.rpartition(".")[2]
+            if kind in kinds:
+                groups[owner, kind][fcurve.array_index] = fcurve
+
+        for (_, kind), channels in groups.items():
+            build, components = kinds[kind]
+            if len(channels) != components:
+                continue  # Not every component of this rotation is keyed.
+
+            rows = [sorted(channels[i].keyframe_points, key=lambda kfp: kfp.co.x) for i in range(components)]
+            if any([kfp.co.x for kfp in row] != [kfp.co.x for kfp in rows[0]] for row in rows[1:]):
+                continue  # Components are keyed at different frames, can't be paired up.
+
+            rotations = [build(tuple(row[i].co.y for row in rows)) for i in range(len(rows[0]))]
+            for previous, current in itertools.pairwise(rotations):
+                current.make_compatible(previous)
+            for i, current in enumerate(rotations):
+                for row, value in zip(rows, current):
+                    delta = value - row[i].co.y
+                    row[i].co.y += delta
+                    row[i].handle_left.y += delta
+                    row[i].handle_right.y += delta
 
     @require_initialized_service
     def exposed_set_current_frame(self, frame_number: int) -> None:
