@@ -7,7 +7,7 @@ import OpenEXR
 import pytest
 
 from visionsim.dataset import Dataset, Metadata
-from visionsim.simulate.blender import INDEX_PADDING, ITEMS_PER_SUBFOLDER, BlenderClients
+from visionsim.simulate.blender import INDEX_PADDING, ITEMS_PER_SUBFOLDER, BlenderClient, BlenderClients
 
 
 @pytest.mark.parametrize(
@@ -145,6 +145,44 @@ def test_database_threading(tmp_path_factory, executable):
             frame.parent.mkdir(exist_ok=True, parents=True)
             frame.touch()
         clients.render_animation()
+
+
+def test_move_keyframes_unwraps_rotations(tmp_path_factory, executable):
+    """Scaling samples frames between keyframes, where a wrapped rotation turns the long way."""
+    tmpdir = tmp_path_factory.mktemp("unwrap")
+    scene = Path(__file__).parent.parent / "test_files" / "scenes" / "cube.blend"
+
+    def z_rotation(angle: float) -> list[list[float]]:
+        """A 4x4 world transform rotating about Z by ``angle`` radians."""
+        cos, sin = np.cos(angle), np.sin(angle)
+        return [
+            [cos, -sin, 0, 0],
+            [sin, cos, 0, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ]
+
+    def key_at(fcurve, frame: float):
+        return next(k for k in fcurve.keyframe_points if round(k.co.x) == frame)
+
+    with BlenderClient.spawn(executable=executable, timeout=30) as client:
+        client.initialize(scene.resolve(), tmpdir.resolve())
+        # 3.5 radians lies past +/-pi, so blender stores it as -2.783: a wrap of more than pi.
+        wrapped_frame = 10
+        client.set_camera_keyframe(0, z_rotation(3.0))
+        client.set_camera_keyframe(wrapped_frame, z_rotation(3.5))
+        z_channel = next(
+            fcurve
+            for fcurve in client.iter_fcurves()
+            if fcurve.data_path.endswith("rotation_euler")
+            and fcurve.array_index == 2
+            and any(round(k.co.x) == 0 for k in fcurve.keyframe_points)
+        )
+        assert abs(key_at(z_channel, wrapped_frame).co.y - 3.5) > np.pi
+
+        client.move_keyframes(scale=2)
+
+        assert key_at(z_channel, 2 * wrapped_frame).co.y == pytest.approx(3.5)
 
 
 def test_metadata_roundtrip_from_db(cube_dataset):
