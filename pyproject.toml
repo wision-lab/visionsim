@@ -86,7 +86,6 @@ dev = [
     "ruff",
     "types-jsonschema",
     'scipy-stubs; python_version >= "3.10"',
-    "psutil",
     "types-peewee",
     "syrupy>=4.9.1",
     "pytest-skip-slow>=1.1.0",

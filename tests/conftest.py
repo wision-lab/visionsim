@@ -12,7 +12,6 @@ from pathlib import Path
 import imageio.v3 as iio
 import numpy as np
 import numpy.typing as npt
-import psutil
 import pytest
 
 from visionsim.simulate import install_dependencies
@@ -106,15 +105,6 @@ def executable(pytestconfig):
             "visionsim must be installed as editable for development, otherwise Blender "
             "imports a stale copy of the package and the tests no longer reflect your "
             "working tree. Install with `pip install -e . --group dev` (or `uv sync`)."
-        )
-
-    if any("blender" in proc.name().lower() for proc in psutil.process_iter()):
-        # Note: If there's a previous BlenderServer that's running, we might connect to that
-        #   one instead, and it might be running with an outdated visionsim version!
-        # TODO: How to fix this race condition in the general case?
-        raise RuntimeError(
-            "At least on Blender instance is already running, please close all instances "
-            "to ensure we do not connect to a stale one."
         )
 
     # Hand install_dependencies() the resolved path: it would otherwise fall back to a bare

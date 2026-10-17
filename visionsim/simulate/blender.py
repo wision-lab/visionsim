@@ -271,7 +271,7 @@ class BlenderServer(rpyc.utils.server.Server):
     @staticmethod
     def spawn(
         jobs: int = 1,
-        timeout: float = -1.0,
+        timeout: float = 0.0,
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
@@ -287,7 +287,8 @@ class BlenderServer(rpyc.utils.server.Server):
         these processes is also taken care of.
 
         Note:
-            The returned processes and connection settings are not guaranteed to be in the same order.
+            The returned processes and connection settings are in the same order, so the ``i``-th
+            process corresponds to the ``i``-th connection setting.
 
         Warning:
             If ``log`` is a file handle or descriptor, such as redirecting Blender logs to subprocess.STDOUT,
@@ -297,11 +298,10 @@ class BlenderServer(rpyc.utils.server.Server):
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
-            timeout (float, optional): try to discover spawned instances for ``timeout``
-                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
-                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
-                this context manager will immediately yield, even if the server is not yet ready to accept
-                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to register its
+                reserved port before giving up. Zero (the default) skips the wait and yields immediately, even
+                if a server is not yet ready to accept incoming connections; the client connecting to it is
+                expected to retry.
             log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
                 descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
                 Defaults to subprocess.DEVNULL for both stdout/stderr.
@@ -369,7 +369,6 @@ class BlenderServer(rpyc.utils.server.Server):
                     p.wait()
 
         BlenderServer.spawn_registry()
-        existing = BlenderServer.discover() if timeout > 0 else []
         procs, ports = [], []
 
         if isinstance(log, (str, os.PathLike)):
@@ -380,7 +379,7 @@ class BlenderServer(rpyc.utils.server.Server):
 
         with ExitStack() as stack:
             for i in range(jobs):
-                port = port_reserve("localhost") if timeout < 0 else 0
+                port = port_reserve("localhost")
                 autoexec_cmd = "--enable-autoexec" if autoexec else "--disable-autoexec"
                 # Preserve executable paths; command strings also support launchers such as flatpak.
                 if executable and Path(executable).is_file():
@@ -415,19 +414,22 @@ class BlenderServer(rpyc.utils.server.Server):
 
             if timeout > 0:
                 start = time.time()
+                wanted = set(ports)
 
                 while True:
                     if (time.time() - start) > timeout:
                         # Terminate all procs and close fds
                         stack.close()
                         raise TimeoutError("Unable to spawn and discover server(s) in alloted time.")
-                    if len(conns := set(BlenderServer.discover()) - set(existing)) == jobs:
+                    # Wait for exactly the ports we reserved. The registry is machine-wide, so
+                    # the servers of other checkouts running concurrently answer the same query;
+                    # matching on our own ports keeps us from adopting a foreign (eg. background)
+                    # server that happens to register while we wait.
+                    if wanted <= {port for _, port in BlenderServer.discover()}:
                         break
                     time.sleep(0.1)
-            else:
-                conns = {("localhost", p) for p in ports}
 
-            yield (procs, list(conns))
+            yield (procs, [("localhost", port) for port in ports])
 
     @staticmethod
     def spawn_registry() -> tuple[Process, rpyc.utils.registry.UDPRegistryClient]:
@@ -2890,7 +2892,7 @@ class BlenderClient:
     @contextmanager
     def spawn(
         cls,
-        timeout: float = -1.0,
+        timeout: float = 0.0,
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
@@ -2903,11 +2905,10 @@ class BlenderClient:
         The spawned process is accessible through the client's ``process`` attribute.
 
         Args:
-            timeout (float, optional): try to discover spawned instances for ``timeout``
-                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
-                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
-                this context manager will immediately yield, even if the server is not yet ready to accept
-                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to register its
+                reserved port before giving up. Zero (the default) skips the wait and yields immediately, even
+                if a server is not yet ready to accept incoming connections; the client connecting to it is
+                expected to retry.
             log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
                 descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
                 Defaults to subprocess.DEVNULL for both stdout/stderr.
@@ -3182,7 +3183,7 @@ class BlenderClients(tuple):
     def spawn(
         cls,
         jobs: int = 1,
-        timeout: float = -1.0,
+        timeout: float = 0.0,
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
@@ -3196,11 +3197,10 @@ class BlenderClients(tuple):
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
-            timeout (float, optional): try to discover spawned instances for ``timeout``
-                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
-                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
-                this context manager will immediately yield, even if the server is not yet ready to accept
-                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to register its
+                reserved port before giving up. Zero (the default) skips the wait and yields immediately, even
+                if a server is not yet ready to accept incoming connections; the client connecting to it is
+                expected to retry.
             log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
                 descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
                 Defaults to subprocess.DEVNULL for both stdout/stderr.
@@ -3251,7 +3251,7 @@ class BlenderClients(tuple):
     @staticmethod
     def pool(
         jobs: int = 1,
-        timeout: float = -1.0,
+        timeout: float = 0.0,
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
@@ -3283,11 +3283,10 @@ class BlenderClients(tuple):
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
-            timeout (float, optional): try to discover spawned instances for ``timeout``
-                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
-                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
-                this context manager will immediately yield, even if the server is not yet ready to accept
-                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to register its
+                reserved port before giving up. Zero (the default) skips the wait and yields immediately, even
+                if a server is not yet ready to accept incoming connections; the client connecting to it is
+                expected to retry.
             log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
                 descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
                 Defaults to subprocess.DEVNULL for both stdout/stderr.
