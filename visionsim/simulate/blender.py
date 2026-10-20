@@ -1970,12 +1970,9 @@ class BlenderService(rpyc.Service):
 
     @staticmethod
     def _thermal_values(config: dict[str, Any]) -> dict[str, Any]:
-        from dataclasses import asdict
-
-        values = asdict(ThermalConfig(**dict(config)))
-        if values["assignments"] is not None:
-            values["assignments"] = str(values["assignments"])
-        return values
+        # asdict deepcopies, which tries to pickle a Path that arrived as an rpyc netref
+        # (pickling is disabled); the exposed_* methods consume it via ``Path(str(...))``.
+        return vars(ThermalConfig(**dict(config)))
 
     @require_initialized_service
     def exposed_configure_thermal(self, config: dict[str, Any]) -> None:

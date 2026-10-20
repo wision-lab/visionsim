@@ -1,6 +1,8 @@
 import itertools
+import json
 import os
 import shutil
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +11,7 @@ import pytest
 
 from visionsim.dataset import Dataset, Metadata
 from visionsim.simulate.blender import INDEX_PADDING, ITEMS_PER_SUBFOLDER, BlenderClient, BlenderClients
+from visionsim.simulate.config import ThermalConfig
 
 
 @pytest.mark.parametrize(
@@ -242,6 +245,28 @@ def test_render_thermal(tmp_path_factory, executable):
     assert len(rad_exrs) == N
     rad_shape = Dataset.load_data(rad_exrs[0], auto_collapse=False).shape
     assert rad_shape == (50, 50, 3)
+
+
+def test_thermal_config_crosses_rpyc_with_path_assignments(tmp_path, executable):
+    """A Path-valued thermal config must survive the rpyc bridge.
+
+    ``assignments`` arrives server-side as a netref (rpyc passes non-primitives by
+    reference and pickling is disabled), so any server-side deepcopy — ``asdict`` — dies
+    with "ValueError: pickling is disabled".
+    """
+    scene = tmp_path / "scene.blend"
+    shutil.copy(Path(__file__).parent.parent / "test_files" / "scenes" / "cube.blend", scene)
+    sidecar = tmp_path / "cube.thermal.json"
+    sidecar.write_text(
+        json.dumps({"schema_version": 1, "scene": "scene.blend", "defaults": {"preset": None}, "materials": {}}),
+        encoding="utf-8",
+    )
+    (tmp_path / "logs").mkdir()
+
+    config = ThermalConfig(assignments=sidecar, device="cpu", bake_samples=4, irradiance_texture_size=64)
+    with BlenderClient.spawn(executable=executable, timeout=60, log=tmp_path / "logs") as client:
+        client.initialize(scene.resolve(), tmp_path.resolve())
+        client.configure_thermal(asdict(config))
 
 
 def test_render_without_thermal_outputs(tmp_path, executable):
