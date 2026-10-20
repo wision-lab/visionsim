@@ -26,7 +26,16 @@ def pytest_addoption(parser):
 
 @pytest.fixture(scope="session")
 def executable(pytestconfig):
+    # Resolve first, in the same order as `inv test` (--executable, $VSIM_BLENDER, $PATH;
+    # docs/source/development.rst). `--executable` defaults to None and CI runs a bare
+    # `pytest`, so tests that interpolate this into an argv (subprocess.run([str(exe), ...]))
+    # would spawn the literal "None"; tests that hand it to BlenderClient.spawn() accept None
+    # because that resolves against $PATH. This runs before install_dependencies(), which
+    # raises on a missing executable and would otherwise hide the skip below.
     executable_path = pytestconfig.getoption("--executable")
+    resolved = executable_path or os.environ.get("VSIM_BLENDER") or shutil.which("blender")
+    if resolved is None:
+        pytest.skip("No Blender executable: pass --executable=/path/to/blender or put `blender` on PATH.")
 
     # direct_url.json is absent for installs from an index (a plain `pip install visionsim`),
     # so a missing file is itself proof of a non-editable install.
@@ -52,8 +61,11 @@ def executable(pytestconfig):
             "to ensure we do not connect to a stale one."
         )
 
-    install_dependencies(executable=executable_path, editable=True)
-    return executable_path
+    # Hand install_dependencies() the resolved path: it would otherwise fall back to a bare
+    # `blender` on $PATH and fail under a $VSIM_BLENDER-only configuration.
+    install_dependencies(executable=resolved, editable=True)
+
+    return resolved
 
 
 def _load_cube_scene(client, tmpdir: Path) -> None:
@@ -68,6 +80,9 @@ def _load_cube_scene(client, tmpdir: Path) -> None:
 def cube_dataset(tmp_path_factory, executable) -> Path:
     # Note: If this fails and you're using flatpak, it might be because
     #   the application doesn't have read/write access to /tmp!
+    # Note: This fixture also renders the thermal modality (prepare_thermal +
+    #   include_thermal), so a regression in the thermal pipeline will surface
+    #   across all cube_dataset-based tests, not only the thermal-specific ones.
     tmpdir = tmp_path_factory.mktemp("renders")
     log_dir = tmp_path_factory.mktemp("logs")
 
@@ -85,6 +100,8 @@ def cube_dataset(tmp_path_factory, executable) -> Path:
         client.include_diffuse_pass()
         client.include_specular_pass()
         client.include_points()
+        client.prepare_thermal(device="cpu", bake_samples=4, irradiance_texture_size=64)
+        client.include_thermal(radiance=True, preview=True)
         client.render_animation()
         client.save_file(tmpdir / "cube_out.blend")
     return tmpdir

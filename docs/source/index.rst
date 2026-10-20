@@ -38,6 +38,7 @@ VisionSIM is a modular and extensible framework for distributed simulations with
    tutorials/playblast
    tutorials/light-passes
    tutorials/large-dataset
+   tutorials/thermal-assignments
 
 .. toctree::
    :hidden:
