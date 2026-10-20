@@ -12,6 +12,7 @@ Added
 ^^^^^
 
 - Indirect time-of-flight (iToF) sensor emulation, with a tutorial and figure task.
+- A passive single photon camera (SPC) emulation tutorial covering the CLI, the bitpacked output format, image recovery and dynamic-range figures.
 - An event camera (DVS) emulation tutorial covering the CLI, output format, Python API and parameter figures.
 - Standalone ``render-playblast`` CLI for fast viewport previews, plus a playblast tutorial.
 - HDR, stereo, light-pass, and large-dataset tutorials backed by per-page figure tasks.

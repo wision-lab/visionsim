@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from invoke import Collection
 
-from . import dvs, hdr, itof, light_passes, playblast, stereo, varying_focal_lengths
+from . import dvs, hdr, itof, light_passes, passive_spc, playblast, stereo, varying_focal_lengths
 
 ns = Collection()
 ns.add_task(dvs.build)
@@ -12,5 +12,6 @@ ns.add_task(hdr.build)
 ns.add_task(itof.build)
 ns.add_task(light_passes.build)
 ns.add_task(playblast.build)
+ns.add_task(passive_spc.build)
 ns.add_task(stereo.build)
 ns.add_task(varying_focal_lengths.build)

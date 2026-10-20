@@ -17,7 +17,7 @@ from ._page import all_task, arrange_node_trees
 from .sections import interpolation
 from .sections.blender import groundtruths
 from .sections.sensors import imu, itof, rgb
-from .tutorials import dvs, hdr, light_passes, playblast, stereo, varying_focal_lengths
+from .tutorials import dvs, hdr, light_passes, passive_spc, playblast, stereo, varying_focal_lengths
 from .tutorials import itof as tutorial_itof
 
 ns = Collection()
@@ -33,6 +33,7 @@ ns.add_task(
             dvs,
             hdr,
             light_passes,
+            passive_spc,
             playblast,
             stereo,
             varying_focal_lengths,
