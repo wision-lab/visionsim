@@ -23,6 +23,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 ENV PATH="/root/.local/bin:${PATH}"
 
 # Create venv and "activate" it by placing it in PATH
+# Copy the interpreter pin first: a bare `uv venv` would otherwise grab the newest Python it can
+# find, and the source tree (and thus .python-version) only lands at the later `COPY . /src`.
+COPY .python-version /app/
 RUN uv venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
