@@ -30,14 +30,17 @@ RUN uv venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Install python dependencies
-# Here we install pytorch manually to ensure it's cpu-only
+# The image has no GPU, so torch must come from PyTorch's CPU index; the default PyPI Linux
+# wheel pulls in multi-GB CUDA runtime packages.
 # Using --no-cache prevents uv from caching wheels in the container
-RUN uv pip install --no-cache torch torchvision --index-url https://download.pytorch.org/whl/cpu
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+RUN uv pip install --no-cache torch torchvision --index-url "$TORCH_INDEX_URL"
 
 # Install visionsim package as editable, ensures the current commit is pulled and installed.
 COPY . /src
-RUN uv pip install --no-cache --editable /src
-RUN visionsim post-install --editable
+RUN uv pip install --no-cache --torch-backend cpu --editable /src
+# Blender ships its own interpreter, so `post-install` needs the CPU index again for its torch.
+RUN visionsim post-install --editable --torch-index-url "$TORCH_INDEX_URL"
 
 # Blender's viewport renderer (playblast) needs an X display with a GL context, which containers
 # lack. The entrypoint starts a virtual one with Xvfb before running the container's command.
