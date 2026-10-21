@@ -4,19 +4,68 @@ import contextlib
 import functools
 import shutil
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 
 import numpy as np
 
+if TYPE_CHECKING:
+    from visionsim.dataset import Metadata
+
+UpAxis = Literal["x", "-x", "y", "-y", "z", "-z"]
+"""Up axis a world's poses can be expressed in."""
+
+# The renderer works in Blender's Z-up world, while nerfstudio-family trainers assume Y-up,
+# so poses are rolled onto the requested axis on the way out. Sign flips need the half turn
+# rather than a single-axis flip, which would mirror the scene.
+_UP_AXIS_ROTATIONS = {
+    "x": np.array([[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]]),
+    "-x": np.array([[0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]),
+    "y": np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, -1.0, 0.0]]),
+    "-y": np.array([[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]]),
+    "z": np.eye(3),
+    "-z": np.array([[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, -1.0]]),
+}
+
+
+def _up_axis_matrix(up_axis: UpAxis) -> np.ndarray:
+    """Return the rotation taking the renderer's Z-up world to one whose up axis is ``up_axis``."""
+    rotate = np.eye(4)
+    rotate[:3, :3] = _UP_AXIS_ROTATIONS[up_axis]
+    return rotate
+
+
+def _rebuild(meta: Metadata, transform: Callable[[np.ndarray], np.ndarray]) -> Metadata:
+    """Return a copy of ``meta`` with ``transform`` applied to every pose matrix."""
+    from visionsim.dataset import Metadata
+
+    return Metadata.from_dense_transforms(
+        [
+            t | {"transform_matrix": transform(np.asarray(t["transform_matrix"])).tolist()}
+            for t in meta.iter_dense_transforms()
+        ]
+    )
+
+
+def _apply_up_axis(meta: Metadata, up_axis: UpAxis) -> Metadata:
+    """Return a copy of ``meta`` whose poses are expressed in a world with ``up_axis`` up."""
+    rotate = _up_axis_matrix(up_axis)
+    return _rebuild(meta, lambda pose: rotate @ pose)
+
 
 @contextlib.contextmanager
-def _ply_stream(path: Path, binary: bool = False):
-    """Context manager for streaming PLY data to a file."""
+def _ply_stream(path: Path, binary: bool = False, up_axis: UpAxis | None = None):
+    """Context manager yielding a ``write_points(points, colors)`` callable that streams points into ``path``."""
     total_points = 0
     mode = "wb" if binary else "w"
+    # Splat viewers (Brush) place their ground plane from a "Vertical axis" comment and fall
+    # back on guessing it from the camera poses when it is missing. Only the positive axes
+    # have a shorthand, and the points' frame is only known when a rotation was requested.
+    comment = f"comment Vertical axis: {up_axis}\n" if up_axis in ("x", "y", "z") else ""
     with open(path, mode) as f:
         if binary:
             f.write(b"ply\nformat binary_little_endian 1.0\n")
+            if comment:
+                f.write(comment.encode())
             count_pos = f.tell()
             f.write(f"element vertex {' ' * 15}\n".encode())
             f.write(b"property float x\nproperty float y\nproperty float z\n")
@@ -24,6 +73,8 @@ def _ply_stream(path: Path, binary: bool = False):
             f.write(b"end_header\n")
         else:
             f.write("ply\nformat ascii 1.0\n")
+            if comment:
+                f.write(comment)
             count_pos = f.tell()
             # element vertex {placeholder} - 15 spaces allows for up to 999 trillion points
             f.write(f"element vertex {' ' * 15}\n")
@@ -62,6 +113,7 @@ def _ply_stream(path: Path, binary: bool = False):
 def convert(
     input_dir: Path,
     output_dir: Path | None = None,
+    up_axis: UpAxis | None = None,
     force: bool = False,
 ) -> None:
     """Convert a ``.db`` database to a ``.json`` or vice-versa.
@@ -71,6 +123,11 @@ def convert(
         output_dir: directory in which to save new dataset.
             If not set, save new metadata file in same directory,
             otherwise copy over all data to a new directory.
+        up_axis: up axis of the world the poses should be expressed in, one of ``x``,
+            ``-x``, ``y``, ``-y``, ``z`` or ``-z``. Poses are rolled from the renderer's
+            Z-up world onto that axis, so pass ``y`` for the Y-up world that
+            nerfstudio-family trainers such as Brush assume. Leave unset to save the poses
+            untouched.
         force: if true, overwrite output file(s) if present
     """
     from visionsim.dataset import Metadata
@@ -89,6 +146,9 @@ def convert(
     rel_path = meta.path.relative_to(input_dir.resolve())
     meta_path = rel_path.with_suffix(".db" if meta.path.suffix == ".json" else ".json")
 
+    if up_axis is not None:
+        meta = _apply_up_axis(meta, up_axis)
+
     if output_dir:
         shutil.copytree(input_dir, output_dir)
         meta.save(output_dir / meta_path)
@@ -97,7 +157,12 @@ def convert(
         meta.save(input_dir / meta_path)
 
 
-def merge(input_files: list[Path], names: list[str] | None = None, output_file: Path = Path("combined.json")) -> None:
+def merge(
+    input_files: list[Path],
+    names: list[str] | None = None,
+    output_file: Path = Path("combined.json"),
+    up_axis: UpAxis | None = None,
+) -> None:
     """Merge one or more dataset files.
 
     Typically there will be dataset file per data type (frames, depth, etc) but these can be combined if they
@@ -109,9 +174,12 @@ def merge(input_files: list[Path], names: list[str] | None = None, output_file: 
     data type names, or merge and rename many metadata files altogether.
 
     Args:
-        input_files (list[Path]): List of datasets to merge, can either be the path of a metadata file or it's directory.
-        names (list[str] | None, optional): What to rename each "path" argument to. Defaults to None.
-        output_file (Path, optional): Where to save metadata file, should be a ``.json`` file. Defaults to "combined.json".
+        input_files: List of datasets to merge, can either be the path of a metadata file or it's directory.
+        names: What to rename each "path" argument to. Defaults to None.
+        output_file: Where to save metadata file, should be a ``.json`` file. Defaults to "combined.json".
+        up_axis: up axis of the world the merged poses should be expressed in, one of ``x``,
+            ``-x``, ``y``, ``-y``, ``z`` or ``-z``, rolled from the renderer's Z-up world.
+            Leave unset to keep the inputs' poses as they are.
     """
     import more_itertools as mitertools
 
@@ -166,6 +234,12 @@ def merge(input_files: list[Path], names: list[str] | None = None, output_file: 
         )
     ]
 
+    if up_axis is not None:
+        rotate = _up_axis_matrix(up_axis)
+        merged_transforms = [
+            t | {"transform_matrix": (rotate @ np.asarray(t["transform_matrix"])).tolist()} for t in merged_transforms
+        ]
+
     Metadata.from_dense_transforms(merged_transforms).save(output_file)
 
 
@@ -176,6 +250,7 @@ def to_pointcloud(
     output: Path = Path("pointcloud.ply"),
     p: float = 0.15,
     binary: bool = True,
+    up_axis: UpAxis | None = None,
     force: bool = False,
 ) -> None:
     """Generate a ``.ply`` point cloud from datasets.
@@ -189,6 +264,11 @@ def to_pointcloud(
         output: path to save PLY file to.
         p: probability of sampling a pixel.
         binary: If true, save as a binary PLY file (smaller and faster).
+        up_axis: up axis of the world the points should be expressed in, matching the value
+            the metadata was written with. Takes the same values as
+            :func:`convert <visionsim.cli.dataset.convert>`. Recorded in the PLY header for
+            viewers that orient themselves from it. Leave unset to keep the points where the
+            datasets' poses put them.
         force: If true, overwrite output file if present.
     """
     from rich.progress import track
@@ -228,7 +308,7 @@ def to_pointcloud(
 
     _log.info(f"Generating point cloud from {num_frames} frames (p={p})...")
 
-    with _ply_stream(output, binary=binary) as write_points:
+    with _ply_stream(output, binary=binary, up_axis=up_axis) as write_points:
         for i in track(range(num_frames), description="Processing frames..."):
             colors_data, _ = cast(tuple[np.ndarray, dict[str, Any]], ds_colors[i])
 
@@ -254,17 +334,14 @@ def to_pointcloud(
             if ds_depths and ds_points is None:
                 # Project depth to world-space
                 depth = points_sampled[..., 0]
-                # Filter out zero depth
                 valid_mask = (depth > 0) & (depth < DEPTH_CUTOFF)
                 depth = depth[valid_mask]
                 colors_sampled = colors_sampled[valid_mask]
 
-                # Get coordinates for valid mask
                 yy, xx = np.where(mask)
                 yy = yy[valid_mask]
                 xx = xx[valid_mask]
 
-                # Intrinsics
                 fl_x = points_meta["fl_x"]
                 fl_y = points_meta["fl_y"]
                 cx = points_meta["cx"]
@@ -276,7 +353,6 @@ def to_pointcloud(
                 x = -(xx - cx) * z / fl_x
                 y = (yy - cy) * z / fl_y
 
-                # World space
                 c2w = np.array(points_meta["transform_matrix"])
                 points_cam = np.stack([x, y, z, np.ones_like(x)], axis=-1)
                 points_world = (c2w @ points_cam.T).T
@@ -291,5 +367,6 @@ def to_pointcloud(
                 points_world = points_world[valid_mask]
                 colors_sampled = colors_sampled[valid_mask]
 
-            # Write points for this frame to file
+            if up_axis is not None:
+                points_world = points_world @ _up_axis_matrix(up_axis)[:3, :3].T
             write_points(points_world, colors_sampled)

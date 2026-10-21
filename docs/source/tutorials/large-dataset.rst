@@ -43,7 +43,7 @@ To enable easy configuration and CLI parsing, we re-use the render configuration
 
 | 
 
-We can then reuse the same render-job as :func:`render-animation <visionsim.cli.blender.render_animation>`, except we'll use it in conjunction with a :meth:`BlenderClients.pool <visionsim.simulation.blender.BlenderClients.pool>` in order to render multiple scenes at once (as opposed to a single scene being rendered with multiple jobs). Putting it all together we have:
+We can then reuse the same render-job as :func:`render-animation <visionsim.cli.blender.render_animation>`, except we'll use it in conjunction with a :meth:`BlenderClients.pool <visionsim.simulate.blender.BlenderClients.pool>` in order to render multiple scenes at once (as opposed to a single scene being rendered with multiple jobs). Putting it all together we have:
 
 .. literalinclude:: ../../../scripts/mkdataset.py
    :pyobject: create_datasets

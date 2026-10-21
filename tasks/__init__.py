@@ -192,7 +192,13 @@ def build_docs(c, preview=False):
     result in the browser when the build succeeds.
     """
     with c.cd(ROOT_DIR):
-        api_exclude = ["visionsim/interpolate/rife", "visionsim/simulate/compat.py", "visionsim/simulate/nodes"]
+        api_exclude = [
+            "visionsim/interpolate/rife",
+            "visionsim/simulate/compat.py",
+            "visionsim/simulate/nodes",
+            # The sphinx extension: documentation tooling, not part of the API.
+            "visionsim/sphinx_ext.py",
+        ]
         # We have to do this for all the new changes in the docs to be reflected
         console.print(
             '[yellow]Make sure to run "pip install -e .[dev]" or equivalent to make sure docstring changes are reflected!'

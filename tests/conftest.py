@@ -9,13 +9,68 @@ import sys
 from importlib.metadata import Distribution
 from pathlib import Path
 
-import psutil
+import imageio.v3 as iio
+import numpy as np
+import numpy.typing as npt
 import pytest
 
 from visionsim.simulate import install_dependencies
 from visionsim.simulate.blender import BlenderClient
 
 SCENE = Path(__file__).parent / "test_files" / "scenes" / "cube.blend"
+
+
+def _write_dataset(root: Path, frames: int = 1, *, depths: list[float] | None = None, size: int = 32) -> Path:
+    """Write a minimal Blender-free dataset: images, a ``transforms.json`` and depths.
+
+    The image is non-uniform and non-zero, because the emulators scale the reflection
+    by the albedo: a black frame would decode to an all-zero measurement array and make
+    the finiteness and preview assertions vacuous.
+
+    Args:
+        root: Directory to write the dataset to, created if needed.
+        frames: Number of frames to write. Ignored when ``depths`` is given, which
+            fixes the count at one frame per depth.
+        depths: Depth of each frame, in metres, written as ``depth_NNNN.npy`` beside its
+            frame and referenced from it. None for a dataset with images only.
+        size: Side of the square images, and of the map saved for each depth.
+
+    Returns:
+        ``root``.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    image: npt.NDArray[np.uint8] = np.arange(size * size * 3, dtype=np.uint8).reshape(size, size, 3) + 1
+    entries = []
+    for i in range(len(depths) if depths is not None else frames):
+        iio.imwrite(root / f"{i:04}.png", image)
+        entry = {"file_path": f"{i:04}.png", "transform_matrix": np.eye(4).tolist()}
+        if depths is not None:
+            np.save(root / f"depth_{i:04}.npy", np.full((size, size), depths[i], np.float32)[None])
+            entry["depth_file_path"] = f"depth_{i:04}.npy"
+        entries.append(entry)
+    (root / "transforms.json").write_text(
+        json.dumps(
+            {
+                "camera_model": "OPENCV",
+                "fl_x": float(size),
+                "fl_y": float(size),
+                "cx": size / 2,
+                "cy": size / 2,
+                "h": size,
+                "w": size,
+                "frames": entries,
+            }
+        )
+    )
+    return root
+
+
+@pytest.fixture
+def write_dataset():
+    """Expose :func:`_write_dataset` as a fixture, which is how the tests take it."""
+    # A fixture cannot take arguments - pytest reads its parameters as fixture names - so
+    # this hands back :func:`_write_dataset` for tests to call with their own paths.
+    return _write_dataset
 
 
 def pytest_addoption(parser):
@@ -50,15 +105,6 @@ def executable(pytestconfig):
             "visionsim must be installed as editable for development, otherwise Blender "
             "imports a stale copy of the package and the tests no longer reflect your "
             "working tree. Install with `pip install -e . --group dev` (or `uv sync`)."
-        )
-
-    if any("blender" in proc.name().lower() for proc in psutil.process_iter()):
-        # Note: If there's a previous BlenderServer that's running, we might connect to that
-        #   one instead, and it might be running with an outdated visionsim version!
-        # TODO: How to fix this race condition in the general case?
-        raise RuntimeError(
-            "At least on Blender instance is already running, please close all instances "
-            "to ensure we do not connect to a stale one."
         )
 
     # Hand install_dependencies() the resolved path: it would otherwise fall back to a bare

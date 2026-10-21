@@ -46,7 +46,7 @@ def test_present_figure_is_left_alone(tmp_path):
     """A figure who exists is not rebuilt, and its chain is not walked, even when the
     dataset it was built from is gone."""
     nodes = (
-        _figure("fig", ("mid",), _written(tmp_path, "fig.gif")),
+        _figure("fig", ("mid",), _written(tmp_path, "fig.mp4")),
         _intermediate("mid", ("root",), _absent(tmp_path, "mid")),
         _intermediate("root", (), _absent(tmp_path, "root")),
     )
@@ -56,7 +56,7 @@ def test_present_figure_is_left_alone(tmp_path):
 def test_missing_figure_rebuilds_only_itself(tmp_path):
     """A missing figure is rebuilt from the inputs that are still there."""
     nodes = (
-        _figure("fig", ("mid",), _absent(tmp_path, "fig.gif")),
+        _figure("fig", ("mid",), _absent(tmp_path, "fig.mp4")),
         _intermediate("mid", ("root",), _written(tmp_path, "mid")),
         _intermediate("root", (), _written(tmp_path, "root")),
     )
@@ -67,7 +67,7 @@ def test_missing_figure_climbs_to_first_satisfied_requirement(tmp_path):
     """The climb stops at a requirement that is present, so the missing input above it is
     not re-provisioned."""
     nodes = (
-        _figure("fig", ("mid",), _absent(tmp_path, "fig.gif")),
+        _figure("fig", ("mid",), _absent(tmp_path, "fig.mp4")),
         _intermediate("mid", ("root",), _written(tmp_path, "mid")),
         _intermediate("root", (), _absent(tmp_path, "root")),
     )
@@ -77,7 +77,7 @@ def test_missing_figure_climbs_to_first_satisfied_requirement(tmp_path):
 def test_missing_chain_is_rebuilt_all_the_way_up(tmp_path):
     """Every unsatisfied node between the figure and the first present input is rebuilt."""
     nodes = (
-        _figure("fig", ("mid",), _absent(tmp_path, "fig.gif")),
+        _figure("fig", ("mid",), _absent(tmp_path, "fig.mp4")),
         _intermediate("mid", ("root",), _absent(tmp_path, "mid")),
         _intermediate("root", (), _written(tmp_path, "root")),
     )
@@ -87,7 +87,7 @@ def test_missing_chain_is_rebuilt_all_the_way_up(tmp_path):
 def test_fully_missing_chain_selects_every_node(tmp_path):
     """With nothing present, the whole chain from the figure up is attempted."""
     nodes = (
-        _figure("fig", ("mid",), _absent(tmp_path, "fig.gif")),
+        _figure("fig", ("mid",), _absent(tmp_path, "fig.mp4")),
         _intermediate("mid", ("root",), _absent(tmp_path, "mid")),
         _intermediate("root", (), _absent(tmp_path, "root")),
     )
@@ -98,7 +98,7 @@ def test_force_reprovisions_present_figure_and_missing_inputs(tmp_path):
     """``--force`` rebuilds every figure, pulling in only the requirements that are absent."""
     present = tmp_path / "present"
     nodes = (
-        _figure("fig", ("mid",), _written(present, "fig.gif")),
+        _figure("fig", ("mid",), _written(present, "fig.mp4")),
         _intermediate("mid", ("root",), _written(present, "mid")),
         _intermediate("root", (), _written(present, "root")),
     )
@@ -106,7 +106,7 @@ def test_force_reprovisions_present_figure_and_missing_inputs(tmp_path):
 
     absent = tmp_path / "absent"
     nodes = (
-        _figure("fig", ("mid",), _absent(absent, "fig.gif")),
+        _figure("fig", ("mid",), _absent(absent, "fig.mp4")),
         _intermediate("mid", ("root",), _absent(absent, "mid")),
         _intermediate("root", (), _written(absent, "root")),
     )
@@ -117,7 +117,7 @@ def test_incomplete_output_is_stale(tmp_path):
     """A node whose ``check`` reports its output incomplete is re-run even though the file
     is there."""
     nodes = (
-        _figure("fig", ("mid",), _written(tmp_path, "fig.gif"), check=lambda: False),
+        _figure("fig", ("mid",), _written(tmp_path, "fig.mp4"), check=lambda: False),
         _intermediate("mid", ("root",), _written(tmp_path, "mid")),
         _intermediate("root", (), _written(tmp_path, "root")),
     )
@@ -128,8 +128,8 @@ def test_shared_requirement_is_not_rebuilt_for_a_present_figure(tmp_path):
     """A figure sharing an input with a stale figure stays as-is: only the stale figure and
     the inputs it needs run."""
     nodes = (
-        _figure("stale", ("shared",), _absent(tmp_path, "stale.gif")),
-        _figure("fresh", ("shared",), _written(tmp_path, "fresh.gif")),
+        _figure("stale", ("shared",), _absent(tmp_path, "stale.mp4")),
+        _figure("fresh", ("shared",), _written(tmp_path, "fresh.mp4")),
         _intermediate("shared", ("root",), _written(tmp_path, "shared")),
         _intermediate("root", (), _absent(tmp_path, "root")),
     )

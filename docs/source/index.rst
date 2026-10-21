@@ -15,7 +15,6 @@ VisionSIM is a modular and extensible framework for distributed simulations with
    :caption: Getting Started
 
    quick-start
-   overview
    installation 
 
 .. toctree::
@@ -31,14 +30,15 @@ VisionSIM is a modular and extensible framework for distributed simulations with
    :hidden:
    :caption: Tutorials & Use Cases
 
-   tutorials/extending 
-   tutorials/hdr
-   tutorials/stereo
-   tutorials/itof
-   tutorials/playblast
-   tutorials/light-passes
-   tutorials/large-dataset
-   tutorials/thermal-assignments
+   tutorials/sensors
+   tutorials/rendering
+   tutorials/applications
+
+.. toctree::
+   :hidden:
+   :caption: Project
+
+   changelog
 
 .. toctree::
    :hidden:

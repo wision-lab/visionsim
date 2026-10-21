@@ -68,6 +68,12 @@ exclude = ["visionsim/interpolate/rife/*"]
 exclude = ["visionsim/interpolate/rife/*"]
 follow_imports = "skip"
 
+# Tree Clipper, the node editor's extensions and blender's own mathutils only exist
+# inside Blender's own Python, which the figure services run in.
+[[tool.mypy.overrides]]
+module = ["tree_clipper", "tree_clipper.*", "bl_ext.*", "mathutils"]
+ignore_missing_imports = true
+
 [dependency-groups]
 dev = [
     "build>=1.3.0",
@@ -80,7 +86,6 @@ dev = [
     "ruff",
     "types-jsonschema",
     'scipy-stubs; python_version >= "3.10"',
-    "psutil",
     "types-peewee",
     "syrupy>=4.9.1",
     "pytest-skip-slow>=1.1.0",

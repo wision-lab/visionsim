@@ -112,7 +112,7 @@ NOTES.md
 *.heatsim/
 scenes/
 data/
-cache/
+cache
 examples/logs/
 examples/renders/
 examples/*.blend*

@@ -95,7 +95,7 @@ Which data type is used for what depends on a few things such as if the data can
 
 - Numpy arrays can be memory mapped, enabling us to manipulate larger-than-RAM arrays efficiently and easily. This is particularly important when sampling pixels as we do not need to read and decode a whole image to sample a single pixel.
 
-- We are not constrained by an image codec, meaning we can for instance use higher precision floats (although EXRs support this), losslessly save data, and in the case of binary valued SPC data, we can bitpack it which enables compression.
+- We are not constrained by an image codec, meaning we can for instance use higher precision floats (although EXRs support this), losslessly save data, and in the case of binary valued SPC (single photon camera) data, we can bitpack it which enables compression.
 
 - Dataset integrity is easier to check as it's just an npy file and it's accompanying transforms file as opposed to thousands of image files.
 
@@ -132,7 +132,17 @@ Coordinate Conventions
 
 The camera poses stored in ``transforms.json`` files follow Blender/OpenGL/NeRF camera conventions where +X is right, +Y is up, and +Z is pointing back and away from the camera, making the camera's viewing direction -Z. Another common convention is the OpenCV/COLMAP convention, which uses the same X axis, with +Y going down and +Z going into the scene.   
 
-.. figure:: ../_static/datasets/camera-conventions.png
+.. figure:: ../_static/datasets/camera-conventions.webp
    :width: 100% 
 
    Camera coordinate conventions (`source <https://medium.com/@christophkrautz/what-are-the-coordinates-225f1ec0dd78>`_)
+
+The poses are written in the Blender/OpenGL convention above, in Blender's Z-up world, while nerfstudio-family trainers assume Y-up: they lay their ground plane on ``XZ`` and look down ``-Y``, so an orbit that is horizontal in the render comes out as a vertical ring. :func:`dataset.convert <visionsim.cli.dataset.convert>`, :func:`dataset.merge <visionsim.cli.dataset.merge>` and :func:`dataset.to-pointcloud <visionsim.cli.dataset.to_pointcloud>` all take an ``--up-axis`` option for it, one of ``x``, ``-x``, ``y``, ``-y``, ``z`` or ``-z``, which rolls the poses from the renderer's Z-up world onto that axis. Everything derived from a dataset has to use the same value, or the training file and the geometry will disagree.
+
+|
+
+.. seealso::
+
+    - :doc:`../tutorials/large-dataset` for producing datasets at scale.
+    - :doc:`../tutorials/nerf-splats` for consuming ``transforms.json`` for training.
+

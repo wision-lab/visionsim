@@ -29,7 +29,7 @@ you only need temperatures, add ``--config.thermal.no-radiance``. The default
 ``render-domain AUTO`` chooses how densely to sample each surface; large walls
 and floors will often use thermal atlas texels.
 
-``--config.include-all`` enables thermal along with every other output, so it
+The ``--config.include-all`` flag enables thermal along with every other output, so it
 also pays for the bake, the heat solve and the second render pass. Pass
 ``--config.include-thermal`` instead when you want only the thermal outputs.
 
@@ -43,7 +43,7 @@ and increase the bake's spatial resolution::
         --config.thermal.timestep-s 0.1 \
         --config.thermal.irradiance-texture-size 1024
 
-``sim-time-s`` is elapsed *simulation* time, not animation duration. Adjust it
+The ``sim-time-s`` parameter is elapsed *simulation* time, not animation duration. Adjust it
 to let heating and conduction develop before rendering. It does not move
 objects or change illumination during the solve.
 
@@ -397,7 +397,7 @@ VisionSim stores reusable thermal results beside the blend file in a
 ``.heatsim`` directory. For a clean, saved blend, it checks blend bytes,
 external images and libraries, solver settings, sampling layout, and sidecar
 contents before reusing a result. Edited or missing dependencies cause a new
-bake and solve. ``--config.thermal.recompute`` forces a new one. Changing only
+bake and solve. Passing ``--config.thermal.recompute`` forces a new one. Changing only
 preview or radiance display settings does not require a new heat solve.
 Thermal atlases and attributes are prepared in memory for rendering; the
 source blend is not overwritten. Save an output blend explicitly if you need

@@ -146,3 +146,9 @@ After rendering both eyes, you can use the :class:`Dataset <visionsim.dataset.Da
     for (left_img, _), (right_img, _) in zip(left, right):
         # left_img and right_img have shape (H, W, C)
         ...
+
+|
+
+.. seealso::
+
+    - :doc:`../sections/blender/cameras` for what the recorded intrinsics contain.
