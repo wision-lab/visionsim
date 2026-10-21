@@ -271,7 +271,7 @@ class BlenderServer(rpyc.utils.server.Server):
     @staticmethod
     def spawn(
         jobs: int = 1,
-        timeout: float = -1.0,
+        timeout: float = 0.0,
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
@@ -287,7 +287,8 @@ class BlenderServer(rpyc.utils.server.Server):
         these processes is also taken care of.
 
         Note:
-            The returned processes and connection settings are not guaranteed to be in the same order.
+            The returned processes and connection settings are in the same order, so the ``i``-th
+            process corresponds to the ``i``-th connection setting.
 
         Warning:
             If ``log`` is a file handle or descriptor, such as redirecting Blender logs to subprocess.STDOUT,
@@ -297,11 +298,10 @@ class BlenderServer(rpyc.utils.server.Server):
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
-            timeout (float, optional): try to discover spawned instances for ``timeout``
-                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
-                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
-                this context manager will immediately yield, even if the server is not yet ready to accept
-                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to register its
+                reserved port before giving up. Zero (the default) skips the wait and yields immediately, even
+                if a server is not yet ready to accept incoming connections; the client connecting to it is
+                expected to retry.
             log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
                 descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
                 Defaults to subprocess.DEVNULL for both stdout/stderr.
@@ -368,8 +368,10 @@ class BlenderServer(rpyc.utils.server.Server):
                 for p in procs:
                     p.wait()
 
-        BlenderServer.spawn_registry()
-        existing = BlenderServer.discover() if timeout > 0 else []
+        # Direct connections use the reserved ports and never query the registry; only discovery
+        # does, and it needs the registry up before the servers start since they register once.
+        if timeout > 0:
+            BlenderServer.spawn_registry()
         procs, ports = [], []
 
         if isinstance(log, (str, os.PathLike)):
@@ -380,7 +382,7 @@ class BlenderServer(rpyc.utils.server.Server):
 
         with ExitStack() as stack:
             for i in range(jobs):
-                port = port_reserve("localhost") if timeout < 0 else 0
+                port = port_reserve("localhost")
                 autoexec_cmd = "--enable-autoexec" if autoexec else "--disable-autoexec"
                 # Preserve executable paths; command strings also support launchers such as flatpak.
                 if executable and Path(executable).is_file():
@@ -415,19 +417,20 @@ class BlenderServer(rpyc.utils.server.Server):
 
             if timeout > 0:
                 start = time.time()
+                wanted = set(ports)
 
                 while True:
                     if (time.time() - start) > timeout:
                         # Terminate all procs and close fds
                         stack.close()
                         raise TimeoutError("Unable to spawn and discover server(s) in alloted time.")
-                    if len(conns := set(BlenderServer.discover()) - set(existing)) == jobs:
+                    # Match only our reserved ports: the registry is machine-wide, so servers from
+                    # concurrent checkouts (or a background one) answer the same query.
+                    if wanted <= {port for _, port in BlenderServer.discover()}:
                         break
                     time.sleep(0.1)
-            else:
-                conns = {("localhost", p) for p in ports}
 
-            yield (procs, list(conns))
+            yield (procs, [("localhost", port) for port in ports])
 
     @staticmethod
     def spawn_registry() -> tuple[Process, rpyc.utils.registry.UDPRegistryClient]:
@@ -877,9 +880,6 @@ class BlenderService(rpyc.Service):
     def exposed_iter_fcurves(self, actions: list[bpy.types.Action] | None = None) -> Iterator[bpy.types.FCurve]:
         """Yield fcurves of all actions.
 
-        This abstracts away the API for accessing fcurves which changed to using channelbags in v4.4, see
-        `release notes here <https://developer.blender.org/docs/release_notes/4.4/upgrading/slotted_actions/>`_.
-
         Args:
             actions (list[bpy.types.Action] | None, optional): Only yield fcurves from these actions if specified,
                 otherwise use all actions. Defaults to None.
@@ -887,17 +887,36 @@ class BlenderService(rpyc.Service):
         Yields:
             Iterator[bpy.types.FCurve]: an fcurve object from the scene or action
         """
-        if bpy.app.version >= (4, 4, 0):
-            for action in actions or bpy.data.actions:
+        for _, fcurve in self._iter_fcurves_by_owner(actions):
+            yield fcurve
+
+    def _iter_fcurves_by_owner(
+        self, actions: list[bpy.types.Action] | None = None
+    ) -> Iterator[tuple[Any, bpy.types.FCurve]]:
+        """Yield ``(owner, fcurve)`` pairs where owner identifies the animated data-block.
+
+        This abstracts the fcurve API which changed to using channelbags in v4.4, see
+        `release notes here <https://developer.blender.org/docs/release_notes/4.4/upgrading/slotted_actions/>`_.
+        Since then an action can drive several data-blocks, one per slot, so the slot is the owner;
+        before that an action owns exactly one data-block.
+
+        Args:
+            actions (list[bpy.types.Action] | None, optional): Only yield fcurves from these actions if specified,
+                otherwise use all actions. Defaults to None.
+
+        Yields:
+            Iterator[tuple[Any, bpy.types.FCurve]]: an owner and one of the fcurves it owns.
+        """
+        for action in actions or bpy.data.actions:
+            if bpy.app.version >= (4, 4, 0):
                 for slot in action.slots:
                     channelbag = anim_utils.action_get_channelbag_for_slot(action, slot)
 
                     for fcurve in channelbag.fcurves or []:
-                        yield fcurve
-        else:
-            for action in actions or bpy.data.actions:
+                        yield slot, fcurve
+            else:
                 for fcurve in action.fcurves or []:
-                    yield fcurve
+                    yield action, fcurve
 
     @require_initialized_service
     def exposed_get_original_fps(self) -> float:
@@ -2189,7 +2208,48 @@ class BlenderService(rpyc.Service):
                 kfp.handle_left.x = kfp.handle_left.x * scale + shift
                 kfp.handle_right.x = kfp.handle_right.x * scale + shift
                 kfp.period *= scale
+
+        # Only scaling samples frames between keyframes, so only scaling can expose a wrap.
+        if scale != 1.0:
+            self._make_rotations_compatible()
         self.scene.render.motion_blur_shutter /= scale
+
+    def _make_rotations_compatible(self) -> None:
+        """Make each rotation's keyframes interpolate the short way around.
+
+        Rotations are keyed as independent per-component fcurves, but interpolating between two
+        of them is only well-defined for the rotation as a whole: a component that wrapped across
+        ±π, or a quaternion that flipped sign, makes blender turn the long way between adjacent
+        keyframes. Rebuilding each keyframe's rotation and making it compatible with the previous
+        one is what blender's euler filter does.
+        """
+        # The last data_path component tells us which type compares this rotation, and how many
+        # fcurves it has. A shared action can key rotations under several slots, hence the owner.
+        kinds = {"rotation_euler": (mathutils.Euler, 3), "rotation_quaternion": (mathutils.Quaternion, 4)}
+        groups: dict[tuple[Any, str], dict[int, bpy.types.FCurve]] = collections.defaultdict(dict)
+        for owner, fcurve in self._iter_fcurves_by_owner():
+            kind = fcurve.data_path.rpartition(".")[2]
+            if kind in kinds:
+                groups[owner, kind][fcurve.array_index] = fcurve
+
+        for (_, kind), channels in groups.items():
+            build, components = kinds[kind]
+            if len(channels) != components:
+                continue  # Not every component of this rotation is keyed.
+
+            rows = [sorted(channels[i].keyframe_points, key=lambda kfp: kfp.co.x) for i in range(components)]
+            if any([kfp.co.x for kfp in row] != [kfp.co.x for kfp in rows[0]] for row in rows[1:]):
+                continue  # Components are keyed at different frames, can't be paired up.
+
+            rotations = [build(tuple(row[i].co.y for row in rows)) for i in range(len(rows[0]))]
+            for previous, current in itertools.pairwise(rotations):
+                current.make_compatible(previous)
+            for i, current in enumerate(rotations):
+                for row, value in zip(rows, current):
+                    delta = value - row[i].co.y
+                    row[i].co.y += delta
+                    row[i].handle_left.y += delta
+                    row[i].handle_right.y += delta
 
     @require_initialized_service
     def exposed_set_current_frame(self, frame_number: int) -> None:
@@ -2830,7 +2890,7 @@ class BlenderClient:
     @contextmanager
     def spawn(
         cls,
-        timeout: float = -1.0,
+        timeout: float = 0.0,
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
@@ -2843,11 +2903,10 @@ class BlenderClient:
         The spawned process is accessible through the client's ``process`` attribute.
 
         Args:
-            timeout (float, optional): try to discover spawned instances for ``timeout``
-                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
-                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
-                this context manager will immediately yield, even if the server is not yet ready to accept
-                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to register its
+                reserved port before giving up. Zero (the default) skips the wait and yields immediately, even
+                if a server is not yet ready to accept incoming connections; the client connecting to it is
+                expected to retry.
             log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
                 descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
                 Defaults to subprocess.DEVNULL for both stdout/stderr.
@@ -3122,7 +3181,7 @@ class BlenderClients(tuple):
     def spawn(
         cls,
         jobs: int = 1,
-        timeout: float = -1.0,
+        timeout: float = 0.0,
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
@@ -3136,11 +3195,10 @@ class BlenderClients(tuple):
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
-            timeout (float, optional): try to discover spawned instances for ``timeout``
-                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
-                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
-                this context manager will immediately yield, even if the server is not yet ready to accept
-                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to register its
+                reserved port before giving up. Zero (the default) skips the wait and yields immediately, even
+                if a server is not yet ready to accept incoming connections; the client connecting to it is
+                expected to retry.
             log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
                 descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
                 Defaults to subprocess.DEVNULL for both stdout/stderr.
@@ -3191,10 +3249,14 @@ class BlenderClients(tuple):
     @staticmethod
     def pool(
         jobs: int = 1,
-        timeout: float = -1.0,
+        timeout: float = 0.0,
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = subprocess.DEVNULL,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        service: str | None = None,
+        background: bool = True,
+        factory_startup: bool = False,
+        env: dict[str, str] | None = None,
         conns: list[tuple[str, int]] | None = None,
     ) -> Generator[multiprocess.Pool]:
         """Spawns a multiprocessing-like worker pool, each with their own :class:`BlenderClient` instance.
@@ -3219,11 +3281,10 @@ class BlenderClients(tuple):
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
-            timeout (float, optional): try to discover spawned instances for ``timeout``
-                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
-                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
-                this context manager will immediately yield, even if the server is not yet ready to accept
-                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to register its
+                reserved port before giving up. Zero (the default) skips the wait and yields immediately, even
+                if a server is not yet ready to accept incoming connections; the client connecting to it is
+                expected to retry.
             log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
                 descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
                 Defaults to subprocess.DEVNULL for both stdout/stderr.
@@ -3233,6 +3294,17 @@ class BlenderClients(tuple):
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
+            service (str | None, optional): path of the :class:`BlenderService` subclass each spawned
+                server should expose, either dotted (``module:ClassName``) or a ``/path/to/service.py:ClassName``
+                file. Defaults to None (the base :class:`BlenderService`).
+            background (bool, optional): if true, spawn blender instances in background mode (``-b``). Background
+                mode has no OpenGL context, so viewport renders (playblasts) require ``background=False``, which
+                also requires a display. Defaults to True.
+            factory_startup (bool, optional): if true, pass ``--factory-startup`` so the runs ignore the
+                machine's blender preferences and startup file. Defaults to False.
+            env (dict[str, str] | None, optional): extra environment variables for the spawned blender
+                instances, such as ``PYTHONPATH``. Merged over the parent's ``os.environ``, which is
+                inherited by default. Defaults to None.
             conns: List of connection tuples containing the hostnames and ports of existing servers.
                 If specified, the pool will use these servers (and ``jobs`` and other spawn arguments will
                 be ignored) instead of spawning new ones.
@@ -3270,7 +3342,17 @@ class BlenderClients(tuple):
             return inner
 
         context_manager = (
-            BlenderServer.spawn(jobs=jobs, timeout=timeout, log=log, autoexec=autoexec, executable=executable)
+            BlenderServer.spawn(
+                jobs=jobs,
+                timeout=timeout,
+                log=log,
+                autoexec=autoexec,
+                executable=executable,
+                service=service,
+                background=background,
+                factory_startup=factory_startup,
+                env=env,
+            )
             if conns is None
             else nullcontext(enter_result=(None, conns))
         )

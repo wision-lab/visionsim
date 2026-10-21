@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from invoke import Collection
 
-from . import itof
+from . import imu, itof, rgb
 
 ns = Collection()
+ns.add_task(imu.build)
 ns.add_task(itof.build)
+ns.add_task(rgb.build)

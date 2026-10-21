@@ -37,11 +37,34 @@ The scheme, the number of captures ``--n-captures`` and the modulation frequency
 
 Each frame writes a ``.npy`` array of shape ``(n_captures, H, W)`` holding the raw measurements of the ``n_captures`` taps. The output ``params.json`` records the acquisition parameters (scheme, captures, frequency and the unambiguous range), which is what lets you decode the arrays later without guessing how they were produced. Use ``--preview`` to also dump a colorized PNG per tap, and ``--force`` to overwrite an existing output directory.
 
-The CLI warns when the scene contains depths beyond the unambiguous range of the selected scheme. That range is ``c/2f`` for most schemes and ``c/4f`` for the ramp schemes, and geometry past it folds back into the recovered depths while the radiometric falloff keeps following the true distance. In the quickstart scene the truck sits around 4.5-5.8 m against a 1.25 m range at ``f = 120 MHz``, so every scheme folds there; the ramp schemes fold at 0.62 m instead.
+The CLI warns when the scene contains depths beyond the unambiguous range of the selected scheme. That range is ``c/2f`` for most schemes and ``c/4f`` for the ramp schemes, and geometry past it folds back into the recovered depths while the radiometric falloff keeps following the true distance. In the lego scene the truck sits around 4.5-5.8 m against a 1.25 m range at ``f = 120 MHz``, so every scheme folds there; the ramp schemes fold at 0.62 m instead.
 
 .. note::
 
     iToF sensors are monochromatic, so color albedo frames are converted to linear luma before the correlation is computed.
+
+|
+
+Frequency and Folding
+---------------------
+
+The modulation frequency sets the unambiguous range (usually ``c/2f``), so the same room folds differently across a frequency sweep. The figure below runs ``convSin`` with four captures at 40, 60, 80 and 120 MHz, one frequency per column: the top row is tap 0 of the four captures, the bottom row is the depth decoded from all four, and the single colorbar is shared across the sweep and spans the widest range. 
+
+The room is 3.34 m deep, so the 40 MHz range of 3.75 m recovers it whole; each step up folds more of it, and 120 MHz wraps it several times over in 1.25 m. Tap 0 shows the same folding as progressively finer fringes.
+
+.. figure:: ../_static/sensors/itof/sweep.webp
+    :width: 100%
+    :align: center
+    :class: only-light
+
+.. figure:: ../_static/sensors/itof/sweep-dark.webp
+    :width: 100%
+    :align: center
+    :class: only-dark
+
+    ``convSin`` at 40, 60, 80 and 120 MHz: tap 0 above, decoded depth below, on a shared depth scale.
+
+:doc:`The sensor section <../sections/sensors/itof>` derives the model behind this and lists the frequencies and capture counts each decoder accepts.
 
 |
 
