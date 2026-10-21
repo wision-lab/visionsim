@@ -77,7 +77,7 @@ def test_render_layout(cube_dataset, gt_type):
         # ("specular/light", ["RGB"]),
         ("points", ["RGB"]),
         ("temperature", ["V"]),
-        ("thermal_radiance", ["RGB"]),
+        ("thermal_radiance", ["V"]),
     ],
 )
 def test_groundtruth_exrs(cube_dataset, subdir, channels):
@@ -115,7 +115,7 @@ def test_groundtruth_exrs(cube_dataset, subdir, channels):
         # ("specular/light", (50, 50, 3)),
         ("points", (50, 50, 3), False),
         ("temperature", (50, 50, 1), True),
-        ("thermal_radiance", (50, 50, 3), False),
+        ("thermal_radiance", (50, 50, 1), True),
     ],
 )
 def test_load_exrs(cube_dataset, subdir, shape, auto_collapse):
@@ -181,7 +181,7 @@ def test_render_thermal(tmp_path_factory, executable):
       * the radiance second-render pass did NOT clobber the main RGB ``frames/``,
       * ``temperature/`` ground-truth EXRs are written (single channel, Kelvin),
       * the inferno-colormap ``previews/temperature/`` PNGs are written, and
-      * the gray-body ``thermal_radiance/`` EXRs are written.
+      * the gray-body ``thermal_radiance/`` EXRs are written as single-channel fields.
 
     N is the number of frames rendered by this gate.
     """
@@ -235,16 +235,15 @@ def test_render_thermal(tmp_path_factory, executable):
     assert preview.exists()
     assert len(list(preview.glob("**/*.png"))) == N
 
-    # gray-body thermal radiance EXRs: determine the ACTUAL channel count rather
-    # than assuming (50, 50, 1) vs (50, 50, 3). The output is registered as a
-    # 3-channel RGB EXR, so load with auto_collapse=False to read its true shape.
+    # Emission is spectrally flat, so the radiance pass is single-channel.
     assert rad.exists()
     assert (rad / "transforms.db").exists()
     Metadata.load(rad / "transforms.db")  # round-trips without error
     rad_exrs = sorted(rad.glob("**/*.exr"))
     assert len(rad_exrs) == N
-    rad_shape = Dataset.load_data(rad_exrs[0], auto_collapse=False).shape
-    assert rad_shape == (50, 50, 3)
+    with OpenEXR.File(str(rad_exrs[0])) as f:
+        assert list(f.channels().keys()) == ["V"]
+    assert Dataset.load_data(rad_exrs[0]).shape == (50, 50, 1)
 
 
 def test_thermal_config_crosses_rpyc_with_path_assignments(tmp_path, executable):

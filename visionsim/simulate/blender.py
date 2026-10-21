@@ -1944,22 +1944,29 @@ class BlenderService(rpyc.Service):
             )
 
         if radiance:
+            # Emission is spectrally flat, so collapse to one channel; before 4.3 the RGB
+            # fallback needs identical channels for `load_data(auto_collapse=True)`.
+            radiance_bw = self.tree.nodes.new("CompositorNodeRGBToBW")
+            radiance_bw.label = "Thermal Radiance Luminance"
+            self.tree.links.new(self.render_layers.outputs["Image"], radiance_bw.inputs["Image"])
+
+            color_mode = "RGB" if bpy.app.version < (4, 3, 0) else "BW"
             node, (socket,), (slot,) = file_output_node(
                 self.tree,
                 self.root_path / "thermal_radiance" / "0000",
                 label="Thermal Radiance Output",
-                color_mode="RGB",
+                color_mode=color_mode,
             )
             node.format.color_management = "OVERRIDE"
             node.format.linear_colorspace_settings.name = "Non-Color"
             node.format.file_format = "OPEN_EXR"
-            node.format.color_mode = "RGB"
+            node.format.color_mode = color_mode
             node.format.exr_codec = exr_codec
             node.format.color_depth = str(bit_depth)
             slot.name = str(Path(slot.name).with_suffix(FORMATS["OPEN_EXR"]))
 
-            self.tree.links.new(self.render_layers.outputs["Image"], socket)
-            self.register_output_type("thermal_radiance", node, slot, c=3)
+            self.tree.links.new(radiance_bw.outputs["Val"], socket)
+            self.register_output_type("thermal_radiance", node, slot, c=1)
             # Arm the second render pass only after registration succeeds, so a raise
             # mid-setup cannot leave the flag truthy with _outputs["thermal_radiance"] missing.
             self._thermal_radiance = {

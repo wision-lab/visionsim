@@ -63,9 +63,10 @@ Reading the outputs
     with ``--config.thermal.no-preview``.
 
 ``thermal_radiance/``
-    Three-channel OpenEXR from a second Cycles render. The thermal material
+    Single-channel OpenEXR from a second Cycles render. The thermal material
     emits according to temperature and emissivity and diffusely reflects
-    thermal light from other surfaces and the world. This is a broadband
+    thermal light from other surfaces and the world. The emission is
+    spectrally flat, so radiance is a scalar field. This is a broadband
     gray-body image, not a calibrated image for a particular infrared camera
     band. Its emission scale follows :math:`\varepsilon\sigma T^4`, where
     :math:`\varepsilon` is surface emissivity and :math:`\sigma` is the

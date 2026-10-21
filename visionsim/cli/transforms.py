@@ -62,9 +62,21 @@ def colorize_depths(
     input_dir, output_dir, in_files = _validate_directories(input_dir, output_dir, pattern)
     in_files = in_files[::step]
 
+    def scalar_field(d: npt.NDArray) -> npt.NDArray:
+        # Numpy would treat the channel axis as width and emit a 3-pixel-wide image.
+        if d.ndim == 3 and d.shape[-1] == 1:
+            d = d[..., 0]
+        if d.ndim != 2:
+            raise ValueError(
+                f"Expected a single-channel scalar field, got shape {d.shape}. "
+                "Pass depth or temperature EXRs, or collapse duplicated channels with Dataset.load_data."
+            )
+        return d
+
     def transform_depth(d):
         # Filter out large depths, this is a render bug in CYCLES
         # See: https://blender.stackexchange.com/questions/325007
+        d = scalar_field(d)
         d = d[d < DEPTH_CUTOFF]
         return d.flatten()
 
@@ -81,7 +93,7 @@ def colorize_depths(
 
     for in_file in track(in_files):
         # Open with imageio, convert to color using matplotlib's cmaps and save as png.
-        depth = cast(npt.NDArray, Dataset.load_data(in_file)).squeeze()
+        depth = scalar_field(cast(npt.NDArray, Dataset.load_data(in_file)))
         depth[depth >= DEPTH_CUTOFF] = np.nan
         img = (colormap(norm(depth)) * 255).astype(np.uint8)
         path = output_dir / Path(in_file).stem
