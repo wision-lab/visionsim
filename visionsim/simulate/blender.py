@@ -368,7 +368,10 @@ class BlenderServer(rpyc.utils.server.Server):
                 for p in procs:
                     p.wait()
 
-        BlenderServer.spawn_registry()
+        # Direct connections use the reserved ports and never query the registry; only discovery
+        # does, and it needs the registry up before the servers start since they register once.
+        if timeout > 0:
+            BlenderServer.spawn_registry()
         procs, ports = [], []
 
         if isinstance(log, (str, os.PathLike)):
@@ -421,10 +424,8 @@ class BlenderServer(rpyc.utils.server.Server):
                         # Terminate all procs and close fds
                         stack.close()
                         raise TimeoutError("Unable to spawn and discover server(s) in alloted time.")
-                    # Wait for exactly the ports we reserved. The registry is machine-wide, so
-                    # the servers of other checkouts running concurrently answer the same query;
-                    # matching on our own ports keeps us from adopting a foreign (eg. background)
-                    # server that happens to register while we wait.
+                    # Match only our reserved ports: the registry is machine-wide, so servers from
+                    # concurrent checkouts (or a background one) answer the same query.
                     if wanted <= {port for _, port in BlenderServer.discover()}:
                         break
                     time.sleep(0.1)
