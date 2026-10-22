@@ -305,8 +305,8 @@ class RenderConfig:
     """If false, disable all preview visualizations of auxiliary outputs"""
     keyframe_multiplier: float = 1.0
     """Stretch keyframes by this amount, eg: 2.0 will slow down time"""
-    timeout: int = -1
-    """Maximum allowed time in seconds to wait to connect to render instance"""
+    timeout: int = 0
+    """Maximum allowed time in seconds to wait to connect to render instance; zero uses the assigned port directly"""
     autoexec: bool = True
     """If true, allow python execution of embedded scripts (warning: potentially dangerous)"""
     device_type: Literal["cpu", "cuda", "optix", "metal"] = "optix"

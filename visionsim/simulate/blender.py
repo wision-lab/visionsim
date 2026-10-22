@@ -89,6 +89,7 @@ server_log.setLevel(logging.INFO)
 
 EXPOSED_PREFIX: str = "exposed_"
 REGISTRY: tuple[Process, rpyc.utils.registry.UDPRegistryClient] | None = None
+_REGISTRY_REUSE_LOGGED: bool = False
 ITEMS_PER_SUBFOLDER: int = 1000
 INDEX_PADDING: int = np.ceil(np.log10(ITEMS_PER_SUBFOLDER)).astype(int)
 
@@ -298,10 +299,10 @@ class BlenderServer(rpyc.utils.server.Server):
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
-            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to register its
-                reserved port before giving up. Zero (the default) skips the wait and yields immediately, even
-                if a server is not yet ready to accept incoming connections; the client connecting to it is
-                expected to retry.
+            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to accept
+                connections on its reserved port before giving up. Zero (the default) skips the wait and
+                yields immediately, even if a server is not yet ready to accept incoming connections; the
+                client connecting to it is expected to retry.
             log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
                 descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
                 Defaults to subprocess.DEVNULL for both stdout/stderr.
@@ -368,10 +369,6 @@ class BlenderServer(rpyc.utils.server.Server):
                 for p in procs:
                     p.wait()
 
-        # Direct connections use the reserved ports and never query the registry; only discovery
-        # does, and it needs the registry up before the servers start since they register once.
-        if timeout > 0:
-            BlenderServer.spawn_registry()
         procs, ports = [], []
 
         if isinstance(log, (str, os.PathLike)):
@@ -416,60 +413,91 @@ class BlenderServer(rpyc.utils.server.Server):
             stack.enter_context(terminate_jobs(procs))
 
             if timeout > 0:
-                start = time.time()
-                wanted = set(ports)
-
-                while True:
-                    if (time.time() - start) > timeout:
-                        # Terminate all procs and close fds
-                        stack.close()
-                        raise TimeoutError("Unable to spawn and discover server(s) in alloted time.")
-                    # Match only our reserved ports: the registry is machine-wide, so servers from
-                    # concurrent checkouts (or a background one) answer the same query.
-                    if wanted <= {port for _, port in BlenderServer.discover()}:
-                        break
-                    time.sleep(0.1)
+                # Readiness is the reserved listener accepting connections; the machine-wide registry
+                # is not used, so another process owning its UDP port cannot break spawning.
+                deadline = time.time() + timeout
+                pending = list(ports)
+                while pending:
+                    for port in pending.copy():
+                        try:
+                            socket.create_connection(("localhost", port), timeout=0.1).close()
+                        except OSError:
+                            continue
+                        pending.remove(port)
+                    if pending:
+                        if time.time() > deadline:
+                            # Leaving the with-block terminates all procs and closes fds
+                            raise TimeoutError("Unable to spawn server(s) in alloted time.")
+                        time.sleep(0.05)
 
             yield (procs, [("localhost", port) for port in ports])
 
     @staticmethod
-    def spawn_registry() -> tuple[Process, rpyc.utils.registry.UDPRegistryClient]:
+    def spawn_registry() -> tuple[Process | None, rpyc.utils.registry.UDPRegistryClient]:
         """Spawn a registry server and client to aid in server discovery, or return cached result.
         While this method can be called directly, it will be invoked automatically by :meth:`discover` and :meth:`spawn`.
 
-        Returns:
-            tuple[Process, rpyc.utils.registry.UDPRegistryClient]: A tuple containing:
-                - Process: process running the global registry server,
-                - rpyc.utils.registry.UDPRegistryClient: global registry client
-        """
-        global REGISTRY
+        The registry is machine-wide, so a registry already running in another process is reused
+        rather than treated as an error.
 
-        if not REGISTRY or not REGISTRY[0].is_alive():
-            BlenderServer._require_free_registry_port()
+        Returns:
+            tuple[Process | None, rpyc.utils.registry.UDPRegistryClient]: A tuple containing:
+                - Process | None: process running the registry server, or None if another process owns it,
+                - rpyc.utils.registry.UDPRegistryClient: global registry client
+
+        Raises:
+            RuntimeError: the registry port is held by a process that does not answer rpyc queries.
+        """
+        global REGISTRY, _REGISTRY_REUSE_LOGGED
+
+        # Only a registry we own is cached; a shared one can exit without us noticing, so it is
+        # checked on every call instead.
+        if REGISTRY is not None and REGISTRY[0].is_alive():
+            return REGISTRY
+
+        port = rpyc.utils.registry.REGISTRY_PORT
+        client = rpyc.utils.registry.UDPRegistryClient()
+        if BlenderServer._registry_port_free():
             registry = Process(target=BlenderServer._launch_registry, daemon=True)
-            client = rpyc.utils.registry.UDPRegistryClient()
             registry.start()
             REGISTRY = (registry, client)
+        elif BlenderServer._registry_responds():
+            if not _REGISTRY_REUSE_LOGGED:
+                server_log.info(f"Reusing the rpyc registry already listening on UDP port {port}")
+                _REGISTRY_REUSE_LOGGED = True
+            return (None, client)
+        else:
+            raise RuntimeError(
+                f"UDP port {port} is held by a process that does not answer rpyc registry queries, "
+                f"so server discovery cannot work. Find and stop it with `ss -ulpn | grep {port}`."
+            )
         return REGISTRY
 
     @staticmethod
-    def _require_free_registry_port() -> None:
-        """Fail loudly if another process already holds the rpyc registry port.
+    def _registry_port_free() -> bool:
+        """Check whether the rpyc registry port can be bound locally.
 
-        The registry binds in a child process that cannot report a bind failure, so without this
-        check our queries silently go to whatever else is holding the port.
+        The registry binds in a child process that cannot report a bind failure, so this check
+        distinguishes a free port from one held by another process before spawning.
         """
-        port = rpyc.utils.registry.REGISTRY_PORT
         with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as sock:
             try:
-                sock.bind(("0.0.0.0", port))
-            except OSError as e:
-                raise RuntimeError(
-                    f"UDP port {port} is already in use, so the rpyc registry started here would be "
-                    f"ignored and servers would register elsewhere instead. Another process is holding "
-                    f"it, often an orphaned registry from a killed test run; find it with "
-                    f"`ss -ulpn | grep {port}` and kill it."
-                ) from e
+                sock.bind(("0.0.0.0", rpyc.utils.registry.REGISTRY_PORT))
+            except OSError:
+                return False
+        return True
+
+    @staticmethod
+    def _registry_responds() -> bool:
+        """Check whether an rpyc registry answers a discovery query on the well-known UDP port."""
+        try:
+            # `discover` cannot tell an empty reply from a timeout. `list` replies None when the
+            # registry has listing disabled, which is rpyc's and visionsim's default.
+            # shortcut: a listing-enabled registry replies with a tuple and is treated as absent,
+            # use a brine QUERY if reusing such a registry matters.
+            return rpyc.utils.registry.UDPRegistryClient(timeout=1.0).list() is None
+        except OSError:
+            return False
 
     @staticmethod
     def _launch_registry():
@@ -2910,10 +2938,10 @@ class BlenderClient:
         The spawned process is accessible through the client's ``process`` attribute.
 
         Args:
-            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to register its
-                reserved port before giving up. Zero (the default) skips the wait and yields immediately, even
-                if a server is not yet ready to accept incoming connections; the client connecting to it is
-                expected to retry.
+            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to accept
+                connections on its reserved port before giving up. Zero (the default) skips the wait and
+                yields immediately, even if a server is not yet ready to accept incoming connections; the
+                client connecting to it is expected to retry.
             log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
                 descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
                 Defaults to subprocess.DEVNULL for both stdout/stderr.
@@ -3202,10 +3230,10 @@ class BlenderClients(tuple):
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
-            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to register its
-                reserved port before giving up. Zero (the default) skips the wait and yields immediately, even
-                if a server is not yet ready to accept incoming connections; the client connecting to it is
-                expected to retry.
+            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to accept
+                connections on its reserved port before giving up. Zero (the default) skips the wait and
+                yields immediately, even if a server is not yet ready to accept incoming connections; the
+                client connecting to it is expected to retry.
             log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
                 descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
                 Defaults to subprocess.DEVNULL for both stdout/stderr.
@@ -3288,10 +3316,10 @@ class BlenderClients(tuple):
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
-            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to register its
-                reserved port before giving up. Zero (the default) skips the wait and yields immediately, even
-                if a server is not yet ready to accept incoming connections; the client connecting to it is
-                expected to retry.
+            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to accept
+                connections on its reserved port before giving up. Zero (the default) skips the wait and
+                yields immediately, even if a server is not yet ready to accept incoming connections; the
+                client connecting to it is expected to retry.
             log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
                 descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
                 Defaults to subprocess.DEVNULL for both stdout/stderr.

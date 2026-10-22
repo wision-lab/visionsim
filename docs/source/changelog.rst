@@ -27,6 +27,7 @@ Added
 Changed
 ^^^^^^^
 
+- ``RenderConfig.timeout`` defaults to 0; negative timeouts are deprecated and behave like zero.
 - Rebuilt the documentation around per-page figure tasks, sphinx-design grids for figure rows,
   and UTF-8 reading of doc sources.
 - Blender 5 support for nodes and fcurves, with the Blender version selected through
@@ -49,6 +50,9 @@ Fixed
 - Event generation blur and pattern handling, ffprobe output capture, and RIFE weight caching.
 - Camera-change warnings and material-preview connections, plus docstring backtick and math
   escaping errors.
+- Spawning servers no longer depends on the rpyc registry: readiness is checked on each reserved
+  TCP port, and an existing registry is reused rather than treated as an error. UDP port 18811 is
+  only needed by ``auto_connect``/``discover``.
 
 [0.1.0-alpha2] - 2025-11-05
 ---------------------------
