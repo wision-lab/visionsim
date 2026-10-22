@@ -35,7 +35,7 @@ The two modes side by side, both rendered from `loft.blend <https://drive.google
 
 The playblast gives up shading fidelity: the walls and paintings are untextured and there are no ray-traced shadows or reflections, which is the tradeoff you accept for iteration speed.
 
-Render time comparison: the playblast took 8.2 seconds, the full render took 15 minutes 31 seconds. That is roughly a 113x speedup, and the gap grows on heavier scenes.
+Render time comparison: the playblast took 1 minute 12 seconds, the full render took 15 minutes 31 seconds. That is roughly a 13x speedup, and the gap grows on heavier scenes.
 
 |
 

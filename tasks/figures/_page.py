@@ -123,6 +123,58 @@ def _command_recipe(name: str, *commands: str) -> Callable[[str | None, bool], N
     return recipe
 
 
+def dataset_check(root: Path, expected: int | None = None) -> Callable[[], bool]:
+    """Build a :attr:`Node.check` for a rendered dataset directory.
+
+    A render writes its frames and its ``transforms.db`` together, one metadata row
+    per frame, so an interrupted run leaves the two consistent with each other while
+    both fall short of the frame range that was asked for. Comparing the two against
+    each other catches the case where they diverge; passing ``expected`` additionally
+    catches the case where they agree on a truncated range.
+
+    The rows are counted from the database rather than assumed, and the files are
+    counted on disk under ``root``, which is where Blender shards them (``0000/``,
+    ``0001/``, ...). Counts must match exactly: a dataset is only complete if every
+    row has its file and every file has its row.
+
+    Args:
+        root: Dataset directory holding ``transforms.db`` and the sharded frames.
+        expected: Number of frames the render was asked for. When given, the
+            database must hold exactly this many rows, which is what distinguishes a
+            finished render from one that stopped early and left a consistent but
+            short dataset behind.
+
+    Returns:
+        A predicate returning whether the dataset at ``root`` is complete.
+    """
+
+    def check() -> bool:
+        db = root / "transforms.db"
+        if not db.exists():
+            return False
+
+        # Imported here rather than at module scope: this package is imported by
+        # ``inv --list``, which should not have to pay for the dataset stack.
+        import peewee
+        from pydantic import ValidationError
+
+        from visionsim.dataset import Metadata
+
+        try:
+            frames = len(Metadata.load(db).frames)
+        # A truncated file, a table the schema did not get to create or a malformed
+        # row are all what this check exists to catch; anything else is a real bug
+        # and should surface rather than be reported as stale.
+        except (peewee.DatabaseError, ValidationError):
+            return False
+
+        if expected is not None and frames != expected:
+            return False
+        return frames == sum(1 for p in root.rglob("*") if p.is_file() and p.suffix != ".db")
+
+    return check
+
+
 # Intermediate nodes shared across pages: name -> node.  Each recipe lists the
 # steps of ``examples/quickstart.sh`` or of the interpolation render/interpolate
 # pair, one command per step so a failure names the exact step; ``requires`` is
@@ -212,10 +264,12 @@ INTERMEDIATES: dict[str, Node] = {
             " --output-dir=quickstart/ultramodern-thermal/temperature-colorized",
         ),
     ),
-    # Used for the playblast tutorial
+    # Used for the playblast tutorial. ``loft.blend`` animates frames 1..600; checking the
+    # frame count stops a truncated playblast from being accepted as complete.
     "playblast-full": Node(
         name="playblast-full",
         files=(CACHE / "playblast" / "full" / "frames",),
+        check=dataset_check(CACHE / "playblast" / "full" / "frames", 600),
         recipe=_command_recipe(
             "playblast-full",
             "visionsim blender.render-animation loft.blend playblast/full/{executable}{force}",
@@ -224,6 +278,7 @@ INTERMEDIATES: dict[str, Node] = {
     "playblast": Node(
         name="playblast",
         files=(CACHE / "playblast" / "playblast",),
+        check=dataset_check(CACHE / "playblast" / "playblast", 600),
         recipe=_command_recipe(
             "playblast",
             "visionsim blender.render-playblast loft.blend playblast/ --no-video{executable}{force}",
@@ -728,58 +783,6 @@ def cached(*parts: str) -> Path:
         The joined path.
     """
     return CACHE.joinpath(*parts)
-
-
-def dataset_check(root: Path, expected: int | None = None) -> Callable[[], bool]:
-    """Build a :attr:`Node.check` for a rendered dataset directory.
-
-    A render writes its frames and its ``transforms.db`` together, one metadata row
-    per frame, so an interrupted run leaves the two consistent with each other while
-    both fall short of the frame range that was asked for. Comparing the two against
-    each other catches the case where they diverge; passing ``expected`` additionally
-    catches the case where they agree on a truncated range.
-
-    The rows are counted from the database rather than assumed, and the files are
-    counted on disk under ``root``, which is where Blender shards them (``0000/``,
-    ``0001/``, ...). Counts must match exactly: a dataset is only complete if every
-    row has its file and every file has its row.
-
-    Args:
-        root: Dataset directory holding ``transforms.db`` and the sharded frames.
-        expected: Number of frames the render was asked for. When given, the
-            database must hold exactly this many rows, which is what distinguishes a
-            finished render from one that stopped early and left a consistent but
-            short dataset behind.
-
-    Returns:
-        A predicate returning whether the dataset at ``root`` is complete.
-    """
-
-    def check() -> bool:
-        db = root / "transforms.db"
-        if not db.exists():
-            return False
-
-        # Imported here rather than at module scope: this package is imported by
-        # ``inv --list``, which should not have to pay for the dataset stack.
-        import peewee
-        from pydantic import ValidationError
-
-        from visionsim.dataset import Metadata
-
-        try:
-            frames = len(Metadata.load(db).frames)
-        # A truncated file, a table the schema did not get to create or a malformed
-        # row are all what this check exists to catch; anything else is a real bug
-        # and should surface rather than be reported as stale.
-        except (peewee.DatabaseError, ValidationError):
-            return False
-
-        if expected is not None and frames != expected:
-            return False
-        return frames == sum(1 for p in root.rglob("*") if p.is_file() and p.suffix != ".db")
-
-    return check
 
 
 def static(name: str) -> Path:
