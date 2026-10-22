@@ -79,6 +79,12 @@ jobs:
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
+  prune-images:
+    runs-on: ubuntu-latest
+    needs: docker-build
+    # Both matrix legs push to the same package; pruning from each leg sent the
+    # same stale version ids twice and 404'd ("Package version not found").
+    steps:
       - name: Prune unused container images
         uses: actions/delete-package-versions@v5
         with:
