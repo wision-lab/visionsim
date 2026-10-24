@@ -5,6 +5,7 @@ import shutil
 from dataclasses import asdict
 from pathlib import Path
 
+import imageio.v3
 import numpy as np
 import OpenEXR
 import pytest
@@ -57,6 +58,16 @@ def test_render_layout(cube_dataset, gt_type):
         assert len(list(subdir.glob("**/*.png"))) == 5
     else:
         assert len(list(subdir.glob("**/*.exr"))) == 5
+
+
+def test_materials_preview_keeps_id_hue(cube_dataset):
+    """Regression: shading must not collapse the ID hue to a grey ramp."""
+    frames = sorted((cube_dataset / "previews" / "materials").glob("**/*.png"))
+    assert frames
+
+    colors = np.concatenate([imageio.v3.imread(frame)[..., :3].reshape(-1, 3).astype(np.int16) for frame in frames])
+    non_grey = (colors[:, 0] != colors[:, 1]) | (colors[:, 1] != colors[:, 2])
+    assert non_grey.any(), "materials preview contains only grey pixels"
 
 
 @pytest.mark.parametrize(

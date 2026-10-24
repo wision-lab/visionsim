@@ -940,9 +940,9 @@
                                                         "type": "VECTOR",
                                                         "display_shape": "CIRCLE",
                                                         "default_value": [
-                                                            -0.21473628282546997,
-                                                            -0.9695161581039429,
-                                                            0.11801175028085709
+                                                            0.0,
+                                                            0.0,
+                                                            0.0
                                                         ]
                                                     }
                                                 },
@@ -1113,7 +1113,7 @@
                                                         "name": "A",
                                                         "description": "",
                                                         "hide": false,
-                                                        "enabled": true,
+                                                        "enabled": false,
                                                         "link_limit": 1,
                                                         "show_expanded": false,
                                                         "hide_value": false,
@@ -1129,7 +1129,7 @@
                                                         "name": "B",
                                                         "description": "",
                                                         "hide": false,
-                                                        "enabled": true,
+                                                        "enabled": false,
                                                         "link_limit": 1,
                                                         "show_expanded": false,
                                                         "hide_value": false,
@@ -1185,7 +1185,7 @@
                                                         "name": "A",
                                                         "description": "",
                                                         "hide": false,
-                                                        "enabled": false,
+                                                        "enabled": true,
                                                         "link_limit": 1,
                                                         "show_expanded": false,
                                                         "hide_value": false,
@@ -1206,7 +1206,7 @@
                                                         "name": "B",
                                                         "description": "",
                                                         "hide": false,
-                                                        "enabled": false,
+                                                        "enabled": true,
                                                         "link_limit": 1,
                                                         "show_expanded": false,
                                                         "hide_value": false,
@@ -1274,7 +1274,7 @@
                                                         "name": "Result",
                                                         "description": "",
                                                         "hide": false,
-                                                        "enabled": true,
+                                                        "enabled": false,
                                                         "link_limit": 4095,
                                                         "show_expanded": false,
                                                         "hide_value": false,
@@ -1310,7 +1310,7 @@
                                                         "name": "Result",
                                                         "description": "",
                                                         "hide": false,
-                                                        "enabled": false,
+                                                        "enabled": true,
                                                         "link_limit": 4095,
                                                         "show_expanded": false,
                                                         "hide_value": false,
@@ -1356,7 +1356,7 @@
                                     },
                                     "bl_idname": "ShaderNodeMix",
                                     "parent": null,
-                                    "data_type": "FLOAT",
+                                    "data_type": "RGBA",
                                     "factor_mode": "UNIFORM",
                                     "blend_type": "MULTIPLY",
                                     "clamp_factor": true,
@@ -1705,7 +1705,7 @@
                                     "is_valid": true,
                                     "is_muted": false,
                                     "from_socket": 27,
-                                    "to_socket": 69
+                                    "to_socket": 73
                                 }
                             },
                             {
@@ -1714,7 +1714,7 @@
                                     "is_valid": true,
                                     "is_muted": false,
                                     "from_socket": 89,
-                                    "to_socket": 70
+                                    "to_socket": 74
                                 }
                             },
                             {
@@ -1740,7 +1740,7 @@
                                 "data": {
                                     "is_valid": true,
                                     "is_muted": false,
-                                    "from_socket": 78,
+                                    "from_socket": 80,
                                     "to_socket": 95
                                 }
                             },
@@ -1774,7 +1774,7 @@
             "data": {
                 "name": "Compositor Nodes",
                 "use_fake_user": false,
-                "use_extra_user": true,
+                "use_extra_user": false,
                 "is_runtime_data": false,
                 "tag": false,
                 "color_tag": "NONE",
@@ -2779,7 +2779,7 @@
                                     "is_valid": true,
                                     "is_muted": false,
                                     "from_socket": 129,
-                                    "to_socket": 136
+                                    "to_socket": 123
                                 }
                             },
                             {
@@ -2788,7 +2788,7 @@
                                     "is_valid": true,
                                     "is_muted": false,
                                     "from_socket": 129,
-                                    "to_socket": 123
+                                    "to_socket": 136
                                 }
                             }
                         ]

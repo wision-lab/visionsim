@@ -80,10 +80,22 @@ def colorize_indices_node_group(shade: bool = False):
     # Node Mix
     mix = colorize_indices.nodes.new(MIX_NODE)
     mix.name = "Mix"
-    mix.blend_type = "MULTIPLY"
-    mix.inputs[0].default_value = 1.0
-    mix_A = mix.inputs[1] if "A" not in mix.inputs else mix.inputs["A"]
-    mix_B = mix.inputs[2] if "B" not in mix.inputs else mix.inputs["B"]
+    if bpy.app.version >= (5, 0, 0):
+        # ShaderNodeMix has one socket pair per data type and defaults to FLOAT.
+        # Select the colour pair explicitly: index-based lookup of "A"/"B" lands
+        # on the float sockets and turns the hue into a greyscale value.
+        mix.data_type = "RGBA"
+        mix.blend_type = "MULTIPLY"
+        mix.inputs[0].default_value = 1.0
+        # Look up by identifier: the socket *name* is "A"/"B" for every data type.
+        mix_A = next(s for s in mix.inputs if s.identifier == "A_Color")
+        mix_B = next(s for s in mix.inputs if s.identifier == "B_Color")
+        mix_result = next(s for s in mix.outputs if s.identifier == "Result_Color")
+    else:
+        mix.blend_type = "MULTIPLY"
+        mix.inputs[0].default_value = 1.0
+        mix_A, mix_B = mix.inputs[1], mix.inputs[2]
+        mix_result = mix.outputs[0]
 
     # Node Math.001
     math_001 = colorize_indices.nodes.new(MATH_NODE)
@@ -135,13 +147,13 @@ def colorize_indices_node_group(shade: bool = False):
     # It used to be ["Off", "On"], and `check` as an attribute, but now it's ["Switch", "On", "Off"]
     if not hasattr(switch, "check"):
         # mix.Result -> switch.On
-        colorize_indices.links.new(mix.outputs[0], switch.inputs[2])
+        colorize_indices.links.new(mix_result, switch.inputs[2])
         # reroute.Output -> switch.Off
         colorize_indices.links.new(reroute.outputs[0], switch.inputs[1])
         switch.inputs[0].default_value = shade
     else:
         # mix.Result -> switch.On
-        colorize_indices.links.new(mix.outputs[0], switch.inputs[1])
+        colorize_indices.links.new(mix_result, switch.inputs[1])
         # reroute.Output -> switch.Off
         colorize_indices.links.new(reroute.outputs[0], switch.inputs[0])
         switch.check = shade
