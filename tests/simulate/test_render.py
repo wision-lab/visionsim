@@ -70,6 +70,16 @@ def test_materials_preview_keeps_id_hue(cube_dataset):
     assert non_grey.any(), "materials preview contains only grey pixels"
 
 
+@pytest.mark.parametrize("id_type", ["materials", "segmentations"])
+def test_id_indices(cube_dataset, id_type):
+    """Every assigned ID maps to a name, and no raw pass value exceeds the table."""
+    indices = json.loads((cube_dataset / id_type / "indices.json").read_text())
+    assert sorted(map(int, indices)) == list(range(1, len(indices) + 1))
+
+    for exr in (cube_dataset / id_type).glob("**/*.exr"):
+        assert Dataset.load_data(exr, auto_collapse=True).max() <= len(indices)
+
+
 @pytest.mark.parametrize(
     "subdir, channels",
     [
