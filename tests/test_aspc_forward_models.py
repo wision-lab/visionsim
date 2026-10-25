@@ -218,9 +218,9 @@ class TestDifferentiable:
             dn[i] -= eps
             fd = (f(up) - f(dn)) / (2 * eps)
             analytic = float(phi.grad[i])
-            assert analytic == pytest.approx(fd, abs=1e-4, rel=2e-2), (
-                f"bin {i}: analytic {analytic:.6f} vs finite-difference {fd:.6f}"
-            )
+            assert analytic == pytest.approx(
+                fd, abs=1e-4, rel=2e-2
+            ), f"bin {i}: analytic {analytic:.6f} vs finite-difference {fd:.6f}"
 
     @pytest.mark.parametrize("model,dt", DIFF_CASES)
     def test_no_numpy_round_trip(self, model, dt):

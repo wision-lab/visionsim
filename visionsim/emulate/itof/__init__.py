@@ -1,6 +1,6 @@
 """iToF (indirect time-of-flight) sensor emulation."""
 
-from .coding import (  # noqa: F401
+from .coding import (
     CodingScheme,
     make_coding_functions,
     make_conv_sinusoidal_codes,
@@ -17,7 +17,7 @@ from .coding import (  # noqa: F401
     make_tof_hilbert_codes,
     unambiguous_range,
 )
-from .decoding import (  # noqa: F401
+from .decoding import (
     decode,
     decode_double_ramp,
     decode_hilbert,
@@ -26,7 +26,7 @@ from .decoding import (  # noqa: F401
     decode_sinusoid,
     decode_square,
 )
-from .simulation import (  # noqa: F401
+from .simulation import (
     compute_correlation_function,
     simulate_measurements,
 )

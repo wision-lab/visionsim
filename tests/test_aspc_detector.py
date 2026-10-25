@@ -254,9 +254,9 @@ class TestAnalyticRates:
         par = [self._mean_rate(lam, tau, paralyzable=True, n_seeds=2)[0] for lam in lams]
         non_par = [self._mean_rate(lam, tau, paralyzable=False, n_seeds=2)[0] for lam in lams]
         assert par[-1] < par[2], "paralyzable rate must collapse at high flux"
-        assert par == sorted(par[: par.index(max(par)) + 1]) + sorted(par[par.index(max(par)) + 1 :], reverse=True), (
-            "paralyzable rate must rise then fall"
-        )
+        assert par == sorted(par[: par.index(max(par)) + 1]) + sorted(
+            par[par.index(max(par)) + 1 :], reverse=True
+        ), "paralyzable rate must rise then fall"
         assert non_par == sorted(non_par), "non-paralyzable rate must increase monotonically"
         assert non_par[-1] < 1.0 / tau * 1.05, "non-paralyzable saturates near 1/tau"
 

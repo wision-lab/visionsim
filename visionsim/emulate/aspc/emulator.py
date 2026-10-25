@@ -4,6 +4,7 @@ from copy import deepcopy
 
 import numpy as np
 import torch
+from pint import Quantity
 
 from visionsim.emulate.aspc.ambient import Sun, get_light_conditions_from_string
 from visionsim.emulate.aspc.detector import Detector
@@ -20,9 +21,7 @@ def _build_lidar(
     config: dict,
     device: str | torch.device = "cpu",
 ) -> tuple[Detector, PulsedLaser | None, Sun | None]:
-    """
-    Parses configuration dictionary and instantiates Detector, PulsedLaser emitter, and Sun.
-    """
+    """Parses configuration dictionary and instantiates Detector, PulsedLaser emitter, and Sun."""
     cfg = deepcopy(config)
 
     # 1. Active Emitter Source (PulsedLaser)
@@ -47,7 +46,6 @@ def _build_lidar(
     hist_type = hist_cfg_dict.pop("type", "ewh")
     pixel_fov_list = hist_cfg_dict.pop("pixel_fov_list", None)
 
-    # Unpack directly — invalid or unexpected keys will raise TypeError
     hist_config_obj = HistConfig(**hist_cfg_dict)
 
     if hist_type == "edh":
@@ -77,14 +75,20 @@ class ASPCEmulator:
         self.device = torch.device(device) if isinstance(device, str) else device
         self.detector, self.emitter, self.scene = _build_lidar(config, device=self.device)
 
-    def process_frame(self, depth_frame: torch.Tensor, albedo_frame: torch.Tensor) -> np.ndarray:
-        """Executes complete forward simulation for an input depth and albedo frame pair."""
-        if self.emitter is None or self.scene is None:
-            raise RuntimeError("ASPCEmulator requires both active emitter and ambient scene to be enabled.")
+    def process_frame(
+        self,
+        depth_frame: Quantity | torch.Tensor,
+        albedo_frame: Quantity | torch.Tensor,
+        ambient_frame: Quantity | torch.Tensor | None = None,
+    ) -> np.ndarray:
+        """Executes complete forward simulation for input depth, albedo, and optional ambient frame."""
+        if self.emitter is None:
+            raise RuntimeError("ASPCEmulator requires an active emitter (PulsedLaser) to process frames.")
 
         _transients, _ = self.detector.get_transients(
             depth_frame=depth_frame,
             albedo_frame=albedo_frame,
+            ambient_frame=ambient_frame,
             emitter=self.emitter,
             scene=self.scene,
         )

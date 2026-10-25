@@ -327,7 +327,6 @@ def plot_spad_sensor_grid(
 
 
 def plot_ewh_per_pixel(histogrammer, fov_masks, albedo_frame, depth_frame, transients, arrival_rates, ewh_list):
-
     # Plots
     # Get number of FOVs from fov_masks
     num_fovs = fov_masks.shape[0]

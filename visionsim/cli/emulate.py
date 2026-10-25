@@ -470,6 +470,7 @@ def aspc(
     sensor_fov: tuple | None = None,
     force: bool | None = None,
     pattern: str | None = None,
+    device: str = "cpu",
 ) -> None:
     """Simulate Single-Photon (SP) LiDAR data from rendered frames and depth maps.
 
@@ -505,12 +506,13 @@ def aspc(
         sensor_fov: the angular field of view of the camera sensor. Given in degree.
         force: if true, overwrite output file(s) or directory if present.
         pattern: glob pattern to filter which files to process in the input directory.
+        device: cpu or cuda for processing
     """
     user_args = locals().copy()
 
     from visionsim.dataset import Dataset
     from visionsim.emulate.aspc import ASPCEmulator
-    from visionsim.emulate.aspc.utils import prepare_config, ureg
+    from visionsim.emulate.aspc.utils import prepare_config, preproc_frames, ureg
 
     prepared_config = prepare_config(user_args, config_file)
 
@@ -531,7 +533,8 @@ def aspc(
         depths = Dataset.from_pattern(root=input_dir / "depths", pattern="*.exr")
     else:
         depths = Dataset.from_path(input_dir / "depths")
-        albedo = Dataset.from_path(input_dir / "frames")
+        ambient = Dataset.from_path(input_dir / "frames")
+        albedo = Dataset.from_path(input_dir / "diffuse" / "color")
 
     emulator = ASPCEmulator(config=prepared_config)
 
@@ -564,16 +567,17 @@ def aspc(
     with ElapsedProgress() as progress:
         task = progress.add_task("[cyan]Generating ASPC histograms...", total=total_frames)
 
-        for frame_idx, (depth_frame, albedo_frame) in enumerate(zip(depths, albedo)):
-            depth_frame = depth_frame[0].squeeze()
+        for frame_idx, (depth_frame, albedo_frame, ambient_frame) in enumerate(zip(depths, albedo, ambient)):
+            depth_qty, albedo_qty, ambient_qty = preproc_frames(
+                depth_frame=depth_frame,
+                albedo_frame=albedo_frame,
+                ambient_frame=ambient_frame,
+                config=prepared_config,
+                device=device,
+            )
 
-            albedo_frame = albedo_frame[0][:, :, 0]
-
-            # Format frames as 2D NumPy arrays wrapped in Pint Quantities
-            depth_qty = _prepare_frame_quantity(depth_frame, "meter")
-            albedo_qty = _prepare_frame_quantity(albedo_frame, "dimensionless")
-
-            histogram_data = emulator.process_frame(depth_qty, albedo_qty)
+            # Pass depth, albedo, and ambient quantities to the emulator
+            histogram_data = emulator.process_frame(depth_qty, albedo_qty, ambient_qty)
 
             output_file = output_dir / "frames" / f"histogram_{frame_idx:04d}.npy"
             np.save(output_file, histogram_data)

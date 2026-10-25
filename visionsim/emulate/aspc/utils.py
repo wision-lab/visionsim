@@ -16,8 +16,6 @@ from pint import Quantity, UnitRegistry, set_application_registry
 from ruamel.yaml import YAML
 from scipy.constants import c  # Top-level export for unit tests
 
-from visionsim.dataset import Dataset
-
 ureg = UnitRegistry()
 ureg.setup_matplotlib(True)
 Q_ = ureg.Quantity
@@ -105,75 +103,97 @@ def get_irradiance_with_fov(irradiance, sensor_fov, pixel_fov, omega, w, h):
     return irradiance * scale
 
 
-def preproc_albedo_intensity_depth_frames(
-    root: str | Path,
-    device: str | torch.device,
+def preproc_frames(
+    depth_frame: np.ndarray | torch.Tensor,
+    albedo_frame: np.ndarray | torch.Tensor,
+    ambient_frame: np.ndarray | torch.Tensor,
     config: dict,
-    start_idx: int,
-    num_frames: int | None = 1,
-    requires_grad: bool | None = False,
-):
-    root = Path(root) if isinstance(root, str) else root
-    frames = Dataset.from_path(root / "frames")
-    depths = Dataset.from_path(root / "depths")
-    assert len(depths) == len(frames), "Different number of depth and RGB frames"
+    device: str | torch.device = "cpu",
+    requires_grad: bool = False,
+) -> tuple[Quantity, Quantity, Quantity]:
+    """Preprocesses a single frame triplet (depth, albedo, ambient) into PyTorch Tensors
 
-    if num_frames is None:
-        num_frames = len(frames) - start_idx
-
-    assert start_idx + num_frames <= len(frames), "start_idx + num_frames must not exceed total rendered frames"
-
+    wrapped in Pint quantities.
+    """
     Nr, Nc = config["sensor"]["size"]
-    tmax = (1.0 / config["active_source"]["pulsed_laser"]["pulse_repetition"]).to(ureg.second)
 
+    # 1. Validate max depth against laser pulse repetition rate
+    pulse_rep = config["active_source"]["pulsed_laser"]["pulse_repetition"]
+    if not hasattr(pulse_rep, "to"):
+        pulse_rep = pulse_rep * ureg.hertz
+
+    tmax = (1.0 / pulse_rep).to(ureg.second)
     max_resolvable_depth = (tmax * (c * ureg.meter / ureg.second) / 2).to(ureg.meter)
-    scale_depth = config["histogrammer"]["max_depth"].to(ureg.meter)
+
+    scale_depth = config["histogrammer"]["max_depth"]
+    if not hasattr(scale_depth, "to"):
+        scale_depth = scale_depth * ureg.meter
+    else:
+        scale_depth = scale_depth.to(ureg.meter)
+
     if scale_depth > max_resolvable_depth:
         raise ValueError(
             f"histogrammer.max_depth ({scale_depth}) exceeds max resolvable depth ({max_resolvable_depth})."
         )
     max_depth = scale_depth.magnitude
 
-    rgb_img_list = list(frames[start_idx : start_idx + num_frames][1])
-    depth_img_list = list(depths[start_idx : start_idx + num_frames][1])
+    def _to_numpy(frame):
+        # Dataset.__getitem__ returns (data, transform); image array is at index 0
+        if isinstance(frame, (tuple, list)) and len(frame) == 2:
+            frame = frame[0]
 
-    albedo_frames_list = []
-    intensity_frames_list = []
-    depth_frames_list = []
+        if hasattr(frame, "detach"):
+            frame = frame.detach().cpu().numpy()
 
-    for idx in range(len(rgb_img_list)):
-        rgb_img = np.asarray(rgb_img_list[idx])
-        raw_depth = np.asarray(depth_img_list[idx])
+        return np.asarray(frame)
 
-        if raw_depth.ndim == 3:
-            raw_depth = raw_depth[:, :, 0]
-        if np.issubdtype(raw_depth.dtype, np.integer):
-            depth_img = raw_depth.astype(np.float32) / 255.0 * float(max_depth)
-        else:
-            depth_img = raw_depth.astype(np.float32)
+    # 2. Process Depth Frame
+    raw_depth = _to_numpy(depth_frame)
+    if raw_depth.ndim == 3:
+        raw_depth = raw_depth[:, :, 0]
 
-        depth_img = np.where(np.isfinite(depth_img) & (depth_img > 0), depth_img, 0.0)
+    if np.issubdtype(raw_depth.dtype, np.integer):
+        depth_img = raw_depth.astype(np.float32) / 255.0 * float(max_depth)
+    else:
+        depth_img = raw_depth.astype(np.float32)
 
-        rgb_img = cv2.resize(rgb_img, (Nc, Nr))
-        rgb = torch.tensor(rgb_img.astype(float), device=device, requires_grad=requires_grad) / 255.0
-        depth_img = cv2.resize(depth_img, (Nc, Nr), interpolation=cv2.INTER_NEAREST)
-        depth = torch.tensor(depth_img.astype(float), device=device, requires_grad=requires_grad).unsqueeze(0)
+    depth_img = np.where(np.isfinite(depth_img) & (depth_img > 0), depth_img, 0.0)
+    depth_img = cv2.resize(depth_img, (Nc, Nr), interpolation=cv2.INTER_NEAREST)
 
-        albedo = intensity = rgb[..., 0].unsqueeze(0)
+    # 3. Process Albedo Frame (Diffuse Color Pass)
+    raw_albedo = _to_numpy(albedo_frame)
+    if raw_albedo.ndim == 3:
+        raw_albedo = raw_albedo[:, :, 0]  # Extract red channel as reflectance proxy
 
-        albedo_frames_list.append(albedo)
-        intensity_frames_list.append(intensity)
-        depth_frames_list.append(depth)
+    if np.issubdtype(raw_albedo.dtype, np.integer):
+        albedo_img = raw_albedo.astype(np.float32) / 255.0
+    else:
+        albedo_img = raw_albedo.astype(np.float32)
 
-    albedo_frames = torch.concat(albedo_frames_list)
-    intensity_frames = torch.concat(intensity_frames_list)
-    depth_frames = torch.concat(depth_frames_list) * ureg.meter
+    albedo_img = cv2.resize(albedo_img, (Nc, Nr))
 
-    return albedo_frames, intensity_frames, depth_frames
+    # 4. Process Ambient Frame (Full RGB Render Pass)
+    raw_ambient = _to_numpy(ambient_frame)
+    if raw_ambient.ndim == 3:
+        raw_ambient = raw_ambient[:, :, 0]  # Extract red channel for ambient light proxy
 
+    if np.issubdtype(raw_ambient.dtype, np.integer):
+        ambient_img = raw_ambient.astype(np.float32) / 255.0
+    else:
+        ambient_img = raw_ambient.astype(np.float32)
 
-# Alias for backward compatibility
-preproc_albedo_depth_frame = preproc_albedo_intensity_depth_frames
+    ambient_img = cv2.resize(ambient_img, (Nc, Nr))
+
+    # 5. Convert to PyTorch Tensors and attach Pint Quantities
+    depth_tensor = torch.tensor(depth_img, device=device, dtype=torch.float64, requires_grad=requires_grad)
+    albedo_tensor = torch.tensor(albedo_img, device=device, dtype=torch.float64, requires_grad=requires_grad)
+    ambient_tensor = torch.tensor(ambient_img, device=device, dtype=torch.float64, requires_grad=requires_grad)
+
+    depth_qty = ureg.Quantity(depth_tensor, "meter")
+    albedo_qty = ureg.Quantity(albedo_tensor, "dimensionless")
+    ambient_qty = ureg.Quantity(ambient_tensor, "dimensionless")
+
+    return depth_qty, albedo_qty, ambient_qty
 
 
 def _validate_config(config: dict) -> None:
@@ -319,7 +339,7 @@ def _to_quantity(val: Any, unit_str: str) -> Any:
             if q.dimensionless:
                 return ureg.Quantity(q.magnitude, unit_str)
             return q
-        except Exception:  # noqa: BLE001
+        except Exception:
             return ureg.Quantity(float(val), unit_str)
 
     return val

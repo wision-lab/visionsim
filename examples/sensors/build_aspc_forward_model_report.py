@@ -155,7 +155,7 @@ def main() -> None:
         for free_running, label, slug in MODES:
             sel = [r for r in rows if r["depth"] == depth and r["free_running"] == free_running]
             figs = "\n".join(
-                f'''<figure>
+                f"""<figure>
       <img src="data:image/png;base64,{b64(r["file"])}" alt="{label} at {r["depth"]:.0f} m, SBR 1:{r["bkg"]:.0f}">
       <figcaption><strong>signal:background 1:{r["bkg"]:.0f}</strong> &mdash;
         &Sigma;&phi; = {r["sig"] + r["bkg"]:.0f} photons/cycle.
@@ -163,7 +163,7 @@ def main() -> None:
         budget <span class="mono">{r["tol"]:.4f}</span> &rarr; {chip(r)}.
         {r["total"]:,.0f} detections in 10,000 cycles.<br>
         Time: MC 1k <span class="mono">{r["ms_1k"]:.1f} ms</span>, MC 10k <span class="mono">{r["ms_10k"]:.1f} ms</span>, model <span class="mono">{r["ms_model"]:.2f} ms</span> &rarr; <strong>{r["speedup"]:.0f}&times;</strong>.</figcaption>
-    </figure>'''
+    </figure>"""
                 for r in sel
             )
             blocks.append(f"""

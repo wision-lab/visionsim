@@ -152,25 +152,58 @@ class Detector:
 
         return torch.as_tensor(irradiance.magnitude, dtype=torch.float32, device=self.device)
 
-    def _get_ambient_offset(self, albedo_frame: torch.Tensor, scene: Sun, emitter: PulsedLaser) -> torch.Tensor:
+    def _get_ambient_offset(
+        self,
+        albedo_frame: torch.Tensor | Quantity,
+        emitter: PulsedLaser,
+        scene: Sun | None = None,
+        ambient_frame: torch.Tensor | Quantity | None = None,
+    ) -> torch.Tensor:
         """Converts ambient background radiance to focal plane offset irradiance (#photons)."""
-        ambient_radiance = scene.get_scene_radiance(albedo_frame, emitter.pulse_repetition)
-        ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(
-            irradiance_photons
-        ) * (self.sensor.pixel_pitch.to(ureg.meter)) ** 2
+        # 1. Primary path: Use rendered ambient spatial frame if provided
+        if ambient_frame is not None:
+            if hasattr(ambient_frame, "units"):
+                try:
+                    ambient_irradiance = (ambient_frame * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(
+                        irradiance_photons
+                    ) * (self.sensor.pixel_pitch.to(ureg.meter)) ** 2
+                    return torch.as_tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=self.device)
+                except (AttributeError, TypeError, ValueError):
+                    raw_ambient = ambient_frame.magnitude
+                    return torch.as_tensor(raw_ambient, dtype=torch.float32, device=self.device)
+            else:
+                return torch.as_tensor(ambient_frame, dtype=torch.float32, device=self.device)
 
-        return torch.as_tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=self.device)
+        # 2. Secondary path: Fall back to analytical Sun model
+        elif scene is not None:
+            ambient_radiance = scene.get_scene_radiance(albedo_frame, emitter.pulse_repetition)
+            ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(
+                irradiance_photons
+            ) * (self.sensor.pixel_pitch.to(ureg.meter)) ** 2
+
+            return torch.as_tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=self.device)
+
+        # 3. Default path: No ambient source
+        else:
+            raw_ref = albedo_frame.magnitude if hasattr(albedo_frame, "magnitude") else albedo_frame
+            return torch.zeros(raw_ref.shape, dtype=torch.float32, device=self.device)
 
     def get_transients(
         self,
-        depth_frame: torch.Tensor,
-        albedo_frame: torch.Tensor,
+        depth_frame: torch.Tensor | Quantity,
+        albedo_frame: torch.Tensor | Quantity,
         emitter: PulsedLaser,
-        scene: Sun,
+        scene: Sun | None = None,
+        ambient_frame: torch.Tensor | Quantity | None = None,
     ) -> tuple[torch.Tensor, list[torch.Tensor]]:
         """Calculates spatial-temporal transients over laser ToF bins."""
         irradiance = self._get_signal(depth_frame, albedo_frame, emitter)
-        offsets = self._get_ambient_offset(albedo_frame, scene, emitter)
+        offsets = self._get_ambient_offset(
+            albedo_frame=albedo_frame,
+            emitter=emitter,
+            scene=scene,
+            ambient_frame=ambient_frame,
+        )
 
         empty_ref = depth_frame.magnitude if hasattr(depth_frame, "magnitude") else depth_frame
         if empty_ref.dim() == 3:

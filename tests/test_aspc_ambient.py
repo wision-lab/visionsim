@@ -10,6 +10,12 @@ import pytest
 
 from visionsim.emulate.aspc.ambient import BlackBodySource, LightConditions, Sun
 from visionsim.emulate.aspc.utils import radiance, radiance_photons, ureg
+from visionsim.emulate.aspc.detector import Detector
+from visionsim.emulate.aspc.emitter import PulsedLaser
+from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer
+from visionsim.emulate.aspc.sensors import SPADSensor
+from visionsim.emulate.aspc.utils import preproc_frames
+import torch
 
 REL = 1e-9
 
@@ -121,3 +127,83 @@ class TestSunParamsRepr:
 
     def test_repr_does_not_raise(self):
         assert repr(_sun()).startswith("Sun(")
+
+
+class TestRGBAndDiffusePreproc:
+    """Tests for preproc_frames handling 3D arrays, dataset tuples, and units."""
+
+    def test_preproc_frames_extracts_channels_and_units(self):
+        config = {
+            "sensor": {"size": (16, 16)},
+            "active_source": {"pulsed_laser": {"pulse_repetition": 10e6}},
+            "histogrammer": {"max_depth": 10.0},
+        }
+
+        # Simulate Dataset tuple yields: (data_array, metadata_dict)
+        depth_raw = (np.ones((32, 32, 1), dtype=np.float32) * 3.0, {"file_path": "depths/0000.exr"})
+        albedo_raw = (np.ones((32, 32, 3), dtype=np.float32) * 0.8, {"file_path": "diffuse/0000.png"})
+        ambient_raw = (np.ones((32, 32, 3), dtype=np.float32) * 0.2, {"file_path": "frames/0000.png"})
+
+        depth_qty, albedo_qty, ambient_qty = preproc_frames(
+            depth_frame=depth_raw,
+            albedo_frame=albedo_raw,
+            ambient_frame=ambient_raw,
+            config=config,
+        )
+
+        assert depth_qty.magnitude.shape == (16, 16)
+        assert albedo_qty.magnitude.shape == (16, 16)
+        assert ambient_qty.magnitude.shape == (16, 16)
+
+        assert str(depth_qty.units) == "meter"
+        assert str(albedo_qty.units) == "dimensionless"
+        assert str(ambient_qty.units) == "dimensionless"
+
+
+class TestDetectorAmbientFramePriority:
+    """Verifies that Detector._get_ambient_offset prioritizes spatial ambient_frame over Sun model."""
+
+    def test_ambient_frame_overrides_scene_model(self):
+        sensor = SPADSensor(size=(8, 8), fov=66 * ureg.degree)
+        histogrammer = Histogrammer(HistConfig())
+        detector = Detector(sensor=sensor, histogrammer=histogrammer)
+
+        emitter = PulsedLaser(
+            wavelength=550 * ureg.nanometer,
+            pulse_repetition=10e6 * ureg.hertz,
+            pulse_width=1 * ureg.nanosecond,
+            avg_watts=1 * ureg.milliwatt,
+            pulse_shape="gaussian",
+        )
+        scene = _sun()
+
+        albedo_qty = ureg.Quantity(torch.ones((8, 8), dtype=torch.float64) * 0.5, "dimensionless")
+        ambient_qty = ureg.Quantity(torch.ones((8, 8), dtype=torch.float64) * 0.3, "dimensionless")
+
+        # 1. Spatial ambient_frame provided (should use ambient_frame)
+        offset_spatial = detector._get_ambient_offset(
+            albedo_frame=albedo_qty,
+            emitter=emitter,
+            scene=scene,
+            ambient_frame=ambient_qty,
+        )
+        assert offset_spatial.shape == (8, 8)
+        assert torch.all(offset_spatial > 0)
+
+        # 2. ambient_frame is None (should fall back to Sun scene model)
+        offset_scene = detector._get_ambient_offset(
+            albedo_frame=albedo_qty,
+            emitter=emitter,
+            scene=scene,
+            ambient_frame=None,
+        )
+        assert offset_scene.shape == (8, 8)
+
+        # 3. Both are None (should return zero ambient noise)
+        offset_zero = detector._get_ambient_offset(
+            albedo_frame=albedo_qty,
+            emitter=emitter,
+            scene=None,
+            ambient_frame=None,
+        )
+        assert torch.allclose(offset_zero, torch.zeros((8, 8)))

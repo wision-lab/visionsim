@@ -79,9 +79,9 @@ def test_emulate_events(snapshot, tmp_path):
 
     # Compare event preview
     for path in sorted(tmp_path.glob("events_preview_*.png")):
-        assert path == snapshot(extension_class=ImageSnapshotExtension), (
-            "Generated preview does not match the reference snapshot"
-        )
+        assert path == snapshot(
+            extension_class=ImageSnapshotExtension
+        ), "Generated preview does not match the reference snapshot"
 
     # Test reset functionality
     emulator.reset()

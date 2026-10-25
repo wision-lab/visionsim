@@ -59,9 +59,9 @@ def test_docs_exist():
 def test_no_prompt_in_codeblocks(path):
     offenders = [line for _, lines in code_blocks(path) for line in lines if line.lstrip().startswith("$ ")]
 
-    assert not offenders, (
-        f"{path.relative_to(DOCS_DIR)}: drop the $ prompt from literal blocks, it makes them un-copyable: {offenders}"
-    )
+    assert (
+        not offenders
+    ), f"{path.relative_to(DOCS_DIR)}: drop the $ prompt from literal blocks, it makes them un-copyable: {offenders}"
 
 
 @pytest.mark.parametrize("path", docs_files(), ids=lambda p: str(p.relative_to(DOCS_DIR)))

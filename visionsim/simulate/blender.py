@@ -1912,7 +1912,7 @@ class BlenderService(rpyc.Service):
         for path in paths.values():
             path.parent.mkdir(parents=True, exist_ok=True)
 
-        if not dry_run:  # noqa: SIM102
+        if not dry_run:
             # Render frame(s), skip the render iff all files exist and `allow_skips`
             if not allow_skips or any(not Path(self.root_path / p).exists() for p in paths.values()):
                 # If `write_still` is false, depth/normals/etc can be written but composites will be skipped
