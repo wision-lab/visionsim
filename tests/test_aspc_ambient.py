@@ -7,15 +7,19 @@ reddening the suite; a fix flips them to ``xpass``.
 
 import numpy as np
 import pytest
+import torch
 
 from visionsim.emulate.aspc.ambient import BlackBodySource, LightConditions, Sun
-from visionsim.emulate.aspc.utils import radiance, radiance_photons, ureg
 from visionsim.emulate.aspc.detector import Detector
 from visionsim.emulate.aspc.emitter import PulsedLaser
 from visionsim.emulate.aspc.histogrammers import HistConfig, Histogrammer
 from visionsim.emulate.aspc.sensors import SPADSensor
-from visionsim.emulate.aspc.utils import preproc_frames
-import torch
+from visionsim.emulate.aspc.utils import (
+    preproc_frames,
+    radiance,
+    radiance_photons,
+    ureg,
+)
 
 REL = 1e-9
 

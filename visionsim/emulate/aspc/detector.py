@@ -14,6 +14,7 @@ from visionsim.emulate.aspc.sensors import SPADSensor
 from visionsim.emulate.aspc.utils import (
     irradiance_photons,
     ureg,
+    radiance_photons,
 )
 
 
@@ -153,41 +154,40 @@ class Detector:
         return torch.as_tensor(irradiance.magnitude, dtype=torch.float32, device=self.device)
 
     def _get_ambient_offset(
-        self,
-        albedo_frame: torch.Tensor | Quantity,
-        emitter: PulsedLaser,
-        scene: Sun | None = None,
-        ambient_frame: torch.Tensor | Quantity | None = None,
-    ) -> torch.Tensor:
-        """Converts ambient background radiance to focal plane offset irradiance (#photons)."""
-        # 1. Primary path: Use rendered ambient spatial frame if provided
-        if ambient_frame is not None:
-            if hasattr(ambient_frame, "units"):
-                try:
-                    ambient_irradiance = (ambient_frame * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(
-                        irradiance_photons
-                    ) * (self.sensor.pixel_pitch.to(ureg.meter)) ** 2
-                    return torch.as_tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=self.device)
-                except (AttributeError, TypeError, ValueError):
-                    raw_ambient = ambient_frame.magnitude
-                    return torch.as_tensor(raw_ambient, dtype=torch.float32, device=self.device)
+            self,
+            albedo_frame: torch.Tensor | Quantity,
+            emitter: PulsedLaser,
+            scene: Sun | None = None,
+            ambient_frame: torch.Tensor | Quantity | None = None,
+        ) -> torch.Tensor:
+            """Converts ambient background radiance to focal plane offset irradiance (#photons)."""
+            # 1. Primary path: Use rendered ambient spatial frame scaled by physical radiance
+            if ambient_frame is not None:
+                if scene is not None:
+                    base_radiance = scene.get_scene_radiance(1.0, emitter.pulse_repetition)
+                else:
+                    base_radiance = 1.0 * radiance_photons
+
+                spatial_radiance = ambient_frame * base_radiance
+                ambient_irradiance = (
+                    spatial_radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2
+                ).to(irradiance_photons) * (self.sensor.pixel_pitch.to(ureg.meter)) ** 2
+
+                return torch.as_tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=self.device)
+
+            # 2. Secondary path: Fall back to analytical Sun model
+            elif scene is not None:
+                ambient_radiance = scene.get_scene_radiance(albedo_frame, emitter.pulse_repetition)
+                ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(
+                    irradiance_photons
+                ) * (self.sensor.pixel_pitch.to(ureg.meter)) ** 2
+
+                return torch.as_tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=self.device)
+
+            # 3. Default path: No ambient source
             else:
-                return torch.as_tensor(ambient_frame, dtype=torch.float32, device=self.device)
-
-        # 2. Secondary path: Fall back to analytical Sun model
-        elif scene is not None:
-            ambient_radiance = scene.get_scene_radiance(albedo_frame, emitter.pulse_repetition)
-            ambient_irradiance = (ambient_radiance * torch.pi / 4 * (1 / self.sensor.f_number) ** 2).to(
-                irradiance_photons
-            ) * (self.sensor.pixel_pitch.to(ureg.meter)) ** 2
-
-            return torch.as_tensor(ambient_irradiance.magnitude, dtype=torch.float32, device=self.device)
-
-        # 3. Default path: No ambient source
-        else:
-            raw_ref = albedo_frame.magnitude if hasattr(albedo_frame, "magnitude") else albedo_frame
-            return torch.zeros(raw_ref.shape, dtype=torch.float32, device=self.device)
-
+                raw_ref = albedo_frame.magnitude if hasattr(albedo_frame, "magnitude") else albedo_frame
+                return torch.zeros(raw_ref.shape, dtype=torch.float32, device=self.device)
     def get_transients(
         self,
         depth_frame: torch.Tensor | Quantity,
