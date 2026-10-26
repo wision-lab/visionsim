@@ -8,13 +8,14 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
-import cv2
+
 import numpy as np
 import pint
 import torch
 from pint import Quantity, UnitRegistry, set_application_registry
 from ruamel.yaml import YAML
 from scipy.constants import c  # Top-level export for unit tests
+import torch.nn.functional as F
 
 ureg = UnitRegistry()
 ureg.setup_matplotlib(True)
@@ -158,36 +159,37 @@ def preproc_frames(
         depth_img = raw_depth.astype(np.float32)
 
     depth_img = np.where(np.isfinite(depth_img) & (depth_img > 0), depth_img, 0.0)
-    depth_img = cv2.resize(depth_img, (Nc, Nr), interpolation=cv2.INTER_NEAREST)
 
     # 3. Process Albedo Frame (Diffuse Color Pass)
     raw_albedo = _to_numpy(albedo_frame)
     if raw_albedo.ndim == 3:
-        raw_albedo = raw_albedo[:, :, 0]  # Extract red channel as reflectance proxy
+        raw_albedo = raw_albedo[:, :, 0]
 
     if np.issubdtype(raw_albedo.dtype, np.integer):
         albedo_img = raw_albedo.astype(np.float32) / 255.0
     else:
         albedo_img = raw_albedo.astype(np.float32)
 
-    albedo_img = cv2.resize(albedo_img, (Nc, Nr))
-
     # 4. Process Ambient Frame (Full RGB Render Pass)
     raw_ambient = _to_numpy(ambient_frame)
     if raw_ambient.ndim == 3:
-        raw_ambient = raw_ambient[:, :, 0]  # Extract red channel for ambient light proxy
+        raw_ambient = raw_ambient[:, :, 0]
 
     if np.issubdtype(raw_ambient.dtype, np.integer):
         ambient_img = raw_ambient.astype(np.float32) / 255.0
     else:
         ambient_img = raw_ambient.astype(np.float32)
 
-    ambient_img = cv2.resize(ambient_img, (Nc, Nr))
+    # 5. Convert to PyTorch Tensors and Resize with F.interpolate
+    # Shape requirements: F.interpolate expects (Batch, Channel, Height, Width) -> (1, 1, H, W)
+    depth_tensor = torch.tensor(depth_img, device=device, dtype=torch.float64, requires_grad=requires_grad).unsqueeze(0).unsqueeze(0)
+    albedo_tensor = torch.tensor(albedo_img, device=device, dtype=torch.float64, requires_grad=requires_grad).unsqueeze(0).unsqueeze(0)
+    ambient_tensor = torch.tensor(ambient_img, device=device, dtype=torch.float64, requires_grad=requires_grad).unsqueeze(0).unsqueeze(0)
 
-    # 5. Convert to PyTorch Tensors and attach Pint Quantities
-    depth_tensor = torch.tensor(depth_img, device=device, dtype=torch.float64, requires_grad=requires_grad)
-    albedo_tensor = torch.tensor(albedo_img, device=device, dtype=torch.float64, requires_grad=requires_grad)
-    ambient_tensor = torch.tensor(ambient_img, device=device, dtype=torch.float64, requires_grad=requires_grad)
+    # Apply interpolation: 'nearest' for depth, 'bilinear' for smooth color/ambient maps
+    depth_tensor = F.interpolate(depth_tensor, size=(Nr, Nc), mode="nearest").squeeze(0).squeeze(0)
+    albedo_tensor = F.interpolate(albedo_tensor, size=(Nr, Nc), mode="bilinear", align_corners=False).squeeze(0).squeeze(0)
+    ambient_tensor = F.interpolate(ambient_tensor, size=(Nr, Nc), mode="bilinear", align_corners=False).squeeze(0).squeeze(0)
 
     depth_qty = ureg.Quantity(depth_tensor, "meter")
     albedo_qty = ureg.Quantity(albedo_tensor, "dimensionless")

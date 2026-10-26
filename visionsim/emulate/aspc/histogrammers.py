@@ -9,8 +9,8 @@ import torch
 import torch.nn.functional as F
 from pint import Quantity
 from torch import Tensor
-from tqdm import tqdm
 
+from visionsim.utils.progress import ElapsedProgress
 from visionsim.emulate.aspc.utils import get_irradiance_with_fov, ureg, validate_units
 
 # =============================================================================
@@ -405,15 +405,71 @@ class HistogrammerBase:
 
         if len(irradiance_frames.shape) == 3:
             for frame_idx in range(irradiance_frames.shape[0]):
-                for mask_idx, fov_mask in enumerate(tqdm(fov_masks, desc="Processing FOV masks", disable=True)):
+                with ElapsedProgress(disable=True) as progress:
+                    task = progress.add_task("Processing FOV masks", total=len(fov_masks))
+                    for mask_idx, fov_mask in enumerate(fov_masks):
+                        index_mask = fov_mask > 0
+                        current_irradiance_vals = irradiance_frames[frame_idx][index_mask]
+
+                        n_fov_pixels = int(index_mask.sum())
+                        if n_fov_pixels == 0:
+                            transient_list.append(
+                                torch.zeros((1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=device)
+                            )
+                            ambient_offsets.append(torch.zeros((), device=device))
+                            continue
+
+                        if (
+                            sensor_fov is not None
+                            and pixel_fov_list is not None
+                            and w is not None
+                            and h is not None
+                            and omega is not None
+                        ):
+                            fov_irradiance_vals = get_irradiance_with_fov(
+                                current_irradiance_vals, sensor_fov, pixel_fov_list[mask_idx], omega, w, h
+                            )
+                        else:
+                            fov_irradiance_vals = current_irradiance_vals
+
+                        if hasattr(fov_irradiance_vals, "magnitude"):
+                            fov_irradiance_vals = fov_irradiance_vals.magnitude
+
+                        current_depth_vals = depth_frames[frame_idx][index_mask]
+                        masked_offsets = offsets[frame_idx][index_mask]
+
+                        fov_irradiance_vals = fov_irradiance_vals * fov_mask[index_mask]
+
+                        valid = torch.isfinite(current_depth_vals) & (current_depth_vals > 0)
+                        current_depth_vals = current_depth_vals[valid]
+                        fov_irradiance_vals = fov_irradiance_vals[valid]
+
+                        ambient_offsets.append(masked_offsets.sum() / (n_fov_pixels * gt_ntime_bins))
+
+                        if current_depth_vals.numel() == 0:
+                            transient_list.append(
+                                torch.zeros((1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=device)
+                            )
+                            continue
+
+                        transient_idx = torch.floor(current_depth_vals * gt_ntime_bins / max_depth).to(torch.long)
+                        transient_idx = torch.remainder(transient_idx, gt_ntime_bins)
+
+                        row = torch.zeros(gt_ntime_bins, dtype=fov_irradiance_vals.dtype, device=device)
+                        row = row.scatter_add(0, transient_idx, fov_irradiance_vals / n_fov_pixels)
+                        transient_list.append(row.unsqueeze(0))
+                        progress.advance(task)
+            return torch.concat(transient_list), ambient_offsets
+        else:
+            with ElapsedProgress(disable=True) as progress:
+                task = progress.add_task("Processing FOV masks", total=len(fov_masks))
+                for mask_idx, fov_mask in enumerate(fov_masks):
                     index_mask = fov_mask > 0
-                    current_irradiance_vals = irradiance_frames[frame_idx][index_mask]
+                    current_irradiance_vals = irradiance_frames[index_mask]
 
                     n_fov_pixels = int(index_mask.sum())
                     if n_fov_pixels == 0:
-                        transient_list.append(
-                            torch.zeros((1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=device)
-                        )
+                        transient_list.append(torch.zeros((1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=device))
                         ambient_offsets.append(torch.zeros((), device=device))
                         continue
 
@@ -433,8 +489,8 @@ class HistogrammerBase:
                     if hasattr(fov_irradiance_vals, "magnitude"):
                         fov_irradiance_vals = fov_irradiance_vals.magnitude
 
-                    current_depth_vals = depth_frames[frame_idx][index_mask]
-                    masked_offsets = offsets[frame_idx][index_mask]
+                    current_depth_vals = depth_frames[index_mask]
+                    masked_offsets = offsets[index_mask]
 
                     fov_irradiance_vals = fov_irradiance_vals * fov_mask[index_mask]
 
@@ -445,9 +501,7 @@ class HistogrammerBase:
                     ambient_offsets.append(masked_offsets.sum() / (n_fov_pixels * gt_ntime_bins))
 
                     if current_depth_vals.numel() == 0:
-                        transient_list.append(
-                            torch.zeros((1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=device)
-                        )
+                        transient_list.append(torch.zeros((1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=device))
                         continue
 
                     transient_idx = torch.floor(current_depth_vals * gt_ntime_bins / max_depth).to(torch.long)
@@ -456,57 +510,7 @@ class HistogrammerBase:
                     row = torch.zeros(gt_ntime_bins, dtype=fov_irradiance_vals.dtype, device=device)
                     row = row.scatter_add(0, transient_idx, fov_irradiance_vals / n_fov_pixels)
                     transient_list.append(row.unsqueeze(0))
-
-            return torch.concat(transient_list), ambient_offsets
-        else:
-            for mask_idx, fov_mask in enumerate(tqdm(fov_masks, desc="Processing FOV masks", disable=True)):
-                index_mask = fov_mask > 0
-                current_irradiance_vals = irradiance_frames[index_mask]
-
-                n_fov_pixels = int(index_mask.sum())
-                if n_fov_pixels == 0:
-                    transient_list.append(torch.zeros((1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=device))
-                    ambient_offsets.append(torch.zeros((), device=device))
-                    continue
-
-                if (
-                    sensor_fov is not None
-                    and pixel_fov_list is not None
-                    and w is not None
-                    and h is not None
-                    and omega is not None
-                ):
-                    fov_irradiance_vals = get_irradiance_with_fov(
-                        current_irradiance_vals, sensor_fov, pixel_fov_list[mask_idx], omega, w, h
-                    )
-                else:
-                    fov_irradiance_vals = current_irradiance_vals
-
-                if hasattr(fov_irradiance_vals, "magnitude"):
-                    fov_irradiance_vals = fov_irradiance_vals.magnitude
-
-                current_depth_vals = depth_frames[index_mask]
-                masked_offsets = offsets[index_mask]
-
-                fov_irradiance_vals = fov_irradiance_vals * fov_mask[index_mask]
-
-                valid = torch.isfinite(current_depth_vals) & (current_depth_vals > 0)
-                current_depth_vals = current_depth_vals[valid]
-                fov_irradiance_vals = fov_irradiance_vals[valid]
-
-                ambient_offsets.append(masked_offsets.sum() / (n_fov_pixels * gt_ntime_bins))
-
-                if current_depth_vals.numel() == 0:
-                    transient_list.append(torch.zeros((1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=device))
-                    continue
-
-                transient_idx = torch.floor(current_depth_vals * gt_ntime_bins / max_depth).to(torch.long)
-                transient_idx = torch.remainder(transient_idx, gt_ntime_bins)
-
-                row = torch.zeros(gt_ntime_bins, dtype=fov_irradiance_vals.dtype, device=device)
-                row = row.scatter_add(0, transient_idx, fov_irradiance_vals / n_fov_pixels)
-                transient_list.append(row.unsqueeze(0))
-
+                    progress.advance(task)
             return torch.concat(transient_list), ambient_offsets
 
     def calculate_arrival_rates(
