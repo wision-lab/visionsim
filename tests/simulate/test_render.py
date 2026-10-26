@@ -294,14 +294,22 @@ def test_render_thermal(tmp_path_factory, executable):
     assert preview.exists()
     assert len(list(preview.glob("**/*.png"))) == N
 
-    # Emission is spectrally flat, so the radiance pass is single-channel.
+    # Emission is spectrally flat, so the radiance pass is single-channel from Blender
+    # 4.3 on; older versions duplicate the value across RGB (checked below).
     assert rad.exists()
     assert (rad / "transforms.db").exists()
     Metadata.load(rad / "transforms.db")  # round-trips without error
     rad_exrs = sorted(rad.glob("**/*.exr"))
     assert len(rad_exrs) == N
     with OpenEXR.File(str(rad_exrs[0])) as f:
-        assert list(f.channels().keys()) == ["V"]
+        if "V" in f.channels():
+            assert list(f.channels().keys()) == ["V"]
+        else:
+            # Before v4, EXRs could not be single channel, they were saved as
+            # RGB with duplicated channels.
+            assert list(f.channels().keys()) == ["RGB"]
+            data = f.channels()["RGB"].pixels.transpose(2, 0, 1)
+            assert all(np.allclose(a, b) for a, b in itertools.pairwise(data))
     assert Dataset.load_data(rad_exrs[0]).shape == (50, 50, 1)
 
 
