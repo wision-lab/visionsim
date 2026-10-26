@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import math
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 from visionsim.types import EXR_CODECS, FILE_FORMATS, MemSize
+from visionsim.utils.config_file import ConfigIO
 
 
 @dataclass
@@ -246,7 +248,7 @@ class ThermalConfig:
 
 
 @dataclass
-class RenderConfig:
+class RenderConfig(ConfigIO):
     executable: Path | None = None
     """Path to blender executable"""
     height: int | None = None
@@ -300,9 +302,9 @@ class RenderConfig:
     thermal: ThermalConfig = field(default_factory=ThermalConfig)
     """Thermal modality configuration options"""
     include_all: bool = False
-    """If true, enable all ground truth outputs"""
+    """If true, enable all ground truth outputs; applied by :meth:`resolved`"""
     previews: bool = True
-    """If false, disable all preview visualizations of auxiliary outputs"""
+    """If false, disable all preview visualizations of auxiliary outputs; applied by :meth:`resolved`"""
     keyframe_multiplier: float = 1.0
     """Stretch keyframes by this amount, eg: 2.0 will slow down time"""
     timeout: int = 0
@@ -340,27 +342,37 @@ class RenderConfig:
     camera_offset: tuple[float, float, float] | None = None
     """Camera offset to apply in local coordinates (x, y, z)."""
 
-    def __post_init__(self):
-        # Note: Using post init with tyro is not best practice, as it will be called multiple
-        #   times. However here we are just propagating values of aliases, so it should be ok.
-        # See: https://brentyi.github.io/tyro/examples/overriding_configs/#dataclasses-defaults
-        if self.include_all:
-            self.include_composites = True
-            self.include_frames = True
-            self.include_depths = True
-            self.include_normals = True
-            self.include_flows = True
-            self.include_segmentations = True
-            self.include_materials = True
-            self.include_diffuse_pass = True
-            self.include_specular_pass = True
-            self.include_points = True
-            self.include_thermal = True
+    def resolved(self) -> RenderConfig:
+        """Return a copy with ``include_all`` and ``previews`` applied to the individual pass options.
 
-        self.depths.preview &= self.previews
-        self.normals.preview &= self.previews
-        self.flows.preview &= self.previews
-        self.segmentations.preview &= self.previews
-        self.materials.preview &= self.previews
-        self.points.preview &= self.previews
-        self.thermal.preview &= self.previews
+        The configuration stays declarative: ``include_all`` and ``previews`` are only
+        expanded when the render actually starts, so instances parsed by tyro keep the
+        values the user expressed. Calling this method repeatedly is safe.
+
+        Returns:
+            RenderConfig: Copy of this configuration with all aliases resolved.
+        """
+        config = deepcopy(self)
+
+        if config.include_all:
+            config.include_composites = True
+            config.include_frames = True
+            config.include_depths = True
+            config.include_normals = True
+            config.include_flows = True
+            config.include_segmentations = True
+            config.include_materials = True
+            config.include_diffuse_pass = True
+            config.include_specular_pass = True
+            config.include_points = True
+            config.include_thermal = True
+
+        config.depths.preview &= config.previews
+        config.normals.preview &= config.previews
+        config.flows.preview &= config.previews
+        config.segmentations.preview &= config.previews
+        config.materials.preview &= config.previews
+        config.points.preview &= config.previews
+        config.thermal.preview &= config.previews
+
+        return config

@@ -11,6 +11,8 @@ All notable changes to VisionSIM are documented here. The format follows
 Added
 ^^^^^
 
+- ``--config.load`` and ``--config.dump`` options for render commands, so a ``RenderConfig``
+  can be read from a YAML or JSON file and the effective configuration written back.
 - Indirect time-of-flight (iToF) sensor emulation, with a tutorial and figure task.
 - A passive single photon camera (SPC) emulation tutorial covering the CLI, the bitpacked output format, image recovery and dynamic-range figures.
 - An event camera (DVS) emulation tutorial covering the CLI, output format, Python API and parameter figures.

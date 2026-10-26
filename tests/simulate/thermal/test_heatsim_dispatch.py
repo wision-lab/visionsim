@@ -47,3 +47,17 @@ def test_render_job_skips_thermal_when_disabled():
 
     names = [name for name, _, _ in client.calls]
     assert "configure_thermal" not in names, names
+
+
+def test_render_job_resolves_include_all_and_previews():
+    client = _RecordingClient()
+    config = RenderConfig(include_all=True, previews=False)
+
+    render_job(client, "scene.blend", "out", config=config, dry_run=True)
+
+    names = [name for name, _, _ in client.calls]
+    assert "include_depths" in names
+    assert "configure_thermal" in names
+    _name, _args, kwargs = client.calls[names.index("include_flows")]
+    assert kwargs["preview"] is False
+    assert config.include_depths is False

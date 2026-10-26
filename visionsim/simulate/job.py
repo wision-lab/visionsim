@@ -60,6 +60,7 @@ def _prepare_render_job(
         output_blend_file (str | os.PathLike | None, optional): If set, write the modified blend file to
             this path. Defaults to not saving.
     """
+    config = config.resolved()
     _prepare_render(client, blend_file, root, config)
 
     client.cycles_settings(

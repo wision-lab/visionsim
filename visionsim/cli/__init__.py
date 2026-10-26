@@ -17,6 +17,7 @@ from rich.logging import RichHandler
 from rich.traceback import install
 
 from . import blender, dataset, emulate, ffmpeg, interpolate, transforms
+from ._config_file import bind_config_file
 
 logging.basicConfig(
     level=os.environ.get("VSIM_LOG_LEVEL", "INFO").upper(),
@@ -167,5 +168,10 @@ def main():
                 if func.__module__ == module.__name__ and not func_name.startswith("_")
             }
         )
+
+    if len(sys.argv) > 1:
+        _, command, *args = sys.argv
+        if command in cli_dict:
+            cli_dict[command] = bind_config_file(cli_dict[command], args)
 
     tyro.extras.subcommand_cli_from_dict(cli_dict)

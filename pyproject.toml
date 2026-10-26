@@ -38,6 +38,7 @@ dependencies = [
     "rpyc",
     "fastdigest",
     "tyro",
+    "pyyaml",
     "ephemeral-port-reserve",
     "peewee",
     "pydantic",
@@ -71,7 +72,7 @@ follow_imports = "skip"
 # Tree Clipper, the node editor's extensions and blender's own mathutils only exist
 # inside Blender's own Python, which the figure services run in.
 [[tool.mypy.overrides]]
-module = ["tree_clipper", "tree_clipper.*", "bl_ext.*", "mathutils"]
+module = ["tree_clipper", "tree_clipper.*", "bl_ext.*", "mathutils", "yaml"]
 ignore_missing_imports = true
 
 [dependency-groups]
