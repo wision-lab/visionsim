@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import itertools
 import re
-from typing import IO, Annotated, Any, Literal, Protocol, Union
+from typing import IO, Annotated, Any, Literal, Protocol, TypeAlias
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import TypeAlias
 
 try:
     # Note: Keep import requirements to only stdlib
@@ -19,7 +19,7 @@ except ImportError:
 _SIZE_SYMBOLS = ("B", "K", "M", "G", "T", "P", "E", "Z", "Y")
 _SIZE_BOUNDS = [(1024**i, sym) for i, sym in enumerate(_SIZE_SYMBOLS)]
 _SIZE_DICT = {sym: val for val, sym in _SIZE_BOUNDS}
-_SIZE_RANGES = list(zip(_SIZE_BOUNDS, _SIZE_BOUNDS[1:]))
+_SIZE_RANGES = list(itertools.pairwise(_SIZE_BOUNDS))
 
 FILE_FORMATS = Literal[
     "BMP",
@@ -35,7 +35,7 @@ FILE_FORMATS = Literal[
     "TIFF",
     "WEBP",
 ]
-FILE: TypeAlias = Union[None, int, IO[Any]]
+FILE: TypeAlias = int | None | IO[Any]
 EXR_CODECS = Literal["NONE", "PXR24", "ZIP", "PIZ", "RLE", "ZIPS", "DWAA", "DWAB"]
 COLOR_MODES = Literal["BW", "RGB", "RGBA"]
 
@@ -94,4 +94,4 @@ MemSize: TypeAlias = Annotated[
 ]
 
 _Matrix4x4: TypeAlias = list[list[float]]
-Matrix4x4: TypeAlias = Union[_Matrix4x4, npt.NDArray[np.floating]]
+Matrix4x4: TypeAlias = _Matrix4x4 | npt.NDArray[np.floating]

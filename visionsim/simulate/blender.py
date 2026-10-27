@@ -7,6 +7,7 @@ import importlib
 import importlib.util
 import inspect
 import itertools
+import json
 import logging
 import os
 import platform
@@ -1329,6 +1330,13 @@ class BlenderService(rpyc.Service):
         for i, item in zip(indices, data):
             item.pass_index = i + 1
 
+        # Record the assigned ID -> name table beside the raw pass so consumers of the
+        # single-channel EXRs can decode which material/object each value identifies.
+        ids_by_index = {int(item.pass_index): item.name for item in data}
+        index_path = self.root_path / id_type / "indices.json"
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        index_path.write_text(json.dumps({str(i): ids_by_index[i] for i in sorted(ids_by_index)}, indent=2) + "\n")
+
         if preview:
             group = self.tree.nodes.new("CompositorNodeGroup")
             group.label = f"{label} Preview"
@@ -1374,7 +1382,8 @@ class BlenderService(rpyc.Service):
 
         The preview visualization simply assigns a color to each object ID by mapping the
         objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
-        for the background which will have a value of 0 to ensure it is black).
+        for the background which will have a value of 0 to ensure it is black). The assigned
+        ID -> object name table is written to ``indices.json`` beside the raw pass.
 
         Args:
             preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
@@ -1411,7 +1420,8 @@ class BlenderService(rpyc.Service):
 
         The preview visualization simply assigns a color to each material ID by mapping the
         materials ID value to a hue using a HSV node with saturation=1 and value=1 (except
-        for the background which will have a value of 0 to ensure it is black).
+        for the background which will have a value of 0 to ensure it is black). The assigned
+        ID -> material name table is written to ``indices.json`` beside the raw pass.
 
         Args:
             preview (bool, optional): If true, also save preview visualizations of material IDs. Defaults to True.

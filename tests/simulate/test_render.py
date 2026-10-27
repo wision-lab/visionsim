@@ -5,6 +5,7 @@ import shutil
 from dataclasses import asdict
 from pathlib import Path
 
+import imageio.v3
 import numpy as np
 import OpenEXR
 import pytest
@@ -57,6 +58,26 @@ def test_render_layout(cube_dataset, gt_type):
         assert len(list(subdir.glob("**/*.png"))) == 5
     else:
         assert len(list(subdir.glob("**/*.exr"))) == 5
+
+
+def test_materials_preview_keeps_id_hue(cube_dataset):
+    """Regression: shading must not collapse the ID hue to a grey ramp."""
+    frames = sorted((cube_dataset / "previews" / "materials").glob("**/*.png"))
+    assert frames
+
+    colors = np.concatenate([imageio.v3.imread(frame)[..., :3].reshape(-1, 3).astype(np.int16) for frame in frames])
+    non_grey = (colors[:, 0] != colors[:, 1]) | (colors[:, 1] != colors[:, 2])
+    assert non_grey.any(), "materials preview contains only grey pixels"
+
+
+@pytest.mark.parametrize("id_type", ["materials", "segmentations"])
+def test_id_indices(cube_dataset, id_type):
+    """Every assigned ID maps to a name, and no raw pass value exceeds the table."""
+    indices = json.loads((cube_dataset / id_type / "indices.json").read_text())
+    assert sorted(map(int, indices)) == list(range(1, len(indices) + 1))
+
+    for exr in (cube_dataset / id_type).glob("**/*.exr"):
+        assert Dataset.load_data(exr, auto_collapse=True).max() <= len(indices)
 
 
 @pytest.mark.parametrize(
@@ -273,14 +294,22 @@ def test_render_thermal(tmp_path_factory, executable):
     assert preview.exists()
     assert len(list(preview.glob("**/*.png"))) == N
 
-    # Emission is spectrally flat, so the radiance pass is single-channel.
+    # Emission is spectrally flat, so the radiance pass is single-channel from Blender
+    # 4.3 on; older versions duplicate the value across RGB (checked below).
     assert rad.exists()
     assert (rad / "transforms.db").exists()
     Metadata.load(rad / "transforms.db")  # round-trips without error
     rad_exrs = sorted(rad.glob("**/*.exr"))
     assert len(rad_exrs) == N
     with OpenEXR.File(str(rad_exrs[0])) as f:
-        assert list(f.channels().keys()) == ["V"]
+        if "V" in f.channels():
+            assert list(f.channels().keys()) == ["V"]
+        else:
+            # Before v4, EXRs could not be single channel, they were saved as
+            # RGB with duplicated channels.
+            assert list(f.channels().keys()) == ["RGB"]
+            data = f.channels()["RGB"].pixels.transpose(2, 0, 1)
+            assert all(np.allclose(a, b) for a, b in itertools.pairwise(data))
     assert Dataset.load_data(rad_exrs[0]).shape == (50, 50, 1)
 
 

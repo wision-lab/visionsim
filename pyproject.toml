@@ -6,11 +6,10 @@ build-backend = "hatchling.build"
 name = "visionsim"
 description = "Towards a Sensor-Realistic World Simulator"
 dynamic = ["version"]
-requires-python = ">=3.9,<3.15"
+requires-python = ">=3.10,<3.15"
 readme = "README.md"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",

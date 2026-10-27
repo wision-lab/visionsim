@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from typing import Optional
 
 import bpy  # type: ignore[import-not-found]
 
-UVState = tuple[Optional[str], Optional[str]]  # (active_uv_name, active_render_uv_name)
+UVState = tuple[str | None, str | None]  # (active_uv_name, active_render_uv_name)
 UVSnapshot = list[tuple["bpy.types.Object", UVState]]
 
 

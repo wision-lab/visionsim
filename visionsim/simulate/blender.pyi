@@ -631,7 +631,8 @@ class BlenderService(rpyc.Service):
 
         The preview visualization simply assigns a color to each object ID by mapping the
         objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
-        for the background which will have a value of 0 to ensure it is black).
+        for the background which will have a value of 0 to ensure it is black). The assigned
+        ID -> object name table is written to ``indices.json`` beside the raw pass.
 
         Args:
             preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
@@ -660,7 +661,8 @@ class BlenderService(rpyc.Service):
 
         The preview visualization simply assigns a color to each material ID by mapping the
         materials ID value to a hue using a HSV node with saturation=1 and value=1 (except
-        for the background which will have a value of 0 to ensure it is black).
+        for the background which will have a value of 0 to ensure it is black). The assigned
+        ID -> material name table is written to ``indices.json`` beside the raw pass.
 
         Args:
             preview (bool, optional): If true, also save preview visualizations of material IDs. Defaults to True.
@@ -1609,7 +1611,8 @@ class BlenderClient:
 
         The preview visualization simply assigns a color to each object ID by mapping the
         objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
-        for the background which will have a value of 0 to ensure it is black).
+        for the background which will have a value of 0 to ensure it is black). The assigned
+        ID -> object name table is written to ``indices.json`` beside the raw pass.
 
         Args:
             preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
@@ -1638,7 +1641,8 @@ class BlenderClient:
 
         The preview visualization simply assigns a color to each material ID by mapping the
         materials ID value to a hue using a HSV node with saturation=1 and value=1 (except
-        for the background which will have a value of 0 to ensure it is black).
+        for the background which will have a value of 0 to ensure it is black). The assigned
+        ID -> material name table is written to ``indices.json`` beside the raw pass.
 
         Args:
             preview (bool, optional): If true, also save preview visualizations of material IDs. Defaults to True.
@@ -2613,7 +2617,8 @@ class BlenderClients(tuple):
 
         The preview visualization simply assigns a color to each object ID by mapping the
         objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
-        for the background which will have a value of 0 to ensure it is black).
+        for the background which will have a value of 0 to ensure it is black). The assigned
+        ID -> object name table is written to ``indices.json`` beside the raw pass.
 
         Args:
             preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
@@ -2642,7 +2647,8 @@ class BlenderClients(tuple):
 
         The preview visualization simply assigns a color to each material ID by mapping the
         materials ID value to a hue using a HSV node with saturation=1 and value=1 (except
-        for the background which will have a value of 0 to ensure it is black).
+        for the background which will have a value of 0 to ensure it is black). The assigned
+        ID -> material name table is written to ``indices.json`` beside the raw pass.
 
         Args:
             preview (bool, optional): If true, also save preview visualizations of material IDs. Defaults to True.
