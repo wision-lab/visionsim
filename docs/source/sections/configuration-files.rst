@@ -51,10 +51,10 @@ Dumping the effective configuration
 -----------------------------------
 
 ``--config.dump PATH`` writes the merged group to ``PATH`` before the command starts,
-which makes a working invocation easy to reuse as a starting point. ``load`` and ``dump``
-are command-line options and cannot be set in the file itself. The dump reflects the
-parsed input; derived values such as autoscaled job counts are applied later by the job.
-Parent directories are created.
+which makes a working invocation easy to reuse as a starting point. YAML is used unless
+``PATH`` ends in ``.json``. ``load`` and ``dump`` are command-line options and cannot be
+set in the file itself. The dump reflects the parsed input; derived values such as
+autoscaled job counts are applied later by the job. Parent directories are created.
 
 .. tip::
     Set ``VSIM_LOG_LEVEL=DEBUG`` to print the resolved configuration before rendering.

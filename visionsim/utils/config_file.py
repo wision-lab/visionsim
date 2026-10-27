@@ -56,6 +56,12 @@ class ConfigIO:
             raise TypeError(f"Config file {source} must contain a mapping at the top level, got {type(data).__name__}.")
         return tyro.cli(cls, default=cls(), args=_to_args(cls, data, str(source)))
 
+    def _as_dict(self) -> dict[str, Any]:
+        data = dataclasses.asdict(self)
+        data.pop("load", None)
+        data.pop("dump", None)
+        return data
+
     def to_stream(self, stream: IO[str]) -> None:
         """Write this configuration as YAML to a writable text stream.
 
@@ -73,20 +79,25 @@ class ConfigIO:
 
         _Dumper.add_multi_representer(Path, lambda dumper, value: dumper.represent_str(str(value)))
 
-        data = dataclasses.asdict(self)
-        data.pop("load", None)
-        data.pop("dump", None)
-        yaml.dump(data, stream, Dumper=_Dumper, sort_keys=False)
+        yaml.dump(self._as_dict(), stream, Dumper=_Dumper, sort_keys=False)
 
     def to_file(self, path: Path) -> None:
-        """Write this configuration as YAML to a file.
+        """Write this configuration to a file.
+
+        YAML is used unless ``path`` ends in ``.json``.
 
         Args:
             path (Path): Destination file; parent directories are created.
         """
+        import json
+
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as stream:
-            self.to_stream(stream)
+            if path.suffix.lower() == ".json":
+                json.dump(self._as_dict(), stream, indent=2, default=str)
+                stream.write("\n")
+            else:
+                self.to_stream(stream)
 
 
 def _to_args(cls: type[Any], data: dict[str, Any], where: str, prefix: str = "") -> list[str]:
