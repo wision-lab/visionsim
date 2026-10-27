@@ -27,6 +27,7 @@ Added
 Changed
 ^^^^^^^
 
+- Python 3.10 or newer is now required; Python 3.9 is end-of-life.
 - ``RenderConfig.timeout`` defaults to 0; negative timeouts are deprecated and behave like zero.
 - Rebuilt the documentation around per-page figure tasks, sphinx-design grids for figure rows,
   and UTF-8 reading of doc sources.

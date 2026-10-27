@@ -19,7 +19,7 @@ Finally, to install additional dependencies into Blender's runtime, you can run 
     visionsim post-install
 
 
-We currently support **Python 3.9+**. Users still on Python 3.8 or older are
+We currently support **Python 3.10+**. Users still on Python 3.9 or older are
 urged to upgrade.
 
 |
