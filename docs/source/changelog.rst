@@ -22,6 +22,8 @@ Added
   preview built from five integrated runs.
 - Materials, diffuse, specular, and position/point-map render passes, with a ``dataset.to-pointcloud`` CLI.
 - ``transforms.db`` metadata backed by peewee, alongside the existing ``transforms.json``.
+- A ``completion`` CLI command that installs bash, zsh, or fish tab-completion scripts for
+  ``visionsim`` and ``vsim``.
 - Pre-commit format check, mypy configuration, and type checking for the package and tasks.
 
 Changed

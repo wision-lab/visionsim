@@ -67,37 +67,23 @@ and :class:`BlenderClient <visionsim.simulate.blender.BlenderClient>`.
 Autocompletion
 --------------
 
-The auto-complete functionality is provided by `Tyro <https://brentyi.github.io/tyro/tab_completion/>`_, and can be activated per terminal as follows.
+Tab completion is provided by `Tyro <https://brentyi.github.io/tyro/tab_completion/>`_ and
+can be installed for your current shell with::
 
-|
+    visionsim completion
 
-Bash Support
-^^^^^^^^^^^^
+This writes completion scripts for ``visionsim`` and ``vsim`` into the standard user
+completion directory of the shell named by ``$SHELL``. Supported shells are bash, zsh,
+and fish; pass ``--shell`` to choose one explicitly, or ``--path`` to write somewhere
+else. Re-run the command after upgrading VisionSIM, since subcommands and options change
+between releases.
 
-First, find and make directory for local completions::
-
-    completion_dir="${BASH_COMPLETION_USER_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion}"
-    completion_dir="$completion_dir/completions/"
-    mkdir -p "$completion_dir"
-
-Next, write completion script::
-
-    visionsim --tyro-write-completion bash ${completion_dir}/visionsim
-
-|
-
-ZSH Support
-^^^^^^^^^^^
-
-First, make directory for local completions::
-
-    mkdir -p ~/.zfunc
-
-Next, write completion script::
-
-    visionsim --tyro-write-completion zsh ~/.zfunc/_visionsim
-
-Finally, add the following lines to `.zshrc` file to add `.zfunc` to the function search path::
+Bash and fish load the standard directory automatically. Zsh reads completion functions
+from ``fpath``, so add ``~/.zfunc`` in ``.zshrc``::
 
     fpath+=~/.zfunc
     autoload -Uz compinit && compinit
+
+Remove the scripts again with::
+
+    visionsim completion --mode uninstall
