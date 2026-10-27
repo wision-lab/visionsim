@@ -491,6 +491,8 @@ def optimize_rate(
     probe_config.include_points = False
     probe_config.include_segmentations = False
     probe_config.include_thermal = False
+    # `resolved()` runs at the job boundary and would otherwise re-expand the caller's include_all.
+    probe_config.include_all = False
     probe_config.previews = False
     probe_config.autoscale = False
     probe_config.jobs = 1

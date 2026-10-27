@@ -1,0 +1,149 @@
+from __future__ import annotations
+
+import dataclasses
+import types
+import typing
+from dataclasses import dataclass
+from pathlib import Path
+from typing import IO, Any
+
+from typing_extensions import Self
+
+_RESERVED_FIELDS = ("load", "dump")
+_UNIONS = (typing.Union, types.UnionType)
+
+
+@dataclass
+class ConfigIO:
+    """Mixin adding the ``load``/``dump`` file options to a CLI config dataclass."""
+
+    load: Path | None = None
+    """Load options from this YAML or JSON file before parsing the remaining flags"""
+    dump: Path | None = None
+    """Write the effective options to this YAML file before running"""
+
+    @classmethod
+    def from_file(cls, path: Path) -> Self:
+        """Load a configuration from a YAML or JSON file.
+
+        The file mirrors the dataclass field names and nesting. Unknown keys are rejected
+        with the offending key path; values are parsed by tyro itself, so the accepted
+        syntax is exactly the one the command line accepts.
+
+        Args:
+            path (Path): File to read. YAML is used for parsing, which also accepts JSON.
+
+        Returns:
+            A configuration built from the file, with missing fields taking their
+            dataclass defaults.
+
+        Raises:
+            FileNotFoundError: If ``path`` does not exist.
+            ValueError: If the file cannot be parsed or contains unknown keys.
+            TypeError: If the file does not contain a mapping at the top level.
+            SystemExit: If tyro rejects a value, after printing its usual error message.
+        """
+        import tyro
+        import yaml
+
+        source = Path(path)
+        try:
+            data = yaml.safe_load(source.read_text(encoding="utf-8"))
+        except yaml.YAMLError as e:
+            raise ValueError(f"Could not parse config file {source}: {e}") from e
+
+        if not isinstance(data, dict):
+            raise TypeError(f"Config file {source} must contain a mapping at the top level, got {type(data).__name__}.")
+        return tyro.cli(cls, default=cls(), args=_to_args(cls, data, str(source)))
+
+    def _as_dict(self) -> dict[str, Any]:
+        data = dataclasses.asdict(self)
+        data.pop("load", None)
+        data.pop("dump", None)
+        return data
+
+    def to_stream(self, stream: IO[str]) -> None:
+        """Write this configuration as YAML to a writable text stream.
+
+        Field declaration order is preserved, ``Path`` values are written as strings and
+        tuple values as lists. The ``load`` and ``dump`` options themselves are omitted so
+        the result can be passed back to :meth:`from_file`.
+
+        Args:
+            stream (IO[str]): Destination stream, e.g. an open file or ``io.StringIO``.
+        """
+        import yaml
+
+        class _Dumper(yaml.SafeDumper):
+            """SafeDumper that serializes ``Path`` values as strings."""
+
+        _Dumper.add_multi_representer(Path, lambda dumper, value: dumper.represent_str(str(value)))
+
+        yaml.dump(self._as_dict(), stream, Dumper=_Dumper, sort_keys=False)
+
+    def to_file(self, path: Path) -> None:
+        """Write this configuration to a file.
+
+        YAML is used unless ``path`` ends in ``.json``.
+
+        Args:
+            path (Path): Destination file; parent directories are created.
+        """
+        import json
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as stream:
+            if path.suffix.lower() == ".json":
+                json.dump(self._as_dict(), stream, indent=2, default=str)
+                stream.write("\n")
+            else:
+                self.to_stream(stream)
+
+
+def _to_args(cls: type[Any], data: dict[str, Any], where: str, prefix: str = "") -> list[str]:
+    """Convert a config mapping into tyro option tokens for ``cls``."""
+    hints = typing.get_type_hints(cls, include_extras=True)
+    data = {key.replace("-", "_"): value for key, value in data.items()}
+    fields = {f.name for f in dataclasses.fields(typing.cast(Any, cls))}
+
+    if unknown := sorted(set(data) - fields):
+        raise ValueError(f"{where}: unknown option(s) {unknown}; valid options are {sorted(fields)}")
+
+    if set(_RESERVED_FIELDS) <= fields:
+        reserved = sorted(set(data) & set(_RESERVED_FIELDS))
+        if reserved:
+            raise ValueError(f"{where}: {reserved} are command-line options and cannot be set in a config file")
+
+    args: list[str] = []
+    for key, value in data.items():
+        if value is None:
+            continue
+        name = f"{prefix}{key}"
+        where_key = f"{where}:{key}"
+        typ, optional = _strip(hints[key])
+        if isinstance(value, dict):
+            if not (isinstance(typ, type) and dataclasses.is_dataclass(typ)):
+                raise ValueError(f"{where_key}: expected a mapping, got {type(value).__name__}")
+            args.extend(_to_args(typ, value, where_key, prefix=f"{name}."))
+        elif isinstance(value, bool) and not optional:
+            args.append(f"--{prefix}{'' if value else 'no-'}{key}")
+        elif isinstance(value, bool):
+            args.append(f"--{name}={value}")
+        elif isinstance(value, (list, tuple)):
+            items = [str(item) for item in value]
+            args.extend([f"--{name}={items[0]}", *items[1:]] if items else [f"--{name}"])
+        else:
+            args.append(f"--{name}={value}")
+    return args
+
+
+def _strip(typ: Any) -> tuple[Any, bool]:
+    """Unwrap ``Annotated``/``Optional`` and report whether ``None`` was allowed."""
+    while typing.get_origin(typ) is typing.Annotated:
+        typ = typing.get_args(typ)[0]
+    origin = typing.get_origin(typ)
+    if origin in _UNIONS:
+        options = [opt for opt in typing.get_args(typ) if opt is not type(None)]
+        if len(options) == 1:
+            return options[0], len(options) != len(typing.get_args(typ))
+    return typ, False
