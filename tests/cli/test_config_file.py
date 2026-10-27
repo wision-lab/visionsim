@@ -247,6 +247,15 @@ def test_no_config_flags_leaves_command_untouched():
     assert bind_config_file(plain_command, ["input", "--config.load", "x.yaml"]) is plain_command
 
 
+def test_no_config_flags_does_not_parse(monkeypatch):
+    def fail(*args, **kwargs):
+        raise AssertionError("command was parsed without config flags")
+
+    monkeypatch.setattr("visionsim.cli._config_file._parse_config_values", fail)
+
+    assert bind_config_file(toy_command, ["input", "--video"]) is toy_command
+
+
 def test_help_short_circuits_before_loading(tmp_path):
     missing = tmp_path / "missing.yaml"
 

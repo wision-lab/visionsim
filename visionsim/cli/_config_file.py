@@ -16,8 +16,8 @@ def bind_config_file(fn: Callable[..., Any], argv: Sequence[str]) -> Callable[..
 
     A function rather than a decorator: the decision depends on the current ``argv``
     and is made in ``main()`` for the selected subcommand only. Commands without a
-    :class:`ConfigIO` parameter, and invocations that use neither option, are returned
-    unchanged.
+    config parameter carrying ``load``/``dump`` options, and invocations that use
+    neither option, are returned unchanged.
 
     Args:
         fn (Callable[..., Any]): Command function to wrap.
@@ -37,6 +37,10 @@ def bind_config_file(fn: Callable[..., Any], argv: Sequence[str]) -> Callable[..
         return fn
     # Help must reach tyro without reading a config file first.
     if any(token in ("-h", "--help") for token in argv):
+        return fn
+    # Avoid a second parse when neither option is present; plain invocations stay untouched.
+    options = [f"--{name.replace('_', '-')}.{field}" for name, _ in params for field in ("load", "dump")]
+    if not any(token == option or token.startswith(f"{option}=") for token in argv for option in options):
         return fn
 
     configs = _parse_config_values(fn, params, argv)

@@ -5,10 +5,8 @@ import types
 import typing
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Any
 
-import tyro
-import yaml
 from typing_extensions import Self
 
 _RESERVED_FIELDS = ("load", "dump")
@@ -17,21 +15,12 @@ _UNIONS = (typing.Union, types.UnionType)
 
 @dataclass
 class ConfigIO:
-    """Mixin adding ``load`` and ``dump`` options to a CLI-facing config dataclass.
+    """Mixin adding the ``load``/``dump`` file options to a CLI config dataclass."""
 
-    Inheriting from this class makes a config dataclass loadable from a YAML or JSON
-    file through its CLI, e.g. ``--config.load path/to/file.yaml``, and lets the
-    effective configuration be written back with ``--config.dump``.
-    """
-
-    load: Annotated[
-        Path | None,
-        tyro.conf.arg(help="Load options from this YAML or JSON file before parsing the remaining flags."),
-    ] = None
-    dump: Annotated[
-        Path | None,
-        tyro.conf.arg(help="Write the effective options to this YAML file before running."),
-    ] = None
+    load: Path | None = None
+    """Load options from this YAML or JSON file before parsing the remaining flags"""
+    dump: Path | None = None
+    """Write the effective options to this YAML file before running"""
 
     @classmethod
     def from_file(cls, path: Path) -> Self:
@@ -54,6 +43,9 @@ class ConfigIO:
             TypeError: If the file does not contain a mapping at the top level.
             SystemExit: If tyro rejects a value, after printing its usual error message.
         """
+        import tyro
+        import yaml
+
         source = Path(path)
         try:
             data = yaml.safe_load(source.read_text(encoding="utf-8"))
@@ -74,19 +66,19 @@ class ConfigIO:
         Args:
             path (Path): Destination file; parent directories are created.
         """
+        import yaml
+
+        class _Dumper(yaml.SafeDumper):
+            """SafeDumper that serializes ``Path`` values as strings."""
+
+        _Dumper.add_multi_representer(Path, lambda dumper, path: dumper.represent_str(str(path)))
+
         data = dataclasses.asdict(typing.cast(Any, self))
         data.pop("load", None)
         data.pop("dump", None)
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(yaml.dump(data, Dumper=_Dumper, sort_keys=False), encoding="utf-8")
-
-
-class _Dumper(yaml.SafeDumper):
-    """SafeDumper that serializes ``Path`` values as strings."""
-
-
-_Dumper.add_multi_representer(Path, lambda dumper, path: dumper.represent_str(str(path)))
 
 
 def _to_args(cls: type[Any], data: dict[str, Any], where: str, prefix: str = "") -> list[str]:
@@ -98,7 +90,7 @@ def _to_args(cls: type[Any], data: dict[str, Any], where: str, prefix: str = "")
     if unknown := sorted(set(data) - fields):
         raise ValueError(f"{where}: unknown option(s) {unknown}; valid options are {sorted(fields)}")
 
-    if issubclass(cls, ConfigIO):
+    if set(_RESERVED_FIELDS) <= fields:
         reserved = sorted(set(data) & set(_RESERVED_FIELDS))
         if reserved:
             raise ValueError(f"{where}: {reserved} are command-line options and cannot be set in a config file")
