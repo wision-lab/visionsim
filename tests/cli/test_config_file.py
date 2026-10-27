@@ -197,13 +197,14 @@ def test_dump_omits_io_options(tmp_path):
 
 def test_dump_json(tmp_path):
     path = tmp_path / "render.json"
-    config = RenderConfig(jobs=2, executable=Path("/usr/bin/blender"), camera_offset=(1.0, 2.0, 3.0))
+    executable = Path("/usr/bin/blender")
+    config = RenderConfig(jobs=2, executable=executable, camera_offset=(1.0, 2.0, 3.0))
 
     config.to_file(path)
 
     data = json.loads(path.read_text())
     assert data["jobs"] == 2
-    assert data["executable"] == "/usr/bin/blender"
+    assert data["executable"] == str(executable)
     assert RenderConfig.from_file(path) == config
 
 
