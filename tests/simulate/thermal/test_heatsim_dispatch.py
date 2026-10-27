@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict
 
 from visionsim.simulate.config import RenderConfig
@@ -61,3 +62,13 @@ def test_render_job_resolves_include_all_and_previews():
     _name, _args, kwargs = client.calls[names.index("include_flows")]
     assert kwargs["preview"] is False
     assert config.include_depths is False
+
+
+def test_render_job_logs_resolved_config(caplog):
+    config = RenderConfig(include_all=True)
+
+    with caplog.at_level(logging.DEBUG, logger="visionsim.simulate.job"):
+        render_job(_RecordingClient(), "scene.blend", "out", config=config, dry_run=True)
+
+    assert "Resolved configuration" in caplog.text
+    assert "include_depths: true" in caplog.text

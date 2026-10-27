@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+import io
+import logging
 import os
 from dataclasses import asdict
 
 from visionsim.simulate.blender import BlenderClient, BlenderClients
 from visionsim.simulate.config import RenderConfig
 from visionsim.types import UpdateFn
+
+logger = logging.getLogger(__name__)
+
+
+def _log_config(config: RenderConfig, label: str) -> None:
+    if logger.isEnabledFor(logging.DEBUG):
+        stream = io.StringIO()
+        config.to_stream(stream)
+        logger.debug("%s:\n%s", label, stream.getvalue())
 
 
 def _prepare_render(
@@ -61,6 +72,7 @@ def _prepare_render_job(
             this path. Defaults to not saving.
     """
     config = config.resolved()
+    _log_config(config, "Resolved configuration")
     _prepare_render(client, blend_file, root, config)
 
     client.cycles_settings(
@@ -216,6 +228,7 @@ def playblast_job(
             then will be called with ``advance=1`` at every step. Closely mirrors the `rich.Progress
             API <https://rich.readthedocs.io/en/stable/reference/progress.html#rich.progress.Progress.update>`_.
     """
+    _log_config(config, "Playblast configuration")
     _prepare_render(client, blend_file, root, config)
 
     if output_blend_file is not None:

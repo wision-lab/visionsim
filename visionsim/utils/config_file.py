@@ -5,7 +5,7 @@ import types
 import typing
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 from typing_extensions import Self
 
@@ -56,29 +56,37 @@ class ConfigIO:
             raise TypeError(f"Config file {source} must contain a mapping at the top level, got {type(data).__name__}.")
         return tyro.cli(cls, default=cls(), args=_to_args(cls, data, str(source)))
 
-    def to_file(self, path: Path) -> None:
-        """Write this configuration to a YAML file.
+    def to_stream(self, stream: IO[str]) -> None:
+        """Write this configuration as YAML to a writable text stream.
 
         Field declaration order is preserved, ``Path`` values are written as strings and
         tuple values as lists. The ``load`` and ``dump`` options themselves are omitted so
         the result can be passed back to :meth:`from_file`.
 
         Args:
-            path (Path): Destination file; parent directories are created.
+            stream (IO[str]): Destination stream, e.g. an open file or ``io.StringIO``.
         """
         import yaml
 
         class _Dumper(yaml.SafeDumper):
             """SafeDumper that serializes ``Path`` values as strings."""
 
-        _Dumper.add_multi_representer(Path, lambda dumper, path: dumper.represent_str(str(path)))
+        _Dumper.add_multi_representer(Path, lambda dumper, value: dumper.represent_str(str(value)))
 
-        data = dataclasses.asdict(typing.cast(Any, self))
+        data = dataclasses.asdict(self)
         data.pop("load", None)
         data.pop("dump", None)
-        target = Path(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(yaml.dump(data, Dumper=_Dumper, sort_keys=False), encoding="utf-8")
+        yaml.dump(data, stream, Dumper=_Dumper, sort_keys=False)
+
+    def to_file(self, path: Path) -> None:
+        """Write this configuration as YAML to a file.
+
+        Args:
+            path (Path): Destination file; parent directories are created.
+        """
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as stream:
+            self.to_stream(stream)
 
 
 def _to_args(cls: type[Any], data: dict[str, Any], where: str, prefix: str = "") -> list[str]:
