@@ -204,6 +204,13 @@ def _completion_script(shell: _CompletionShell, prog: str) -> str:
             raise
     script = buffer.getvalue()
 
+    # tyro prints multi-line help text verbatim, so descriptions become extra completion
+    # candidates that break prefix matching (bash computes an empty common prefix).
+    script = script.replace(
+        "    for completion in completions:\n        print(completion)",
+        "    for completion in completions:\n        print(*completion.splitlines())",
+    )
+
     if shell == "fish":
         # tyro 1.0.16 passes the spec as a single -c argument, which exceeds Linux's
         # 128 KiB per-argument limit for this CLI; feed it through stdin instead.

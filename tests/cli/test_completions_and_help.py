@@ -35,6 +35,9 @@ def test_completion_command(tmp_path, shell, filename, alias_filename, registrat
 
     assert registration in target.read_text()
     assert (tmp_path / alias_filename).exists()
+    # Multi-line help must not leak description fragments as completion candidates.
+    assert "print(*completion.splitlines())" in target.read_text()
+    assert "print(completion)" not in target.read_text()
     if shell == "fish":
         # tyro's default -c invocation exceeds Linux's per-argument size limit for this CLI.
         assert '-c "$pycode"' not in target.read_text()
