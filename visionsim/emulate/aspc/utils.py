@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+import warnings
 import functools
 import inspect
 import math
@@ -14,6 +14,7 @@ import pint
 import torch
 from pint import Quantity, UnitRegistry, set_application_registry
 from ruamel.yaml import YAML
+from ruamel.yaml.nodes import MappingNode, ScalarNode, SequenceNode
 from scipy.constants import c  # Top-level export for unit tests
 import torch.nn.functional as F
 
@@ -199,8 +200,6 @@ def preproc_frames(
 
 
 def _validate_config(config: dict) -> None:
-    errors = []
-
     expected_dimensionality = {
         ("histogrammer", "min_depth"): ureg.meter.dimensionality,
         ("histogrammer", "max_depth"): ureg.meter.dimensionality,
@@ -218,6 +217,7 @@ def _validate_config(config: dict) -> None:
         ("sensor", "fov"): ureg.degree.dimensionality,
     }
 
+    # 1. Enforce Unit Dimensionality Requirements
     for key_path, expected_dim in expected_dimensionality.items():
         found, val = _get_nested_val(config, key_path)
         if not found or val is None:
@@ -228,18 +228,26 @@ def _validate_config(config: dict) -> None:
         if isinstance(val, (tuple, list)):
             for idx, item in enumerate(val):
                 if not isinstance(item, Quantity):
-                    errors.append(f"'{param_name}[{idx}]' must be a Pint Quantity, got {type(item).__name__}")
-                elif not item.check(expected_dim):
-                    errors.append(f"'{param_name}[{idx}]' has incorrect dimensionality.")
+                    raise TypeError(
+                        f"Invalid configuration parameter '{param_name}[{idx}]': expected a Pint Quantity, got {type(item).__name__}."
+                    )
+                if not item.check(expected_dim):
+                    raise ValueError(
+                        f"Dimensionality mismatch for parameter '{param_name}[{idx}]'. "
+                        f"Expected {expected_dim}, got {item.dimensionality}."
+                    )
         elif isinstance(val, Quantity):
             if not val.check(expected_dim):
-                errors.append(f"'{param_name}' has incorrect unit dimensionality.")
+                raise ValueError(
+                    f"Dimensionality mismatch for parameter '{param_name}'. "
+                    f"Expected {expected_dim}, got {val.dimensionality}."
+                )
         else:
-            errors.append(f"'{param_name}' must be a Pint Quantity, got {type(val).__name__}")
+            raise TypeError(
+                f"Invalid configuration parameter '{param_name}': expected a Pint Quantity, got {type(val).__name__}."
+            )
 
-    if errors:
-        raise ValueError("Unit Validation Errors:\n - " + "\n - ".join(errors))
-
+    # 2. Check Physical Quantities and Value Constraints
     hist = config.get("histogrammer", {})
     active = config.get("active_source", {}).get("pulsed_laser", {})
 
@@ -249,42 +257,44 @@ def _validate_config(config: dict) -> None:
     bin_width = hist.get("bin_width")
     pulse_rep = active.get("pulse_repetition")
 
-    if min_depth is not None and min_depth < 0 * ureg.meters:
-        errors.append(f"min_depth must be >= 0m, got {min_depth}")
+    if min_depth is not None and isinstance(min_depth, Quantity):
+        if min_depth < 0 * ureg.meters:
+            raise ValueError(f"Invalid min_depth: value must be >= 0m, got {min_depth}.")
 
-    if max_depth is not None and min_depth is not None and max_depth <= min_depth:
-        errors.append(f"max_depth ({max_depth}) must be > min_depth ({min_depth})")
+    if min_depth is not None and max_depth is not None and isinstance(min_depth, Quantity) and isinstance(max_depth, Quantity):
+        if max_depth <= min_depth:
+            raise ValueError(
+                f"Conflicting depth parameters: max_depth ({max_depth}) must be strictly greater than min_depth ({min_depth})."
+            )
 
-    if pulse_rep is not None and pulse_rep > 0 * ureg.megahertz:
+    if pulse_rep is not None and isinstance(pulse_rep, Quantity) and pulse_rep > 0 * ureg.hertz:
         max_resolvable_depth = tof2depth(1 / pulse_rep)
-        if max_depth is not None and max_depth > max_resolvable_depth:
-            errors.append(f"Max depth ({max_depth}) exceeds max resolvable depth ({max_resolvable_depth}).")
+        if max_depth is not None and isinstance(max_depth, Quantity):
+            if max_depth > max_resolvable_depth:
+                raise ValueError(
+                    f"Conflicting parameters: max_depth ({max_depth}) exceeds maximum resolvable depth "
+                    f"({max_resolvable_depth:.4f~P}) derived from pulse_repetition ({pulse_rep})."
+                )
 
-        if n_bins is not None and bin_width is not None:
+        if n_bins is not None and bin_width is not None and isinstance(bin_width, Quantity):
             implied_bw = max_resolvable_depth / n_bins
             ratio = (bin_width / implied_bw).to(ureg.dimensionless).magnitude
             if not np.isclose(ratio, 1.0, rtol=5e-2):
-                errors.append(
-                    f"Configured bin_width ({bin_width}) contradicts implied bin width ({implied_bw:.6f~P}) "
-                    f"from pulse_repetition ({pulse_rep}) and n_bins ({n_bins})."
+                raise ValueError(
+                    f"Conflicting parameters: bin_width ({bin_width}) contradicts implied bin width "
+                    f"({implied_bw:.6f~P}) derived from pulse_repetition ({pulse_rep}) and n_bins ({n_bins})."
                 )
-
-    if errors:
-        raise ValueError("Invalid configuration:\n - " + "\n - ".join(errors))
-
 
 def yaml_constructor(cls_or_func, *extra_args):
     def constructor(loader, node):
-        if hasattr(loader, "construct_scalar") and isinstance(node, loader.model.ScalarNode):
+        if isinstance(node, ScalarNode):
             val = loader.construct_scalar(node)
             return cls_or_func(val, *extra_args)
-        elif hasattr(node, "value") and isinstance(node.value, str):
-            return cls_or_func(node.value, *extra_args)
-        elif isinstance(node.value, list):
-            seq = [loader.construct_object(child) for child in node.value]
+        elif isinstance(node, SequenceNode):
+            seq = loader.construct_sequence(node)
             return cls_or_func(seq, *extra_args)
-        elif isinstance(node.value, dict):
-            mapping = {loader.construct_object(k): loader.construct_object(v) for k, v in node.value.items()}
+        elif isinstance(node, MappingNode):
+            mapping = loader.construct_mapping(node)
             return cls_or_func(*extra_args, **mapping)
         return cls_or_func(node.value, *extra_args)
 
@@ -411,24 +421,64 @@ def _build_config(
     }
 
     config: dict = {}
+    default_used_params: list[str] = []
 
     for param_name, key_path in cli_mapping.items():
         val = user_args.get(param_name)
+        used_default = False
+        source = "cli"
 
         if val is None:
             found, yml_val = _get_nested_val(yml_config, key_path)
             if found and yml_val is not None:
                 val = yml_val
+                source = "yaml"
             else:
                 _, val = _get_nested_val(DEFAULT_CONFIG, key_path)
+                used_default = True
+                source = "default"
 
+        # 1. Reject custom dictionary structures passed for parameters
+        if isinstance(val, dict):
+            raise ValueError(
+                f"Invalid configuration parameter '{param_name}' ({'.'.join(key_path)}). "
+                f"Expected a scalar, list, or Pint Quantity, got dictionary: {val}."
+            )
+
+        if used_default:
+            default_used_params.append(f"  - {param_name} ({'.'.join(key_path)}): {val}")
+
+        # 2. Check for missing Pint units in YAML input and issue a warning
         if param_name in cli_param_units:
-            val = _to_quantity(val, cli_param_units[param_name])
+            default_unit = cli_param_units[param_name]
+            if source == "yaml":
+                if isinstance(val, (int, float)):
+                    warnings.warn(
+                        f"YAML parameter '{param_name}' ({'.'.join(key_path)}) is missing explicit Pint units. "
+                        f"Defaulting to unit '{default_unit}' (value: {val} {default_unit}).",
+                        UserWarning,
+                    )
+                elif isinstance(val, (list, tuple)) and any(not isinstance(x, Quantity) for x in val):
+                    warnings.warn(
+                        f"YAML parameter '{param_name}' ({'.'.join(key_path)}) contains elements missing explicit Pint units. "
+                        f"Defaulting to unit '{default_unit}'.",
+                        UserWarning,
+                    )
+
+            val = _to_quantity(val, default_unit)
 
         d = config
         for step in key_path[:-1]:
             d = d.setdefault(step, {})
         d[key_path[-1]] = val
+
+    # Issue a warning summarizing all parameters that fell back to defaults
+    if default_used_params:
+        warnings.warn(
+            "The following configuration parameters were not specified and fell back to default values:\n"
+            + "\n".join(default_used_params),
+            UserWarning,
+        )
 
     for key in ("input_dir", "output_dir", "force", "pattern"):
         if key in user_args and user_args[key] is not None:
