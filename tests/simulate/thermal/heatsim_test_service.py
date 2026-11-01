@@ -441,6 +441,229 @@ class HeatsimTestService(BlenderService):
             "albedo_n": None if albedo is None else len(albedo),
         }
 
+    def exposed_opaque_receiver_fixture(self) -> dict:
+        """Bake mixed-material coplanar patches under known uniform radiance 1."""
+        from unittest.mock import patch
+
+        from visionsim.simulate.heatsim import irradiance
+        from visionsim.simulate.heatsim.adapter import _sample_bilinear
+        from visionsim.simulate.heatsim.names import BAKE_UV_LAYER_NAME
+
+        self._clear()
+        self._enable_cycles(samples=64)
+        self._add_world_light(color=(1, 1, 1, 1))
+        scene = bpy.context.scene
+        scene.cycles.use_adaptive_sampling = False
+        scene.cycles.seed = 71
+        kinds = (
+            "black",
+            "gray",
+            "metal",
+            "alpha",
+            "transmission",
+            "subsurface",
+            "linked_alpha",
+            "linked_transmission",
+            "linked_subsurface",
+            "mixed",
+            "translucent",
+            "volume",
+        )
+        vertices, faces, materials = [], [], []
+        for i, kind in enumerate(kinds):
+            x = i * 3
+            faces.append(tuple(range(len(vertices), len(vertices) + 4)))
+            vertices.extend(((x, 0, 0), (x + 1, 0, 0), (x + 1, 1, 0), (x, 1, 0)))
+            mat = bpy.data.materials.new(kind)
+            mat.use_nodes = True
+            nodes, links = mat.node_tree.nodes, mat.node_tree.links
+            surface = nodes.get("Principled BSDF")
+            output = nodes.get("Material Output")
+            color = {"black": 0.0, "gray": 0.18, "metal": 0.6}.get(kind, 0.2)
+            surface.inputs["Base Color"].default_value = (color, color, color, 1)
+            if kind == "metal":
+                surface.inputs["Metallic"].default_value = 1
+            socket_names = {"alpha": "Alpha", "transmission": "Transmission Weight", "subsurface": "Subsurface Weight"}
+            if kind in socket_names:
+                surface.inputs[socket_names[kind]].default_value = 0.5
+            elif kind.startswith("linked_"):
+                name = kind.removeprefix("linked_")
+                value = nodes.new("ShaderNodeValue")
+                value.outputs[0].default_value = 1 if name == "alpha" else 0
+                links.new(value.outputs[0], surface.inputs[socket_names[name]])
+            elif kind == "mixed":
+                mix = nodes.new("ShaderNodeMixShader")
+                transparent = nodes.new("ShaderNodeBsdfTransparent")
+                links.new(surface.outputs[0], mix.inputs[1])
+                links.new(transparent.outputs[0], mix.inputs[2])
+                links.new(mix.outputs[0], output.inputs["Surface"])
+            elif kind == "translucent":
+                links.new(nodes.new("ShaderNodeBsdfTranslucent").outputs[0], output.inputs["Surface"])
+            elif kind == "volume":
+                links.new(nodes.new("ShaderNodeVolumeAbsorption").outputs[0], output.inputs["Volume"])
+            materials.append(mat)
+        mesh = bpy.data.meshes.new("MixedReceiver")
+        mesh.from_pydata(vertices, [], faces)
+        obj = bpy.data.objects.new("MixedReceiver", mesh)
+        scene.collection.objects.link(obj)
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        for i, mat in enumerate(materials):
+            mesh.materials.append(mat)
+            mesh.polygons[i].material_index = i
+        # A second user exercises restoration of shared meshes and object slots.
+        shared = obj.copy()
+        scene.collection.objects.link(shared)
+        shared.location.y = 3
+        shared.hide_render = True
+        shared.material_slots[0].link = "OBJECT"
+        shared.material_slots[0].material = materials[1]
+        irradiance.prepare_object_bake_uv(obj)
+
+        def snapshot():
+            return (
+                tuple(bpy.data.materials),
+                tuple(bpy.data.node_groups),
+                tuple((m, len(m.node_tree.nodes), len(m.node_tree.links)) for m in materials),
+                tuple((o, tuple((s.link, s.material) for s in o.material_slots)) for o in (obj, shared)),
+                tuple(p.material_index for p in mesh.polygons),
+                tuple((uv.name, uv.active_render) for uv in mesh.uv_layers),
+                mesh.uv_layers.active_index,
+            )
+
+        before = snapshot()
+        eligible = [kind for kind, mat in zip(kinds, materials) if irradiance._opaque_principled_surface(mat)]
+        uv = mesh.uv_layers[BAKE_UV_LAYER_NAME]
+        centers = np.array([np.mean([uv.data[i].uv[:] for i in p.loop_indices], axis=0) for p in mesh.polygons])
+
+        def sample(baked, scale=1):
+            # Face centers avoid mixing adjacent padded UV charts at vertices.
+            return _sample_bilinear(baked.pixels, baked.width, baked.height, centers) * scale
+
+        # Control uses precisely the old bake path on identical geometry/UVs.
+        with patch.object(irradiance, "_prepare_opaque_bake_material"):
+            old_flux = sample(irradiance.bake_irradiance_map(scene, obj, 256, samples=64), np.pi)
+            old_color = sample(irradiance.bake_albedo_map(scene, obj, 256))
+        flux = sample(irradiance.bake_irradiance_map(scene, obj, 256, samples=64), np.pi)
+        color = sample(irradiance.bake_albedo_map(scene, obj, 256))
+        restored = snapshot() == before
+        with patch.object(
+            irradiance, "_prepare_image_nodes_for_bake", side_effect=RuntimeError("injected bake failure")
+        ):
+            failed = irradiance.bake_irradiance_map(scene, obj, 32, samples=4)
+        return {
+            "eligible": eligible,
+            "patches": {
+                kind: {
+                    "incident": float(flux[i]),
+                    "albedo": float(color[i]),
+                    "old_incident": float(old_flux[i]),
+                    "old_albedo": float(old_color[i]),
+                }
+                for i, kind in enumerate(kinds)
+            },
+            "restored": restored,
+            "failure_restored": failed is None and snapshot() == before,
+        }
+
+    def exposed_opaque_receiver_concave(self) -> dict:
+        """One black mesh forms both a bowl and its center measurement patch."""
+        import math
+
+        from visionsim.simulate.heatsim import irradiance
+        from visionsim.simulate.heatsim.names import BAKE_UV_LAYER_NAME
+
+        self._clear()
+        self._enable_cycles(samples=256)
+        self._add_world_light(color=(1, 1, 1, 1))
+        scene = bpy.context.scene
+        scene.cycles.max_bounces = scene.cycles.diffuse_bounces = 32
+        scene.cycles.seed = 71
+        n, s = 128, 0.002
+        vertices = [(-s, -s, 0), (s, -s, 0), (s, s, 0), (-s, s, 0)]
+        for radius, z in ((0.01, 0), (1, 0), (1, 1)):
+            vertices.extend(
+                (radius * math.cos(2 * math.pi * i / n), radius * math.sin(2 * math.pi * i / n), z) for i in range(n)
+            )
+        faces = [(0, 1, 2, 3)]
+        for i in range(n):
+            j = (i + 1) % n
+            faces.extend(((4 + i, 4 + n + i, 4 + n + j, 4 + j), (4 + n + j, 4 + n + i, 4 + 2 * n + i, 4 + 2 * n + j)))
+        mesh = bpy.data.meshes.new("BlackBowl")
+        mesh.from_pydata(vertices, [], faces)
+        obj = bpy.data.objects.new("BlackBowl", mesh)
+        scene.collection.objects.link(obj)
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        mat = bpy.data.materials.new("BlackBowl")
+        mat.use_nodes = True
+        surface = mat.node_tree.nodes.get("Principled BSDF")
+        surface.inputs["Base Color"].default_value = (0, 0, 0, 1)
+        surface.inputs["Specular IOR Level"].default_value = 0
+        mesh.materials.append(mat)
+        # Let production build/cache its UVs, then devote the atlas to the tiny
+        # patch. Degenerate wall UVs still leave the walls in light transport.
+        irradiance.prepare_object_bake_uv(obj)
+        uv = mesh.uv_layers[BAKE_UV_LAYER_NAME]
+        for corner in uv.data:
+            corner.uv = (0, 0)
+        for index, coord in zip(mesh.polygons[0].loop_indices, ((0, 0), (1, 0), (1, 1), (0, 1))):
+            uv.data[index].uv = coord
+        probe = irradiance.bake_irradiance_map(scene, obj, 32, samples=256)
+        # A global-white control must visibly disagree with the black-bowl truth.
+        surface.inputs["Base Color"].default_value = (1, 1, 1, 1)
+        white = irradiance.bake_irradiance_map(scene, obj, 32, samples=256)
+        return {
+            "expected": math.pi / 2,
+            "measured": float(probe.pixels[2:-2, 2:-2].mean() * math.pi),
+            "global_white": float(white.pixels[2:-2, 2:-2].mean() * math.pi),
+        }
+
+    def exposed_opaque_receiver_transparent_path(self) -> dict:
+        """A transparent crossing must end the depth-zero receiver override."""
+        from visionsim.simulate.heatsim import irradiance
+
+        self._clear()
+        self._enable_cycles(samples=32)
+        self._add_world_light(color=(1, 1, 1, 1))
+        scene = bpy.context.scene
+        bpy.ops.mesh.primitive_plane_add(size=4)
+        receiver = bpy.context.object
+        mat = bpy.data.materials.new("Receiver")
+        mat.use_nodes = True
+        surface = mat.node_tree.nodes.get("Principled BSDF")
+        surface.inputs["Base Color"].default_value = (0, 0, 0, 1)
+        surface.inputs["Specular IOR Level"].default_value = 0
+        irradiance._prepare_opaque_bake_material(mat, incident=True)
+        receiver.data.materials.append(mat)
+        bpy.ops.mesh.primitive_plane_add(size=4, location=(0, 0, 1))
+        window = bpy.context.object
+        glass = bpy.data.materials.new("Transparent")
+        glass.use_nodes = True
+        nodes, links = glass.node_tree.nodes, glass.node_tree.links
+        links.new(nodes.new("ShaderNodeBsdfTransparent").outputs[0], nodes.get("Material Output").inputs["Surface"])
+        window.data.materials.append(glass)
+        bpy.ops.object.camera_add(location=(0, 0, 3))
+        scene.camera = bpy.context.object
+        scene.camera.data.type = "ORTHO"
+        scene.camera.data.ortho_scale = 0.5
+        scene.render.resolution_x = scene.render.resolution_y = 8
+        scene.render.resolution_percentage = 100
+        scene.render.image_settings.file_format = "OPEN_EXR"
+        scene.render.image_settings.color_depth = "32"
+        measured = {}
+        with tempfile.TemporaryDirectory() as root:
+            for present in (False, True):
+                window.hide_render = not present
+                scene.render.filepath = str(Path(root) / f"{present}.exr")
+                bpy.ops.render.render(write_still=True)
+                image = bpy.data.images.load(scene.render.filepath)
+                image.colorspace_settings.name = "Non-Color"
+                pixels = np.array(image.pixels[:]).reshape(8, 8, 4)
+                measured[str(present)] = float(pixels[:, :, :3].mean())
+                bpy.data.images.remove(image)
+        return measured
+
     def exposed_prepare_bake_uv(self) -> dict:
         """Create a bake UV on the active object and report its atlas eligibility.
 

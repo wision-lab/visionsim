@@ -497,6 +497,73 @@ def _install_bake_uv_material_overrides(objects: list[bpy.types.Object], uv_snap
     return state
 
 
+def _opaque_principled_surface(mat):
+    """Recognize only directly connected, provably opaque Principled surfaces.
+
+    Linked opacity inputs and complex graphs are deliberately left unchanged;
+    evaluating their transparency at a few sample points would not prove opacity.
+    """
+    output = mat.node_tree.get_output_node("CYCLES")
+    if output is None or output.inputs["Volume"].is_linked or not output.inputs["Surface"].is_linked:
+        return None
+    surface = output.inputs["Surface"].links[0].from_node
+    if surface.type != "BSDF_PRINCIPLED":
+        return None
+    for names, expected in (
+        (("Alpha",), 1.0),
+        (("Transmission Weight", "Transmission"), 0.0),
+        (("Subsurface Weight", "Subsurface"), 0.0),
+    ):
+        socket = next((surface.inputs.get(name) for name in names if surface.inputs.get(name) is not None), None)
+        if socket is None or socket.is_linked or socket.default_value != expected:
+            return None
+    thin_wall = surface.inputs.get("Thin Wall")
+    if thin_wall is not None and (thin_wall.is_linked or thin_wall.default_value):
+        return None
+    return output, surface
+
+
+def _prepare_opaque_bake_material(mat, *, incident: bool) -> None:
+    """Modify a private bake copy, retaining the authored shader on later hits."""
+    opaque = _opaque_principled_surface(mat)
+    if opaque is None:
+        return
+    output, surface = opaque
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    receiver = nodes.new("ShaderNodeBsdfDiffuse")
+    normal = surface.inputs["Normal"]
+    if normal.is_linked:
+        links.new(normal.links[0].from_socket, receiver.inputs["Normal"])
+    else:
+        receiver.inputs["Normal"].default_value = normal.default_value
+    if not incident:
+        # COLOR-only baking reads Base Color, including on metals whose authored
+        # shader has no diffuse lobe. This pass does not trace reflected light.
+        color = surface.inputs["Base Color"]
+        if color.is_linked:
+            links.new(color.links[0].from_socket, receiver.inputs["Color"])
+        else:
+            receiver.inputs["Color"].default_value = color.default_value
+        links.new(receiver.outputs[0], output.inputs["Surface"])
+        return
+    receiver.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+    path = nodes.new("ShaderNodeLightPath")
+    depth = nodes.new("ShaderNodeMath")
+    depth.operation = "ADD"
+    links.new(path.outputs["Ray Depth"], depth.inputs[0])
+    links.new(path.outputs["Transparent Depth"], depth.inputs[1])
+    first = nodes.new("ShaderNodeMath")
+    first.operation = "LESS_THAN"
+    first.inputs[1].default_value = 0.5
+    # Transparent passes do not increment Ray Depth, but are still later hits.
+    links.new(depth.outputs[0], first.inputs[0])
+    mix = nodes.new("ShaderNodeMixShader")
+    links.new(first.outputs[0], mix.inputs[0])
+    links.new(output.inputs["Surface"].links[0].from_socket, mix.inputs[1])
+    links.new(receiver.outputs[0], mix.inputs[2])
+    links.new(mix.outputs[0], output.inputs["Surface"])
+
+
 def _restore_bake_uv_material_overrides(state: _BakeMaterialUVOverride | None) -> None:
     if state is None:
         return
@@ -641,7 +708,7 @@ def bake_vertex_albedo(scene, obj, texture_size: int) -> np.ndarray:
 @_preserve_bake_state
 def bake_albedo_map(scene, obj, texture_size: int) -> BakedFluxMap | None:
     """
-    Bake visible diffuse albedo (COLOR pass) for a single object.
+    Bake visible colour (COLOR pass), reading Base Color for known opaque surfaces.
     """
     if obj.type != "MESH":
         return None
@@ -691,6 +758,8 @@ def bake_albedo_map(scene, obj, texture_size: int) -> BakedFluxMap | None:
 
         # Keep textures sampling from the original UVs while baking into BAKE_UV_LAYER_NAME.
         uv_override_state = _install_bake_uv_material_overrides([obj], uv_snapshot)
+        for mat in uv_override_state.materials:
+            _prepare_opaque_bake_material(mat, incident=False)
         _prepare_image_nodes_for_bake(obj, image, "HeatSim_Albedo", "HeatSim Albedo")
 
         # object.select_all.poll() fails in --background when the context is in
@@ -791,10 +860,11 @@ def bake_albedo_map(scene, obj, texture_size: int) -> BakedFluxMap | None:
 def bake_irradiance_map(scene, obj, texture_size: int, samples: int | None = None) -> BakedFluxMap | None:
     """Bake incident irradiance (DIFFUSE DIRECT+INDIRECT) for a single object.
 
-    The mirror image of :func:`bake_albedo_map`: that bakes COLOR with the light
-    passes off (a texture lookup, no light transport); this bakes the light passes
-    with COLOR off, so the result is incoming light *independent of surface colour* -
-    irradiance, not radiosity.
+    Known opaque Principled surfaces use a unit-white diffuse receiver only at
+    the initial bake shading point (Ray Depth == 0). Subsequent hits, including
+    self-reflections, use the authored shader. This avoids missing light on black
+    or metallic receivers without whitening the scene's indirect illumination.
+    Transparent, subsurface and unrecognized surfaces retain the authored bake.
 
     Cycles includes emissive geometry, indirect lighting and world illumination.
     ``vertex_flux`` is incident W/m²; the caller multiplies by ``1 - albedo``
@@ -862,6 +932,8 @@ def bake_irradiance_map(scene, obj, texture_size: int, samples: int | None = Non
 
         # Keep textures sampling from the original UVs while baking into BAKE_UV_LAYER_NAME.
         uv_override_state = _install_bake_uv_material_overrides([obj], uv_snapshot)
+        for mat in uv_override_state.materials:
+            _prepare_opaque_bake_material(mat, incident=True)
         _prepare_image_nodes_for_bake(obj, image, "HeatSim_Irradiance", "HeatSim Irradiance")
 
         # object.select_all.poll() fails in --background when the context is in

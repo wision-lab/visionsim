@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import math
+
+import pytest
+
 from tests.simulate.thermal.heatsim_test_service import SERVICE_PATH, call_service
 from visionsim.simulate.blender import BlenderClient
 
@@ -43,3 +47,41 @@ def test_all_zero_attribute_albedo_is_ignored_and_rebaked(executable):
 
     assert result["baked"] == "ok", "albedo absent"
     assert result["std"] > 0.05, f"zeros attribute was served instead of re-baking (std={result['std']})"
+
+
+def test_opaque_receiver_measures_black_and_metal_and_preserves_other_surfaces(executable):
+    with BlenderClient.spawn(executable=executable, timeout=120, service=SERVICE_PATH) as client:
+        result = call_service(client, "opaque_receiver_fixture")
+
+    assert result["eligible"] == ["black", "gray", "metal"]
+    for kind, albedo in (("black", 0), ("gray", 0.18), ("metal", 0.6)):
+        values = result["patches"][kind]
+        assert values["incident"] == pytest.approx(math.pi, rel=0.02), (kind, values)
+        assert values["albedo"] == pytest.approx(albedo, abs=0.005), (kind, values)
+        absorbed = values["incident"] * (1 - values["albedo"])
+        assert absorbed == pytest.approx(math.pi * (1 - albedo), rel=0.02)
+    for kind, values in result["patches"].items():
+        if kind in result["eligible"]:
+            continue
+        assert values["incident"] == pytest.approx(values["old_incident"], abs=1e-6), (kind, values)
+        assert values["albedo"] == pytest.approx(values["old_albedo"], abs=1e-6), (kind, values)
+    assert result["patches"]["black"]["old_incident"] == 0
+    assert result["patches"]["metal"]["old_incident"] == 0
+    assert result["restored"], "source material graphs, slots, face assignments or UV state changed"
+    assert result["failure_restored"], "private material resources leaked after an injected bake failure"
+
+
+def test_opaque_receiver_preserves_same_object_indirect_reflections(executable):
+    with BlenderClient.spawn(executable=executable, timeout=120, service=SERVICE_PATH) as client:
+        result = call_service(client, "opaque_receiver_concave")
+
+    assert result["measured"] == pytest.approx(result["expected"], rel=0.02), result
+    assert result["global_white"] > 1.8 * result["measured"], result
+
+
+def test_opaque_receiver_ends_after_a_transparent_crossing(executable):
+    with BlenderClient.spawn(executable=executable, timeout=120, service=SERVICE_PATH) as client:
+        result = call_service(client, "opaque_receiver_transparent_path")
+
+    assert result["False"] == pytest.approx(1, abs=0.01), result
+    assert result["True"] == pytest.approx(0, abs=1e-6), result

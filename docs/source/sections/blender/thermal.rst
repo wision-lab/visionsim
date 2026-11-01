@@ -85,6 +85,15 @@ The Cycles bake estimates incident light and visible albedo on each sampled
 surface. VisionSim approximates absorbed heat as irradiance times
 ``1 - albedo``; ``irradiance-scale`` then multiplies that input. This is a
 broadband approximation: visible colour is not measured infrared absorptivity.
+For directly connected opaque Principled materials, the incident-light bake uses
+a white diffuse receiver only at the initial measurement point. Every subsequent
+reflection uses the original material, including reflections within one object.
+The separate colour bake reads the original Base Color, including for metals.
+This receiver requires constant Alpha 1, Transmission 0 and Subsurface 0, with no
+volume shader. Linked opacity inputs, transparent or translucent materials, and
+complex shader graphs retain their previous bake behavior. The changes apply to
+temporary material copies; authored RGB materials are restored after each bake.
+
 The point-cloud solver spreads heat among nearby samples and includes radiative
 exchange with a fixed ambient reference. Its proximity-based conduction can
 also couple nearby, physically separate surfaces. It does not model air
