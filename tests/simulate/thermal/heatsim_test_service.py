@@ -128,7 +128,7 @@ class HeatsimTestService(BlenderService):
             "density_kg_m3": 1330.0,
             "specific_heat_J_kgK": 880.0,
             "emissivity": 0.9,
-            "irradiance_scale": 100.0,
+            "irradiance_scale": 1.0,
         }
 
     @staticmethod
@@ -279,7 +279,7 @@ class HeatsimTestService(BlenderService):
         object_name: str,
         sim_time_s: float = 0.1,
         timestep_s: float = 0.05,
-        irradiance_scale: float = 100.0,
+        irradiance_scale: float = 1.0,
         bake_samples: int = 1024,
         irradiance_texture_size: int = 512,
         write_attributes: bool = True,
@@ -915,7 +915,7 @@ class HeatsimTestService(BlenderService):
             "density_kg_m3": 1330.0,
             "specific_heat_J_kgK": 880.0,
             "emissivity": 0.9,
-            "irradiance_scale": 100.0,
+            "irradiance_scale": 1.0,
         } | config
         if "configure_thermal" in values:
             raise ValueError("configure_thermal is reserved")

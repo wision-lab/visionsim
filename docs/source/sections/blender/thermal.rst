@@ -196,7 +196,7 @@ Heating and integration
      - Default
      - What it changes
    * - ``irradiance-scale``
-     - ``100.0``
+     - ``1.0``
      - Multiplies absorbed input from the lighting bake. Increase it for a
        stronger temperature rise from scene lighting. Unlike
        ``radiance-scale``, it changes the solved temperature.
