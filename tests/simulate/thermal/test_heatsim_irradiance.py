@@ -4,6 +4,16 @@ from tests.simulate.thermal.heatsim_test_service import SERVICE_PATH, call_servi
 from visionsim.simulate.blender import BlenderClient
 
 
+def test_bake_uvs_are_reused_until_geometry_changes(executable):
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        call_service(client, "build_scene", "grid", "ThermalPlane", subdivisions=10, material="checker")
+        result = call_service(client, "bake_uv_reuse")
+
+    assert result["reused_coordinates"]
+    assert result["regenerated_after_geometry_edit"]
+    assert result["source_uv_unchanged"]
+
+
 def test_bake_albedo_map_returns_varying_pixels(executable):
     with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
         call_service(client, "build_scene", "grid", "Checker", material="checker", lit=False)

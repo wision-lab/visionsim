@@ -399,6 +399,44 @@ def test_build_atlas_plan_excludes_dense_objects(monkeypatch):
     assert plan.texels == {}
 
 
+@pytest.mark.parametrize(
+    ("mode", "safe_vertices", "uses_atlas"),
+    [("AUTO", True, False), ("AUTO", False, True), ("TEXEL", True, True)],
+)
+def test_sparse_uv_charts_do_not_replace_safe_dense_vertices(monkeypatch, mode, safe_vertices, uses_atlas):
+    """A densely sampled surface must not lose its detail to mostly empty UV tiles."""
+    side = 20
+    x, y = np.meshgrid(np.linspace(0, 10_000, side), np.linspace(0, 10_000, side))
+    verts = np.column_stack((x.ravel(), y.ravel(), np.zeros(side * side)))
+    faces = []
+    for row in range(side - 1):
+        for col in range(side - 1):
+            a = row * side + col
+            faces.extend(((a, a + 1, a + side + 1), (a, a + side + 1, a + side)))
+    faces = np.asarray(faces, dtype=np.int32)
+    obj = _AtlasObj("upholstery", len(verts) if safe_vertices else len(verts) - 1)
+    monkeypatch.setattr(adapter, "_extract_geometry", lambda _obj: (verts, faces, len(verts)))
+    monkeypatch.setattr(adapter, "_prepare_bake_uv", lambda _obj: None)
+    captured = {}
+
+    def write(_obj, tile, atlas_size, _layer):
+        captured.update(tile=tile, size=atlas_size)
+
+    def read(_obj, _layer):
+        # Occupy only 1% of the allocated tile, like many small, padded charts.
+        uv = verts[faces, :2] / 100_000
+        tile = captured["tile"]
+        atlas_uv = (uv * tile.size + tile.offset) / captured["size"]
+        return atlas_uv, np.zeros(len(faces), dtype=np.int32)
+
+    monkeypatch.setattr(adapter, "_write_atlas_uv_layer", write)
+    monkeypatch.setattr(adapter, "_extract_evaluated_face_uv_and_slots", read)
+    plan = adapter.build_atlas_plan(None, [obj], _ATLAS_CFG | {"render_domain": mode})
+    assert ("upholstery" in plan.texels) is uses_atlas
+    if uses_atlas:
+        assert 0 < len(plan.texels["upholstery"]["xy"]) < len(verts)
+
+
 def _build_two_object_plan(monkeypatch, *, drop_second: bool):
     """Shared setup for the digest-participation tests below: two same-sized objects on
     the same allocation (so ``layout.tiles`` is identical either way); ``drop_second``

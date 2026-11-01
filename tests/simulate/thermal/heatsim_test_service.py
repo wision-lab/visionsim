@@ -468,6 +468,30 @@ class HeatsimTestService(BlenderService):
             "texels": sorted(plan.texels),
         }
 
+    def exposed_bake_uv_reuse(self, object_name: str = "ThermalPlane") -> dict:
+        """Verify shared bake coordinates survive repeat preparation and track geometry edits."""
+        from visionsim.simulate.heatsim import irradiance
+        from visionsim.simulate.heatsim.names import BAKE_UV_LAYER_NAME
+
+        obj = bpy.data.objects[object_name]
+        source_name = obj.data.uv_layers.active.name
+        source = np.array([tuple(loop.uv) for loop in obj.data.uv_layers[source_name].data])
+        irradiance.prepare_object_bake_uv(obj)
+        first_key = obj.data.get("heatsim_bake_uv_signature")
+        obj.data.uv_layers[BAKE_UV_LAYER_NAME].data[0].uv.x += 0.0007
+        expected = np.array([tuple(loop.uv) for loop in obj.data.uv_layers[BAKE_UV_LAYER_NAME].data])
+        irradiance.prepare_object_bake_uv(obj)
+        reused = np.array([tuple(loop.uv) for loop in obj.data.uv_layers[BAKE_UV_LAYER_NAME].data])
+        obj.data.vertices[0].co.x += 0.1
+        obj.data.update()
+        irradiance.prepare_object_bake_uv(obj)
+        after = np.array([tuple(loop.uv) for loop in obj.data.uv_layers[source_name].data])
+        return {
+            "reused_coordinates": bool(np.array_equal(expected, reused)),
+            "regenerated_after_geometry_edit": obj.data.get("heatsim_bake_uv_signature") != first_key,
+            "source_uv_unchanged": bool(np.array_equal(source, after)),
+        }
+
     def exposed_absorbed_flux(
         self, object_name: str = "ThermalPlane", bake_samples: int = 1024, irradiance_texture_size: int = 512
     ) -> dict:

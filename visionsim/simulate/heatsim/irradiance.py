@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import math
 import warnings
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -173,6 +175,20 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
     if len(mesh.polygons) == 0 or len(mesh.vertices) == 0:
         return
 
+    # Repacking between the atlas rasterization, lighting bake and albedo bake
+    # invalidates their shared UV addresses. Reuse the layout until geometry changes.
+    signature = hashlib.sha256(b"visionsim.bake-uv.v2.angle80.margin002")
+    for collection, attribute, width, dtype in (
+        (mesh.vertices, "co", 3, np.float32),
+        (mesh.loops, "vertex_index", 1, np.int32),
+        (mesh.polygons, "loop_total", 1, np.int32),
+    ):
+        values = np.empty(len(collection) * width, dtype=dtype)
+        collection.foreach_get(attribute, values)
+        signature.update(values.tobytes())
+    layout_key = signature.hexdigest()
+    already_prepared = BAKE_UV_LAYER_NAME in mesh.uv_layers and mesh.get("heatsim_bake_uv_signature") == layout_key
+
     # Ensure bake UV layer exists
     if BAKE_UV_LAYER_NAME not in mesh.uv_layers:
         try:
@@ -186,6 +202,8 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
         mesh.uv_layers[BAKE_UV_LAYER_NAME].active_render = True
     except Exception:
         logging.getLogger(__name__).debug("Blender thermal operation failed", exc_info=True)
+    if already_prepared:
+        return
     ctx = bpy.context
     view_layer = ctx.view_layer
     prev_selection = list(getattr(ctx, "selected_objects", []) or [])
@@ -210,9 +228,11 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
 
         bpy.ops.object.mode_set(mode="EDIT")
         bpy.ops.mesh.select_all(action="SELECT")
-        # Using 1.6% island margin to prevent texture bleeding artifacts.
-        bpy.ops.uv.smart_project(island_margin=0.016)
+        # Large relative margins consumed almost the whole tile on upholstery
+        # with thousands of small charts. Favor larger charts and a smaller gap.
+        bpy.ops.uv.smart_project(angle_limit=math.radians(80), island_margin=0.002)
         bpy.ops.object.mode_set(mode="OBJECT")
+        obj.data["heatsim_bake_uv_signature"] = layout_key
     except Exception as exc:  # noqa: BLE001
         # A per-object unwrap failure (smart_project.poll() and friends can fail in
         # --background on some meshes) must never abort the whole scene's bake. Warn

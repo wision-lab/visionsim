@@ -13,8 +13,8 @@ import numpy as np
 
 CACHE_SCHEMA_VERSION = 2
 # Bump when bake/solver semantics change, even if the archive layout is unchanged.
-# Revision 1 includes RGB-safe materials, source UVs and owned bake images.
-BAKE_PIPELINE_VERSION = 1
+# Revision 2 retains dense mesh samples and reuses compact, geometry-dependent bake UVs.
+BAKE_PIPELINE_VERSION = 2
 _log = logging.getLogger("rich")
 
 
