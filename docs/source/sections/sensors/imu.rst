@@ -40,21 +40,10 @@ To emulate an IMU from a ``transforms.json`` file, we can also use the CLI::
 
     visionsim emulate.imu --input-dir=path/to/transforms.json --output-file=imu.csv --dt=0.02
 
-Where ``dt`` is the sampling period or the IMU, set here to 50Hz. This will output a CSV (comma separated values) table like so:
-
-+------+---------+--------+---------+---------+---------+---------+-------------+-------------+-------------+
-| t    | acc_x   | acc_y  | acc_z   | gyro_x  | gyro_y  | gyro_z  | bias_ax     | bias_ay     | bias_az     |
-+======+=========+========+=========+=========+=========+=========+=============+=============+=============+
-| 0    | -2.2421 | 9.3807 | -4.9132 | 0.0072  | -0.0048 | -0.0054 | 0           | 0           | 0           |
-| 0.02 | -2.1713 | 9.2758 | -4.9026 | 0.0052  | -0.0115 | 0.0025  | 1.8007e-06  | -3.4000e-06 | 5.5357e-06  |
-| 0.04 | -2.0358 | 9.3330 | -4.8106 | 0.0146  | -0.0080 | -0.0006 | 6.7951e-07  | -2.4913e-05 | -4.0781e-06 |
-| 0.06 | -2.1025 | 9.3745 | -4.6503 | -0.0031 | -0.0063 | 0.0022  | -6.9008e-08 | -2.1221e-05 | -1.9061e-05 |
-| 0.08 | -2.0334 | 9.3777 | -4.6613 | 0.0058  | -0.0020 | -0.0171 | 8.2615e-06  | -1.0654e-05 | -2.4797e-05 |
-| 0.1  | -2.0380 | 9.4258 | -4.5916 | -0.0124 | -0.0044 | 0.0066  | 4.6997e-06  | -6.5517e-06 | -3.7947e-05 |
-| ...  | ...     | ...    | ...     | ...     | ...     | ...     | ...         | ...         | ...         |
-|      |         |        |         |         |         |         |             |             |             |
-|      |         |        |         |         |         |         |             |             |             |
-+------+---------+--------+---------+---------+---------+---------+-------------+-------------+-------------+
+Where ``dt`` is the sampling period of the IMU, set here to 50Hz. It writes one row per
+sample, holding the timestamp ``t``, the accelerometer and gyroscope readings
+``acc_*``/``gyro_*`` and the accumulated biases ``bias_*``; :doc:`../../tutorials/imu`
+shows the emulator's output and decodes a file like this one.
 
 | 
 
@@ -67,17 +56,31 @@ While many methods exist, one of the simplest and most ubiquitous is to simply i
 
 .. literalinclude:: ../../../../examples/sensors/imu.py 
 
-.. TODO: add link to `examples/sensors/render-camera-geonodes.png` when repo is public 
+Using a bit of Blender's geometry nodes we can composite a few estimated trajectories back into the scene:
 
-Using a bit of Blender's geometry [2]_ nodes we can composite a few estimated trajectories back into the scene:
+.. tab-set::
 
-.. image:: ../../_static/sensors/imu-preview.gif 
-   :align: center 
+    .. tab-item:: Preview
+        :selected:
 
-Here, the bright blue camera follows the ground truth trajectory, and all others are estimated from IMU measurements. Notice how they all start grouped together and slowly drift apart. 
+        .. video:: ../../_static/sensors/imu-preview.mp4
+           :loop:
+           :autoplay:
+           :nocontrols:
+           :playsinline:
+           :align: center
+           :width: 80%
+
+    .. tab-item:: Geometry nodes
+
+        .. node-graph:: ../../../../examples/blender/mesh_camera.json
 
 | 
 
+.. note::
+
+    A worked example that runs the emulator from the command line, integrates the readings and plots the estimate against the ground truth is in :doc:`../../tutorials/imu`.
+
+
 .. [1] `Leutenegger et al. (2015), "Keyframe-based visual-inertial odometry using nonlinear
         optimization". <https://www.roboticsproceedings.org/rss09/p37.pdf>`_
-.. [2] This is beyond the scope of this tutorial, it requires knowledge of geometry nodes and Blender scripting.

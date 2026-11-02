@@ -26,6 +26,7 @@ handlers: Iterable[logging.Handler] | None
 server_log: logging.Logger
 EXPOSED_PREFIX: str
 REGISTRY: tuple[Process, rpyc.utils.registry.UDPRegistryClient] | None
+_REGISTRY_REUSE_LOGGED: bool
 ITEMS_PER_SUBFOLDER: int
 INDEX_PADDING: int
 FORMATS: dict[str, str]
@@ -126,11 +127,14 @@ class BlenderServer(rpyc.utils.server.Server):
     @staticmethod
     def spawn(
         jobs: int = 1,
-        timeout: float = -1.0,
+        timeout: float = 0.0,
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        service: str | None = None,
         background: bool = True,
+        factory_startup: bool = False,
+        env: dict[str, str] | None = None,
     ) -> Generator[tuple[list[subprocess.Popen], list[tuple[str, int]]]]:
         """Spawn one or more blender instances and start a :class:`BlenderServer` in each.
 
@@ -139,7 +143,8 @@ class BlenderServer(rpyc.utils.server.Server):
         these processes is also taken care of.
 
         Note:
-            The returned processes and connection settings are not guaranteed to be in the same order.
+            The returned processes and connection settings are in the same order, so the ``i``-th
+            process corresponds to the ``i``-th connection setting.
 
         Warning:
             If ``log`` is a file handle or descriptor, such as redirecting Blender logs to subprocess.STDOUT,
@@ -149,11 +154,10 @@ class BlenderServer(rpyc.utils.server.Server):
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
-            timeout (float, optional): try to discover spawned instances for ``timeout``
-                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
-                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
-                this context manager will immediately yield, even if the server is not yet ready to accept
-                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to accept
+                connections on its reserved port before giving up. Zero (the default) skips the wait and
+                yields immediately, even if a server is not yet ready to accept incoming connections; the
+                client connecting to it is expected to retry.
             log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
                 descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
                 Defaults to subprocess.DEVNULL for both stdout/stderr.
@@ -163,10 +167,19 @@ class BlenderServer(rpyc.utils.server.Server):
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
+            service (str | None, optional): path of the :class:`BlenderService` subclass the spawned
+                server should expose, either dotted (``module:ClassName``, imported inside blender) or a
+                ``/path/to/service.py:ClassName`` file (executed as a script, so the file's package is
+                never imported). Defaults to None (the base :class:`BlenderService`).
             background (bool, optional): if true, spawn blender in background mode (``-b``). This is faster
                 and does not require a display, but has no OpenGL context, so viewport renders (playblasts)
                 are unavailable. Set to false to keep a window/GL context open (requires a display).
                 Defaults to True.
+            factory_startup (bool, optional): if true, pass ``--factory-startup`` so the run ignores the
+                machine's blender preferences and startup file. Defaults to False.
+            env (dict[str, str] | None, optional): extra environment variables for the spawned blender,
+                such as ``PYTHONPATH``. Merged over the parent's ``os.environ``, which is inherited by
+                default. Defaults to None.
 
         Raises:
             TimeoutError: raise if unable to discover spawned servers in ``timeout`` seconds and kill any spawned processes.
@@ -178,15 +191,33 @@ class BlenderServer(rpyc.utils.server.Server):
         """
 
     @staticmethod
-    def spawn_registry() -> tuple[Process, rpyc.utils.registry.UDPRegistryClient]:
+    def spawn_registry() -> tuple[Process | None, rpyc.utils.registry.UDPRegistryClient]:
         """Spawn a registry server and client to aid in server discovery, or return cached result.
         While this method can be called directly, it will be invoked automatically by :meth:`discover` and :meth:`spawn`.
 
+        The registry is machine-wide, so a registry already running in another process is reused
+        rather than treated as an error.
+
         Returns:
-            tuple[Process, rpyc.utils.registry.UDPRegistryClient]: A tuple containing:
-                - Process: process running the global registry server,
+            tuple[Process | None, rpyc.utils.registry.UDPRegistryClient]: A tuple containing:
+                - Process | None: process running the registry server, or None if another process owns it,
                 - rpyc.utils.registry.UDPRegistryClient: global registry client
+
+        Raises:
+            RuntimeError: the registry port is held by a process that does not answer rpyc queries.
         """
+
+    @staticmethod
+    def _registry_port_free() -> bool:
+        """Check whether the rpyc registry port can be bound locally.
+
+        The registry binds in a child process that cannot report a bind failure, so this check
+        distinguishes a free port from one held by another process before spawning.
+        """
+
+    @staticmethod
+    def _registry_responds() -> bool:
+        """Check whether an rpyc registry answers a discovery query on the well-known UDP port."""
 
     @staticmethod
     def _launch_registry() -> None: ...
@@ -218,6 +249,12 @@ class BlenderService(rpyc.Service):
     _warned_no_outputs: bool
     _outputs: dict[str, Any]
     _camera: bpy.types.Camera | None
+    _thermal_radiance: dict[str, Any] | None
+    _thermal_assignment: Any | None
+    _loaded_persistent_data: bool | None
+    _persistent_data_before_thermal: bool | None
+    _thermal_atlas_plan: Any | None
+    _thermal_temp_range: tuple[float, float] | None
 
     def __init__(self) -> None:
         """Initialize render service.
@@ -289,6 +326,7 @@ class BlenderService(rpyc.Service):
         exr_codec: EXR_CODECS = "DWAA",
         bit_depth: int = 32,
         preview: bool = False,
+        preview_view_transform: str | None = None,
         c: int | None = None,
         denoise: bool = False,
     ) -> None:
@@ -303,6 +341,9 @@ class BlenderService(rpyc.Service):
             exr_codec (str, optional): EXR codec to use. Defaults to "DWAA".
             bit_depth (int, optional): Bit depth to use. Defaults to 32.
             preview (bool, optional): If true, output node will be configured for preview. Defaults to False.
+            preview_view_transform (str, optional): When set on a preview output, overrides the preview
+                default "Raw" view transform (e.g. "Standard" to sRGB-encode a colormapped image).
+                Ignored for non-preview outputs. Defaults to None (leave the preview default "Raw").
             c (int, optional): Number of channels for registration. Defaults to None (inferred from color_mode).
             denoise (bool, optional): If true, insert a denoise compositor node before the file output.
                 This enables the Cycles denoising data view layer passes (albedo and normal) and connects
@@ -388,15 +429,30 @@ class BlenderService(rpyc.Service):
     def exposed_iter_fcurves(self, actions: list[bpy.types.Action] | None = None) -> Iterator[bpy.types.FCurve]:
         """Yield fcurves of all actions.
 
-        This abstracts away the API for accessing fcurves which changed to using channelbags in v4.4, see
-        `release notes here <https://developer.blender.org/docs/release_notes/4.4/upgrading/slotted_actions/>`_.
-
         Args:
             actions (list[bpy.types.Action] | None, optional): Only yield fcurves from these actions if specified,
                 otherwise use all actions. Defaults to None.
 
         Yields:
             Iterator[bpy.types.FCurve]: an fcurve object from the scene or action
+        """
+
+    def _iter_fcurves_by_owner(
+        self, actions: list[bpy.types.Action] | None = None
+    ) -> Iterator[tuple[Any, bpy.types.FCurve]]:
+        """Yield ``(owner, fcurve)`` pairs where owner identifies the animated data-block.
+
+        This abstracts the fcurve API which changed to using channelbags in v4.4, see
+        `release notes here <https://developer.blender.org/docs/release_notes/4.4/upgrading/slotted_actions/>`_.
+        Since then an action can drive several data-blocks, one per slot, so the slot is the owner;
+        before that an action owns exactly one data-block.
+
+        Args:
+            actions (list[bpy.types.Action] | None, optional): Only yield fcurves from these actions if specified,
+                otherwise use all actions. Defaults to None.
+
+        Yields:
+            Iterator[tuple[Any, bpy.types.FCurve]]: an owner and one of the fcurves it owns.
         """
 
     @require_initialized_service
@@ -575,7 +631,8 @@ class BlenderService(rpyc.Service):
 
         The preview visualization simply assigns a color to each object ID by mapping the
         objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
-        for the background which will have a value of 0 to ensure it is black).
+        for the background which will have a value of 0 to ensure it is black). The assigned
+        ID -> object name table is written to ``indices.json`` beside the raw pass.
 
         Args:
             preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
@@ -604,7 +661,8 @@ class BlenderService(rpyc.Service):
 
         The preview visualization simply assigns a color to each material ID by mapping the
         materials ID value to a hue using a HSV node with saturation=1 and value=1 (except
-        for the background which will have a value of 0 to ensure it is black).
+        for the background which will have a value of 0 to ensure it is black). The assigned
+        ID -> material name table is written to ``indices.json`` beside the raw pass.
 
         Args:
             preview (bool, optional): If true, also save preview visualizations of material IDs. Defaults to True.
@@ -695,6 +753,154 @@ class BlenderService(rpyc.Service):
         .. [1] `VGGT: Visual Geometry Grounded Transformer <https://arxiv.org/abs/2503.11651>`_
         .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
         """
+
+    def _thermal_config(
+        self,
+        *,
+        initial_temperature_K: float,
+        thermal_diffusivity_mm2_s: float,
+        density_kg_m3: float,
+        specific_heat_J_kgK: float,
+        emissivity: float,
+        irradiance_scale: float,
+        sim_time_s: float,
+        timestep_s: float,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"],
+        assignments: str | None = None,
+    ) -> tuple[dict, dict, Path, Any]:
+        """Resolve thermal material defaults, solver settings, cache root and sidecar."""
+
+    def _thermal_solve(
+        self,
+        *,
+        initial_temperature_K: float,
+        thermal_diffusivity_mm2_s: float,
+        density_kg_m3: float,
+        specific_heat_J_kgK: float,
+        emissivity: float,
+        irradiance_scale: float,
+        sim_time_s: float,
+        timestep_s: float,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"],
+        assignments: str | None = None,
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+    ) -> tuple[dict, Any, Path]:
+        """Build the requested sampling plan and solve a fixed scene snapshot."""
+
+    def _thermal_load_pack_atlas_image(self, atlas_path: Path) -> None:
+        """Load the EXR :func:`adapter.write_atlas` wrote and (re)register it as the
+        ``HeatSim_Temperature_Atlas`` Blender image, packed so the shader (built right
+        after this call, by ``thermal_shader.setup_temperature_aov``, and later at render
+        time by ``thermal_shader.enter_thermal_scene``) can find it by name -- and so it
+        keeps working even if the source EXR under the ``.heatsim`` cache directory later
+        moves or is cleaned up.
+        """
+
+    @require_initialized_service
+    def exposed_prepare_thermal(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Solve a fixed thermal field, write attributes or atlas, and set up the AOV."""
+
+    @require_initialized_service
+    def exposed_heatsim_solve(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Solve and cache a fixed thermal field without adding render outputs."""
+
+    @require_initialized_service
+    def exposed_include_thermal(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Add the temperature AOV and optional preview and radiance outputs."""
+
+    @staticmethod
+    def _thermal_values(config: dict[str, Any]) -> dict[str, Any]: ...
+    @require_initialized_service
+    def exposed_configure_thermal(self, config: dict[str, Any]) -> None:
+        """Validate one serialized ThermalConfig and prepare both thermal outputs."""
+
+    @require_initialized_service
+    def exposed_heatsim_solve_config(self, config: dict[str, Any]) -> None:
+        """Validate one serialized ThermalConfig and solve without render outputs."""
 
     @require_initialized_service
     def exposed_load_addons(self, *addons: str) -> None:
@@ -792,6 +998,16 @@ class BlenderService(rpyc.Service):
 
         Raises:
             RuntimeError: raised if trying to move keyframes beyond blender's limits.
+        """
+
+    def _make_rotations_compatible(self) -> None:
+        """Make each rotation's keyframes interpolate the short way around.
+
+        Rotations are keyed as independent per-component fcurves, but interpolating between two
+        of them is only well-defined for the rotation as a whole: a component that wrapped across
+        ±π, or a quaternion that flipped sign, makes blender turn the long way between adjacent
+        keyframes. Rebuilding each keyframe's rotation and making it compatible with the previous
+        one is what blender's euler filter does.
         """
 
     @require_initialized_service
@@ -906,17 +1122,7 @@ class BlenderService(rpyc.Service):
 
     @require_initialized_service
     def exposed_render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> None:
-        """Same as first setting current frame then rendering it.
-
-        Warning:
-            Calling this has the side-effect of changing the current frame.
-
-        Args:
-            frame_number (int): frame to render
-            allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
-            dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-        """
+        """Render one camera frame using the current scene state."""
 
     @require_initialized_service
     def exposed_render_frames(
@@ -1089,21 +1295,23 @@ class BlenderClient:
     @contextmanager
     def spawn(
         cls,
-        timeout: float = -1.0,
+        timeout: float = 0.0,
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        service: str | None = None,
         background: bool = True,
+        factory_startup: bool = False,
+        env: dict[str, str] | None = None,
     ) -> Generator[Self]:
         """Spawn and connect to a blender server.
         The spawned process is accessible through the client's ``process`` attribute.
 
         Args:
-            timeout (float, optional): try to discover spawned instances for ``timeout``
-                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
-                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
-                this context manager will immediately yield, even if the server is not yet ready to accept
-                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to accept
+                connections on its reserved port before giving up. Zero (the default) skips the wait and
+                yields immediately, even if a server is not yet ready to accept incoming connections; the
+                client connecting to it is expected to retry.
             log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
                 descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
                 Defaults to subprocess.DEVNULL for both stdout/stderr.
@@ -1113,9 +1321,17 @@ class BlenderClient:
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
+            service (str | None, optional): path of the :class:`BlenderService` subclass the spawned server
+                should expose, either dotted (``module:ClassName``) or a ``/path/to/service.py:ClassName``
+                file. Defaults to None (the base :class:`BlenderService`).
             background (bool, optional): if true, spawn blender in background mode (``-b``). Background mode
                 has no OpenGL context, so viewport renders (playblasts) require ``background=False``, which
                 also requires a display. Defaults to True.
+            factory_startup (bool, optional): if true, pass ``--factory-startup`` so the run ignores the
+                machine's blender preferences and startup file. Defaults to False.
+            env (dict[str, str] | None, optional): extra environment variables for the spawned blender,
+                such as ``PYTHONPATH``. Merged over the parent's ``os.environ``, which is inherited by
+                default. Defaults to None.
 
         Yields:
             Generator[Self]: the connected client
@@ -1223,9 +1439,6 @@ class BlenderClient:
     @type_check_only
     def iter_fcurves(self, actions: list[bpy.types.Action] | None = None) -> Iterator[bpy.types.FCurve]:
         """Yield fcurves of all actions.
-
-        This abstracts away the API for accessing fcurves which changed to using channelbags in v4.4, see
-        `release notes here <https://developer.blender.org/docs/release_notes/4.4/upgrading/slotted_actions/>`_.
 
         Args:
             actions (list[bpy.types.Action] | None, optional): Only yield fcurves from these actions if specified,
@@ -1398,7 +1611,8 @@ class BlenderClient:
 
         The preview visualization simply assigns a color to each object ID by mapping the
         objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
-        for the background which will have a value of 0 to ensure it is black).
+        for the background which will have a value of 0 to ensure it is black). The assigned
+        ID -> object name table is written to ``indices.json`` beside the raw pass.
 
         Args:
             preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
@@ -1427,7 +1641,8 @@ class BlenderClient:
 
         The preview visualization simply assigns a color to each material ID by mapping the
         materials ID value to a hue using a HSV node with saturation=1 and value=1 (except
-        for the background which will have a value of 0 to ensure it is black).
+        for the background which will have a value of 0 to ensure it is black). The assigned
+        ID -> material name table is written to ``indices.json`` beside the raw pass.
 
         Args:
             preview (bool, optional): If true, also save preview visualizations of material IDs. Defaults to True.
@@ -1518,6 +1733,101 @@ class BlenderClient:
         .. [1] `VGGT: Visual Geometry Grounded Transformer <https://arxiv.org/abs/2503.11651>`_
         .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
         """
+
+    @type_check_only
+    def prepare_thermal(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Solve a fixed thermal field, write attributes or atlas, and set up the AOV."""
+
+    @type_check_only
+    def heatsim_solve(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Solve and cache a fixed thermal field without adding render outputs."""
+
+    @type_check_only
+    def include_thermal(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Add the temperature AOV and optional preview and radiance outputs."""
+
+    @type_check_only
+    def configure_thermal(self, config: dict[str, Any]) -> None:
+        """Validate one serialized ThermalConfig and prepare both thermal outputs."""
+
+    @type_check_only
+    def heatsim_solve_config(self, config: dict[str, Any]) -> None:
+        """Validate one serialized ThermalConfig and solve without render outputs."""
 
     @type_check_only
     def load_addons(self, *addons: str) -> None:
@@ -1724,17 +2034,7 @@ class BlenderClient:
 
     @type_check_only
     def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> None:
-        """Same as first setting current frame then rendering it.
-
-        Warning:
-            Calling this has the side-effect of changing the current frame.
-
-        Args:
-            frame_number (int): frame to render
-            allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
-            dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-        """
+        """Render one camera frame using the current scene state."""
 
     @type_check_only
     def render_frames(
@@ -1874,6 +2174,23 @@ class BlenderClients(tuple):
         """
 
     def _method_dispatch_factory(self, name: str, method: Callable) -> Callable: ...
+    def __getattr__(self, name: str) -> Callable[..., Any]:
+        """Dispatch a remote service method across the connected clients.
+
+        Names resolve against :class:`BlenderService` so an unconnected client list still
+        offers the standard API; the connected servers answer for anything else, such as the
+        ``exposed_`` methods a service passed to :meth:`spawn` adds.
+
+        Args:
+            name (str): Name of the method, without the ``exposed_`` prefix.
+
+        Raises:
+            AttributeError: raised if no connected service exposes the method.
+
+        Returns:
+            Callable[..., Any]: Function calling the method on every connected client.
+        """
+
     def __enter__(self) -> Self:
         """Connect all clients to their render servers via a context manager.
 
@@ -1897,22 +2214,24 @@ class BlenderClients(tuple):
     def spawn(
         cls,
         jobs: int = 1,
-        timeout: float = -1.0,
+        timeout: float = 0.0,
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        service: str | None = None,
         background: bool = True,
+        factory_startup: bool = False,
+        env: dict[str, str] | None = None,
     ) -> Generator[Self]:
         """Spawn and connect to one or more blender servers.
         The spawned processes are accessible through the client's ``process`` attribute.
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
-            timeout (float, optional): try to discover spawned instances for ``timeout``
-                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
-                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
-                this context manager will immediately yield, even if the server is not yet ready to accept
-                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to accept
+                connections on its reserved port before giving up. Zero (the default) skips the wait and
+                yields immediately, even if a server is not yet ready to accept incoming connections; the
+                client connecting to it is expected to retry.
             log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
                 descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
                 Defaults to subprocess.DEVNULL for both stdout/stderr.
@@ -1922,9 +2241,17 @@ class BlenderClients(tuple):
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
+            service (str | None, optional): path of the :class:`BlenderService` subclass the spawned server
+                should expose, either dotted (``module:ClassName``) or a ``/path/to/service.py:ClassName``
+                file. Defaults to None (the base :class:`BlenderService`).
             background (bool, optional): if true, spawn blender instances in background mode (``-b``). Background
                 mode has no OpenGL context, so viewport renders (playblasts) require ``background=False``, which
                 also requires a display. Defaults to True.
+            factory_startup (bool, optional): if true, pass ``--factory-startup`` so the run ignores the
+                machine's blender preferences and startup file. Defaults to False.
+            env (dict[str, str] | None, optional): extra environment variables for the spawned blender
+                instances, such as ``PYTHONPATH``. Merged over the parent's ``os.environ``, which is
+                inherited by default. Defaults to None.
 
         Yields:
             Generator[Self]: the connected clients
@@ -1934,10 +2261,14 @@ class BlenderClients(tuple):
     @staticmethod
     def pool(
         jobs: int = 1,
-        timeout: float = -1.0,
+        timeout: float = 0.0,
         log: str | os.PathLike | FILE | tuple[FILE, FILE] = ...,
         autoexec: bool = False,
         executable: str | os.PathLike | None = None,
+        service: str | None = None,
+        background: bool = True,
+        factory_startup: bool = False,
+        env: dict[str, str] | None = None,
         conns: list[tuple[str, int]] | None = None,
     ) -> Generator[multiprocess.Pool]:
         """Spawns a multiprocessing-like worker pool, each with their own :class:`BlenderClient` instance.
@@ -1962,11 +2293,10 @@ class BlenderClients(tuple):
 
         Args:
             jobs (int, optional): number of jobs to spawn. Defaults to 1.
-            timeout (float, optional): try to discover spawned instances for ``timeout``
-                (in seconds) before giving up. If negative, a port will be randomly selected and assigned to the
-                spawned server, bypassing the need for discovery and timeouts. Note that when a port is assigned
-                this context manager will immediately yield, even if the server is not yet ready to accept
-                incoming connections. Defaults to assigning a port to spawned server (-1 seconds).
+            timeout (float, optional): wait up to ``timeout`` seconds for each spawned server to accept
+                connections on its reserved port before giving up. Zero (the default) skips the wait and
+                yields immediately, even if a server is not yet ready to accept incoming connections; the
+                client connecting to it is expected to retry.
             log (str | os.PathLike | FILE | tuple[FILE, FILE], optional): path to log directory, file handle,
                 descriptor or tuple thereof. Stdout and stderr will be captured and saved if supplied.
                 Defaults to subprocess.DEVNULL for both stdout/stderr.
@@ -1976,6 +2306,17 @@ class BlenderClients(tuple):
                 for blender on $PATH, but is useful when targeting a specific blender install, or when it's installed
                 via a package manager such as flatpak. Setting it to "flatpak run --die-with-parent org.blender.Blender"
                 might be required when using flatpaks. Defaults to None (system PATH).
+            service (str | None, optional): path of the :class:`BlenderService` subclass each spawned
+                server should expose, either dotted (``module:ClassName``) or a ``/path/to/service.py:ClassName``
+                file. Defaults to None (the base :class:`BlenderService`).
+            background (bool, optional): if true, spawn blender instances in background mode (``-b``). Background
+                mode has no OpenGL context, so viewport renders (playblasts) require ``background=False``, which
+                also requires a display. Defaults to True.
+            factory_startup (bool, optional): if true, pass ``--factory-startup`` so the runs ignore the
+                machine's blender preferences and startup file. Defaults to False.
+            env (dict[str, str] | None, optional): extra environment variables for the spawned blender
+                instances, such as ``PYTHONPATH``. Merged over the parent's ``os.environ``, which is
+                inherited by default. Defaults to None.
             conns: List of connection tuples containing the hostnames and ports of existing servers.
                 If specified, the pool will use these servers (and ``jobs`` and other spawn arguments will
                 be ignored) instead of spawning new ones.
@@ -2104,9 +2445,6 @@ class BlenderClients(tuple):
     @type_check_only
     def iter_fcurves(self, actions: list[bpy.types.Action] | None = None) -> tuple[Iterator[bpy.types.FCurve],]:
         """Yield fcurves of all actions.
-
-        This abstracts away the API for accessing fcurves which changed to using channelbags in v4.4, see
-        `release notes here <https://developer.blender.org/docs/release_notes/4.4/upgrading/slotted_actions/>`_.
 
         Args:
             actions (list[bpy.types.Action] | None, optional): Only yield fcurves from these actions if specified,
@@ -2279,7 +2617,8 @@ class BlenderClients(tuple):
 
         The preview visualization simply assigns a color to each object ID by mapping the
         objects ID value to a hue using a HSV node with saturation=1 and value=1 (except
-        for the background which will have a value of 0 to ensure it is black).
+        for the background which will have a value of 0 to ensure it is black). The assigned
+        ID -> object name table is written to ``indices.json`` beside the raw pass.
 
         Args:
             preview (bool, optional): If true, also save preview visualizations of segmentation. Defaults to True.
@@ -2308,7 +2647,8 @@ class BlenderClients(tuple):
 
         The preview visualization simply assigns a color to each material ID by mapping the
         materials ID value to a hue using a HSV node with saturation=1 and value=1 (except
-        for the background which will have a value of 0 to ensure it is black).
+        for the background which will have a value of 0 to ensure it is black). The assigned
+        ID -> material name table is written to ``indices.json`` beside the raw pass.
 
         Args:
             preview (bool, optional): If true, also save preview visualizations of material IDs. Defaults to True.
@@ -2399,6 +2739,101 @@ class BlenderClients(tuple):
         .. [1] `VGGT: Visual Geometry Grounded Transformer <https://arxiv.org/abs/2503.11651>`_
         .. [2] `DUSt3R: Geometric 3D Vision Made Easy with Unconstrained Image Collections <https://arxiv.org/abs/2312.14132>`_
         """
+
+    @type_check_only
+    def prepare_thermal(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Solve a fixed thermal field, write attributes or atlas, and set up the AOV."""
+
+    @type_check_only
+    def heatsim_solve(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Solve and cache a fixed thermal field without adding render outputs."""
+
+    @type_check_only
+    def include_thermal(
+        self,
+        radiance: bool = True,
+        preview: bool = True,
+        initial_temperature_K: float = ...,
+        thermal_diffusivity_mm2_s: float = ...,
+        density_kg_m3: float = ...,
+        specific_heat_J_kgK: float = ...,
+        emissivity: float = ...,
+        irradiance_scale: float = 100.0,
+        sim_time_s: float = 1.0,
+        timestep_s: float = 0.05,
+        bake_samples: int = 1024,
+        irradiance_texture_size: int = 512,
+        device: Literal["cuda", "cpu"] = "cuda",
+        render_domain: Literal["AUTO", "VERTEX", "TEXEL"] = "AUTO",
+        atlas_texel_density: float = 1500.0,
+        atlas_tile_min: int = 16,
+        atlas_tile_max: int = 512,
+        atlas_texel_soft_max: int = 500000,
+        recompute: bool = False,
+        radiance_scale: float = 1.0,
+        exr_codec: EXR_CODECS = "ZIP",
+        bit_depth: Literal[16, 32] = 32,
+        assignments: str | None = None,
+    ) -> None:
+        """Add the temperature AOV and optional preview and radiance outputs."""
+
+    @type_check_only
+    def configure_thermal(self, config: dict[str, Any]) -> None:
+        """Validate one serialized ThermalConfig and prepare both thermal outputs."""
+
+    @type_check_only
+    def heatsim_solve_config(self, config: dict[str, Any]) -> None:
+        """Validate one serialized ThermalConfig and solve without render outputs."""
 
     @type_check_only
     def load_addons(self, *addons: str) -> None:
@@ -2605,17 +3040,7 @@ class BlenderClients(tuple):
 
     @type_check_only
     def render_frame(self, frame_number: int, allow_skips: bool = True, dry_run: bool = False) -> None:
-        """Same as first setting current frame then rendering it.
-
-        Warning:
-            Calling this has the side-effect of changing the current frame.
-
-        Args:
-            frame_number (int): frame to render
-            allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
-            dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
-        """
+        """Render one camera frame using the current scene state."""
 
     @type_check_only
     def render_playblast(

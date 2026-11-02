@@ -19,7 +19,7 @@ Finally, to install additional dependencies into Blender's runtime, you can run 
     visionsim post-install
 
 
-We currently support **Python 3.9+**. Users still on Python 3.8 or older are
+We currently support **Python 3.10+**. Users still on Python 3.9 or older are
 urged to upgrade.
 
 |
@@ -50,7 +50,12 @@ command. For Flatpak::
 
 Each Blender version ships its own Python interpreter and site-packages, so
 dependencies must be installed into every version you render with. Run
-``post-install`` once per custom executable.
+``post-install`` once per custom executable. Blender's torch comes from PyPI by
+default; on a machine without CUDA, or one that needs a specific CUDA build, pass the
+matching wheel index::
+
+    visionsim post-install --executable=/opt/blender-4.2/blender \
+        --torch-index-url=https://download.pytorch.org/whl/cpu
 
 In Python, set the ``executable`` field of
 :class:`RenderConfig <visionsim.simulate.config.RenderConfig>`, or pass

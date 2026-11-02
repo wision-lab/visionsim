@@ -6,11 +6,10 @@ build-backend = "hatchling.build"
 name = "visionsim"
 description = "Towards a Sensor-Realistic World Simulator"
 dynamic = ["version"]
-requires-python = ">=3.9"
+requires-python = ">=3.10,<3.15"
 readme = "README.md"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -26,6 +25,10 @@ dependencies = [
     "torch",
     "matplotlib",
     "scipy",
+    # Windows is excluded: 1.1.0 crashes inside Windows Blender, and 1.0.0 (the safe
+    # version) has no 3.14 wheel. Blender gets the right version into its own Python via
+    # `vsim post-install`; the host interpreter only needs it for the in-process solve test.
+    "robust-laplacian==1.1.0; sys_platform != 'win32'",
     "invoke",
     "natsort",
     "rich",
@@ -59,13 +62,18 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 121
+force-exclude = true
 exclude = ["visionsim/interpolate/rife/*"]
 
 [tool.mypy]
-exclude = [
-    "visionsim/interpolate/rife/*",
-]
-follow_imports="skip"
+exclude = ["visionsim/interpolate/rife/*"]
+follow_imports = "skip"
+
+# Tree Clipper, the node editor's extensions and blender's own mathutils only exist
+# inside Blender's own Python, which the figure services run in.
+[[tool.mypy.overrides]]
+module = ["tree_clipper", "tree_clipper.*", "bl_ext.*", "mathutils"]
+ignore_missing_imports = true
 
 [dependency-groups]
 dev = [
@@ -79,9 +87,9 @@ dev = [
     "ruff",
     "types-jsonschema",
     'scipy-stubs; python_version >= "3.10"',
-    "psutil",
     "types-peewee",
     "syrupy>=4.9.1",
+    "pytest-skip-slow>=1.1.0",
 ]
 docs = [
     "invoke",

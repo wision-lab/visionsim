@@ -71,10 +71,13 @@ def simulate_measurements(
     radiometric falloff and albedo scaling [1]_.
 
     Args:
-        depths: Depth map in metres, arbitrary shape ``(*spatial,)``.
+        depths: Depth map in metres, arbitrary shape ``(*spatial,)``. Non-finite
+            entries (e.g. a renderer's sky/miss sentinel) describe no surface and
+            are treated as no return: their active-light term is zero, leaving
+            only ambient light.
         albedos: Reflectance values (0-1), same shape as *depths*.
         modulation_codes: Modulation codes, shape ``(n_captures, n_bins)``.
-        reference_codes: Reference (demodulation) codes, shape ``(n_captures, n_bins)``.
+        reference_codes: Reference (demodulation) codes, same shape as *modulation_codes*.
         period: Duration of one code period in seconds, i.e. ``1 / f``. The
             correlation function is periodic over it, so ``n_bins`` bins span the
             round-trip distance ``c * period / 2`` and depths wrap back over it.
@@ -83,12 +86,28 @@ def simulate_measurements(
         light_power: Peak active light intensity. Defaults to 1.0.
 
     Returns:
-        Simulated measurement array of shape ``(n_captures, *spatial)``.
+        Simulated measurement array of shape ``(n_captures, *spatial)``. Finite
+        whenever *depths* and *albedos* are: ``inf``/``nan`` sentinel depths
+        resolve to the ambient term instead of leaking NaN into the measurements.
+
+    Raises:
+        ValueError: If *reference_codes* does not have one row per modulation
+            capture, or if *albedos* does not have the same shape as *depths*.
 
     References:
         .. [1] `Gupta et al. (2018), "What Are Optimal Coding Functions for Time-of-Flight Imaging?"
            <https://wisionlab.com/wp-content/uploads/2018/07/Gupta_ToG18_ToFOptimalCodingFunctions.pdf>`_
     """
+    # A short reference set would raise a bare IndexError in the loop below;
+    # column (bin) mismatches are caught by compute_correlation_function.
+    if reference_codes.shape[0] != modulation_codes.shape[0]:
+        raise ValueError(
+            f"reference_codes and modulation_codes need one row per capture, got {reference_codes.shape} "
+            f"and {modulation_codes.shape}"
+        )
+    if albedos.shape != depths.shape:
+        raise ValueError(f"albedos and depths must have the same shape, got {albedos.shape} and {depths.shape}")
+
     n_captures, n_bins = modulation_codes.shape
     # The codes span one period, so the correlation wraps over the distance
     # light travels in that time, and back out.
@@ -97,7 +116,12 @@ def simulate_measurements(
 
     # kappa is the integral of the reference functions in a period
     kappa = reference_codes.sum(axis=1) * time_resolution  # (n_captures,)
-    beta = albedos / (depths**2 + 1e-30)
+    # Non-finite depths carry no return: substitute 0 so the interpolator never
+    # sees inf/nan; the active term is zeroed below, leaving only the ambient
+    # contribution.
+    finite = np.isfinite(depths)
+    safe_depths = np.where(finite, depths, 0.0)
+    beta = np.where(finite, albedos / (safe_depths**2 + 1e-30), 0.0)
 
     correlation_distances = np.linspace(0, max_depth, n_bins, endpoint=False)
     measurements = np.zeros((n_captures, *depths.shape))
@@ -111,7 +135,7 @@ def simulate_measurements(
 
         # The phase of the correlation function wraps around the code period,
         # while the 1/d**2 falloff below follows the true distance.
-        correlation_samples = interpolator(depths % max_depth)
+        correlation_samples = interpolator(safe_depths % max_depth)
 
         # Reference formula: (T_exp / T_period) * (beta * correlation + ambient * kappa * albedo)
         measurements[index] = (exposure_time / period) * (

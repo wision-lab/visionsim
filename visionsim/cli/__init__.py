@@ -130,6 +130,7 @@ def post_install(
     editable: bool = False,
     version: str | None = None,
     path: str | None = None,
+    torch_index_url: str | None = None,
 ):
     """Install additional dependencies
 
@@ -141,6 +142,8 @@ def post_install(
             when pip installing. If set, a fresh copy from PyPI will be installed inside blender's runtime environment,
             which might not match the currently installed version. Defaults to None (use currently installed version).
         path (str | None, optional): The path to the visionsim source code to install, only used when --version is not set.
+        torch_index_url (str | None, optional): PyTorch wheel index to install torch from, e.g.
+            ``https://download.pytorch.org/whl/cpu`` for a machine without CUDA. Defaults to None (whatever PyPI resolves to).
     """
     from visionsim.simulate import install_dependencies
 
@@ -148,7 +151,7 @@ def post_install(
         raise RuntimeError(
             "No blender installation found on path! Please make sure it is discoverable, or specify executable."
         )
-    install_dependencies(executable, editable=editable, version=version, path=path)
+    install_dependencies(executable, editable=editable, version=version, path=path, torch_index_url=torch_index_url)
 
 
 def main():

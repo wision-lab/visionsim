@@ -19,4 +19,10 @@ To orchestrate many rendering servers a registry server is spawned and listens f
 
 This client/server architecture can drastically cut down on processing time and enables the use of a distributed set of machines with heterogeneous hardware. Even when worker processes are on the same machine, as is typically the case when using :meth:`BlenderClients.spawn <visionsim.simulate.blender.BlenderClients.spawn>` or :meth:`BlenderClients.pool <visionsim.simulate.blender.BlenderClients.pool>`, render times can be shorter as the system's resources will be better utilized. See the :doc:`Render API <../../sections/blender/rendering>` for examples of parallel distributed simulation.
 
+|
+
+.. seealso::
+
+    - :doc:`../../tutorials/extending` for subclassing ``BlenderService``.
+
 

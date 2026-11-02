@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from invoke import Collection
 
-from . import interpolation, sensors
+from . import blender, interpolation, sensors
 
 ns = Collection()
 ns.add_task(interpolation.build)
+ns.add_collection(Collection.from_module(blender))
 ns.add_collection(Collection.from_module(sensors))

@@ -116,7 +116,7 @@ def lint(c):
 
 
 @task(iterable=["paths"])
-def test(c, executable=None, paths=None):
+def test(c, executable=None, paths=None, slow=False):
     """Run the test suite with pytest.
 
     Passes ``-s`` so test output, including anything printed by a failing test,
@@ -130,12 +130,16 @@ def test(c, executable=None, paths=None):
         paths: Optional test files or directories to run, relative to the repo
             root. May be given more than once. Defaults to the whole ``tests/``
             tree.
+        slow: Also run tests marked ``slow`` (the production-scale thermal bake),
+            which pytest-skip-slow skips by default. Defaults to False.
     """
     executable = executable or os.environ.get("VSIM_BLENDER")
     targets = [shlex.quote(str(ROOT_DIR / path)) for path in paths or []] or [shlex.quote(str(TEST_DIR))]
     command = f"pytest -s --durations=0 -c {shlex.quote(str(ROOT_DIR / 'pyproject.toml'))} {' '.join(targets)}"
     if executable:
         command += f" --executable {shlex.quote(executable)}"
+    if slow:
+        command += " --slow"
     _run(c, command)
 
 
@@ -188,7 +192,13 @@ def build_docs(c, preview=False):
     result in the browser when the build succeeds.
     """
     with c.cd(ROOT_DIR):
-        api_exclude = ["visionsim/interpolate/rife", "visionsim/simulate/compat.py", "visionsim/simulate/nodes"]
+        api_exclude = [
+            "visionsim/interpolate/rife",
+            "visionsim/simulate/compat.py",
+            "visionsim/simulate/nodes",
+            # The sphinx extension: documentation tooling, not part of the API.
+            "visionsim/sphinx_ext.py",
+        ]
         # We have to do this for all the new changes in the docs to be reflected
         console.print(
             '[yellow]Make sure to run "pip install -e .[dev]" or equivalent to make sure docstring changes are reflected!'

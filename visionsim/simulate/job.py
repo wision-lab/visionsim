@@ -90,6 +90,8 @@ def _prepare_render_job(
         client.include_specular_pass(**asdict(config.specular_pass))
     if config.include_points:
         client.include_points(**asdict(config.points))
+    if config.include_thermal:
+        client.configure_thermal(asdict(config.thermal))
 
     if output_blend_file is not None:
         client.save_file(output_blend_file)

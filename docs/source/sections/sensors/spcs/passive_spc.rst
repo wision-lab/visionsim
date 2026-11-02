@@ -64,5 +64,9 @@ Finally, bear in mind that :math:`\phi` is the scene flux in photons/second, whi
 
 |
 
+.. seealso::
+
+    :doc:`../../../tutorials/passive-spc` walks through emulating binary frames from a rendered sequence and recovering an image from them with the estimators above.
+
 .. [1] Some sources of noise such as dark counts and non-ideal quantum efficiency can be absorbed into the value of :math:`\phi`.
 .. [2] `Yang et al. (2011), "Bits from Photons: Oversampled Image Acquisition Using Binary Poisson Statistics". <https://arxiv.org/abs/1106.0954>`_

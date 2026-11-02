@@ -1,13 +1,18 @@
 import itertools
+import json
 import os
+import shutil
+from dataclasses import asdict
 from pathlib import Path
 
+import imageio.v3
 import numpy as np
 import OpenEXR
 import pytest
 
 from visionsim.dataset import Dataset, Metadata
-from visionsim.simulate.blender import INDEX_PADDING, ITEMS_PER_SUBFOLDER, BlenderClients
+from visionsim.simulate.blender import INDEX_PADDING, ITEMS_PER_SUBFOLDER, BlenderClient, BlenderClients
+from visionsim.simulate.config import ThermalConfig
 
 
 @pytest.mark.parametrize(
@@ -35,6 +40,9 @@ from visionsim.simulate.blender import INDEX_PADDING, ITEMS_PER_SUBFOLDER, Blend
         # "specular/light",
         "points",
         "previews/points",
+        "temperature",
+        "previews/temperature",
+        "thermal_radiance",
     ],
 )
 def test_render_layout(cube_dataset, gt_type):
@@ -50,6 +58,26 @@ def test_render_layout(cube_dataset, gt_type):
         assert len(list(subdir.glob("**/*.png"))) == 5
     else:
         assert len(list(subdir.glob("**/*.exr"))) == 5
+
+
+def test_materials_preview_keeps_id_hue(cube_dataset):
+    """Regression: shading must not collapse the ID hue to a grey ramp."""
+    frames = sorted((cube_dataset / "previews" / "materials").glob("**/*.png"))
+    assert frames
+
+    colors = np.concatenate([imageio.v3.imread(frame)[..., :3].reshape(-1, 3).astype(np.int16) for frame in frames])
+    non_grey = (colors[:, 0] != colors[:, 1]) | (colors[:, 1] != colors[:, 2])
+    assert non_grey.any(), "materials preview contains only grey pixels"
+
+
+@pytest.mark.parametrize("id_type", ["materials", "segmentations"])
+def test_id_indices(cube_dataset, id_type):
+    """Every assigned ID maps to a name, and no raw pass value exceeds the table."""
+    indices = json.loads((cube_dataset / id_type / "indices.json").read_text())
+    assert sorted(map(int, indices)) == list(range(1, len(indices) + 1))
+
+    for exr in (cube_dataset / id_type).glob("**/*.exr"):
+        assert Dataset.load_data(exr, auto_collapse=True).max() <= len(indices)
 
 
 @pytest.mark.parametrize(
@@ -69,6 +97,8 @@ def test_render_layout(cube_dataset, gt_type):
         ("specular/indirect", ["RGB"]),
         # ("specular/light", ["RGB"]),
         ("points", ["RGB"]),
+        ("temperature", ["V"]),
+        ("thermal_radiance", ["V"]),
     ],
 )
 def test_groundtruth_exrs(cube_dataset, subdir, channels):
@@ -105,6 +135,8 @@ def test_groundtruth_exrs(cube_dataset, subdir, channels):
         ("specular/indirect", (50, 50, 3), False),
         # ("specular/light", (50, 50, 3)),
         ("points", (50, 50, 3), False),
+        ("temperature", (50, 50, 1), True),
+        ("thermal_radiance", (50, 50, 1), True),
     ],
 )
 def test_load_exrs(cube_dataset, subdir, shape, auto_collapse):
@@ -133,7 +165,9 @@ def test_database_threading(tmp_path_factory, executable):
 
     # Spoof frames to bypass render, only save metadata, from a bunch of blender instances.
     # This forces a lot of database writes, which helps test for any potential "Database is locked" errors.
-    with BlenderClients.spawn(jobs=os.cpu_count() or 5, executable=executable, timeout=30, log=log_dir) as clients:
+    with BlenderClients.spawn(
+        jobs=min(os.cpu_count() or 5, 5), executable=executable, timeout=30, log=log_dir
+    ) as clients:
         clients.initialize(scene.resolve(), tmpdir.resolve())
         clients.include_frames()
         clients.move_keyframes(scale=5)
@@ -147,6 +181,44 @@ def test_database_threading(tmp_path_factory, executable):
         clients.render_animation()
 
 
+def test_move_keyframes_unwraps_rotations(tmp_path_factory, executable):
+    """Scaling samples frames between keyframes, where a wrapped rotation turns the long way."""
+    tmpdir = tmp_path_factory.mktemp("unwrap")
+    scene = Path(__file__).parent.parent / "test_files" / "scenes" / "cube.blend"
+
+    def z_rotation(angle: float) -> list[list[float]]:
+        """A 4x4 world transform rotating about Z by ``angle`` radians."""
+        cos, sin = np.cos(angle), np.sin(angle)
+        return [
+            [cos, -sin, 0, 0],
+            [sin, cos, 0, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ]
+
+    def key_at(fcurve, frame: float):
+        return next(k for k in fcurve.keyframe_points if round(k.co.x) == frame)
+
+    with BlenderClient.spawn(executable=executable, timeout=30) as client:
+        client.initialize(scene.resolve(), tmpdir.resolve())
+        # 3.5 radians lies past +/-pi, so blender stores it as -2.783: a wrap of more than pi.
+        wrapped_frame = 10
+        client.set_camera_keyframe(0, z_rotation(3.0))
+        client.set_camera_keyframe(wrapped_frame, z_rotation(3.5))
+        z_channel = next(
+            fcurve
+            for fcurve in client.iter_fcurves()
+            if fcurve.data_path.endswith("rotation_euler")
+            and fcurve.array_index == 2
+            and any(round(k.co.x) == 0 for k in fcurve.keyframe_points)
+        )
+        assert abs(key_at(z_channel, wrapped_frame).co.y - 3.5) > np.pi
+
+        client.move_keyframes(scale=2)
+
+        assert key_at(z_channel, 2 * wrapped_frame).co.y == pytest.approx(3.5)
+
+
 def test_metadata_roundtrip_from_db(cube_dataset):
     for path in cube_dataset.glob("**/*.db"):
         meta = Metadata.load(path)
@@ -158,3 +230,130 @@ def test_metadata_roundtrip_from_db(cube_dataset):
         # Note: Other tests (eg: `test_dataset_merge`) glob this directory and expect a
         #   single metadata source, so clean up after ourselves.
         json_path.unlink()
+
+
+def test_render_thermal(tmp_path_factory, executable):
+    """End-to-end thermal render gate (M1 acceptance).
+
+    Solves the heat-transfer FEM on the reused cube fixture, then renders the
+    main RGB pass plus the thermal outputs and asserts that:
+      * the radiance second-render pass did NOT clobber the main RGB ``frames/``,
+      * ``temperature/`` ground-truth EXRs are written (single channel, Kelvin),
+      * the inferno-colormap ``previews/temperature/`` PNGs are written, and
+      * the gray-body ``thermal_radiance/`` EXRs are written as single-channel fields.
+
+    N is the number of frames rendered by this gate.
+    """
+    N = 2
+
+    out = tmp_path_factory.mktemp("renders")
+    log_dir = tmp_path_factory.mktemp("logs")
+    repo_scene = Path(__file__).parent.parent / "test_files" / "scenes" / "cube.blend"
+
+    # Cache isolation: `prepare_thermal` derives its FEM solve-cache dir from the
+    # *source* blend path (`<blend>.heatsim/`). Initialize from a tmp copy so the
+    # cache lands under tmp_path (auto-cleaned) instead of polluting the repo tree.
+    scene = tmp_path_factory.mktemp("scene") / "cube.blend"
+    shutil.copy(repo_scene, scene)
+
+    with BlenderClient.spawn(executable=executable, timeout=60, log=log_dir) as client:
+        client.initialize(scene.resolve(), out.resolve())
+        client.set_resolution(50, 50)
+        # Mirror cube_dataset's keyframe scaling so the cube stays in-frame, then
+        # render exactly N frames (stop is exclusive: [10, 10 + N) -> 10, 11).
+        client.move_keyframes(scale=1 / 5)
+        client.set_animation_range(10, 10 + N)
+        client.include_frames()
+        # CPU solve for determinism; `render_domain` stays at its AUTO default here (POINTS
+        # is a solver-side laplacian_domain, not a render domain), so this gate covers AUTO.
+        # The cube fixture has a single 8-vertex Cube, which robust_laplacian's default of 30
+        # neighbours rejects; the backend clamps n_neighbors to len(points) - 1 (7 here), so
+        # the degenerate solve runs. This gate checks solve -> temperature AOV -> radiance only.
+        client.prepare_thermal(device="cpu", bake_samples=4, irradiance_texture_size=64)
+        client.include_thermal(radiance=True, preview=True)
+        client.render_animation()
+
+    frames = out / "frames"
+    temp = out / "temperature"
+    preview = out / "previews" / "temperature"
+    rad = out / "thermal_radiance"
+
+    # frames/ intact: the radiance second-render pass must NOT clobber the main RGB render.
+    assert frames.exists()
+    assert len(list(frames.glob("**/*.png"))) == N
+
+    # temperature ground-truth EXRs (Kelvin), single channel.
+    assert temp.exists()
+    assert (temp / "transforms.db").exists()
+    temp_exrs = sorted(temp.glob("**/*.exr"))
+    assert len(temp_exrs) == N
+    assert Dataset.load_data(temp_exrs[0]).shape == (50, 50, 1)
+    Metadata.load(temp / "transforms.db")  # round-trips without error
+
+    # inferno-colormap previews.
+    assert preview.exists()
+    assert len(list(preview.glob("**/*.png"))) == N
+
+    # Emission is spectrally flat, so the radiance pass is single-channel from Blender
+    # 4.3 on; older versions duplicate the value across RGB (checked below).
+    assert rad.exists()
+    assert (rad / "transforms.db").exists()
+    Metadata.load(rad / "transforms.db")  # round-trips without error
+    rad_exrs = sorted(rad.glob("**/*.exr"))
+    assert len(rad_exrs) == N
+    with OpenEXR.File(str(rad_exrs[0])) as f:
+        if "V" in f.channels():
+            assert list(f.channels().keys()) == ["V"]
+        else:
+            # Before v4, EXRs could not be single channel, they were saved as
+            # RGB with duplicated channels.
+            assert list(f.channels().keys()) == ["RGB"]
+            data = f.channels()["RGB"].pixels.transpose(2, 0, 1)
+            assert all(np.allclose(a, b) for a, b in itertools.pairwise(data))
+    assert Dataset.load_data(rad_exrs[0]).shape == (50, 50, 1)
+
+
+def test_thermal_config_crosses_rpyc_with_path_assignments(tmp_path, executable):
+    """A Path-valued thermal config must survive the rpyc bridge.
+
+    ``assignments`` arrives server-side as a netref (rpyc passes non-primitives by
+    reference and pickling is disabled), so any server-side deepcopy — ``asdict`` — dies
+    with "ValueError: pickling is disabled".
+    """
+    scene = tmp_path / "scene.blend"
+    shutil.copy(Path(__file__).parent.parent / "test_files" / "scenes" / "cube.blend", scene)
+    sidecar = tmp_path / "cube.thermal.json"
+    sidecar.write_text(
+        json.dumps({"schema_version": 1, "scene": "scene.blend", "defaults": {"preset": None}, "materials": {}}),
+        encoding="utf-8",
+    )
+    (tmp_path / "logs").mkdir()
+
+    config = ThermalConfig(assignments=sidecar, device="cpu", bake_samples=4, irradiance_texture_size=64)
+    with BlenderClient.spawn(executable=executable, timeout=60, log=tmp_path / "logs") as client:
+        client.initialize(scene.resolve(), tmp_path.resolve())
+        client.configure_thermal(asdict(config))
+
+
+def test_render_without_thermal_outputs(tmp_path, executable):
+    """An RGB-only render must not touch the thermal pipeline at all.
+
+    Renders from a tmp copy of the scene, because thermal caches land beside the
+    *source* blend (``<blend>.heatsim/``) and a shared fixture copy would hide
+    whether this path created one.
+    """
+    scene = tmp_path / "scene.blend"
+    shutil.copy(Path(__file__).parent.parent / "test_files" / "scenes" / "cube.blend", scene)
+    (tmp_path / "logs").mkdir()
+    with BlenderClient.spawn(executable=executable, timeout=60, log=tmp_path / "logs") as client:
+        client.initialize(scene.resolve(), tmp_path.resolve())
+        client.set_resolution(16, 16)
+        client.include_frames()
+        client.render_frame(10, allow_skips=False)
+    assert len(list((tmp_path / "frames").glob("**/*.png"))) == 1
+
+    # No thermal outputs, and no solve cache: `prepare_thermal` is what creates either.
+    assert not (tmp_path / "temperature").exists()
+    assert not (tmp_path / "thermal_radiance").exists()
+    assert not (tmp_path / "previews" / "temperature").exists()
+    assert not Path(f"{scene}.heatsim").exists()

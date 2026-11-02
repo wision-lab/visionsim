@@ -31,17 +31,22 @@ Camera positioning can be achieved programmatically as well, mainly using the :f
 
 Here we keyframe the camera to rotate around the origin with a radius of 5, always look towards the center, and rotate around it's optical axis:  
 
-.. Make gif with: 
-    gifski renders/monkey/frames/*.png --fps 25 -o keyframing-api.gif --width=320 --height=320
+.. Make video with:
+    inv figures.sections.blender.keyframing
 
 .. literalinclude:: ../../../../examples/blender/render_custompath.py 
    :lines: 15-20
    :dedent: 
 
-Now, if we render this scene, it will result in the following animation: 
+Now, if we render this scene, it will result in the following animation:
 
-.. image:: ../../_static/blender/keyframing-api.gif
-   :align: center 
+.. video:: ../../_static/blender/keyframing-api.mp4
+   :loop:
+   :autoplay:
+   :nocontrols:
+   :playsinline:
+   :align: center
+   :width: 80%
 
 .. tip:: 
     The camera might already be constrained to a path or object, which can result in the camera positioning not working as expected. In these cases it is helpful to :func:`unbind the camera <visionsim.simulate.blender.BlenderService.exposed_unbind_camera>` from any external constraints. 
@@ -54,4 +59,12 @@ Keyframe Stretching
 Keyframes are tied to frame numbers not relative animation time, so while this works well when the artist knows the framerate of the final render, if they animate for 30fps but render it at 120fps, the animation will be four times too fast. 
 
 This is where keyframe stretching comes in, it allows for a decoupling between rendering framerate and animation framerate. The ``keyframe-multiplier`` option of ``blender.render-animation`` controls this stretch factor. In the above example, we would set ``--keyframe-multiplier=4.0`` to get the desired animation, or we could reuse existing animations and render them at single photon camera framerates using a higher multiplier.  
+
+|
+
+.. seealso::
+
+    - :doc:`../../tutorials/varying-focal-lengths` for animating the lens and what it records.
+    - :doc:`optimize-rate` for choosing the keyframe multiplier.
+
 

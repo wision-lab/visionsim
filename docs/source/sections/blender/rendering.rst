@@ -40,3 +40,11 @@ This enables much more flexibility, allowing users to render multiple scenes or 
 To properly track the progress, we queue render jobs with ``apply_async`` which gives control back to the main process. Then we call ``progress.wait()``, which blocks until all jobs have completed and updates the progress bar accordingly.    
 
 .. important:: After queuing jobs, you *must* wait for them to terminate by calling :meth:`PoolProgress.wait <visionsim.utils.progress.PoolProgress.wait>`, otherwise the main process will exit and force-kill all child processes. 
+
+|
+
+.. seealso::
+
+    - :doc:`architecture` for the client/server design behind the examples.
+    - :doc:`../../quick-start` for the CLI equivalents.
+

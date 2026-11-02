@@ -332,7 +332,10 @@ def rgb(
                 # We checked that there's only a single camera, just re-use any transforms dict
                 (transform, *_), transforms_iter = mitertools.spy(transforms_iter)
                 poses = np.array([t["transform_matrix"] for t in transforms_iter])
-                transform["transform_matrix"] = pose_interp(poses, k=np.clip(len(poses) - 1, 2, 3))(0.5)
+                # A sequence whose length is not a multiple of ``chunk_size`` ends on a
+                # single-frame chunk, which cannot be interpolated; its own pose stands.
+                if len(poses) > 1:
+                    transform["transform_matrix"] = pose_interp(poses, k=min(len(poses) - 1, 3))(0.5)
                 transform["file_path"] = outpath.relative_to(output_dir)
                 transforms.append(transform)
 
@@ -360,9 +363,14 @@ def imu(
     std_bias_gyro: float = 2e-5,
     std_acc: float = 8e-3,
     std_gyro: float = 1.2e-3,
+    convert_coords: bool = True,
     force: bool = False,
 ) -> None:
     """Simulate data from a co-located IMU using the poses in a ``transforms.json`` or ``transforms.db`` file.
+
+    The pose matrices in ``transforms.json`` map directly from the OpenGL camera frame into
+    Blender's world frame, so by default they are converted to Blender's camera convention
+    before emulating. Pass ``--no-convert-coords`` to emulate the poses exactly as they are.
 
     Args:
         input_dir: directory in which to look for transforms,
@@ -376,6 +384,8 @@ def imu(
         std_bias_gyro: stdev for random-walk component of error (drift) in gyroscope. Given in rad/(s^2 sqrt(Hz))
         std_acc: stdev for white-noise component of error in accelerometer. Given in m/(s^2 sqrt(Hz))
         std_gyro: stdev for white-noise component of error in gyroscope. Given in rad/(s sqrt(Hz))
+        convert_coords: if true, convert the pose matrices from the OpenGL camera convention into
+            Blender's before emulating. If false, emulate them as-is. Defaults to true.
         force: if true, overwrite output file(s) if present
     """
 
@@ -384,6 +394,7 @@ def imu(
 
     from visionsim.dataset import Metadata
     from visionsim.emulate.imu import emulate_imu
+    from visionsim.utils.pose import camcoord_opengl_to_blender
 
     if output_file and output_file.exists() and not force:
         raise FileExistsError("Output file already exists.")
@@ -396,6 +407,9 @@ def imu(
     init_bias_acc_ = np.array(ast.literal_eval(init_bias_acc))
     init_bias_gyro_ = np.array(ast.literal_eval(init_bias_gyro))
     poses = Metadata.from_path(input_dir).poses
+    # fix coordinate convention in the pose matrices
+    if convert_coords:
+        poses = [camcoord_opengl_to_blender(p) for p in poses]
 
     data_gen = emulate_imu(
         poses,
@@ -642,11 +656,6 @@ def itof(
         raise RuntimeError("Input and output directory cannot be the same!")
     if output_dir.exists() and not force:
         raise FileExistsError("Output directory already exists.")
-    shutil.rmtree(output_dir, ignore_errors=True)
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    if preview:
-        (output_dir / "preview").mkdir(parents=True, exist_ok=True)
 
     dataset_albedo = None
     dataset_depth = None
@@ -703,6 +712,13 @@ def itof(
         params["freq_vec"] = list(freq_vec)
     if shifts_vec is not None:
         params["shifts_vec"] = list(shifts_vec)
+
+    # A failed run must not leave a partial tree, which would make the retry
+    # demand --force for nothing usable.
+    shutil.rmtree(output_dir, ignore_errors=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if preview:
+        (output_dir / "preview").mkdir(parents=True, exist_ok=True)
 
     with open(output_dir / "params.json", "w") as f:
         json.dump(params, f, indent=2)

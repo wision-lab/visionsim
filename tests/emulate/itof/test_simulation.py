@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 from scipy.interpolate import PchipInterpolator
@@ -146,3 +148,46 @@ def test_simulation_mismatched_code_lengths():
     _, ref = codes("convSin", 4, 502)
     with pytest.raises(ValueError, match="same length"):
         simulate_measurements(np.array([0.5]), np.array([0.5]), mod, ref, PERIOD)
+
+
+def test_simulation_rejects_broadcast_albedo():
+    """A wrongly shaped albedo must not silently broadcast against the depths."""
+    mod, ref = codes("convSin", 4, 501)
+    with pytest.raises(ValueError, match="same shape"):
+        simulate_measurements(np.full((8, 6), 0.5), np.full(6, 0.5), mod, ref, PERIOD)
+
+
+def test_simulation_rejects_short_reference_codes():
+    """A reference set with too few captures must not fall through to an IndexError."""
+    mod, _ = codes("convSin", 4, 501)
+    _, ref = codes("convSin", 3, 501)
+    with pytest.raises(ValueError, match="one row per capture"):
+        simulate_measurements(np.array([0.5]), np.array([0.5]), mod, ref, PERIOD)
+
+
+def test_simulation_non_finite_depths_are_ambient_only():
+    """inf/nan depths model a missing return: finite, ambient-only, no warning.
+
+    The renderer's sky/miss sentinel is a non-finite depth. It must not leak NaN
+    into the measurements (it would be persisted by the float32 write) nor
+    silently scale the active term.
+    """
+    mod, ref = codes("convSin", 4, 501)
+    albedos = np.array([0.5, 0.6, 0.7])
+    depths = np.array([0.4, np.inf, np.nan])
+    exposure_time, ambient_power = 2.0, 3.0
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # any RuntimeWarning from the remainder fails the test
+        measurements = simulate_measurements(
+            depths, albedos, mod, ref, PERIOD, exposure_time=exposure_time, ambient_power=ambient_power
+        )
+
+    assert np.all(np.isfinite(measurements))
+    # No active modulation survives, so every sentinel pixel equals the analytic
+    # ambient term ambient * kappa * albedo (independent of depth).
+    kappa = ref.sum(axis=1) * (PERIOD / mod.shape[1])
+    for pixel in (1, 2):
+        assert measurements[:, pixel] == pytest.approx(exposure_time / PERIOD * ambient_power * kappa * albedos[pixel])
+    # The finite pixel still carries an active term, so it must differ.
+    assert not np.allclose(measurements[:, 0], measurements[:, 1])
