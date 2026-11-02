@@ -1,22 +1,23 @@
 from __future__ import annotations
-import warnings
+
 import functools
 import inspect
 import math
+import warnings
+from collections.abc import Callable
 from copy import deepcopy
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
-
+from typing import Any
 
 import numpy as np
 import pint
 import torch
+import torch.nn.functional as F
 from pint import Quantity, UnitRegistry, set_application_registry
 from ruamel.yaml import YAML
 from ruamel.yaml.nodes import MappingNode, ScalarNode, SequenceNode
 from scipy.constants import c  # Top-level export for unit tests
-import torch.nn.functional as F
 
 ureg = UnitRegistry()
 ureg.setup_matplotlib(True)
@@ -183,14 +184,30 @@ def preproc_frames(
 
     # 5. Convert to PyTorch Tensors and Resize with F.interpolate
     # Shape requirements: F.interpolate expects (Batch, Channel, Height, Width) -> (1, 1, H, W)
-    depth_tensor = torch.tensor(depth_img, device=device, dtype=torch.float64, requires_grad=requires_grad).unsqueeze(0).unsqueeze(0)
-    albedo_tensor = torch.tensor(albedo_img, device=device, dtype=torch.float64, requires_grad=requires_grad).unsqueeze(0).unsqueeze(0)
-    ambient_tensor = torch.tensor(ambient_img, device=device, dtype=torch.float64, requires_grad=requires_grad).unsqueeze(0).unsqueeze(0)
+    depth_tensor = (
+        torch.tensor(depth_img, device=device, dtype=torch.float64, requires_grad=requires_grad)
+        .unsqueeze(0)
+        .unsqueeze(0)
+    )
+    albedo_tensor = (
+        torch.tensor(albedo_img, device=device, dtype=torch.float64, requires_grad=requires_grad)
+        .unsqueeze(0)
+        .unsqueeze(0)
+    )
+    ambient_tensor = (
+        torch.tensor(ambient_img, device=device, dtype=torch.float64, requires_grad=requires_grad)
+        .unsqueeze(0)
+        .unsqueeze(0)
+    )
 
     # Apply interpolation: 'nearest' for depth, 'bilinear' for smooth color/ambient maps
     depth_tensor = F.interpolate(depth_tensor, size=(Nr, Nc), mode="nearest").squeeze(0).squeeze(0)
-    albedo_tensor = F.interpolate(albedo_tensor, size=(Nr, Nc), mode="bilinear", align_corners=False).squeeze(0).squeeze(0)
-    ambient_tensor = F.interpolate(ambient_tensor, size=(Nr, Nc), mode="bilinear", align_corners=False).squeeze(0).squeeze(0)
+    albedo_tensor = (
+        F.interpolate(albedo_tensor, size=(Nr, Nc), mode="bilinear", align_corners=False).squeeze(0).squeeze(0)
+    )
+    ambient_tensor = (
+        F.interpolate(ambient_tensor, size=(Nr, Nc), mode="bilinear", align_corners=False).squeeze(0).squeeze(0)
+    )
 
     depth_qty = ureg.Quantity(depth_tensor, "meter")
     albedo_qty = ureg.Quantity(albedo_tensor, "dimensionless")
@@ -257,24 +274,27 @@ def _validate_config(config: dict) -> None:
     bin_width = hist.get("bin_width")
     pulse_rep = active.get("pulse_repetition")
 
-    if min_depth is not None and isinstance(min_depth, Quantity):
-        if min_depth < 0 * ureg.meters:
-            raise ValueError(f"Invalid min_depth: value must be >= 0m, got {min_depth}.")
+    if min_depth is not None and isinstance(min_depth, Quantity) and min_depth < 0 * ureg.meters:
+        raise ValueError(f"Invalid min_depth: value must be >= 0m, got {min_depth}.")
 
-    if min_depth is not None and max_depth is not None and isinstance(min_depth, Quantity) and isinstance(max_depth, Quantity):
-        if max_depth <= min_depth:
-            raise ValueError(
-                f"Conflicting depth parameters: max_depth ({max_depth}) must be strictly greater than min_depth ({min_depth})."
-            )
+    if (
+        min_depth is not None
+        and max_depth is not None
+        and isinstance(min_depth, Quantity)
+        and isinstance(max_depth, Quantity)
+        and max_depth <= min_depth
+    ):
+        raise ValueError(
+            f"Conflicting depth parameters: max_depth ({max_depth}) must be strictly greater than min_depth ({min_depth})."
+        )
 
     if pulse_rep is not None and isinstance(pulse_rep, Quantity) and pulse_rep > 0 * ureg.hertz:
         max_resolvable_depth = tof2depth(1 / pulse_rep)
-        if max_depth is not None and isinstance(max_depth, Quantity):
-            if max_depth > max_resolvable_depth:
-                raise ValueError(
-                    f"Conflicting parameters: max_depth ({max_depth}) exceeds maximum resolvable depth "
-                    f"({max_resolvable_depth:.4f~P}) derived from pulse_repetition ({pulse_rep})."
-                )
+        if max_depth is not None and isinstance(max_depth, Quantity) and max_depth > max_resolvable_depth:
+            raise ValueError(
+                f"Conflicting parameters: max_depth ({max_depth}) exceeds maximum resolvable depth "
+                f"({max_resolvable_depth:.4f~P}) derived from pulse_repetition ({pulse_rep})."
+            )
 
         if n_bins is not None and bin_width is not None and isinstance(bin_width, Quantity):
             implied_bw = max_resolvable_depth / n_bins
@@ -284,6 +304,7 @@ def _validate_config(config: dict) -> None:
                     f"Conflicting parameters: bin_width ({bin_width}) contradicts implied bin width "
                     f"({implied_bw:.6f~P}) derived from pulse_repetition ({pulse_rep}) and n_bins ({n_bins})."
                 )
+
 
 def yaml_constructor(cls_or_func, *extra_args):
     def constructor(loader, node):
@@ -346,13 +367,10 @@ def _to_quantity(val: Any, unit_str: str) -> Any:
         return ureg.Quantity(val, unit_str)
 
     if isinstance(val, str):
-        try:
-            q = ureg.Quantity(val)
-            if q.dimensionless:
-                return ureg.Quantity(q.magnitude, unit_str)
-            return q
-        except Exception:
-            return ureg.Quantity(float(val), unit_str)
+        q = ureg.Quantity(val)
+        if q.dimensionless:
+            return ureg.Quantity(q.magnitude, unit_str)
+        return q
 
     return val
 
@@ -440,7 +458,7 @@ def _build_config(
 
         # 1. Reject custom dictionary structures passed for parameters
         if isinstance(val, dict):
-            raise ValueError(
+            raise TypeError(
                 f"Invalid configuration parameter '{param_name}' ({'.'.join(key_path)}). "
                 f"Expected a scalar, list, or Pint Quantity, got dictionary: {val}."
             )

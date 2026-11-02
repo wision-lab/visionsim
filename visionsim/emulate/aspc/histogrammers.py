@@ -10,8 +10,8 @@ import torch.nn.functional as F
 from pint import Quantity
 from torch import Tensor
 
-from visionsim.utils.progress import ElapsedProgress
 from visionsim.emulate.aspc.utils import get_irradiance_with_fov, ureg, validate_units
+from visionsim.utils.progress import ElapsedProgress
 
 # =============================================================================
 # MONTE-CARLO SAMPLING & DEAD-TIME WALK KERNELS
@@ -469,7 +469,9 @@ class HistogrammerBase:
 
                     n_fov_pixels = int(index_mask.sum())
                     if n_fov_pixels == 0:
-                        transient_list.append(torch.zeros((1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=device))
+                        transient_list.append(
+                            torch.zeros((1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=device)
+                        )
                         ambient_offsets.append(torch.zeros((), device=device))
                         continue
 
@@ -501,7 +503,9 @@ class HistogrammerBase:
                     ambient_offsets.append(masked_offsets.sum() / (n_fov_pixels * gt_ntime_bins))
 
                     if current_depth_vals.numel() == 0:
-                        transient_list.append(torch.zeros((1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=device))
+                        transient_list.append(
+                            torch.zeros((1, gt_ntime_bins), dtype=irradiance_frames.dtype, device=device)
+                        )
                         continue
 
                     transient_idx = torch.floor(current_depth_vals * gt_ntime_bins / max_depth).to(torch.long)

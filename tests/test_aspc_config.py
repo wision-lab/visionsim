@@ -76,10 +76,10 @@ active_source:
         assert config["histogrammer"]["bin_width"] == 0.03 * ureg.meter
 
         warnings_text = " ".join([str(w.message) for w in recwarn.list if issubclass(w.category, UserWarning)])
-        
+
         # YAML scalar missing Pint unit -> emits warning
         assert "YAML parameter 'min_depth' (histogrammer.min_depth) is missing explicit Pint units" in warnings_text
-        
+
         # Parameter not specified in YAML -> listed under default fallback warnings
         assert "dead_time" in warnings_text
 
@@ -191,5 +191,5 @@ sensor:
 class TestASPCConfigStructureAndErrors:
     def test_custom_dict_input_raises_value_error(self):
         user_args = {"min_depth": {"invalid": "dict_structure"}}
-        with pytest.raises(ValueError, match="Expected a scalar, list, or Pint Quantity, got dictionary"):
+        with pytest.raises(TypeError, match="Expected a scalar, list, or Pint Quantity, got dictionary"):
             prepare_config(user_args, config_file=None)
