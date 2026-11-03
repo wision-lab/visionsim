@@ -798,6 +798,90 @@ class HeatsimTestService(BlenderService):
             "rendered": rendered,
         }
 
+    def exposed_thermal_reflection_pixels(self, root_path: str) -> dict:
+        """Render a hot sphere reflected in a cool opaque plane, plus equilibrium controls."""
+        from visionsim.simulate.heatsim import thermal_shader as ts
+        from visionsim.simulate.heatsim.materials import PRESETS, MaterialEntry, SceneAssignment
+        from visionsim.simulate.heatsim.physics import STEFAN_BOLTZMANN_SI
+
+        self._clear()
+        scene = bpy.context.scene
+        scene.render.engine = "CYCLES"
+        scene.cycles.device = "CPU"
+        scene.cycles.samples = 512
+        scene.cycles.seed = 29
+        scene.cycles.use_adaptive_sampling = scene.cycles.use_denoising = False
+        scene.render.use_compositing = False
+        scene.render.film_transparent = False
+        scene.render.resolution_x = scene.render.resolution_y = 64
+        scene.render.resolution_percentage = 100
+        scene.render.image_settings.file_format = "OPEN_EXR"
+        scene.render.image_settings.color_depth = "32"
+        scene.render.image_settings.color_mode = "RGB"
+
+        def surface(obj, name, temperature, eps):
+            mat = bpy.data.materials.new(name)
+            obj.data.materials.append(mat)
+            obj["heatsim_default_temperature"] = temperature
+            attr = obj.data.attributes.new("emissivity", "FLOAT", "POINT")
+            attr.data.foreach_set("value", [eps] * len(attr.data))
+            return obj
+
+        bpy.ops.mesh.primitive_plane_add(size=20)
+        plane = surface(bpy.context.object, "Mirror", 295, 0.84)
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=32, ring_count=16, radius=0.4, location=(0, 2, 2))
+        hot = surface(bpy.context.object, "Hot", 350, 1.0)
+        # This hot object must never be visible through the plane in the equilibrium cases.
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=8, radius=0.4, location=(0, 0, -1))
+        surface(bpy.context.object, "Below", 400, 1.0)
+        bpy.ops.object.camera_add(location=(0, -4, 4))
+        camera = bpy.context.object
+        camera.rotation_euler = (-camera.location).to_track_quat("-Z", "Y").to_euler()
+        scene.camera = camera
+        camera.data.type = "ORTHO"
+        camera.data.ortho_scale = 4
+        root = Path(root_path)
+        root.mkdir(parents=True, exist_ok=True)
+        rendered = {}
+        for name, specular, roughness, temperature in (
+            ("diffuse", 0, 0.5, 350),
+            ("sharp", 1, 0, 350),
+            ("rough", 1, 0.4, 350),
+            ("equilibrium_sharp", 1, 0, 295),
+            ("equilibrium_rough", 1, 0.6, 295),
+        ):
+            hot["heatsim_default_temperature"] = temperature
+            # Test energy preservation on a much more reflective surface too.
+            if name.startswith("equilibrium"):
+                plane.data.attributes["emissivity"].data.foreach_set("value", [0.05] * 4)
+            assignment = SceneAssignment(
+                "fixture",
+                "",
+                None,
+                {"Mirror": MaterialEntry(PRESETS["glass"], "FEM_PARTICIPANT", None, 1.0, "", specular, roughness)},
+            )
+            state = ts.enter_thermal_scene(scene, radiance_scale=1, assignment=assignment)
+            path = root / f"{name}.exr"
+            try:
+                scene.render.filepath = str(path)
+                bpy.ops.render.render(write_still=True)
+            finally:
+                ts.restore_scene(scene, state)
+            img = bpy.data.images.load(str(path))
+            pixels = np.array(img.pixels[:]).reshape(64, 64, 4)[:, :, 0]
+            centre = pixels[24:40, 24:40]
+            ring = centre.copy()
+            ring[5:11, 5:11] = np.nan
+            rendered[name] = {
+                "peak": float(np.percentile(centre, 99)),
+                "ring_mean": float(np.nanmean(ring)),
+                "centre_mean": float(centre.mean()),
+                "centre_min": float(centre.min()),
+                "centre_max": float(centre.max()),
+            }
+            bpy.data.images.remove(img)
+        return {"rendered": rendered, "ambient": STEFAN_BOLTZMANN_SI * 295**4}
+
     def exposed_write_atlas(
         self,
         root_path: str,
@@ -1362,7 +1446,7 @@ class HeatsimTestService(BlenderService):
         temperature = pixels.reshape(-1, 4)[:, 0]
         return {"min": float(temperature.min()), "max": float(temperature.max()), "n": int(temperature.size)}
 
-    def exposed_enter_restore(self) -> dict:
+    def exposed_enter_restore(self, assigned: bool = False) -> dict:
         """Enter and restore the thermal scene three times on a shared-mesh setup.
 
         Returns:
@@ -1370,6 +1454,7 @@ class HeatsimTestService(BlenderService):
             fully restored after each round trip.
         """
         from visionsim.simulate.heatsim import thermal_shader as ts
+        from visionsim.simulate.heatsim.materials import PRESETS, MaterialEntry, SceneAssignment
 
         bpy.ops.mesh.primitive_cube_add()
         a = bpy.context.object
@@ -1382,6 +1467,21 @@ class HeatsimTestService(BlenderService):
         bpy.context.collection.objects.link(b)
         b.material_slots[1].link = "OBJECT"
         b.material_slots[1].material = materials[2]
+        assignment = None
+        if assigned:
+            assignment = SceneAssignment(
+                "fixture",
+                "",
+                None,
+                {
+                    mat.name: MaterialEntry(PRESETS[key], "FEM_PARTICIPANT", None, 1.0, "")
+                    for mat, key in zip(materials, ("glass", "fabric", "aluminium_polished"))
+                },
+            )
+            bpy.ops.mesh.primitive_plane_add()
+            empty = bpy.context.object
+            empty_copy = empty.copy()
+            bpy.context.collection.objects.link(empty_copy)
         scene = bpy.context.scene
         extra = scene.view_layers.new("ExistingOverride")
         extra.material_override = materials[0]
@@ -1396,22 +1496,50 @@ class HeatsimTestService(BlenderService):
                 scene.world,
                 light.hide_render,
                 light.hide_viewport,
+                (scene.cycles.max_bounces, scene.cycles.diffuse_bounces, scene.cycles.glossy_bounces),
+                tuple(empty.data.materials) if assigned else (),
             )
 
         before = snapshot()
         setup_preserved = True
         override_ok = True
+        restored = True
         for _ in range(3):
-            state = ts.enter_thermal_scene(scene, radiance_scale=1.0)
-            if snapshot()[:3] != before[:3]:
+            state = ts.enter_thermal_scene(scene, radiance_scale=1.0, assignment=assignment)
+            if snapshot()[:2] != before[:2] or (not assigned and snapshot()[2] != before[2]):
                 setup_preserved = False
-            if not all(v.material_override == ts._build_gray_body_material(1.0) for v in scene.view_layers):
-                override_ok = False
+            if assigned:
+                override_ok &= all(v.material_override is None for v in scene.view_layers)
+                override_ok &= a.material_slots[0].material["heatsim_thermal_specular_fraction"] == 0.95
+                override_ok &= a.material_slots[1].material["heatsim_thermal_specular_fraction"] == 0.0
+                override_ok &= b.material_slots[1].material["heatsim_thermal_specular_fraction"] == 0.98
+            else:
+                override_ok &= all(v.material_override == ts._build_gray_body_material(1.0) for v in scene.view_layers)
             ts.restore_scene(scene, state)
+            restored &= snapshot() == before
+        if assigned:
+            from unittest.mock import patch
+
+            build = ts._build_gray_body_material
+            calls = []
+
+            def fail_setup(*args, **kwargs):
+                calls.append(1)
+                if len(calls) == 3:
+                    raise RuntimeError("injected material failure")
+                return build(*args, **kwargs)
+
+            with patch.object(ts, "_build_gray_body_material", side_effect=fail_setup):
+                try:
+                    ts.enter_thermal_scene(scene, radiance_scale=1.0, assignment=assignment)
+                except RuntimeError as exc:
+                    assert str(exc) == "injected material failure"
+                else:
+                    raise AssertionError("material failure was swallowed")
         return {
             "setup_preserved": bool(setup_preserved),
             "override_ok": bool(override_ok),
-            "restored": snapshot() == before,
+            "restored": bool(restored and snapshot() == before),
         }
 
     def exposed_default_surface(self) -> dict:
@@ -1543,6 +1671,7 @@ class HeatsimTestService(BlenderService):
         Returns:
             dict: pixel-identity, radiance sanity, and cleanup/propagation flags.
         """
+        import json
         from types import SimpleNamespace
         from unittest.mock import patch
 
@@ -1565,6 +1694,7 @@ class HeatsimTestService(BlenderService):
         service = BlenderService()
         service.exposed_initialize(blend, root)
         scene = service.scene
+        cube = scene.objects["Cube"]
         scene.render.engine = "CYCLES"
         scene.cycles.device = "CPU"
         scene.cycles.samples = 8
@@ -1581,7 +1711,16 @@ class HeatsimTestService(BlenderService):
 
         ts.stamp_default_temperatures(scene, default_K=310)
         ts.setup_temperature_aov(scene, service.view_layer)
-        service.exposed_include_thermal(preview=False)
+        sidecar = root / "scene.thermal.json"
+        sidecar.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "materials": {"Red": {"preset": "glass"}, "Blue": {"preset": "aluminium_polished"}},
+                }
+            )
+        )
+        service.exposed_include_thermal(preview=False, assignments=str(sidecar))
         for frame in range(2, frames + 1):
             scene.frame_set(frame)
             service.exposed_render_current_frame(allow_skips=False)
@@ -1604,6 +1743,8 @@ class HeatsimTestService(BlenderService):
             scene.world,
             service.view_layer.material_override,
             [(o.name, o.hide_render, o.hide_viewport) for o in scene.objects if o.type == "LIGHT"],
+            tuple((s.link, s.material) for s in cube.material_slots),
+            tuple(p.material_index for p in cube.data.polygons),
         )
         mutes = {name: entry[0].mute for name, entry in service._outputs.items()}
         cleanup_ok = True
@@ -1635,6 +1776,8 @@ class HeatsimTestService(BlenderService):
                 scene.world,
                 service.view_layer.material_override,
                 [(o.name, o.hide_render, o.hide_viewport) for o in scene.objects if o.type == "LIGHT"],
+                tuple((s.link, s.material) for s in cube.material_slots),
+                tuple(p.material_index for p in cube.data.polygons),
             )
             if after != before:
                 cleanup_ok = False

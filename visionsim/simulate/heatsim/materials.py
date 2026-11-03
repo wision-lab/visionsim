@@ -41,7 +41,9 @@ _SCHEMA_VERSION = 1
 _ROLES = ("FEM_PARTICIPANT", "DIRICHLET_SOURCE")
 # Fields a per-material entry may carry. Anything else is a typo, and warning about it is
 # the only signal, since a misspelled "presett" otherwise loads as an unassigned slot.
-_ENTRY_FIELDS = frozenset({"preset", "role", "dirichlet_K", "confidence", "reason"})
+_ENTRY_FIELDS = frozenset(
+    {"preset", "role", "dirichlet_K", "confidence", "reason", "specular_fraction_ir", "roughness_ir"}
+)
 
 # Degenerate (zero-area) faces still have to vote, otherwise their vertices end up
 # with no incident area and fall back to the object defaults - which reads as
@@ -64,6 +66,8 @@ class ThermalPreset:
     specific_heat_J_kgK: float
     emissivity_ir: float
     notes: str
+    specular_fraction_ir: float = 0.0
+    roughness_ir: float = 0.5
 
 
 # key, alpha (mm^2/s), density (kg/m^3), specific heat (J/kg.K), IR emissivity, notes.
@@ -201,6 +205,24 @@ _PRESET_TABLE = (
 )
 
 
+# Estimated LWIR reflection shapes, NOT measured 8–14 um BRDF fits. These change
+# appearance only; the existing gray emissivity still sets total reflectance.
+# Smooth glass is specular even at high emissivity: LBNL-46590, printed p. 22.
+# https://windows.lbl.gov/sites/default/files/46590.pdf
+# Polished versus rough metal can have very different IR scattering:
+# https://pmc.ncbi.nlm.nih.gov/articles/PMC6193458/ (Figs. 2–3; Table 2 is NOT an LWIR average).
+# Roughness is Cycles' dimensionless MULTI_GGX width, not surface height in um.
+_REFLECTION_ESTIMATES = {
+    "glass": (0.95, 0.05),
+    "aluminium_polished": (0.98, 0.08),
+    "stainless_steel": (0.95, 0.18),
+    "aluminium": (0.80, 0.35),
+    "steel": (0.80, 0.30),
+    "iron": (0.60, 0.40),
+    "copper": (0.50, 0.40),
+}
+
+
 def _build_library() -> dict[str, ThermalPreset]:
     library: dict[str, ThermalPreset] = {}
     for key, alpha, rho, c, eps, notes in _PRESET_TABLE:
@@ -210,7 +232,8 @@ def _build_library() -> dict[str, ThermalPreset]:
             raise ValueError(f"preset {key!r}: emissivity_ir must lie in [0, 1]")
         if key in library:
             raise ValueError(f"duplicate preset key {key!r}")
-        library[key] = ThermalPreset(key, alpha, rho, c, eps, notes)
+        specular, roughness = _REFLECTION_ESTIMATES.get(key, (0.0, 0.5))
+        library[key] = ThermalPreset(key, alpha, rho, c, eps, notes, specular, roughness)
     return library
 
 
@@ -237,6 +260,8 @@ class MaterialEntry:
     dirichlet_K: float | None
     confidence: float
     reason: str
+    specular_fraction_ir: float | None = None
+    roughness_ir: float | None = None
 
 
 @dataclass(frozen=True)
@@ -251,6 +276,19 @@ class SceneAssignment:
     def entry_for(self, material_name: str) -> MaterialEntry | None:
         """Return the entry for *material_name*, or ``None`` if the sidecar omits it."""
         return self.materials.get(material_name)
+
+    def reflection_for(self, material_name: str) -> tuple[float, float]:
+        """Render-only reflection controls, resolved per material slot."""
+        entry = self.entry_for(material_name)
+        preset = (entry.preset if entry is not None else None) or self.default_preset
+        specular = preset.specular_fraction_ir if preset is not None else 0.0
+        roughness = preset.roughness_ir if preset is not None else 0.5
+        if entry is not None:
+            if entry.specular_fraction_ir is not None:
+                specular = entry.specular_fraction_ir
+            if entry.roughness_ir is not None:
+                roughness = entry.roughness_ir
+        return specular, roughness
 
 
 def _lookup_preset(key: Any, where: str) -> ThermalPreset | None:
@@ -369,12 +407,24 @@ def load_assignments(path: Path) -> SceneAssignment:
             except (TypeError, ValueError) as exc:
                 raise ValueError(f"{path}: material {name!r} has non-numeric confidence {raw_confidence!r}") from exc
 
+        reflection: dict[str, float | None] = {}
+        for field in ("specular_fraction_ir", "roughness_ir"):
+            reflected_value = spec.get(field)
+            if reflected_value is not None and (
+                isinstance(reflected_value, bool)
+                or not isinstance(reflected_value, (int, float))
+                or not 0.0 <= reflected_value <= 1.0
+            ):
+                raise ValueError(f"{path}: material {name!r} {field} must be a finite number in [0, 1]")
+            reflection[field] = None if reflected_value is None else float(reflected_value)
+
         entries[str(name)] = MaterialEntry(
             preset=preset,
             role=role,
             dirichlet_K=dirichlet_K,
             confidence=confidence,
             reason=str(spec.get("reason") or ""),
+            **reflection,
         )
 
     return SceneAssignment(

@@ -1747,10 +1747,17 @@ class BlenderService(rpyc.Service):
     @staticmethod
     def _thermal_atlas_reader_is_managed(material: Any, node: Any) -> bool:
         """Allow replacement only for thermal readers, never ordinary RGB paths."""
+        from visionsim.simulate.heatsim.thermal_shader import _gray_body_material_name
+
         scale = material.get("heatsim_thermal_radiance_scale")
         if (
             isinstance(scale, (int, float))
-            and material.name == f"HeatSim_ThermalShader_vs_{scale:.6g}"
+            and material.name
+            == _gray_body_material_name(
+                scale,
+                material.get("heatsim_thermal_specular_fraction", 0.0),
+                material.get("heatsim_thermal_roughness", 0.5),
+            )
             and "heatsim_thermal_default_emissivity" in material
         ):
             return True
@@ -2037,6 +2044,10 @@ class BlenderService(rpyc.Service):
             )
 
         if radiance:
+            if assignments is not None:
+                from visionsim.simulate.heatsim.materials import load_assignments
+
+                self._thermal_assignment = load_assignments(Path(str(assignments)))
             # Emission is spectrally flat, so collapse to one channel; before 4.3 the RGB
             # fallback needs identical channels for `load_data(auto_collapse=True)`.
             radiance_bw = self.tree.nodes.new("CompositorNodeRGBToBW")
@@ -2592,7 +2603,9 @@ class BlenderService(rpyc.Service):
                             _entry[0].mute = _sp != "thermal_radiance"
 
                         _thermal_state = thermal_shader.enter_thermal_scene(
-                            self.scene, radiance_scale=_thermal_armed["radiance_scale"]
+                            self.scene,
+                            radiance_scale=_thermal_armed["radiance_scale"],
+                            assignment=self._thermal_assignment,
                         )
                         bpy.ops.render.render(animation=False, write_still=False)
                 finally:

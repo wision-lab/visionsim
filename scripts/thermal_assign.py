@@ -123,7 +123,15 @@ def check_assignments(inventory: dict[str, Any], sidecar: dict[str, Any]) -> tup
         if not isinstance(entry, dict):
             errors.append(f"{name!r}: entry must be an object")
             continue
-        extra = set(entry) - {"preset", "role", "dirichlet_K", "confidence", "reason"}
+        extra = set(entry) - {
+            "preset",
+            "role",
+            "dirichlet_K",
+            "confidence",
+            "reason",
+            "specular_fraction_ir",
+            "roughness_ir",
+        }
         if extra:
             errors.append(f"{name!r}: unknown fields: {', '.join(sorted(extra))}")
         preset = entry.get("preset")
@@ -156,6 +164,12 @@ def check_assignments(inventory: dict[str, Any], sidecar: dict[str, Any]) -> tup
                 or not 0 <= confidence <= 1
             ):
                 errors.append(f"{name!r}: confidence must be a number from 0 to 1")
+        for field in ("specular_fraction_ir", "roughness_ir"):
+            value = entry.get(field)
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1
+            ):
+                errors.append(f"{name!r}: {field} must be a finite number from 0 to 1")
         if "reason" in entry and not isinstance(entry["reason"], str):
             errors.append(f"{name!r}: reason must be text")
     return errors, warnings

@@ -64,8 +64,10 @@ Reading the outputs
 
 ``thermal_radiance/``
     Single-channel OpenEXR from a second Cycles render. The thermal material
-    emits according to temperature and emissivity and diffusely reflects
-    thermal light from other surfaces and the world. The emission is
+    emits according to temperature and emissivity and reflects
+    thermal light from other surfaces and the world. Thermal material presets
+    choose diffuse or mixed diffuse/glossy reflection; glass is opaque here.
+    The emission is
     spectrally flat, so radiance is a scalar field. This is a broadband
     gray-body image, not a calibrated image for a particular infrared camera
     band. Its emission scale follows :math:`\varepsilon\sigma T^4`, where
@@ -181,7 +183,7 @@ the named material presets.
    * - ``emissivity``
      - ``0.9``
      - Surface emissivity from 0 to 1. It controls radiative exchange in the
-       solve and the mix of emitted versus diffusely reflected thermal light
+       solve and the mix of emitted versus reflected thermal light
        in the radiance image. Low-emissivity metal can appear closer to its
        surroundings than to its own temperature.
 

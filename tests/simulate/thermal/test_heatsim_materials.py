@@ -51,6 +51,35 @@ def test_presets_are_immutable():
         materials.PRESETS["wood"].alpha_mm2_s = 999.0  # type: ignore[misc]
 
 
+def test_reflection_controls_follow_finish_and_keep_existing_emissivities(tmp_path):
+    sa = materials.load_assignments(
+        _write(
+            tmp_path,
+            {
+                "pane": {"preset": "glass"},
+                "polished": {"preset": "aluminium_polished"},
+                "brushed": {"preset": "stainless_steel", "specular_fraction_ir": 0.9, "roughness_ir": 0.3},
+                "paint": {"preset": "metal_painted"},
+                "fallback": {"roughness_ir": 0.7},
+            },
+        )
+    )
+    assert sa.reflection_for("pane") == (0.95, 0.05)
+    assert sa.reflection_for("polished") == (0.98, 0.08)
+    assert sa.reflection_for("brushed") == (0.9, 0.3)
+    assert sa.reflection_for("paint")[0] == 0.0
+    assert sa.reflection_for("fallback") == (0.0, 0.7)
+    assert sa.reflection_for("missing") == (0.0, 0.5)
+    assert materials.PRESETS["glass"].emissivity_ir == 0.84
+
+
+@pytest.mark.parametrize("field", ["specular_fraction_ir", "roughness_ir"])
+@pytest.mark.parametrize("value", [-0.01, 1.01, float("nan"), float("inf"), True, "0.5"])
+def test_invalid_reflection_controls_are_rejected(tmp_path, field, value):
+    with pytest.raises(ValueError, match=field):
+        materials.load_assignments(_write(tmp_path, {"surface": {"preset": "glass", field: value}}))
+
+
 # ---------------------------------------------------------------------------
 # 2. Sidecar parsing
 # ---------------------------------------------------------------------------
