@@ -8,16 +8,28 @@ All notable changes to VisionSIM are documented here. The format follows
 [Unreleased]
 ------------
 
+[0.2.0]
+-------
+
 Added
 ^^^^^
 
+- Thermal modality simulation: a Cycles irradiance bake feeds an FEM heat solve whose
+  temperature field drives temperature and thermal-camera radiance passes. Includes the
+  ``thermal`` config tree, a per-scene ``.blend.heatsim`` cache, the ``blender.heatsim-solve``
+  CLI, and a thermal tutorial with material-assignment guidance.
 - Indirect time-of-flight (iToF) sensor emulation, with a tutorial and figure task.
 - A passive single photon camera (SPC) emulation tutorial covering the CLI, the bitpacked output format, image recovery and dynamic-range figures.
 - An event camera (DVS) emulation tutorial covering the CLI, output format, Python API and parameter figures.
 - Standalone ``render-playblast`` CLI for fast viewport previews, plus a playblast tutorial.
+- ``blender.render-frame`` CLI for rendering a single frame with the ``render-animation`` output layout.
+- ``blender.optimize-rate`` CLI and a ``resolution-percentage`` option for finding a keyframe
+  multiplier from rendered optical flow.
+- ID-to-name tables written beside the material and segmentation passes, so label values can be
+  resolved back to Blender data names.
 - HDR, stereo, light-pass, and large-dataset tutorials backed by per-page figure tasks.
 - A grouped tutorials index (Sensors, Rendering & Simulation, Applications) and new
-  camera-models, optimize-rate, changelog and troubleshooting pages.
+  camera-types, optimize-rate, changelog and troubleshooting pages.
 - A varying-focal-lengths tutorial with a rendered contrazoom preview, and an IMU trajectory
   preview built from five integrated runs.
 - Materials, diffuse, specular, and position/point-map render passes, with a ``dataset.to-pointcloud`` CLI.
@@ -42,6 +54,10 @@ Changed
   world axes and are not plain rotations. Passing ``--no-convert-coords`` emulates them as-is, and
   the coordinate helpers were renamed to ``camcoord_opengl_to_blender`` and
   ``camcoord_blender_to_opengl``.
+- Thermal radiance is written as a single-channel EXR on Blender 4.3 and newer; earlier versions
+  write RGB with the channels duplicated.
+- ``post-install`` accepts ``--version`` to install a specific release from PyPI, ``--path`` to
+  install from a source tree, and ``--torch-index-url`` for machines without CUDA.
 - Split CI into separate docs and tests workflows, build the Docker image on push, and run
   viewport tests under a virtual display.
 
@@ -51,12 +67,18 @@ Fixed
 - Event generation blur and pattern handling, ffprobe output capture, and RIFE weight caching.
 - Camera-change warnings and material-preview connections, plus docstring backtick and math
   escaping errors.
+- Material previews no longer show the wrong hue on Blender 5 mix-node wiring.
+- Playblast renders the full frame range and reports incomplete renders instead of silently
+  reusing stale frames.
+- Thermal configuration no longer crashes over RPC when paths are assigned.
+- iToF emulation handles non-finite depths and validates its inputs.
+- Autoscaling no longer resolves to zero render jobs without raising.
 - Spawning servers no longer depends on the rpyc registry: readiness is checked on each reserved
   TCP port, and an existing registry is reused rather than treated as an error. UDP port 18811 is
   only needed by ``auto_connect``/``discover``.
 
-[0.1.0-alpha2] - 2025-11-05
----------------------------
+[0.1.0-alpha2]
+--------------
 
 Added
 ^^^^^
@@ -66,7 +88,7 @@ Added
 - Read the Docs build configuration, a ``vsim`` alias, and dashed CLI names.
 - Docstrings for the ``simulate`` module, typing stubs for dynamic attributes, and passive SPC
   documentation.
-- Package metadata, build system, and ``CITATION.cff``.
+- Package metadata and build system, plus a citation entry in the README.
 
 Changed
 ^^^^^^^
@@ -87,8 +109,8 @@ Fixed
   enforced as RGB channels in EXR files.
 - CI and editable-install fixes.
 
-[0.1.0-alpha] - 2025-04-29
---------------------------
+[0.1.0-alpha]
+-------------
 
 Added
 ^^^^^
