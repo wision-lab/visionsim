@@ -175,16 +175,31 @@ Releases are built and published from CI, with publishing gated on approval. To 
 
     inv precommit
 
-3. Tag a commit on ``main`` and push the tag::
+3. Push the release commit to ``main`` and wait for its CI run to pass::
 
-    git tag v0.2.0
+    git push origin main
+
+Tag only a commit that has already been pushed and whose CI run is green. GitHub reads the
+workflow files from the tagged commit itself, not from ``main``, so a tag on an unpushed or
+unverified commit can start a stale or broken workflow.
+
+4. Tag the verified commit and push the tag::
+
+    git tag v0.2.0 <verified-commit>
     git push origin v0.2.0
 
 The pushed tag starts the ``Release`` workflow: it builds the sdist and wheel, runs
 ``twine check --strict``, verifies that the tag, ``__version__`` and changelog heading agree,
 installs the wheel and runs ``visionsim --help``. Publishing waits for approval on the ``pypi``
-environment before uploading both artifacts with PyPI trusted publishing. A failed build uploads
-nothing, so the tag can be deleted and re-pushed once fixed; only a partially completed upload
+environment before uploading both artifacts with PyPI trusted publishing.
+
+A failed build uploads nothing, so the tag can be deleted and re-pushed once fixed::
+
+    git push --delete origin v0.2.0
+    git tag -d v0.2.0
+
+If the failure is in a workflow file, commit and push the fix before re-tagging; the tagged
+commit, not ``main``, supplies the workflow that runs. Only a partially completed upload
 requires a new version.
 
 Publishing requires the ``pypi`` environment with its required reviewers, and a PyPI trusted
