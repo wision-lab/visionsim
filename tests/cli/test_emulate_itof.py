@@ -12,7 +12,7 @@ from visionsim.cli import emulate
 from visionsim.dataset.models import Metadata
 from visionsim.emulate.itof.coding import make_coding_functions
 from visionsim.emulate.itof.simulation import compute_correlation_function
-from visionsim.utils.color import srgb_to_linearrgb
+from visionsim.utils.color import srgb_to_linearrgb, to_grayscale
 
 _FREQ = 120e6
 _D_MAX = scipy.constants.c / (2 * _FREQ)  # unambiguous range of a single-period scheme, ~1.25 m
@@ -137,8 +137,7 @@ def test_itof_measurement_matches_analytic_model(tmp_path: Path, write_dataset):
     # Reconstruct the albedo exactly as the CLI derives it: sRGB PNG -> linear -> luma.
     image = iio.imread(input_dir / "0000.png").astype(float) / 255.0
     linear = srgb_to_linearrgb(image)
-    r, g, b = linear[..., 0], linear[..., 1], linear[..., 2]
-    albedo = 0.0722 * b + 0.7152 * g + 0.2126 * r
+    albedo = to_grayscale(linear)
 
     n_bins = num_bins + 1
     period = 1.0 / _FREQ

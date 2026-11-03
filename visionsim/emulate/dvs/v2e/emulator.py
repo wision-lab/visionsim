@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import math
-import sys
 from typing import Literal
 
 import numpy as np
@@ -53,10 +52,10 @@ class EventEmulator:
         pos_thres: float = 0.2,
         neg_thres: float = 0.2,
         sigma_thres: float = 0.03,
-        cutoff_hz: float = 0.0,
+        cutoff_hz: float = 30.0,
         leak_rate_hz: float = 0.1,
         refractory_period_s: float = 0.0,
-        shot_noise_rate_hz: float = 0.0,
+        shot_noise_rate_hz: float = 5.0,
         photoreceptor_noise: bool = False,
         leak_jitter_fraction: float = 0.1,
         noise_rate_cov_decades: float = 0.1,
@@ -74,17 +73,19 @@ class EventEmulator:
             sigma_thres: Standard deviation of the per-pixel threshold
                 distribution in log_e units.
             cutoff_hz: 3 dB cutoff frequency of the DVS photoreceptor low-pass
-                filter in Hz.  Set to 0 to disable filtering.
+                filter in Hz.  Set to 0 to disable filtering.  Defaults to 30.
             leak_rate_hz: Nominal leak-event rate per pixel in Hz, modelling
                 junction leakage in the reset switch.
             refractory_period_s: Minimum inter-event interval per pixel in
                 seconds.  Set to 0 to disable.
-            shot_noise_rate_hz: Poisson shot-noise event rate per pixel in Hz.
-                Set to 0 to disable.
+            shot_noise_rate_hz: Shot-noise event rate per pixel in Hz.  Applied as
+                independent Poisson events, or as correlated Gaussian noise at the
+                photoreceptor when *photoreceptor_noise* is ``True``.  Set to 0 to
+                disable.  Defaults to 5.
             photoreceptor_noise: When ``True``, model shot noise as correlated
                 Gaussian noise injected at the photoreceptor rather than as
-                independent Poisson events.  Requires both *shot_noise_rate_hz*
-                and *cutoff_hz* to be non-zero.
+                independent Poisson events.  Requires both *shot_noise_rate_hz* and
+                *cutoff_hz* to be non-zero.  Defaults to ``False``.
             leak_jitter_fraction: Fractional random variation applied to the
                 per-pixel leak rate to model device mismatch.
             noise_rate_cov_decades: Standard deviation (in decades) of the
@@ -105,17 +106,9 @@ class EventEmulator:
 
         if photoreceptor_noise:
             if shot_noise_rate_hz == 0:
-                logger.warning(
-                    "Parameter `photoreceptor_noise` is specified but `shot_noise_rate_hz` is 0; "
-                    "set a finite rate of shot noise events per pixel"
-                )
-                sys.exit(1)
+                raise ValueError("Parameter `photoreceptor_noise` requires a finite `shot_noise_rate_hz`, got 0.")
             if cutoff_hz == 0:
-                logger.warning(
-                    "Parameter `photoreceptor_noise` is specified but `cutoff_hz` is 0; "
-                    "set a finite photoreceptor cutoff frequency"
-                )
-                sys.exit(1)
+                raise ValueError("Parameter `photoreceptor_noise` requires a finite `cutoff_hz`, got 0.")
 
         if seed is not None:
             np.random.seed(seed)
@@ -707,11 +700,10 @@ class EventEmulator:
         alpha_h = actual_delta_time / tau_h
 
         if alpha_p >= 1 or alpha_h >= 1:
-            logger.error(
+            raise ValueError(
                 f"CSDVS update alpha (of IIR update) is too large; simulation "
                 f"would explode: alpha_p={alpha_p:.3f} alpha_h={alpha_h:.3f}"
             )
-            sys.exit(1)
 
         if alpha_p > 0.25 or alpha_h > 0.25:
             logger.warning(

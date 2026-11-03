@@ -861,7 +861,11 @@ class BlenderService(rpyc.Service):
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
     ) -> None:
-        """Solve and cache a fixed thermal field without adding render outputs."""
+        """Solve and cache a fixed thermal field without adding render outputs.
+
+        Render-output parameters (``radiance``, ``preview``, ``radiance_scale``, ``exr_codec``,
+        ``bit_depth``) are accepted so ``ThermalConfig`` can be splatted in directly, and ignored.
+        """
 
     @require_initialized_service
     def exposed_include_thermal(
@@ -923,10 +927,10 @@ class BlenderService(rpyc.Service):
         Args:
             height (tuple[int] | list[int] | int | None, optional): Height of render in pixels. Defaults to value from file.
             width (int | None, optional): Width of render in pixels. Defaults to value from file.
-            resolution_percentage (float, optional): Percentage of the original resolution to render at. Defaults to 100%.
+            resolution_percentage (int, optional): Percentage of the original resolution to render at. Defaults to 100%.
 
         Raises:
-            ValueError: raised if resolution is not understood.
+            ValueError: raised if the resolution is not understood, or if a dimension is not positive.
         """
 
     @require_initialized_service
@@ -946,6 +950,19 @@ class BlenderService(rpyc.Service):
 
         Args:
             enable (bool): If true, enable animations.
+        """
+
+    @staticmethod
+    def _select_devices(devices: Iterable[Any], device_type: str, use_cpu: bool) -> list[Any]:
+        """Pick the devices of the requested type, plus the CPU when ``use_cpu`` is set.
+
+        Args:
+            devices (Iterable[Any]): Devices exposed by the Cycles preferences.
+            device_type (str): Requested device type, for instance ``CUDA`` or ``CPU``.
+            use_cpu (bool): Also enable CPU devices alongside a GPU backend.
+
+        Returns:
+            list[Any]: Devices to activate.
         """
 
     @require_initialized_service
@@ -1116,7 +1133,7 @@ class BlenderService(rpyc.Service):
 
         Args:
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+                Applies to every selected output; the render is skipped only when all of them exist. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
         """
 
@@ -1137,7 +1154,7 @@ class BlenderService(rpyc.Service):
         Args:
             frame_numbers (Iterable[int]): frames to render.
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+                Applies to every selected output; the render is skipped only when all of them exist. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
             update_fn (UpdateFn, optional): callback function to track render progress. Will first be called with ``total`` kwarg,
                 indicating number of steps to be taken, then will be called with ``advance=1`` at every step. Closely mirrors the
@@ -1343,8 +1360,8 @@ class BlenderClient:
         and return an rpyc.AsyncResult.
 
         Args:
-            *args: Same as :meth:`BlendService.exposed_render_animation`
-            *kwargs: Same as :meth:`BlendService.exposed_render_animation`
+            *args: Same as :meth:`BlenderService.exposed_render_animation`
+            *kwargs: Same as :meth:`BlenderService.exposed_render_animation`
 
         Returns:
             rpyc.AsyncResult: Result encapsulating the return value of ``render_animation``.
@@ -1358,8 +1375,8 @@ class BlenderClient:
         and return an rpyc.AsyncResult.
 
         Args:
-            *args: Same as :meth:`BlendService.exposed_render_frames`
-            *kwargs: Same as :meth:`BlendService.exposed_render_frames`
+            *args: Same as :meth:`BlenderService.exposed_render_frames`
+            *kwargs: Same as :meth:`BlenderService.exposed_render_frames`
 
         Returns:
             rpyc.AsyncResult: Result encapsulating the return value of ``render_frames``.
@@ -1373,8 +1390,8 @@ class BlenderClient:
         and return an rpyc.AsyncResult.
 
         Args:
-            *args: Same as :meth:`BlendService.exposed_render_playblast`
-            *kwargs: Same as :meth:`BlendService.exposed_render_playblast`
+            *args: Same as :meth:`BlenderService.exposed_render_playblast`
+            *kwargs: Same as :meth:`BlenderService.exposed_render_playblast`
 
         Returns:
             rpyc.AsyncResult: Result encapsulating the return value of ``render_playblast``.
@@ -1390,6 +1407,13 @@ class BlenderClient:
 
         Raises:
             TimeoutError: raised if unable to connect to server in time.
+        """
+
+    def common_animation_range(self) -> range:
+        """Get the animation range of this client as range(start, end+1, step).
+
+        Returns:
+            range: Range of frames in animation.
         """
 
     def __getattr__(self, name: str) -> rpyc.BaseNetref:
@@ -1790,7 +1814,11 @@ class BlenderClient:
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
     ) -> None:
-        """Solve and cache a fixed thermal field without adding render outputs."""
+        """Solve and cache a fixed thermal field without adding render outputs.
+
+        Render-output parameters (``radiance``, ``preview``, ``radiance_scale``, ``exr_codec``,
+        ``bit_depth``) are accepted so ``ThermalConfig`` can be splatted in directly, and ignored.
+        """
 
     @type_check_only
     def include_thermal(
@@ -1850,10 +1878,10 @@ class BlenderClient:
         Args:
             height (tuple[int] | list[int] | int | None, optional): Height of render in pixels. Defaults to value from file.
             width (int | None, optional): Width of render in pixels. Defaults to value from file.
-            resolution_percentage (float, optional): Percentage of the original resolution to render at. Defaults to 100%.
+            resolution_percentage (int, optional): Percentage of the original resolution to render at. Defaults to 100%.
 
         Raises:
-            ValueError: raised if resolution is not understood.
+            ValueError: raised if the resolution is not understood, or if a dimension is not positive.
         """
 
     @type_check_only
@@ -2028,7 +2056,7 @@ class BlenderClient:
 
         Args:
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+                Applies to every selected output; the render is skipped only when all of them exist. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
         """
 
@@ -2049,7 +2077,7 @@ class BlenderClient:
         Args:
             frame_numbers (Iterable[int]): frames to render.
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+                Applies to every selected output; the render is skipped only when all of them exist. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
             update_fn (UpdateFn, optional): callback function to track render progress. Will first be called with ``total`` kwarg,
                 indicating number of steps to be taken, then will be called with ``advance=1`` at every step. Closely mirrors the
@@ -2365,7 +2393,7 @@ class BlenderClients(tuple):
         Args:
             frame_numbers (Collection[int]): frames to render.
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+                Applies to every selected output; the render is skipped only when all of them exist. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
             update_fn (UpdateFn, optional): callback function to track render progress. Will first be called with ``total`` kwarg,
                 indicating number of steps to be taken, then will be called with ``advance=1`` at every step. Closely mirrors the
@@ -2796,7 +2824,11 @@ class BlenderClients(tuple):
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
     ) -> None:
-        """Solve and cache a fixed thermal field without adding render outputs."""
+        """Solve and cache a fixed thermal field without adding render outputs.
+
+        Render-output parameters (``radiance``, ``preview``, ``radiance_scale``, ``exr_codec``,
+        ``bit_depth``) are accepted so ``ThermalConfig`` can be splatted in directly, and ignored.
+        """
 
     @type_check_only
     def include_thermal(
@@ -2856,10 +2888,10 @@ class BlenderClients(tuple):
         Args:
             height (tuple[int] | list[int] | int | None, optional): Height of render in pixels. Defaults to value from file.
             width (int | None, optional): Width of render in pixels. Defaults to value from file.
-            resolution_percentage (float, optional): Percentage of the original resolution to render at. Defaults to 100%.
+            resolution_percentage (int, optional): Percentage of the original resolution to render at. Defaults to 100%.
 
         Raises:
-            ValueError: raised if resolution is not understood.
+            ValueError: raised if the resolution is not understood, or if a dimension is not positive.
         """
 
     @type_check_only
@@ -3034,7 +3066,7 @@ class BlenderClients(tuple):
 
         Args:
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+                Applies to every selected output; the render is skipped only when all of them exist. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
         """
 

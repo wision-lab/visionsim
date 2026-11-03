@@ -168,12 +168,30 @@ See `pre-commit <https://pre-commit.com/#intro>`_ for more.
 Release Process
 ---------------
 
-To prepare for a new release, first ensure all tests, linting, formatting and typing checks pass, and update the documentation and version numbers accordingly. Then you'll need to build the new source distribution and push it to PyPI using twine. 
+Releases are built and published from CI, with publishing gated on approval. To cut one:
 
-The up-to-date source on this is the `python package authority <https://packaging.python.org/en/latest/tutorials/packaging-projects>`_, but you'll have to first build the source distribution using::
+1. Bump ``__version__`` and turn the changelog's ``[Unreleased]`` section into a release heading.
+2. Run the pre-commit hooks, which cover lint, formatting, typing, stubs and tests::
+
+    inv precommit
+
+3. Tag a commit on ``main`` and push the tag::
+
+    git tag v0.2.0
+    git push origin v0.2.0
+
+The pushed tag starts the ``Release`` workflow: it builds the sdist and wheel, runs
+``twine check --strict``, verifies that the tag, ``__version__`` and changelog heading agree,
+installs the wheel and runs ``visionsim --help``. Publishing waits for approval on the ``pypi``
+environment before uploading both artifacts with PyPI trusted publishing. A failed build uploads
+nothing, so the tag can be deleted and re-pushed once fixed; only a partially completed upload
+requires a new version.
+
+Publishing requires the ``pypi`` environment with its required reviewers, and a PyPI trusted
+publisher naming the ``release.yml`` workflow and the ``pypi`` environment.
+
+Publishing by hand, for instance if CI is unavailable, should run the same checks first::
 
     python -m build
-
-Then upload it to PyPI with twine::
-
+    python -m twine check --strict dist/*
     python -m twine upload dist/*

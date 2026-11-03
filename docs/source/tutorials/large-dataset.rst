@@ -18,23 +18,16 @@ For clarity, we'll refer to a single blend-file as a scene, and a sequence will 
     └── renders
         ├── SCENE-NAME
         │   ├── SEQUENCE-ID
-        │   │   ├── frames/
-        │   │   ├── depths/
-        │   │   ├── normals/
-        │   │   ├── segmentations/
-        │   │   ├── flows/
-        │   │   └── transforms.json
+        │   │   ├── frames/          # 0000/, transforms.db
+        │   │   ├── depths/          # 0000/, transforms.db
+        │   │   ├── normals/         # 0000/, transforms.db
+        │   │   ├── segmentations/   # 0000/, transforms.db
+        │   │   └── flows/           # 0000/, transforms.db
         │   ├── SEQUENCE-ID/...
         │   └── ...
         └── SCENE-NAME/...  
 
 .. seealso:: For more about the dataset schema see :doc:`../sections/datasets`.
-
-.. admonition:: TODO
-
-   This example is currently missing interpolation or sensor emulation, and will be extended soon.
-
-|
 
 To enable easy configuration and CLI parsing, we re-use the render configuration class used in the :func:`render-animation <visionsim.cli.blender.render_animation>` CLI which stores all important parameters such as render device, dimensions, and types of ground truth to use:
 
@@ -51,10 +44,10 @@ We can then reuse the same render-job as :func:`render-animation <visionsim.cli.
 This CLI can be used, for instance, like so::
 
    CUDA_VISIBLE_DEVICES=0 python scripts/mkdataset.py create-datasets \
-      --scenes-dir=scenes/ --datasets-dir=datasets/ --sequences-per-scene=1 \ 
-      --render-config.width=800 --render-config.height=800 \
-      --render-config.depths --render-config.normals \
-      --render-config.flows --render-config.segmentations \ 
-      --render-config.keyframe-multiplier=2.0 --render-config.jobs=5 
+      --scenes-dir=scenes/ --datasets-dir=datasets/ --sequences-per-scene=1 \
+      --config.width=800 --config.height=800 \
+      --config.include-depths --config.include-normals \
+      --config.include-flows --config.include-segmentations \
+      --config.keyframe-multiplier=2.0 --config.jobs=5
 
 Which will render the dataset show above at a framerate of 100fps (original fps of 50 time 2x keyframe multiplier).

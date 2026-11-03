@@ -2,6 +2,7 @@ from pathlib import Path
 
 import imageio.v3 as iio
 import numpy as np
+import pytest
 
 from visionsim.cli import blender as cli
 from visionsim.dataset import Metadata
@@ -61,3 +62,38 @@ def test_render_frame_warns_on_multiple_jobs(tmp_path, executable, caplog):
 
     assert "always uses a single render job" in caplog.text
     assert (tmp_path / "frames" / "0000" / f"{FRAME:0{INDEX_PADDING}}.png").exists()
+
+
+def test_autoscale_requires_max_job_vram():
+    with pytest.raises(ValueError, match="max_job_vram"):
+        cli._resolve_autoscale(RenderConfig(autoscale=True))
+
+
+def test_autoscale_rejects_non_positive_max_job_vram():
+    with pytest.raises(ValueError, match="positive"):
+        cli._resolve_autoscale(RenderConfig(autoscale=True, max_job_vram=0))
+
+
+def test_autoscale_without_gpu_uses_single_job(monkeypatch, caplog):
+    monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: False)
+
+    with caplog.at_level("WARNING"):
+        config = cli._resolve_autoscale(RenderConfig(autoscale=True, max_job_vram=1024))
+
+    assert config.jobs == 1
+    assert not config.autoscale
+    assert "No GPU" in caplog.text
+
+
+@pytest.mark.skipif(not cli.torch.cuda.is_available(), reason="requires CUDA-enabled torch")
+def test_autoscale_single_gpu_divides_free_vram(monkeypatch):
+    monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(cli.torch.cuda, "device_count", lambda: 1)
+    monkeypatch.setattr(cli.torch.cuda, "current_device", lambda: 0)
+    monkeypatch.setattr(cli.torch.cuda, "mem_get_info", lambda device: (10_000, 16_000))
+    monkeypatch.setattr(cli.torch.cuda, "get_device_name", lambda device: "fake gpu")
+
+    config = cli._resolve_autoscale(RenderConfig(autoscale=True, max_job_vram=2_500))
+
+    assert config.jobs == 4
+    assert config.autoscale

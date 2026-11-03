@@ -25,7 +25,7 @@ The passes land beside ``frames/`` in one directory per pass, each with its own 
 
 They are written as 32-bit EXR, because the values are linear light rather than display-ready color. Cycles and EEVEE name these differently; see the note under the diagram below.
 
-By default the direct and indirect passes are denoised individually as they are saved, since they can be very noisy in dark regions, particularly at low sample counts. The color passes are never denoised, being noise-free by nature. Set ``--config.diffuse-pass.denoise=false`` or ``--config.specular-pass.denoise=false`` to save them raw instead, and note that this only applies to Cycles.
+By default the direct and indirect passes are denoised individually as they are saved, since they can be very noisy in dark regions, particularly at low sample counts. The color passes are never denoised, being noise-free by nature. Pass ``--config.diffuse-pass.no-denoise`` or ``--config.specular-pass.no-denoise`` to save them raw instead, and note that this only applies to Cycles.
 
 |
 

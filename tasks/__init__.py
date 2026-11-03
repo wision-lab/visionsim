@@ -23,13 +23,14 @@ TEST_DIR = ROOT_DIR / "tests"
 SOURCE_DIR = ROOT_DIR / "visionsim"
 EXAMPLE_DIR = ROOT_DIR / "examples"
 SCRIPTS_DIR = ROOT_DIR / "scripts"
+CI_DIR = ROOT_DIR / ".github" / "workflows"
 TASKS_DIR = ROOT_DIR / "tasks"
 COVERAGE_FILE = ROOT_DIR / ".coverage"
 COVERAGE_DIR = ROOT_DIR / "htmlcov"
 COVERAGE_REPORT = COVERAGE_DIR / "index.html"
 DOCS_DIR = ROOT_DIR / "docs"
 DOCS_INDEX = DOCS_DIR / "build" / "html" / "index.html"
-PYTHON_DIRS = [str(d) for d in [SOURCE_DIR, TEST_DIR, EXAMPLE_DIR, SCRIPTS_DIR, DOCS_DIR, TASKS_DIR]]
+PYTHON_DIRS = [str(d) for d in [SOURCE_DIR, TEST_DIR, EXAMPLE_DIR, SCRIPTS_DIR, DOCS_DIR, TASKS_DIR, CI_DIR]]
 
 
 def _delete_file(file, except_patterns=None):
@@ -91,8 +92,8 @@ def _run(c, command, **kwargs):
 def format(c, check=False):
     """Format code and sort imports with ruff.
 
-    Checks ``visionsim/``, ``tests/``, ``examples/``, ``scripts/``, ``docs/`` and
-    ``tasks/``, plus any top-level ``*.py`` files.
+    Checks ``visionsim/``, ``tests/``, ``examples/``, ``scripts/``, ``docs/``,
+    ``tasks/`` and ``.github/workflows/``, plus any top-level ``*.py`` files.
 
     Args:
         check: Report what would change without writing anything, exiting non-zero
@@ -194,6 +195,8 @@ def build_docs(c, preview=False):
     with c.cd(ROOT_DIR):
         api_exclude = [
             "visionsim/interpolate/rife",
+            # Vendored helper module; the public surface is EventEmulator.
+            "visionsim/emulate/dvs/v2e/emulator_utils.py",
             "visionsim/simulate/compat.py",
             "visionsim/simulate/nodes",
             # The sphinx extension: documentation tooling, not part of the API.
