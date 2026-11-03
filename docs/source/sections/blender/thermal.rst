@@ -51,7 +51,8 @@ Reading the outputs
 -------------------
 
 ``temperature/``
-    Single-channel OpenEXR containing visible surface temperature in Kelvin.
+    OpenEXR containing visible surface temperature in Kelvin, with a single
+    channel on Blender 4.3 and newer and RGB (identical channels) before that.
     Read its floating-point values for measurement; 300 K is about 27 °C.
     A fixed-temperature source reports its assigned temperature.
 
@@ -63,7 +64,8 @@ Reading the outputs
     with ``--config.thermal.no-preview``.
 
 ``thermal_radiance/``
-    Single-channel OpenEXR from a second Cycles render. The thermal material
+    OpenEXR from a second Cycles render, single-channel on Blender 4.3 and newer
+    and RGB (identical channels) before that. The thermal material
     emits according to temperature and emissivity and diffusely reflects
     thermal light from other surfaces and the world. The emission is
     spectrally flat, so radiance is a scalar field. This is a broadband
@@ -393,12 +395,13 @@ boundary may look sharper in the atlas.
 Reusing a solve
 ---------------
 
-VisionSim stores reusable thermal results beside the blend file in a
-``.heatsim`` directory. For a clean, saved blend, it checks blend bytes,
-external images and libraries, solver settings, sampling layout, and sidecar
-contents before reusing a result. Edited or missing dependencies cause a new
-bake and solve. Passing ``--config.thermal.recompute`` forces a new one. Changing only
-preview or radiance display settings does not require a new heat solve.
+VisionSim stores reusable thermal results beside the blend file in a directory
+named after it with a ``.heatsim`` suffix (for example ``scene.blend.heatsim``).
+For a clean, saved blend, it checks blend bytes, external images and libraries,
+solver settings, sampling layout, and sidecar contents before reusing a result.
+Edited or missing dependencies cause a new bake and solve. Passing
+``--config.thermal.recompute`` forces a new one. Changing only preview or radiance
+display settings does not require a new heat solve.
 Thermal atlases and attributes are prepared in memory for rendering; the
 source blend is not overwritten. Save an output blend explicitly if you need
 to reopen that prepared scene without relying on its external cache.

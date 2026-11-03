@@ -79,14 +79,14 @@ Find a multiplier that puts the 95th-percentile flow near one pixel:
 
 .. code-block:: bash
 
-    visionsim blender.optimize-rate scene.blend --target 1.0 --percentile 95 \\
+    visionsim blender.optimize-rate scene.blend --target 1.0 --percentile 95 \
         --debug-path ./opt
 
 The command logs the estimated rate and returns it. Render the final dataset with that multiplier:
 
 .. code-block:: bash
 
-    visionsim blender.render-animation scene.blend ./renders/scene \\
+    visionsim blender.render-animation scene.blend ./renders/scene \
         --config.include-frames --config.include-flows --config.keyframe-multiplier 12.5
 
 .. note::

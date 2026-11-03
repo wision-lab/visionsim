@@ -1,6 +1,14 @@
 visionsim.emulate.dvs package
 =============================
 
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   visionsim.emulate.dvs.v2e
+
 Module contents
 ---------------
 

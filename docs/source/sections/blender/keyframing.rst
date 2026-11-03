@@ -20,7 +20,7 @@ You can use a blender-defined camera animation too. To do this, first animate th
 
 We won't go into details as to how to do this, there's an abundance of blender tutorials already. You can look at `this tutorial <https://www.youtube.com/watch?v=a7qyW1G350g>`_ or `this one <https://www.youtube.com/watch?v=K02hlKyoWNI>`_ for some examples.
 
-Then, make sure the camera is not freed from its constraints/parents and keyframes by setting ``--no-unbind-camera`` and enabling ``--use-animations`` (enabled by default). You'll likely want to also specify at which frame to start/stop capture and you can do this with the ``frame-start`` and ``frame-step`` options as well as define the number of frames to capture with ``num-frames`` or the sequence end with ``frame-end``. Finally, you can also slow down the animation using the ``keyframe-multiplier`` argument.
+Then, make sure the camera is not freed from its constraints/parents and keyframes with ``--config.no-unbind-camera``, and keep animations enabled with ``--config.use-animations`` (the default). Capture runs from ``--frame-start`` to ``--frame-end``, with an optional stride set by ``--frame-step``. Finally, ``--config.keyframe-multiplier`` slows the animation down or speeds it up.
 
 |
 
@@ -58,7 +58,7 @@ Keyframe Stretching
 
 Keyframes are tied to frame numbers not relative animation time, so while this works well when the artist knows the framerate of the final render, if they animate for 30fps but render it at 120fps, the animation will be four times too fast. 
 
-This is where keyframe stretching comes in, it allows for a decoupling between rendering framerate and animation framerate. The ``keyframe-multiplier`` option of ``blender.render-animation`` controls this stretch factor. In the above example, we would set ``--keyframe-multiplier=4.0`` to get the desired animation, or we could reuse existing animations and render them at single photon camera framerates using a higher multiplier.  
+This is where keyframe stretching comes in, it allows for a decoupling between rendering framerate and animation framerate. Passing ``--config.keyframe-multiplier`` to ``blender.render-animation`` controls this stretch factor. In the above example, we would set ``--config.keyframe-multiplier=4.0`` to get the desired animation, or we could reuse existing animations and render them at single photon camera framerates using a higher multiplier.  
 
 |
 

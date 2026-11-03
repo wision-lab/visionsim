@@ -50,7 +50,7 @@ To create the dataset, we render the 201 frames between 150 and 350, leaving the
 
     The ``--config.keyframe-multiplier`` option stretches every keyframe in the file, so ``2.0`` plays the animation back at half speed and ``0.5`` at double speed. The command above leaves it at its default of ``1.0``, which keeps the camera moving at the speed it was keyed at.
 
-    If the above command does not work, you might have to change some settings, notably the ``device-type``. For instance on older GPUs that do not support Optix you can do ``--config.device-type=cuda`` to use CUDA.
+    If the above command does not work, you might have to change some settings, notably ``--config.device-type``. For instance on older GPUs that do not support Optix you can do ``--config.device-type=cuda`` to use CUDA.
     
     Finer grain control can be had using the :class:`BlenderClient API <visionsim.simulate.blender.BlenderClient>`.
 
@@ -215,7 +215,7 @@ A thermal camera measures the heat surfaces radiate rather than the light they r
    :language: bash
    :lines: 33-39
 
-The solve writes a single-channel OpenEXR per frame under ``quickstart/ultramodern-thermal/temperature``, holding absolute temperature in Kelvin. Passing ``--config.thermal.no-radiance`` skips the second render that would also produce a thermal-radiance image. :func:`transforms.colorize-temperatures <visionsim.cli.transforms.colorize_temperatures>` then estimates one temperature range across the whole sequence and maps it through the ``ironbow`` thermal palette by default, so ``temperature-colorized`` holds a viewable PNG per frame. The :doc:`thermal rendering section <sections/blender/thermal>` covers the heat-solve parameters, the radiance pass and how to assign materials and heat sources.
+The solve writes an OpenEXR per frame under ``quickstart/ultramodern-thermal/temperature``, holding absolute temperature in Kelvin; Blender 4.3 and newer store a single channel, earlier versions RGB with identical channels. Passing ``--config.thermal.no-radiance`` skips the second render that would also produce a thermal-radiance image. :func:`transforms.colorize-temperatures <visionsim.cli.transforms.colorize_temperatures>` then estimates one temperature range across the whole sequence and maps it through the ``ironbow`` thermal palette by default, so ``temperature-colorized`` holds a viewable PNG per frame. The :doc:`thermal rendering section <sections/blender/thermal>` covers the heat-solve parameters, the radiance pass and how to assign materials and heat sources.
 
 |
 
