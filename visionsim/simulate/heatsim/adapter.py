@@ -550,8 +550,6 @@ def build_atlas_plan(scene: Any, sim_objects: list, cfg: dict) -> AtlasPlan:
         loop_uv[..., 1] = (atlas_loop_uv[..., 1] * ah - ty) / th
 
         raster = atlas.rasterize_tile(verts, faces, loop_uv, tile.size)
-        if raster["xy"].shape[0] == 0:
-            raise RuntimeError(f"{name!r}: thermal atlas rasterized no solve points")
 
         # UV packing can discard most of a dense object's available resolution.
         # A large triangle alone must not replace thousands of safe mesh samples
@@ -564,6 +562,9 @@ def build_atlas_plan(scene: Any, sim_objects: list, cfg: dict) -> AtlasPlan:
                 len(raster["xy"]),
             )
             continue
+
+        if raster["xy"].shape[0] == 0:
+            raise RuntimeError(f"{name!r}: thermal atlas rasterized no solve points")
 
         uv_at_texel = np.empty((raster["xy"].shape[0], 2), dtype=np.float64)
         uv_at_texel[:, 0] = (raster["xy"][:, 0].astype(np.float64) + 0.5) / tw

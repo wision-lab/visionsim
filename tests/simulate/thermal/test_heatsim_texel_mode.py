@@ -403,7 +403,8 @@ def test_build_atlas_plan_excludes_dense_objects(monkeypatch):
     ("mode", "safe_vertices", "uses_atlas"),
     [("AUTO", True, False), ("AUTO", False, True), ("TEXEL", True, True)],
 )
-def test_sparse_uv_charts_do_not_replace_safe_dense_vertices(monkeypatch, mode, safe_vertices, uses_atlas):
+@pytest.mark.parametrize("uv_fraction", [0.0, 0.1])
+def test_sparse_uv_charts_do_not_replace_safe_dense_vertices(monkeypatch, mode, safe_vertices, uses_atlas, uv_fraction):
     """A densely sampled surface must not lose its detail to mostly empty UV tiles."""
     side = 20
     x, y = np.meshgrid(np.linspace(0, 10_000, side), np.linspace(0, 10_000, side))
@@ -423,14 +424,18 @@ def test_sparse_uv_charts_do_not_replace_safe_dense_vertices(monkeypatch, mode, 
         captured.update(tile=tile, size=atlas_size)
 
     def read(_obj, _layer):
-        # Occupy only 1% of the allocated tile, like many small, padded charts.
-        uv = verts[faces, :2] / 100_000
+        # Include fully collapsed charts as well as a sparse occupied region.
+        uv = verts[faces, :2] / 10_000 * uv_fraction
         tile = captured["tile"]
         atlas_uv = (uv * tile.size + tile.offset) / captured["size"]
         return atlas_uv, np.zeros(len(faces), dtype=np.int32)
 
     monkeypatch.setattr(adapter, "_write_atlas_uv_layer", write)
     monkeypatch.setattr(adapter, "_extract_evaluated_face_uv_and_slots", read)
+    if uv_fraction == 0 and uses_atlas:
+        with pytest.raises(RuntimeError, match="thermal atlas rasterized no solve points"):
+            adapter.build_atlas_plan(None, [obj], _ATLAS_CFG | {"render_domain": mode})
+        return
     plan = adapter.build_atlas_plan(None, [obj], _ATLAS_CFG | {"render_domain": mode})
     assert ("upholstery" in plan.texels) is uses_atlas
     if uses_atlas:
