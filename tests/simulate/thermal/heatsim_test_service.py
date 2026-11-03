@@ -483,7 +483,11 @@ class HeatsimTestService(BlenderService):
             surface.inputs["Base Color"].default_value = (color, color, color, 1)
             if kind == "metal":
                 surface.inputs["Metallic"].default_value = 1
-            socket_names = {"alpha": "Alpha", "transmission": "Transmission Weight", "subsurface": "Subsurface Weight"}
+            socket_names = {
+                "alpha": "Alpha",
+                "transmission": "Transmission Weight" if "Transmission Weight" in surface.inputs else "Transmission",
+                "subsurface": "Subsurface Weight" if "Subsurface Weight" in surface.inputs else "Subsurface",
+            }
             if kind in socket_names:
                 surface.inputs[socket_names[kind]].default_value = 0.5
             elif kind.startswith("linked_"):
@@ -599,7 +603,7 @@ class HeatsimTestService(BlenderService):
         mat.use_nodes = True
         surface = mat.node_tree.nodes.get("Principled BSDF")
         surface.inputs["Base Color"].default_value = (0, 0, 0, 1)
-        surface.inputs["Specular IOR Level"].default_value = 0
+        (surface.inputs.get("Specular IOR Level") or surface.inputs["Specular"]).default_value = 0
         mesh.materials.append(mat)
         # Let production build/cache its UVs, then devote the atlas to the tiny
         # patch. Degenerate wall UVs still leave the walls in light transport.
@@ -627,13 +631,14 @@ class HeatsimTestService(BlenderService):
         self._enable_cycles(samples=32)
         self._add_world_light(color=(1, 1, 1, 1))
         scene = bpy.context.scene
+        scene.cycles.use_adaptive_sampling = scene.cycles.use_denoising = False
         bpy.ops.mesh.primitive_plane_add(size=4)
         receiver = bpy.context.object
         mat = bpy.data.materials.new("Receiver")
         mat.use_nodes = True
         surface = mat.node_tree.nodes.get("Principled BSDF")
         surface.inputs["Base Color"].default_value = (0, 0, 0, 1)
-        surface.inputs["Specular IOR Level"].default_value = 0
+        (surface.inputs.get("Specular IOR Level") or surface.inputs["Specular"]).default_value = 0
         irradiance._prepare_opaque_bake_material(mat, incident=True)
         receiver.data.materials.append(mat)
         bpy.ops.mesh.primitive_plane_add(size=4, location=(0, 0, 1))
@@ -861,6 +866,10 @@ class HeatsimTestService(BlenderService):
                 {"Mirror": MaterialEntry(PRESETS["glass"], "FEM_PARTICIPANT", None, 1.0, "", specular, roughness)},
             )
             state = ts.enter_thermal_scene(scene, radiance_scale=1, assignment=assignment)
+            if name.startswith("equilibrium"):
+                # Remove emitter-sampling variance from this analytic energy control.
+                for material in bpy.data.materials:
+                    material.cycles.emission_sampling = "NONE"
             path = root / f"{name}.exr"
             try:
                 scene.render.filepath = str(path)
@@ -1605,6 +1614,9 @@ class HeatsimTestService(BlenderService):
         path = Path(root_path) / "uniform_smoothed_surface.exr"
         path.parent.mkdir(parents=True, exist_ok=True)
         state = ts.enter_thermal_scene(scene, radiance_scale=1)
+        # Isolate normal-related energy loss from emitter-sampling variance.
+        for material in bpy.data.materials:
+            material.cycles.emission_sampling = "NONE"
         try:
             scene.render.filepath = str(path)
             bpy.ops.render.render(write_still=True)
