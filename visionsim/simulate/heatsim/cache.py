@@ -81,6 +81,8 @@ def write_temperatures(cache_root: Path, key: str, per_object: dict[str, np.ndar
     Args:
         cache_root: Root directory for thermal caches.
         key: Cache key from :func:`cache_key`.
+        expected_counts (dict[str, int] | None, optional): Expected sample count per object; a mismatch
+            invalidates the cache. Defaults to None.
         per_object: Mapping of object name to a ``(timesteps, vertices)`` array.
         meta: JSON-serializable metadata stored alongside the arrays.
 
@@ -118,6 +120,8 @@ def read_temperatures(
     Args:
         cache_root: Root directory for thermal caches.
         key: Cache key from :func:`cache_key`.
+        expected_counts (dict[str, int] | None, optional): Expected sample count per object; a mismatch
+            invalidates the cache. Defaults to None.
 
     Returns:
         Mapping of object name to its history array, or ``None`` if absent.

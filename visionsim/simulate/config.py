@@ -336,7 +336,8 @@ class RenderConfig:
     autoscale: bool = False
     """Set number of jobs automatically based on available VRAM and `max_job_vram` when enabled"""
     max_job_vram: MemSize | None = None
-    """Maximum allowable VRAM per job in bytes (limit is not enforced, simply used for `autoscale`)"""
+    """Maximum allowable VRAM per job in bytes (limit is not enforced, simply used for `autoscale`);
+    required when `autoscale` is enabled"""
     camera_offset: tuple[float, float, float] | None = None
     """Camera offset to apply in local coordinates (x, y, z)."""
 

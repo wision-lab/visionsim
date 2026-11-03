@@ -94,6 +94,7 @@ _REGISTRY_REUSE_LOGGED: bool = False
 ITEMS_PER_SUBFOLDER: int = 1000
 INDEX_PADDING: int = np.ceil(np.log10(ITEMS_PER_SUBFOLDER)).astype(int)
 
+
 # Taken from blender/scripts/addons_core/node_wrangler/operators/save_viewer_image.py
 FORMATS: dict[str, str] = {
     "BMP": ".bmp",
@@ -707,7 +708,8 @@ class BlenderService(rpyc.Service):
             node.format.file_format = file_format
             node.format.color_mode = color_mode
             node.format.exr_codec = exr_codec
-            node.format.color_depth = str(bit_depth)
+            # Radiance HDR is 32-bit float only; the config default of 8 is meant for PNGs.
+            node.format.color_depth = "32" if file_format.upper() == "HDR" else str(bit_depth)
             slot.name = str(Path(slot.name).with_suffix(FORMATS[file_format.upper()]))
 
         if denoise and self.scene.render.engine.upper() == "CYCLES":
@@ -1031,6 +1033,8 @@ class BlenderService(rpyc.Service):
         if file_format is not None:
             self.scene.render.image_settings.file_format = file_format.upper()
         if bit_depth is not None:
+            # Radiance HDR is 32-bit float only; the config default of 8 is meant for PNGs.
+            bit_depth = 32 if self.scene.render.image_settings.file_format == "HDR" else bit_depth
             self.scene.render.image_settings.color_depth = str(bit_depth)
         if color_mode is not None:
             self.scene.render.image_settings.color_mode = color_mode.upper()
@@ -1324,8 +1328,7 @@ class BlenderService(rpyc.Service):
         indices = np.arange(len(data))
 
         if shuffle:
-            np.random.seed(seed=seed)
-            np.random.shuffle(indices)
+            np.random.default_rng(seed).shuffle(indices)
 
         for i, item in zip(indices, data):
             item.pass_index = i + 1
@@ -1911,7 +1914,8 @@ class BlenderService(rpyc.Service):
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
     ) -> None:
-        """Solve and cache a fixed thermal field without adding render outputs."""
+        """Solve and cache a fixed thermal field without render outputs, ignoring the render-output
+        parameters it accepts for symmetry with :class:`ThermalConfig`."""
         self._thermal_solve(
             initial_temperature_K=initial_temperature_K,
             thermal_diffusivity_mm2_s=thermal_diffusivity_mm2_s,
@@ -2075,10 +2079,10 @@ class BlenderService(rpyc.Service):
         Args:
             height (tuple[int] | list[int] | int | None, optional): Height of render in pixels. Defaults to value from file.
             width (int | None, optional): Width of render in pixels. Defaults to value from file.
-            resolution_percentage (float, optional): Percentage of the original resolution to render at. Defaults to 100%.
+            resolution_percentage (int, optional): Percentage of the original resolution to render at. Defaults to 100%.
 
         Raises:
-            ValueError: raised if resolution is not understood.
+            ValueError: raised if the resolution is not understood, or if a dimension is not positive.
         """
         if isinstance(height, (tuple, list)):
             if width is not None:
@@ -2087,10 +2091,16 @@ class BlenderService(rpyc.Service):
                 )
             height, width = height  # type: ignore
 
-        if height:
+        if height is not None:
+            if height <= 0:
+                raise ValueError(f"`height` must be positive, got {height}.")
             self.scene.render.resolution_y = int(height)
-        if width:
+        if width is not None:
+            if width <= 0:
+                raise ValueError(f"`width` must be positive, got {width}.")
             self.scene.render.resolution_x = int(width)
+        if resolution_percentage <= 0:
+            raise ValueError(f"`resolution_percentage` must be positive, got {resolution_percentage}.")
         self.scene.render.resolution_percentage = int(resolution_percentage)
 
     @require_initialized_service
@@ -2118,6 +2128,24 @@ class BlenderService(rpyc.Service):
             if fcurve not in self._disabled_fcurves:
                 fcurve.mute = not enable
         self._use_animation = enable
+
+    @staticmethod
+    def _select_devices(devices: Iterable[Any], device_type: str, use_cpu: bool) -> list[Any]:
+        """Pick the devices of the requested type, plus the CPU when ``use_cpu`` is set.
+
+        Args:
+            devices (Iterable[Any]): Devices exposed by the Cycles preferences.
+            device_type (str): Requested device type, for instance ``CUDA`` or ``CPU``.
+            use_cpu (bool): Also enable CPU devices alongside a GPU backend.
+
+        Returns:
+            list[Any]: Devices to activate.
+        """
+        device_type = device_type.upper()
+        selected = [d for d in devices if d.type.upper() == device_type]
+        if use_cpu and device_type != "CPU":
+            selected += [d for d in devices if d.type == "CPU"]
+        return selected
 
     @require_initialized_service
     def exposed_cycles_settings(
@@ -2177,15 +2205,18 @@ class BlenderService(rpyc.Service):
             for device in cycles_preferences.devices:
                 device.use = False
 
+            requested = device_type.upper()
             activated_devices = []
-            devices = filter(lambda d: d.type.upper() == device_type.upper(), cycles_preferences.devices)
 
-            for device in itertools.chain(devices, filter(lambda d: d.type == "CPU" and use_cpu, devices)):
+            for device in self._select_devices(cycles_preferences.devices, requested, use_cpu):
                 self.log.info(f"Activated device {device.name}, {device.type}")
                 activated_devices.append(device.name)
                 device.use = True
-            cycles_preferences.compute_device_type = "NONE" if device_type.upper() == "CPU" else device_type.upper()
-            self.scene.cycles.device = "CPU" if device_type.upper() == "CPU" else "GPU"
+
+            # "NONE" (and "CPU") make Cycles use the CPU regardless of the requested backend.
+            gpu = requested not in ("CPU", "NONE")
+            cycles_preferences.compute_device_type = requested if gpu else "NONE"
+            self.scene.cycles.device = "GPU" if gpu else "CPU"
             return activated_devices
         return []
 
@@ -2484,7 +2515,7 @@ class BlenderService(rpyc.Service):
 
         Args:
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+                Applies to every selected output; the render is skipped only when all of them exist. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
         """
         folder_index = f"{self.scene.frame_current // ITEMS_PER_SUBFOLDER:04}"
@@ -2601,7 +2632,7 @@ class BlenderService(rpyc.Service):
         Args:
             frame_numbers (Iterable[int]): frames to render.
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+                Applies to every selected output; the render is skipped only when all of them exist. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
             update_fn (UpdateFn, optional): callback function to track render progress. Will first be called with ``total`` kwarg,
                 indicating number of steps to be taken, then will be called with ``advance=1`` at every step. Closely mirrors the
@@ -2617,6 +2648,9 @@ class BlenderService(rpyc.Service):
         # Set total number of steps
         if update_fn is not None:
             update_fn(total=len(frame_numbers))
+
+        if not frame_numbers:
+            return
 
         # Max number of frames is 1,048,574 as of Blender 3.4
         # See: https://docs.blender.org/manual/en/latest/advanced/limits.html
@@ -2780,8 +2814,10 @@ class BlenderService(rpyc.Service):
             if bpy.app.version >= (5, 0, 0):
                 self.scene.render.image_settings.media_type = "IMAGE"
             self.scene.render.image_settings.file_format = "PNG"
-            self.scene.render.filepath = str(blasts / ("#" * INDEX_PADDING))
-            skip = allow_skips and all((blasts / f"{f:0{INDEX_PADDING}}.png").exists() for f in frames)
+            skip = allow_skips and all(
+                (blasts / f"{f // ITEMS_PER_SUBFOLDER:04}" / f"{f % ITEMS_PER_SUBFOLDER:0{INDEX_PADDING}}.png").exists()
+                for f in frames
+            )
 
             # Register a database-only output (no compositor node is involved in viewport renders),
             # mirroring `register_output_type` so `_save_metadata` can persist camera info.
@@ -2822,13 +2858,26 @@ class BlenderService(rpyc.Service):
                 )
 
             with bpy.context.temp_override(window=window, screen=window.screen, area=area, region=region):
-                bpy.ops.render.opengl(animation=True, view_context=False)
+                if video:
+                    bpy.ops.render.opengl(animation=True, view_context=False)
+                else:
+                    # Write each frame to its final path so an interrupted run leaves no staging files.
+                    for frame in frames:
+                        folder = f"{frame // ITEMS_PER_SUBFOLDER:04}"
+                        index = f"{frame % ITEMS_PER_SUBFOLDER:0{INDEX_PADDING}}"
+                        (blasts / folder).mkdir(parents=True, exist_ok=True)
+                        self.scene.frame_set(frame)
+                        self.scene.render.filepath = str(blasts / folder / index)
+                        bpy.ops.render.opengl(write_still=True, view_context=False)
 
         if not video:
             for frame in frames:
                 self.exposed_set_current_frame(frame)
                 self._save_metadata(
-                    paths={"playblast": Path(f"{frame:0{INDEX_PADDING}}.png")},
+                    paths={
+                        "playblast": Path(f"{frame // ITEMS_PER_SUBFOLDER:04}")
+                        / f"{frame % ITEMS_PER_SUBFOLDER:0{INDEX_PADDING}}.png"
+                    },
                     transform_matrix=self.exposed_camera_extrinsics().tolist(),
                     camera_info=self.exposed_camera_info(),
                     index=frame,
@@ -3003,8 +3052,8 @@ class BlenderClient:
         and return an rpyc.AsyncResult.
 
         Args:
-            *args: Same as :meth:`BlendService.exposed_render_animation`
-            *kwargs: Same as :meth:`BlendService.exposed_render_animation`
+            *args: Same as :meth:`BlenderService.exposed_render_animation`
+            *kwargs: Same as :meth:`BlenderService.exposed_render_animation`
 
         Returns:
             rpyc.AsyncResult: Result encapsulating the return value of ``render_animation``.
@@ -3024,8 +3073,8 @@ class BlenderClient:
         and return an rpyc.AsyncResult.
 
         Args:
-            *args: Same as :meth:`BlendService.exposed_render_frames`
-            *kwargs: Same as :meth:`BlendService.exposed_render_frames`
+            *args: Same as :meth:`BlenderService.exposed_render_frames`
+            *kwargs: Same as :meth:`BlenderService.exposed_render_frames`
 
         Returns:
             rpyc.AsyncResult: Result encapsulating the return value of ``render_frames``.
@@ -3045,8 +3094,8 @@ class BlenderClient:
         and return an rpyc.AsyncResult.
 
         Args:
-            *args: Same as :meth:`BlendService.exposed_render_playblast`
-            *kwargs: Same as :meth:`BlendService.exposed_render_playblast`
+            *args: Same as :meth:`BlenderService.exposed_render_playblast`
+            *kwargs: Same as :meth:`BlenderService.exposed_render_playblast`
 
         Returns:
             rpyc.AsyncResult: Result encapsulating the return value of ``render_playblast``.
@@ -3091,6 +3140,15 @@ class BlenderClient:
         logger.setLevel(logging.INFO)
         self.with_logger(logger)
         return self
+
+    def common_animation_range(self) -> range:
+        """Get the animation range of this client as range(start, end+1, step).
+
+        Returns:
+            range: Range of frames in animation.
+        """
+        start, end, step = self.animation_range_tuple()
+        return range(start, end + 1, step)
 
     def __getattr__(self, name: str) -> rpyc.BaseNetref:
         """Retrieve remote attribute if client is connected.
@@ -3461,7 +3519,7 @@ class BlenderClients(tuple):
         Args:
             frame_numbers (Collection[int]): frames to render.
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+                Applies to every selected output; the render is skipped only when all of them exist. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
             update_fn (UpdateFn, optional): callback function to track render progress. Will first be called with ``total`` kwarg,
                 indicating number of steps to be taken, then will be called with ``advance=1`` at every step. Closely mirrors the

@@ -1,5 +1,6 @@
 import json
 import subprocess
+from pathlib import Path
 
 import imageio.v3 as iio
 import numpy as np
@@ -7,7 +8,7 @@ import numpy as np
 from visionsim.dataset import Metadata
 from visionsim.simulate.blender import INDEX_PADDING
 
-FRAMES = [f"{f:0{INDEX_PADDING}}.png" for f in range(10, 15)]
+FRAMES = [Path(f"{f // 1000:04}") / f"{f % 1000:0{INDEX_PADDING}}.png" for f in range(10, 15)]
 
 
 def test_playblast_layout(playblast_dataset):
@@ -16,8 +17,10 @@ def test_playblast_layout(playblast_dataset):
     assert not (playblast_dataset / "frames").exists()
 
     # Frame-sequence mode produces PNGs plus a metadata database
-    assert sorted(p.name for p in playblast_dir.glob("*.png")) == FRAMES
+    assert sorted(p.relative_to(playblast_dir) for p in playblast_dir.rglob("*.png")) == FRAMES
     assert (playblast_dir / "transforms.db").exists()
+    # Frames are written straight to their final paths, not staged and renamed.
+    assert not (playblast_dir / "render").exists()
 
 
 def test_playblast_metadata(playblast_dataset):
@@ -27,11 +30,12 @@ def test_playblast_metadata(playblast_dataset):
     for frame in metadata.frames:
         transform = np.array(frame.transform_matrix)
         assert transform.shape == (4, 4)
+        assert frame.file_path.parent.name == "0000"
         assert (playblast_dataset / "playblast" / frame.file_path).exists()
 
 
 def test_playblast_images(playblast_dataset):
-    images = sorted((playblast_dataset / "playblast").glob("*.png"))
+    images = sorted((playblast_dataset / "playblast").rglob("*.png"))
     assert len(images) == 5
 
     image = iio.imread(images[0])
