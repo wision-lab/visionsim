@@ -85,6 +85,7 @@ def test_autoscale_without_gpu_uses_single_job(monkeypatch, caplog):
     assert "No GPU" in caplog.text
 
 
+@pytest.mark.skipif(not cli.torch.cuda.is_available(), reason="requires CUDA-enabled torch")
 def test_autoscale_single_gpu_divides_free_vram(monkeypatch):
     monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(cli.torch.cuda, "device_count", lambda: 1)
