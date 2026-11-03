@@ -183,7 +183,7 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
         (mesh.loops, "vertex_index", 1, np.int32),
         (mesh.polygons, "loop_total", 1, np.int32),
     ):
-        values = np.empty(len(collection) * width, dtype=dtype)
+        values: np.ndarray = np.empty(len(collection) * width, dtype=dtype)
         collection.foreach_get(attribute, values)
         signature.update(values.tobytes())
     layout_key = signature.hexdigest()

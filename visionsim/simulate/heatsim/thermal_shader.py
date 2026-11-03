@@ -633,7 +633,7 @@ def enter_thermal_scene(scene: Any, *, radiance_scale: float, assignment: SceneA
                 continue
             mesh = obj.data
             if mesh not in mesh_smoothing:
-                smooth = np.empty(len(mesh.polygons), dtype=bool)
+                smooth: np.ndarray = np.empty(len(mesh.polygons), dtype=bool)
                 mesh.polygons.foreach_get("use_smooth", smooth)
                 mesh_smoothing[mesh] = smooth
                 mesh.polygons.foreach_set("use_smooth", np.zeros(len(mesh.polygons), dtype=bool))
