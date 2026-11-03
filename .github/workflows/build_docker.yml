@@ -95,4 +95,4 @@ jobs:
           package-type: 'container'
           min-versions-to-keep: 20
           delete-only-untagged-versions: 'false'
-          ignore-versions: '^(latest|blender-([0-9\.]+|latest)|blender-.*-v\d.*)$'
+          ignore-versions: '^(latest|cuda.*|blender-([0-9\.]+|latest)|blender-.*-v\d.*)$'
