@@ -209,13 +209,28 @@ The readings are what a real IMU would report, so integrating them back into a t
 Thermal Camera
 --------------
 
-A thermal camera measures the heat surfaces radiate rather than the light they reflect, so the emulations above do not apply to it and VisionSim instead simulates the scene's heating. :func:`blender.render-animation <visionsim.cli.blender.render_animation>` enables this with ``--config.include-thermal``, which bakes the scene's lighting with Cycles, integrates a temperature field for the requested simulation time, and renders that field from each camera pose:
+A thermal camera sees emitted and reflected thermal radiation. :func:`blender.render-animation <visionsim.cli.blender.render_animation>` enables this with ``--config.include-thermal``, which bakes the scene's lighting with Cycles, simulates heating, and renders the resulting temperature field from each camera pose. From a source checkout, this example uses the Ultramodern material assignments and a 600-second heat solve:
 
-.. literalinclude:: ../../examples/quickstart.sh
-   :language: bash
-   :lines: 33-39
+.. code-block:: bash
 
-The solve writes a single-channel OpenEXR per frame under ``quickstart/ultramodern-thermal/temperature``, holding absolute temperature in Kelvin. Passing ``--config.thermal.no-radiance`` skips the second render that would also produce a thermal-radiance image. :func:`transforms.colorize-temperatures <visionsim.cli.transforms.colorize_temperatures>` then estimates one temperature range across the whole sequence and maps it through the ``ironbow`` thermal palette by default, so ``temperature-colorized`` holds a viewable PNG per frame. The :doc:`thermal rendering section <sections/blender/thermal>` covers the heat-solve parameters, the radiance pass and how to assign materials and heat sources.
+    visionsim blender.render-animation ultramodern.blend quickstart/ultramodern-thermal/ \
+        --frame-start=1 --frame-end=600 \
+        --config.include-thermal --config.no-include-frames \
+        --config.thermal.assignments=assets/thermal/ultramodern.thermal.json \
+        --config.thermal.sim-time-s=600 --config.thermal.timestep-s=1 \
+        --config.thermal.irradiance-texture-size=1024 \
+        --config.no-use-denoising
+
+    visionsim transforms.colorize-temperatures \
+        --input-dir=quickstart/ultramodern-thermal/thermal_radiance \
+        --output-dir=quickstart/ultramodern-thermal/radiance-colorized \
+        --cmap=inferno
+
+    visionsim ffmpeg.animate \
+        --input-dir=quickstart/ultramodern-thermal/radiance-colorized \
+        --pattern='*.png' --outfile=quickstart/ultramodern-thermal/thermal_global.mp4
+
+The solve writes temperature EXRs in Kelvin under ``quickstart/ultramodern-thermal/temperature`` and thermal-radiance EXRs under ``thermal_radiance``. :func:`transforms.colorize-temperatures <visionsim.cli.transforms.colorize_temperatures>` maps the radiance through the ``inferno`` palette using one range across the sequence, and ``ffmpeg.animate`` creates ``thermal_global.mp4``. The :doc:`thermal rendering section <sections/blender/thermal>` covers the simulation parameters, material assignments, and heat sources.
 
 |
 
