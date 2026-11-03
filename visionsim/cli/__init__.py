@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 import glob
 import inspect
+import io
 import logging
 import os
 import re
@@ -9,7 +11,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import overload
+from typing import Any, Literal, get_args, overload
 
 import tyro
 from natsort import natsorted
@@ -154,8 +156,110 @@ def post_install(
     install_dependencies(executable, editable=editable, version=version, path=path, torch_index_url=torch_index_url)
 
 
-def main():
-    cli_dict = {"post-install": post_install}
+_CompletionShell = Literal["bash", "zsh", "fish"]
+_COMPLETION_SHELLS: tuple[_CompletionShell, ...] = get_args(_CompletionShell)
+# Keep in sync with [project.scripts] in pyproject.toml.
+_COMPLETION_PROGS = ("visionsim", "vsim")
+
+
+def _completion_dir(shell: _CompletionShell) -> Path:
+    if shell == "bash":
+        base = os.environ.get("BASH_COMPLETION_USER_DIR")
+        root = Path(base) if base else Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+        return root / "bash-completion" / "completions"
+    if shell == "zsh":
+        return Path.home() / ".zfunc"
+    if shell == "fish":
+        return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "fish" / "completions"
+    raise ValueError(f"Unsupported shell: {shell}")
+
+
+def _completion_filename(shell: _CompletionShell, prog: str) -> str:
+    if shell == "bash":
+        return prog
+    if shell == "zsh":
+        return f"_{prog}"
+    if shell == "fish":
+        return f"{prog}.fish"
+    raise ValueError(f"Unsupported shell: {shell}")
+
+
+def _detect_shell() -> _CompletionShell:
+    shell = Path(os.environ.get("SHELL", "")).name
+    if shell not in _COMPLETION_SHELLS:
+        raise ValueError(
+            f"Could not detect a supported shell from $SHELL {shell!r}; pass --shell one of {_COMPLETION_SHELLS}."
+        )
+    return shell
+
+
+def _completion_script(shell: _CompletionShell, prog: str) -> str:
+    # tyro only exposes generation through its CLI flag, which prints and then exits.
+    buffer = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buffer):
+            tyro.extras.subcommand_cli_from_dict(_cli_dict(), prog=prog, args=["--tyro-write-completion", shell, "-"])
+    except SystemExit as exc:
+        if exc.code not in (None, 0):
+            raise
+    script = buffer.getvalue()
+
+    # tyro prints multi-line help text verbatim, so descriptions become extra completion
+    # candidates that break prefix matching (bash computes an empty common prefix).
+    script = script.replace(
+        "    for completion in completions:\n        print(completion)",
+        "    for completion in completions:\n        print(*completion.splitlines())",
+    )
+
+    if shell == "fish":
+        # tyro 1.0.16 passes the spec as a single -c argument, which exceeds Linux's
+        # 128 KiB per-argument limit for this CLI; feed it through stdin instead.
+        script = script.replace('$python_cmd -c "$pycode"', "printf '%s' \"$pycode\" | $python_cmd -")
+
+    return script
+
+
+def completion(
+    mode: Literal["install", "uninstall"] = "install",
+    shell: _CompletionShell | None = None,
+    path: str | os.PathLike | None = None,
+):
+    """Install or remove tab-completion scripts for the current shell.
+
+    Args:
+        mode (Literal["install", "uninstall"], optional): Whether to write or delete completion scripts.
+            Defaults to "install".
+        shell (Literal["bash", "zsh", "fish"] | None, optional): Shell to generate completions for.
+            Defaults to the basename of ``$SHELL``.
+        path (str | os.PathLike | None, optional): Directory to write completion scripts to instead of the
+            shell's standard user completion directory. Defaults to None.
+    """
+    if sys.platform == "win32":
+        raise RuntimeError("Shell completion is not supported on Windows.")
+
+    shell = shell or _detect_shell()
+    target_dir = Path(path) if path is not None else _completion_dir(shell)
+
+    if mode == "uninstall":
+        for prog in _COMPLETION_PROGS:
+            target = target_dir / _completion_filename(shell, prog)
+            if target.exists():
+                target.unlink()
+                _log.info(f"Removed completion script {target}")
+        return
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for prog in _COMPLETION_PROGS:
+        target = target_dir / _completion_filename(shell, prog)
+        target.write_text(_completion_script(shell, prog))
+        _log.info(f"Wrote completion script {target}")
+
+    if shell == "zsh":
+        _log.info("Ensure ~/.zfunc is on fpath: fpath+=~/.zfunc; autoload -Uz compinit && compinit")
+
+
+def _cli_dict() -> dict[str, Any]:
+    cli_dict: dict[str, Any] = {"post-install": post_install, "completion": completion}
 
     for module in _cli_modules:
         current_module = sys.modules[module.__name__]
@@ -167,5 +271,10 @@ def main():
                 if func.__module__ == module.__name__ and not func_name.startswith("_")
             }
         )
+    return cli_dict
 
-    tyro.extras.subcommand_cli_from_dict(cli_dict)
+
+def main():
+    # Capture bare script name to keep help text short and accurate
+    script, *_ = sys.argv
+    tyro.extras.subcommand_cli_from_dict(_cli_dict(), prog=Path(script).name)
