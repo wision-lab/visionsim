@@ -13,9 +13,8 @@ import numpy as np
 
 CACHE_SCHEMA_VERSION = 2
 # Bump when bake/solver semantics change, even if the archive layout is unchanged.
-# Revision 4 measures incident light on opaque black/metal receivers and reads
-# their Base Color independently of whether the authored shader has a diffuse lobe.
-BAKE_PIPELINE_VERSION = 4
+# Revision 5 resolves small heating increments without absolute-Kelvin cancellation.
+BAKE_PIPELINE_VERSION = 5
 _log = logging.getLogger("rich")
 
 

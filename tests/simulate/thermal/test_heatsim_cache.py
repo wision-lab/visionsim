@@ -32,6 +32,24 @@ def test_solver_settings_change_cache_key(tmp_path):
     assert cache.cache_key(blend, {"dt": 0.05}, "source") != cache.cache_key(blend, {"dt": 0.05}, "changed")
 
 
+def test_pipeline_revision_invalidates_keys_and_saved_temperatures(tmp_path, monkeypatch):
+    blend = tmp_path / "scene.blend"
+    config = {"dt": 0.05}
+    key = cache.cache_key(blend, config, "source")
+    values = {"wall": np.full((3, 4), 295.0)}
+    cache.write_temperatures(tmp_path, key, values, {})
+    assert cache.read_temperatures(tmp_path, key, {"wall": 4}) is not None
+
+    monkeypatch.setattr(cache, "BAKE_PIPELINE_VERSION", cache.BAKE_PIPELINE_VERSION + 1)
+    new_key = cache.cache_key(blend, config, "source")
+    assert new_key != key
+    assert cache.read_temperatures(tmp_path, key, {"wall": 4}) is None
+    cache.write_temperatures(tmp_path, new_key, values, {})
+    fresh = cache.read_temperatures(tmp_path, new_key, {"wall": 4})
+    assert fresh is not None
+    np.testing.assert_array_equal(fresh["wall"], values["wall"])
+
+
 def test_cache_rejects_wrong_shape_and_corruption(tmp_path):
     key = "sample"
     cache.write_temperatures(tmp_path, key, {"wall": np.full((3, 4), 295.0)}, {})
