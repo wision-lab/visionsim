@@ -31,9 +31,16 @@ visionsim emulate.imu \
     --input-dir=quickstart/ultramodern-gt/frames \
     --output-file=quickstart/imu.csv --dt=0.02
 visionsim blender.render-animation ultramodern.blend quickstart/ultramodern-thermal/ \
-    --frame-start=150 --frame-end=350 \
-    --config.keyframe-multiplier=1.0 --config.no-include-frames \
-    --config.include-thermal --config.thermal.no-radiance
+    --frame-start=1 --frame-end=600 \
+    --config.include-thermal --config.no-include-frames \
+    --config.thermal.assignments=assets/thermal/ultramodern.thermal.json \
+    --config.thermal.sim-time-s=600 --config.thermal.timestep-s=1 \
+    --config.thermal.irradiance-texture-size=1024 \
+    --config.no-use-denoising
 visionsim transforms.colorize-temperatures \
-    --input-dir=quickstart/ultramodern-thermal/temperature \
-    --output-dir=quickstart/ultramodern-thermal/temperature-colorized
+    --input-dir=quickstart/ultramodern-thermal/thermal_radiance \
+    --output-dir=quickstart/ultramodern-thermal/radiance-colorized \
+    --cmap=inferno
+visionsim ffmpeg.animate \
+    --input-dir=quickstart/ultramodern-thermal/radiance-colorized \
+    --pattern='*.png' --outfile=quickstart/ultramodern-thermal/thermal_global.mp4
