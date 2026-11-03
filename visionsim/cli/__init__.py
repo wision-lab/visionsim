@@ -87,7 +87,7 @@ def _run(
     log_path: str | os.PathLike | None = None,
     text: bool = True,
     hide: bool = False,
-    check: bool = False,
+    check: bool = True,
 ) -> subprocess.CompletedProcess:
     """Execute a command and return an object with the result and failure status."""
     _log.debug(f"Running command: {command}")
@@ -147,7 +147,7 @@ def post_install(
     """
     from visionsim.simulate import install_dependencies
 
-    if _run(f"{executable or 'blender'} --version", shell=True, hide=True).returncode != 0:
+    if _run(f"{executable or 'blender'} --version", shell=True, hide=True, check=False).returncode != 0:
         raise RuntimeError(
             "No blender installation found on path! Please make sure it is discoverable, or specify executable."
         )
