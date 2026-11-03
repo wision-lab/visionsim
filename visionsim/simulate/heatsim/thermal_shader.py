@@ -19,6 +19,8 @@ import hashlib
 import logging
 from typing import Any
 
+import numpy as np
+
 from visionsim.simulate.config import ThermalConfig
 from visionsim.simulate.heatsim.materials import SceneAssignment
 from visionsim.simulate.heatsim.names import ATLAS_COVERAGE_PROP, ATLAS_IMAGE_NAME, ATLAS_UV_LAYER_NAME
@@ -53,6 +55,9 @@ _KEY_CLAMP: str = "orig_sample_clamp"
 _KEY_BOUNCES: str = "orig_thermal_bounces"
 _KEY_MATERIAL_SLOTS: str = "orig_material_slots"
 _KEY_EMPTY_MESHES: str = "orig_empty_materials"
+_KEY_GLOSSY_FILTER: str = "orig_glossy_filter"
+_KEY_MESH_SMOOTHING: str = "orig_mesh_smoothing"
+_KEY_NORMAL_MODIFIERS: str = "orig_normal_modifiers"
 
 
 # ---------------------------------------------------------------------------
@@ -580,6 +585,8 @@ def enter_thermal_scene(scene: Any, *, radiance_scale: float, assignment: SceneA
 
     Uses per-slot gray-body materials when an assignment is supplied, otherwise
     a uniform diffuse view-layer override. All thermal materials are opaque.
+    Disables glossy filtering, smooth mesh shading and weighted normals to avoid
+    losing reflected thermal energy near edges.
     Hides light objects and sets a uniform-background thermal world.
     Returns an opaque state dict; pass it to :func:`restore_scene` to undo all changes.
 
@@ -608,8 +615,34 @@ def enter_thermal_scene(scene: Any, *, radiance_scale: float, assignment: SceneA
     state[_KEY_MATERIAL_OVERRIDES] = material_overrides
     state[_KEY_LIGHT_HIDE_RENDER] = hide_render
     state[_KEY_LIGHT_HIDE_VIEWPORT] = hide_viewport
+    mesh_smoothing: dict[Any, Any] = {}
+    normal_modifiers: list[tuple[Any, bool, bool]] = []
+    state[_KEY_MESH_SMOOTHING] = mesh_smoothing
+    state[_KEY_NORMAL_MODIFIERS] = normal_modifiers
 
     try:
+        cy = getattr(scene, "cycles", None)
+        if cy is not None:
+            state[_KEY_GLOSSY_FILTER] = cy.blur_glossy
+            cy.blur_glossy = 0.0
+
+        # Record shared mesh data once, before changing it. Geometry modifiers
+        # such as bevels stay active; only normal-smoothing modifiers are disabled.
+        for obj in scene.objects:
+            if obj.type != "MESH":
+                continue
+            mesh = obj.data
+            if mesh not in mesh_smoothing:
+                smooth = np.empty(len(mesh.polygons), dtype=bool)
+                mesh.polygons.foreach_get("use_smooth", smooth)
+                mesh_smoothing[mesh] = smooth
+                mesh.polygons.foreach_set("use_smooth", np.zeros(len(mesh.polygons), dtype=bool))
+                mesh.update()
+            for modifier in obj.modifiers:
+                if modifier.type == "WEIGHTED_NORMAL":
+                    normal_modifiers.append((modifier, modifier.show_render, modifier.show_viewport))
+                    modifier.show_render = modifier.show_viewport = False
+
         thermal_mat = _build_gray_body_material(radiance_scale)
 
         # Without a sidecar, retain the original uniform diffuse override.
@@ -713,6 +746,13 @@ def restore_scene(scene: Any, state: dict) -> None:
             :func:`enter_thermal_scene`).
         state: The opaque dict returned by :func:`enter_thermal_scene`.
     """
+    for mesh, smooth in state.get(_KEY_MESH_SMOOTHING, {}).items():
+        mesh.polygons.foreach_set("use_smooth", smooth)
+        mesh.update()
+    for modifier, show_render, show_viewport in state.get(_KEY_NORMAL_MODIFIERS, []):
+        modifier.show_render = show_render
+        modifier.show_viewport = show_viewport
+
     # Restore object-linked overrides before removing any temporary empty-mesh slot.
     for name, slots in state.get(_KEY_MATERIAL_SLOTS, {}).items():
         obj = scene.objects.get(name)
@@ -732,6 +772,8 @@ def restore_scene(scene: Any, state: dict) -> None:
     # -- Restore Cycles sample clamps -------------------------------------------
     cy = getattr(scene, "cycles", None)
     if cy is not None:
+        if _KEY_GLOSSY_FILTER in state:
+            cy.blur_glossy = state[_KEY_GLOSSY_FILTER]
         for attr, value in state.get(_KEY_BOUNCES, {}).items():
             setattr(cy, attr, value)
         for attr, value in (state.get(_KEY_CLAMP, {}) or {}).items():

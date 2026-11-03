@@ -1463,8 +1463,14 @@ class HeatsimTestService(BlenderService):
             a.data.materials.append(mat)
         for face in a.data.polygons:
             face.material_index = face.index % 2
+            face.use_smooth = face.index % 2 == 0
+        a.modifiers.new("Keep bevel geometry", "BEVEL")
+        normal = a.modifiers.new("Smooth normals", "WEIGHTED_NORMAL")
+        normal.show_viewport = False
         b = a.copy()
         bpy.context.collection.objects.link(b)
+        b.modifiers["Smooth normals"].show_render = False
+        b.modifiers["Smooth normals"].show_viewport = True
         b.material_slots[1].link = "OBJECT"
         b.material_slots[1].material = materials[2]
         assignment = None
@@ -1483,6 +1489,7 @@ class HeatsimTestService(BlenderService):
             empty_copy = empty.copy()
             bpy.context.collection.objects.link(empty_copy)
         scene = bpy.context.scene
+        scene.cycles.blur_glossy = 0.75
         extra = scene.view_layers.new("ExistingOverride")
         extra.material_override = materials[0]
         light = next(o for o in scene.objects if o.type == "LIGHT")
@@ -1498,14 +1505,27 @@ class HeatsimTestService(BlenderService):
                 light.hide_viewport,
                 (scene.cycles.max_bounces, scene.cycles.diffuse_bounces, scene.cycles.glossy_bounces),
                 tuple(empty.data.materials) if assigned else (),
+                scene.cycles.blur_glossy,
+                tuple(p.use_smooth for p in a.data.polygons),
+                tuple((m.show_render, m.show_viewport) for o in (a, b) for m in o.modifiers),
             )
 
         before = snapshot()
         setup_preserved = True
         override_ok = True
+        thermal_defaults_ok = True
         restored = True
         for _ in range(3):
             state = ts.enter_thermal_scene(scene, radiance_scale=1.0, assignment=assignment)
+            thermal_defaults_ok &= scene.cycles.blur_glossy == 0
+            thermal_defaults_ok &= not any(p.use_smooth for p in a.data.polygons)
+            thermal_defaults_ok &= all(
+                not m.show_render and not m.show_viewport
+                for o in (a, b)
+                for m in o.modifiers
+                if m.type == "WEIGHTED_NORMAL"
+            )
+            thermal_defaults_ok &= all(o.modifiers["Keep bevel geometry"].show_render for o in (a, b))
             if snapshot()[:2] != before[:2] or (not assigned and snapshot()[2] != before[2]):
                 setup_preserved = False
             if assigned:
@@ -1526,6 +1546,8 @@ class HeatsimTestService(BlenderService):
             def fail_setup(*args, **kwargs):
                 calls.append(1)
                 if len(calls) == 3:
+                    assert scene.cycles.blur_glossy == 0
+                    assert not any(p.use_smooth for p in a.data.polygons)
                     raise RuntimeError("injected material failure")
                 return build(*args, **kwargs)
 
@@ -1539,8 +1561,61 @@ class HeatsimTestService(BlenderService):
         return {
             "setup_preserved": bool(setup_preserved),
             "override_ok": bool(override_ok),
+            "thermal_defaults_ok": bool(thermal_defaults_ok),
             "restored": bool(restored and snapshot() == before),
         }
+
+    def exposed_uniform_smoothed_surface(self, root_path: str) -> dict:
+        """Render a smoothed mesh in a uniform thermal environment.
+
+        Args:
+            root_path: Output directory for the control render.
+
+        Returns:
+            dict: Maximum radiance error and whether the source smoothing was restored.
+        """
+        from visionsim.simulate.heatsim import thermal_shader as ts
+        from visionsim.simulate.heatsim.physics import STEFAN_BOLTZMANN_SI
+
+        self._clear()
+        scene = bpy.context.scene
+        scene.render.engine = "CYCLES"
+        scene.cycles.device = "CPU"
+        scene.cycles.samples = 128
+        scene.cycles.seed = 29
+        scene.cycles.min_light_bounces = 16
+        scene.cycles.use_adaptive_sampling = scene.cycles.use_denoising = False
+        scene.render.use_compositing = scene.render.film_transparent = False
+        scene.render.resolution_x = scene.render.resolution_y = 64
+        scene.render.resolution_percentage = 100
+        scene.render.image_settings.file_format = "OPEN_EXR"
+        scene.render.image_settings.color_depth = "32"
+        scene.render.image_settings.color_mode = "RGB"
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=8)
+        sphere = bpy.context.object
+        for face in sphere.data.polygons:
+            face.use_smooth = True
+        bpy.ops.object.camera_add(location=(0, -4, 0))
+        camera = bpy.context.object
+        camera.rotation_euler = (-camera.location).to_track_quat("-Z", "Y").to_euler()
+        camera.data.type = "ORTHO"
+        camera.data.ortho_scale = 3
+        scene.camera = camera
+        ts.stamp_default_temperatures(scene, default_K=295)
+        path = Path(root_path) / "uniform_smoothed_surface.exr"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        state = ts.enter_thermal_scene(scene, radiance_scale=1)
+        try:
+            scene.render.filepath = str(path)
+            bpy.ops.render.render(write_still=True)
+        finally:
+            ts.restore_scene(scene, state)
+        image = bpy.data.images.load(str(path))
+        pixels = np.array(image.pixels[:]).reshape(64, 64, 4)[:, :, 0]
+        expected = STEFAN_BOLTZMANN_SI * 295**4
+        error = float(np.max(np.abs(pixels - expected)))
+        bpy.data.images.remove(image)
+        return {"max_radiance_error": error, "smoothing_restored": all(p.use_smooth for p in sphere.data.polygons)}
 
     def exposed_default_surface(self) -> dict:
         """Give bare/authored/empty-slot meshes a temperature AOV and report slot state.
@@ -1702,6 +1777,12 @@ class HeatsimTestService(BlenderService):
             scene.render.compositor_device = "CPU"
         scene.cycles.seed = 0
         scene.cycles.use_animated_seed = False
+        scene.cycles.blur_glossy = 0.75
+        for face in cube.data.polygons:
+            face.use_smooth = face.index % 2 == 0
+        cube.modifiers.new("RGB bevel", "BEVEL")
+        normal = cube.modifiers.new("RGB normals", "WEIGHTED_NORMAL")
+        normal.show_viewport = False
         scene.render.use_persistent_data = False
         scene.render.resolution_x = scene.render.resolution_y = 48
         scene.render.resolution_percentage = 100
@@ -1745,6 +1826,9 @@ class HeatsimTestService(BlenderService):
             [(o.name, o.hide_render, o.hide_viewport) for o in scene.objects if o.type == "LIGHT"],
             tuple((s.link, s.material) for s in cube.material_slots),
             tuple(p.material_index for p in cube.data.polygons),
+            scene.cycles.blur_glossy,
+            tuple(p.use_smooth for p in cube.data.polygons),
+            tuple((m.show_render, m.show_viewport) for m in cube.modifiers),
         )
         mutes = {name: entry[0].mute for name, entry in service._outputs.items()}
         cleanup_ok = True
@@ -1778,6 +1862,9 @@ class HeatsimTestService(BlenderService):
                 [(o.name, o.hide_render, o.hide_viewport) for o in scene.objects if o.type == "LIGHT"],
                 tuple((s.link, s.material) for s in cube.material_slots),
                 tuple(p.material_index for p in cube.data.polygons),
+                scene.cycles.blur_glossy,
+                tuple(p.use_smooth for p in cube.data.polygons),
+                tuple((m.show_render, m.show_viewport) for m in cube.modifiers),
             )
             if after != before:
                 cleanup_ok = False

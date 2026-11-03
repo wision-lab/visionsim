@@ -80,6 +80,13 @@ Keep the EXRs when quantitative values matter. The PNG is a visualization.
 Radiance is a separate render pass, so turning it off can save substantial
 render time while leaving the temperature solve and output available.
 
+During the radiance pass, VisionSim disables Cycles Filter Glossy, smooth mesh
+shading and weighted-normal modifiers. Reflections use the mesh's face normals
+to avoid artificial dark rims near edges; geometry modifiers such as bevels
+remain active. The original filtering, smoothing and modifier settings are
+restored afterward, including on failure. These overrides do not change the
+lighting bake or temperature solve.
+
 How the solve works
 -------------------
 

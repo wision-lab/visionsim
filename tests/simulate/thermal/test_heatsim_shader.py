@@ -98,6 +98,7 @@ def test_enter_restore_round_trip(executable):
 
     assert result["setup_preserved"], "thermal setup changed source material assignments"
     assert result["override_ok"], "view layers did not receive the gray-body material override"
+    assert result["thermal_defaults_ok"], "thermal filtering or smoothing overrides were not applied"
     assert result["restored"], "thermal pass did not restore scene state"
 
 
@@ -106,6 +107,7 @@ def test_assigned_reflections_preserve_shared_meshes_and_restore_failed_setup(ex
         result = call_service(client, "enter_restore", assigned=True)
     assert result["setup_preserved"], "source mesh materials or face indices changed"
     assert result["override_ok"], "glass, fabric and object-linked metal did not receive their respective shaders"
+    assert result["thermal_defaults_ok"], "thermal filtering or smoothing overrides were not applied"
     assert result["restored"], "material slots, empty shared mesh or Cycles settings were not restored"
 
 
@@ -120,6 +122,14 @@ def test_specular_reflection_blurs_with_roughness_and_preserves_equilibrium(exec
         # Individual rough-GGX samples fluctuate; the spatial mean must be unbiased.
         for key in ("centre_min", "centre_max"):
             assert abs(images[name][key] / result["ambient"] - 1) < 0.02, (name, images[name])
+
+
+def test_uniform_temperature_has_no_dark_rims_on_smoothed_mesh(executable, tmp_path):
+    """A constant-temperature surface in the same-temperature world must look uniform."""
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        result = call_service(client, "uniform_smoothed_surface", str(tmp_path))
+    assert result["max_radiance_error"] < 0.05, result
+    assert result["smoothing_restored"], "thermal rendering changed source mesh smoothing"
 
 
 def test_meshes_without_materials_get_a_temperature_carrying_surface(executable):
