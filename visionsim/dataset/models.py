@@ -70,6 +70,10 @@ class Data(BaseModel):
     """dimension that has been bitpacked"""
 
 
+# `bitpack_dim` describes the data rather than locating it, so it is not a data path.
+_DATA_PATH_FIELDS = tuple(field for field in Data.model_fields if field != "bitpack_dim")
+
+
 class Frame(Camera, Data):
     """Frame information"""
 
@@ -98,7 +102,12 @@ class Metadata(Camera):
 
     @model_validator(mode="after")
     def _validate_data_paths(self) -> Self:
-        per_frame_paths = {tuple(field for field in Data.model_fields if getattr(frame, field)) for frame in self.frames}
+        if not self.frames:
+            raise ValueError("Metadata must contain at least one frame.")
+
+        per_frame_paths = {
+            tuple(field for field in _DATA_PATH_FIELDS if getattr(frame, field) is not None) for frame in self.frames
+        }
         if len(per_frame_paths) != 1:
             raise ValueError("Some data paths are defined per-frame for some frames but not all.")
 
@@ -109,13 +118,13 @@ class Metadata(Camera):
     def _validate_intrinsics_usage(self) -> Self:
         # Check camera intrinsics are either per-frame or global, allow mixed usage such as global focal-length and per-frame distortion.
         per_frame_intrinsics = {
-            tuple(field for field in Camera.model_fields if getattr(frame, field)) for frame in self.frames
+            tuple(field for field in Camera.model_fields if getattr(frame, field) is not None) for frame in self.frames
         }
         if len(per_frame_intrinsics) != 1:
             raise ValueError("Some intrinsic fields are defined per-frame for some frames but not all.")
 
         per_frame_intrinsic_fields = set(per_frame_intrinsics.pop())
-        redefined_intrinsics = [field for field in per_frame_intrinsic_fields if getattr(self, field)]
+        redefined_intrinsics = [field for field in per_frame_intrinsic_fields if getattr(self, field) is not None]
 
         if "camera_model" in per_frame_intrinsic_fields:
             raise ValueError("Per-frame `camera_model` is not supported.")
@@ -209,8 +218,9 @@ class Metadata(Camera):
             with open(path, "w") as f:
                 f.write(self.model_dump_json(exclude_unset=True, indent=indent))
         elif Path(path).suffix.lower() == ".db":
-            data_type = next(iter(self.data_types))
-            schema._Metadata.from_dense_transforms(path=path, transforms=self.iter_dense_transforms(data_type=data_type))
+            schema._Metadata.from_dense_transforms(
+                path=path, transforms=self.iter_dense_transforms(data_type="file_path")
+            )
         else:
             raise ValueError(f"Can only save metadata as `.json` or `.db`, tried to save as `{Path(path).suffix}`.")
 
@@ -230,6 +240,9 @@ class Metadata(Camera):
             if isinstance(a, np.ndarray) or isinstance(b, np.ndarray):
                 return np.allclose(a, b)
             return a == b
+
+        if not transforms:
+            raise ValueError("Cannot build metadata from an empty transforms sequence.")
 
         global_fields = functools.reduce(
             lambda a, b: {k: a[k] for k in set(a.keys()) & set(b.keys()) if is_equal(a[k], b[k])}, transforms
@@ -259,7 +272,7 @@ class Metadata(Camera):
         """
         return cls(
             frames=[Frame.model_validate(f) for f in frames],
-            **Camera.model_validate(camera).model_dump(exclude_unset=True),
+            **({} if camera is None else Camera.model_validate(camera).model_dump(exclude_unset=True)),
         )
 
     def iter_dense_transforms(
@@ -281,8 +294,7 @@ class Metadata(Camera):
         if data_type:
             if data_type not in self.data_types:
                 raise ValueError(f"Data type {data_type} is not defined for every frame, or at all.")
-            exclude = set(Data.model_fields.keys())
-            exclude.remove(data_type)
+            exclude = self.data_types - {data_type}
         else:
             exclude = set()
 

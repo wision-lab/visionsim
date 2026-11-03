@@ -43,7 +43,8 @@ COLOR_MODES = Literal["BW", "RGB", "RGBA"]
 def _bytes_from_str(size: str | list[str]) -> int:
     # Based on https://stackoverflow.com/a/60708339
     if isinstance(size, list):
-        assert len(size) == 1
+        if len(size) != 1:
+            raise ValueError(f"Expected exactly one size, got {size}.")
         return _bytes_from_str(size[0])
     try:
         return int(size)
