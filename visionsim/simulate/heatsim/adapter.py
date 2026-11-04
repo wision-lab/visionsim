@@ -448,11 +448,14 @@ def _build_atlas_plan(scene: Any, sim_objects: list, cfg: dict, *, source_meshes
             * np.linalg.norm(np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0]), axis=1)
             / 1e6
         )
+        # Split normals/UV seams and loose vertices are not additional surface samples.
+        surface_samples = len(np.unique(verts[np.unique(faces[triangle_areas > 0])], axis=0))
+        geoms[obj.name] = (obj, verts, faces, surface_samples)
         coarse_face = bool(np.max(triangle_areas) * density > 4.0)
         use_atlas = (
             mode == "TEXEL"
             or coarse_face
-            or atlas.select_for_atlas(n, area_m2, density, writeback_possible=writeback_possible)
+            or atlas.select_for_atlas(surface_samples, area_m2, density, writeback_possible=writeback_possible)
         )
         _log.info(
             "thermal: %s uses %s samples (area %.3g m², %d evaluated vertices, "
@@ -481,7 +484,7 @@ def _build_atlas_plan(scene: Any, sim_objects: list, cfg: dict, *, source_meshes
 
     texels: dict[str, dict[str, np.ndarray]] = {}
     for name in areas:
-        obj, verts, faces, _n = geoms[name]
+        obj, verts, faces, surface_samples = geoms[name]
         tile = layout.tiles.get(name)
         if tile is None:
             raise RuntimeError(f"No thermal atlas tile was allocated for {name!r}")
@@ -527,11 +530,18 @@ def _build_atlas_plan(scene: Any, sim_objects: list, cfg: dict, *, source_meshes
         # UV packing can discard most of a dense object's available resolution.
         # A large triangle alone must not replace thousands of safe mesh samples
         # with a handful of covered atlas texels (e.g. upholstery with many charts).
-        if mode == "AUTO" and len(raster["xy"]) < len(verts) and writeback_safe[name]:
+        fallback_safe = writeback_safe[name]
+        if not len(raster["xy"]) and source_meshes is not None and obj.data is not source_meshes[name]:
+            # A private render mesh can hold its own vertex field even when the
+            # original, pre-modifier mesh cannot. Keep tiny surfaces in the solve.
+            fallback_safe = _vertex_writeback_matches(obj, verts)
+        if mode == "AUTO" and len(raster["xy"]) < surface_samples and fallback_safe:
             _log.info(
-                "thermal: %s retains %d VERTEX samples; its atlas would provide only %d covered texels",
+                "thermal: %s retains %d VERTEX samples (%d distinct surface positions); "
+                "its atlas would provide only %d covered texels",
                 name,
                 len(verts),
+                surface_samples,
                 len(raster["xy"]),
             )
             continue

@@ -51,6 +51,51 @@ def call_service(client: Any, name: str, *args: Any, **kwargs: Any) -> Any:
 class HeatsimTestService(BlenderService):
     """Composable primitives (``exposed_*``) that the heatsim tests assemble into scenarios."""
 
+    def exposed_empty_private_atlas(self) -> dict:
+        """A subpixel modified surface must retain a writable render-mesh field."""
+        from unittest.mock import patch
+
+        from visionsim.simulate.config import ThermalConfig
+        from visionsim.simulate.heatsim import adapter, atlas
+        from visionsim.simulate.heatsim.geometry import release_meshes
+
+        self._register()
+        self._clear()
+        mesh = bpy.data.meshes.new("Thin ribbon")
+        mesh.from_pydata([(0, 0, 0), (2, 0, 0), (2, 0.002, 0), (0, 0.002, 0)], [], [(0, 1, 2, 3)])
+        obj = bpy.data.objects.new("Thin ribbon", mesh)
+        bpy.context.collection.objects.link(obj)
+        obj.modifiers.new("Thickness", "SOLIDIFY").thickness = 0.0002
+        bpy.context.view_layer.update()
+        empty = {"xy": np.empty((0, 2), dtype=int)}
+        result = {}
+        with patch.object(atlas, "rasterize_tile", return_value=empty):
+            plan = adapter.build_atlas_plan(bpy.context.scene, [obj], {"render_domain": "AUTO"})
+            try:
+                result["uses_vertices"] = obj.name not in plan.texels
+                with adapter.use_atlas_geometry(bpy.context.scene, plan):
+                    count = len(obj.data.vertices)
+                    assert count != len(mesh.vertices)
+                    adapter.write_frame_attributes(
+                        bpy.context.scene,
+                        {obj.name: np.full((1, count), 301.0)},
+                        0,
+                        vars(ThermalConfig()),
+                        atlas_plan=plan,
+                    )
+                    values = [item.value for item in obj.data.attributes["sim_temperature"].data]
+                    result["field_matches_render_mesh"] = len(values) == count and all(v == 301 for v in values)
+            finally:
+                release_meshes(plan.meshes)
+            try:
+                adapter.build_atlas_plan(bpy.context.scene, [obj], {"render_domain": "TEXEL"})
+            except RuntimeError as exc:
+                result["forced_texel_rejects_empty"] = "no solve points" in str(exc)
+        result["source_preserved"] = (
+            obj.data == mesh and len(mesh.vertices) == 4 and "sim_temperature" not in mesh.attributes
+        )
+        return result
+
     def exposed_thin_chart_irradiance(self) -> dict:
         """A repaired narrow strip must retain the same uniform lighting as its neighbors."""
         from unittest.mock import patch

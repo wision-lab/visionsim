@@ -393,17 +393,47 @@ def test_build_atlas_plan_vertex_count_mismatch_no_longer_demotes(monkeypatch):
 
 def test_build_atlas_plan_excludes_dense_objects(monkeypatch):
     """An object whose native vertex density already exceeds the target keeps the vertex path."""
-    dense = _AtlasObj("dense", n_verts=50_000)
-    dense_geom = (
-        np.random.default_rng(0).uniform(0, 10, size=(50_000, 3)),
-        np.array([[0, 1, 2]], dtype=np.int32),
-        50_000,
-    )
+    side = 224
+    x, y = np.meshgrid(np.linspace(0, 10, side), np.linspace(0, 10, side))
+    verts = np.column_stack((x.ravel(), y.ravel(), np.zeros(side * side)))
+    a = np.arange(side * side).reshape(side, side)[:-1, :-1].ravel()
+    faces = np.concatenate((np.column_stack((a, a + 1, a + side)), np.column_stack((a + 1, a + side + 1, a + side))))
+    dense = _AtlasObj("dense", n_verts=len(verts))
+    dense_geom = (verts, faces, len(verts))
 
     monkeypatch.setattr(adapter, "_extract_geometry", lambda o: dense_geom)
 
     plan = adapter.build_atlas_plan(scene=None, sim_objects=[dense], cfg=_ATLAS_CFG)
     assert plan.texels == {}
+
+
+@pytest.mark.parametrize("extra_vertices", ["duplicates", "loose"])
+@pytest.mark.parametrize("density", [5.0, 50.0])
+def test_auto_counts_distinct_surface_positions_when_selecting_and_retaining_atlas(monkeypatch, extra_vertices, density):
+    """UV/normal splits and unused points must not displace a better-covered thermal atlas."""
+    verts, faces, _ = _big_plane_geom(side_mm=1000)
+    extras = verts[[0, 1, 2]] if extra_vertices == "duplicates" else np.arange(300).reshape(-1, 3) + 2000
+    verts = np.concatenate((verts, extras))
+    if extra_vertices == "duplicates":
+        faces[0] = [4, 5, 6]  # First triangle uses split vertices along the shared surface.
+    obj = _AtlasObj("split_mesh", len(verts))
+    monkeypatch.setattr(adapter, "_extract_geometry", lambda _obj: (verts, faces, len(verts)))
+    monkeypatch.setattr(adapter, "_prepare_bake_uv", lambda _obj: None)
+    captured = {}
+
+    def write(_obj, tile, atlas_size, _layer):
+        captured.update(tile=tile, size=atlas_size)
+
+    def read(_obj, _layer):
+        uv = verts[faces, :2] / 1000 * 0.125
+        tile = captured["tile"]
+        return (uv * tile.size + tile.offset) / captured["size"], np.zeros(len(faces), dtype=np.int32)
+
+    monkeypatch.setattr(adapter, "_write_atlas_uv_layer", write)
+    monkeypatch.setattr(adapter, "_extract_evaluated_face_uv_and_slots", read)
+    plan = adapter.build_atlas_plan(None, [obj], _ATLAS_CFG | {"atlas_texel_density": density})
+
+    assert 4 <= len(plan.texels[obj.name]["xy"]) < len(verts)
 
 
 @pytest.mark.parametrize(

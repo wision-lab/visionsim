@@ -13,8 +13,8 @@ import numpy as np
 
 CACHE_SCHEMA_VERSION = 2
 # Bump when bake/solver semantics change, even if the archive layout is unchanged.
-# Revision 14 shares validated bake UV addresses across worker processes.
-BAKE_PIPELINE_VERSION = 14
+# Revision 15 counts distinct surface positions for AUTO sample selection.
+BAKE_PIPELINE_VERSION = 15
 _log = logging.getLogger("rich")
 
 

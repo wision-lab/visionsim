@@ -258,8 +258,10 @@ mesh. The thermal UV layer is separate from the UVs used for RGB materials.
 If an atlas is required but its surface cannot be rasterized, or if vertex
 write-back is unsafe in ``VERTEX`` mode, VisionSim reports an error.
 
-If a UV layout covers fewer atlas texels than the mesh has safely addressable
-vertices, ``AUTO`` retains those vertices instead. This prevents dense surfaces
+If a UV layout covers fewer atlas texels than the mesh has distinct, safely
+addressable surface positions, ``AUTO`` retains vertices instead. Duplicate
+vertices at UV or normal seams and unused vertices do not increase that count.
+This prevents dense surfaces
 such as upholstery from losing most of their thermal resolution to empty space
 between UV charts. The lighting and albedo bakes reuse one geometry-dependent
 UV layout; their UVs remain separate from the authored RGB texture coordinates.
@@ -269,6 +271,8 @@ the original geometry and RGB UVs are preserved. If repair fails, rendering stop
 with an error instead of baking through an invalid layout.
 Saved scenes retain the validated layouts under ``<scene>.blend.heatsim/bake_uv``
 so independent workers use identical thermal sample addresses.
+If a tiny modified surface has no covered atlas texels, ``AUTO`` can retain the
+vertices of its private render mesh without writing onto the original mesh.
 
 .. list-table::
    :header-rows: 1

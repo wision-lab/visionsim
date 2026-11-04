@@ -22,6 +22,16 @@ from tests.simulate.thermal.heatsim_test_service import SERVICE_PATH, call_servi
 from visionsim.simulate.blender import BlenderClient
 
 
+def test_empty_atlas_uses_safe_private_render_vertices(executable):
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        result = call_service(client, "empty_private_atlas")
+
+    assert result["uses_vertices"]
+    assert result["field_matches_render_mesh"]
+    assert result["forced_texel_rejects_empty"]
+    assert result["source_preserved"]
+
+
 def test_ngons_keep_geometry_uvs_and_materials_aligned(executable):
     with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
         result = call_service(client, "ngon_geometry")
