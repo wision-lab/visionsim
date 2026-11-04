@@ -667,7 +667,9 @@ def enter_thermal_scene(scene: Any, *, radiance_scale: float, assignment: SceneA
                     obj.data.materials.append(thermal_mat)
                 for i, slot in enumerate(obj.material_slots):
                     source = original[i][1] if i < len(original) else None
-                    specular, roughness = assignment.reflection_for(source.name if source is not None else "")
+                    specular, roughness = assignment.reflection_for(
+                        source.name if source is not None else "", object_name=obj.name
+                    )
                     replacement = _build_gray_body_material(
                         radiance_scale, specular_fraction=specular, roughness=roughness
                     )

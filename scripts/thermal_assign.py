@@ -59,7 +59,7 @@ def collect_materials(scene: Any, bpy_data: Any) -> dict[str, Any]:
                 area[name] = area.get(name, 0.0) + face.area
 
     total_area = sum(area.values())
-    entries = []
+    entries: list[dict[str, Any]] = []
     for name, material in materials.items():
         tree = getattr(material, "node_tree", None)
         nodes = tree.nodes if tree else []
@@ -116,7 +116,10 @@ def check_assignments(inventory: dict[str, Any], sidecar: dict[str, Any]) -> tup
         return errors + ["materials must be an object"], warnings
     for name in sorted(names - entries.keys()):
         errors.append(f"missing material: {name!r}")
-    for name in sorted(entries.keys() - names):
+    scoped_names = {
+        f"{obj}::{material['name']}" for material in inventory["materials"] for obj in material.get("objects", [])
+    }
+    for name in sorted(entries.keys() - names - scoped_names):
         errors.append(f"material not in inventory: {name!r}")
 
     for name, entry in entries.items():

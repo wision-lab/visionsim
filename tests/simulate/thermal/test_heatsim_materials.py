@@ -326,6 +326,45 @@ class _Obj:
         self.material_slots = [type("S", (), {"material": type("M", (), {"name": n})()})() for n in slot_names]
 
 
+def test_object_specific_material_applies_to_heating_and_reflection_without_changing_shared_users(tmp_path):
+    sa = materials.load_assignments(
+        _write(
+            tmp_path,
+            {
+                "Shared": {"preset": "rubber"},
+                "TV::Shared": {"preset": "glass", "roughness_ir": 0.15},
+            },
+        )
+    )
+    for name, preset, reflection in (("TV", "glass", (0.95, 0.15)), ("Chair", "rubber", (0.0, 0.5))):
+        obj = _Obj(name, _Mesh(3, [_Poly([0, 1, 2], 0, 1.0)]), ["Shared"])
+        entry = sa.entry_for("Shared", object_name=name)
+        assert entry is not None and entry.preset == materials.PRESETS[preset]
+        assert sa.reflection_for("Shared", object_name=name) == reflection
+        for resolved in (
+            materials.resolve_vertex_materials(obj, sa, _FALLBACK),
+            materials.resolve_face_materials(obj, sa, _FALLBACK, np.array([0])),
+        ):
+            assert resolved is not None
+            assert np.allclose(resolved["eps"], materials.PRESETS[preset].emissivity_ir)
+            assert np.allclose(resolved["alpha"], materials.PRESETS[preset].alpha_mm2_s)
+    assert sa.reflection_for("Shared") == (0.0, 0.5)
+
+
+@pytest.mark.parametrize("object_name,valid", [("TV", True), ("Typo", False)])
+def test_assignment_checker_validates_object_scoped_materials(object_name, valid):
+    from scripts.thermal_assign import check_assignments
+
+    inventory = {"materials": [{"name": "Shared", "objects": ["TV", "Chair"]}]}
+    sidecar = {
+        "schema_version": 1,
+        "materials": {"Shared": {"preset": "rubber"}, f"{object_name}::Shared": {"preset": "glass"}},
+    }
+    errors, warnings = check_assignments(inventory, sidecar)
+    assert not warnings
+    assert (not errors) == valid
+
+
 def _stool():
     """Verts 0,1 pure wood; verts 4,5 pure steel; verts 2,3 on the seam.
 

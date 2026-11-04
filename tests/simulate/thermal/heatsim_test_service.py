@@ -2202,6 +2202,9 @@ class HeatsimTestService(BlenderService):
                     for mat, key in zip(materials, ("glass", "fabric", "aluminium_polished"))
                 },
             )
+            assignment.materials[f"{b.name}::{materials[0].name}"] = MaterialEntry(
+                PRESETS["rubber"], "FEM_PARTICIPANT", None, 1.0, ""
+            )
             bpy.ops.mesh.primitive_plane_add()
             empty = bpy.context.object
             empty_copy = empty.copy()
@@ -2250,6 +2253,7 @@ class HeatsimTestService(BlenderService):
                 override_ok &= all(v.material_override is None for v in scene.view_layers)
                 override_ok &= a.material_slots[0].material["heatsim_thermal_specular_fraction"] == 0.95
                 override_ok &= a.material_slots[1].material["heatsim_thermal_specular_fraction"] == 0.0
+                override_ok &= b.material_slots[0].material["heatsim_thermal_specular_fraction"] == 0.0
                 override_ok &= b.material_slots[1].material["heatsim_thermal_specular_fraction"] == 0.98
             else:
                 override_ok &= all(v.material_override == ts._build_gray_body_material(1.0) for v in scene.view_layers)

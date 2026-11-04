@@ -37,6 +37,15 @@ example physical values are in the :doc:`thermal rendering guide
 
     "Wood Panel": {"preset": "wood"}
 
+When objects share an RGB material but need different thermal properties, add
+an ``Object name::Material name`` entry alongside the shared material entry::
+
+    "Shared Black": {"preset": "rubber"},
+    "TV Screen::Shared Black": {"preset": "glass"}
+
+The object-specific entry replaces the shared entry for both heating properties
+and thermal reflections. Other objects keep the shared assignment.
+
 For a surface whose temperature you deliberately prescribe, add a source role
 and a temperature in Kelvin::
 

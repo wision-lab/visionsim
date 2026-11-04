@@ -277,13 +277,17 @@ class SceneAssignment:
     default_preset: ThermalPreset | None
     materials: dict[str, MaterialEntry]
 
-    def entry_for(self, material_name: str) -> MaterialEntry | None:
-        """Return the entry for *material_name*, or ``None`` if the sidecar omits it."""
+    def entry_for(self, material_name: str, *, object_name: str | None = None) -> MaterialEntry | None:
+        """Prefer ``object_name::material_name`` over the shared material entry."""
+        if object_name is not None:
+            entry = self.materials.get(f"{object_name}::{material_name}")
+            if entry is not None:
+                return entry
         return self.materials.get(material_name)
 
-    def reflection_for(self, material_name: str) -> tuple[float, float]:
+    def reflection_for(self, material_name: str, *, object_name: str | None = None) -> tuple[float, float]:
         """Render-only reflection controls, resolved per material slot."""
-        entry = self.entry_for(material_name)
+        entry = self.entry_for(material_name, object_name=object_name)
         preset = (entry.preset if entry is not None else None) or self.default_preset
         specular = preset.specular_fraction_ir if preset is not None else 0.0
         roughness = preset.roughness_ir if preset is not None else 0.5
@@ -457,7 +461,7 @@ def _slot_tables(obj: Any, assignment: SceneAssignment, fallback: dict[str, Any]
     fallback_T = float(fallback["initial_temperature_K"])
 
     for i, name in enumerate(names):
-        entry = assignment.entry_for(name) if name is not None else None
+        entry = assignment.entry_for(name, object_name=getattr(obj, "name", None)) if name is not None else None
         preset = entry.preset if entry is not None else None
         if preset is None:
             preset = assignment.default_preset  # sidecar-wide fallback, then the object-level one
