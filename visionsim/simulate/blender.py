@@ -1735,17 +1735,63 @@ class BlenderService(rpyc.Service):
             }
             atlas_plan = adapter.build_atlas_plan(self.scene, sim_objects, atlas_cfg)
 
-        history = adapter.solve_scene(
-            self.scene,
-            defaults=defaults,
-            solver_cfg=solver_cfg,
-            cache_root=cache_root,
-            assignment=assignment,
-            atlas_plan=atlas_plan,
-            source_digest=source_digest,
-            recompute=recompute,
-        )
+        try:
+            with adapter.use_atlas_geometry(self.scene, atlas_plan):
+                history = adapter.solve_scene(
+                    self.scene,
+                    defaults=defaults,
+                    solver_cfg=solver_cfg,
+                    cache_root=cache_root,
+                    assignment=assignment,
+                    atlas_plan=atlas_plan,
+                    source_digest=source_digest,
+                    recompute=recompute,
+                )
+        except Exception:
+            if atlas_plan is not None:
+                from visionsim.simulate.heatsim.geometry import release_meshes
+
+                release_meshes(atlas_plan.meshes)
+            raise
         return history, atlas_plan, cache_root
+
+    @staticmethod
+    def _thermal_atlas_reader_is_managed(material: Any, node: Any) -> bool:
+        """Allow replacement only for thermal readers, never ordinary RGB paths."""
+        from visionsim.simulate.heatsim.thermal_shader import _gray_body_material_name
+
+        scale = material.get("heatsim_thermal_radiance_scale")
+        if (
+            isinstance(scale, (int, float))
+            and material.name
+            == _gray_body_material_name(
+                scale,
+                material.get("heatsim_thermal_specular_fraction", 0.0),
+                material.get("heatsim_thermal_roughness", 0.5),
+            )
+            and "heatsim_thermal_default_emissivity" in material
+        ):
+            return True
+        visited = set()
+        pending = [node]
+        temperature_aov = False
+        while pending:
+            current = pending.pop()
+            if current.as_pointer() in visited:
+                continue
+            visited.add(current.as_pointer())
+            for output in current.outputs:
+                for link in output.links:
+                    target = link.to_node
+                    if target.type == "OUTPUT_MATERIAL":
+                        return False
+                    if target.type == "OUTPUT_AOV":
+                        temperature_aov |= (
+                            getattr(target, "aov_name", None) == "temperature" or target.name == "temperature"
+                        )
+                    else:
+                        pending.append(target)
+        return temperature_aov
 
     def _thermal_load_pack_atlas_image(self, atlas_path: Path) -> None:
         """Load the EXR :func:`adapter.write_atlas` wrote and (re)register it as the
@@ -1762,7 +1808,7 @@ class BlenderService(rpyc.Service):
             raise RuntimeError(f"Image {ATLAS_IMAGE_NAME!r} is user-owned; cannot replace it with a thermal atlas")
         bound_nodes = (
             [
-                node
+                (mat, node)
                 for mat in bpy.data.materials
                 if mat.use_nodes and mat.node_tree is not None
                 for node in mat.node_tree.nodes
@@ -1772,13 +1818,18 @@ class BlenderService(rpyc.Service):
             else []
         )
         if existing is not None:
+            # A generated atlas can later become an authored RGB texture. Only
+            # replace it when every reference is an identified thermal reader.
+            unknown_users = existing.users - int(existing.use_fake_user) > len(bound_nodes)
+            if unknown_users or any(not self._thermal_atlas_reader_is_managed(mat, node) for mat, node in bound_nodes):
+                raise RuntimeError(f"Image {ATLAS_IMAGE_NAME!r} has RGB or unrecognized users; cannot replace it safely")
             bpy.data.images.remove(existing)
         image = bpy.data.images.load(str(atlas_path))
         image.name = ATLAS_IMAGE_NAME
         image["heatsim_generated"] = True
         image.colorspace_settings.name = "Non-Color"
         image.pack()
-        for node in bound_nodes:
+        for _, node in bound_nodes:
             node.image = image
 
     @require_initialized_service
@@ -1791,7 +1842,7 @@ class BlenderService(rpyc.Service):
         density_kg_m3: float = ThermalConfig.density_kg_m3,
         specific_heat_J_kgK: float = ThermalConfig.specific_heat_J_kgK,
         emissivity: float = ThermalConfig.emissivity,
-        irradiance_scale: float = 100.0,
+        irradiance_scale: float = 1.0,
         sim_time_s: float = 1.0,
         timestep_s: float = 0.05,
         bake_samples: int = 1024,
@@ -1811,6 +1862,10 @@ class BlenderService(rpyc.Service):
         """Solve a fixed thermal field, write attributes or atlas, and set up the AOV."""
         from visionsim.simulate.heatsim import adapter, thermal_shader
 
+        if self._thermal_atlas_plan is not None:
+            from visionsim.simulate.heatsim.geometry import release_meshes
+
+            release_meshes(self._thermal_atlas_plan.meshes)
         self._thermal_atlas_plan = None
 
         # Cycles' persistent data keeps device-side scene state alive between frames, but
@@ -1844,48 +1899,49 @@ class BlenderService(rpyc.Service):
             recompute=recompute,
         )
         self._thermal_atlas_plan = atlas_plan
-        # Write the ambient fallback before per-object Dirichlet values. AOV setup
-        # follows atlas loading because its shader nodes reference the packed image.
-        thermal_shader.stamp_default_temperatures(self.scene, default_K=initial_temperature_K)
+        with adapter.use_atlas_geometry(self.scene, atlas_plan):
+            # Write the ambient fallback before per-object Dirichlet values. AOV setup
+            # follows atlas loading because its shader nodes reference the packed image.
+            thermal_shader.stamp_default_temperatures(self.scene, default_K=initial_temperature_K)
 
-        # Unset per-object properties resolve from these global defaults.
-        adapter.write_frame_attributes(
-            self.scene,
-            history,
-            -1,
-            {
-                "initial_temperature_K": initial_temperature_K,
-                "thermal_diffusivity_mm2_s": thermal_diffusivity_mm2_s,
-                "density_kg_m3": density_kg_m3,
-                "specific_heat_J_kgK": specific_heat_J_kgK,
-                "emissivity": emissivity,
-            },
-            assignment=self._thermal_assignment,
-            atlas_plan=atlas_plan,
-        )
-        # Global preview range over the solved scene (already pools TEXEL texel and VERTEX
-        # vertex temperatures, since `history` doesn't distinguish them). Stashed on the
-        # service: the caller's `include_thermal` is a separate RPC call on this instance.
-        self._thermal_temp_range = adapter.global_temperature_range(history, initial_temperature_K)
-
-        if atlas_plan is not None and atlas_plan.texels:
-            atlas_path = adapter.write_atlas(
+            # Unset per-object properties resolve from these global defaults.
+            adapter.write_frame_attributes(
+                self.scene,
                 history,
-                atlas_plan,
-                cache_root,
-                defaults={
+                -1,
+                {
                     "initial_temperature_K": initial_temperature_K,
                     "thermal_diffusivity_mm2_s": thermal_diffusivity_mm2_s,
                     "density_kg_m3": density_kg_m3,
                     "specific_heat_J_kgK": specific_heat_J_kgK,
                     "emissivity": emissivity,
-                    "irradiance_scale": irradiance_scale,
                 },
                 assignment=self._thermal_assignment,
+                atlas_plan=atlas_plan,
             )
-            self._thermal_load_pack_atlas_image(atlas_path)
+            # Global preview range over the solved scene (already pools TEXEL texel and VERTEX
+            # vertex temperatures, since `history` doesn't distinguish them). Stashed on the
+            # service: the caller's `include_thermal` is a separate RPC call on this instance.
+            self._thermal_temp_range = adapter.global_temperature_range(history, initial_temperature_K)
 
-        thermal_shader.setup_temperature_aov(self.scene, self.view_layer)
+            if atlas_plan is not None and atlas_plan.texels:
+                atlas_path = adapter.write_atlas(
+                    history,
+                    atlas_plan,
+                    cache_root,
+                    defaults={
+                        "initial_temperature_K": initial_temperature_K,
+                        "thermal_diffusivity_mm2_s": thermal_diffusivity_mm2_s,
+                        "density_kg_m3": density_kg_m3,
+                        "specific_heat_J_kgK": specific_heat_J_kgK,
+                        "emissivity": emissivity,
+                        "irradiance_scale": irradiance_scale,
+                    },
+                    assignment=self._thermal_assignment,
+                )
+                self._thermal_load_pack_atlas_image(atlas_path)
+
+            thermal_shader.setup_temperature_aov(self.scene, self.view_layer)
 
     @require_initialized_service
     def exposed_heatsim_solve(
@@ -1897,7 +1953,7 @@ class BlenderService(rpyc.Service):
         density_kg_m3: float = ThermalConfig.density_kg_m3,
         specific_heat_J_kgK: float = ThermalConfig.specific_heat_J_kgK,
         emissivity: float = ThermalConfig.emissivity,
-        irradiance_scale: float = 100.0,
+        irradiance_scale: float = 1.0,
         sim_time_s: float = 1.0,
         timestep_s: float = 0.05,
         bake_samples: int = 1024,
@@ -1916,7 +1972,7 @@ class BlenderService(rpyc.Service):
     ) -> None:
         """Solve and cache a fixed thermal field without render outputs, ignoring the render-output
         parameters it accepts for symmetry with :class:`ThermalConfig`."""
-        self._thermal_solve(
+        _, atlas_plan, _ = self._thermal_solve(
             initial_temperature_K=initial_temperature_K,
             thermal_diffusivity_mm2_s=thermal_diffusivity_mm2_s,
             density_kg_m3=density_kg_m3,
@@ -1936,6 +1992,10 @@ class BlenderService(rpyc.Service):
             atlas_texel_soft_max=atlas_texel_soft_max,
             recompute=recompute,
         )
+        if atlas_plan is not None:
+            from visionsim.simulate.heatsim.geometry import release_meshes
+
+            release_meshes(atlas_plan.meshes)
 
     @require_initialized_service
     def exposed_include_thermal(
@@ -1947,7 +2007,7 @@ class BlenderService(rpyc.Service):
         density_kg_m3: float = ThermalConfig.density_kg_m3,
         specific_heat_J_kgK: float = ThermalConfig.specific_heat_J_kgK,
         emissivity: float = ThermalConfig.emissivity,
-        irradiance_scale: float = 100.0,
+        irradiance_scale: float = 1.0,
         sim_time_s: float = 1.0,
         timestep_s: float = 0.05,
         bake_samples: int = 1024,
@@ -2005,6 +2065,10 @@ class BlenderService(rpyc.Service):
             )
 
         if radiance:
+            if assignments is not None:
+                from visionsim.simulate.heatsim.materials import load_assignments
+
+                self._thermal_assignment = load_assignments(Path(str(assignments)))
             # Emission is spectrally flat, so collapse to one channel; before 4.3 the RGB
             # fallback needs identical channels for `load_data(auto_collapse=True)`.
             radiance_bw = self.tree.nodes.new("CompositorNodeRGBToBW")
@@ -2556,7 +2620,12 @@ class BlenderService(rpyc.Service):
                 _thermal_armed = getattr(self, "_thermal_radiance", None)
                 _orig_mute: dict[str, bool] = {}
                 _thermal_state = None
+                _geometry_stack = ExitStack()
                 try:
+                    if self._thermal_atlas_plan is not None:
+                        from visionsim.simulate.heatsim import adapter
+
+                        _geometry_stack.enter_context(adapter.use_atlas_geometry(self.scene, self._thermal_atlas_plan))
                     if _thermal_armed:
                         from visionsim.simulate.heatsim import thermal_shader
 
@@ -2587,18 +2656,23 @@ class BlenderService(rpyc.Service):
                             _entry[0].mute = _sp != "thermal_radiance"
 
                         _thermal_state = thermal_shader.enter_thermal_scene(
-                            self.scene, radiance_scale=_thermal_armed["radiance_scale"]
+                            self.scene,
+                            radiance_scale=_thermal_armed["radiance_scale"],
+                            assignment=self._thermal_assignment,
                         )
                         bpy.ops.render.render(animation=False, write_still=False)
                 finally:
                     # Restore the thermal scene (if entered) and all node mute states to their
                     # pre-render originals, regardless of which render pass (if any) raised.
-                    if _thermal_state is not None:
-                        from visionsim.simulate.heatsim import thermal_shader
+                    try:
+                        if _thermal_state is not None:
+                            from visionsim.simulate.heatsim import thermal_shader
 
-                        thermal_shader.restore_scene(self.scene, _thermal_state)
-                    for _sp, _was_muted in _orig_mute.items():
-                        self._outputs[_sp][0].mute = _was_muted
+                            thermal_shader.restore_scene(self.scene, _thermal_state)
+                    finally:
+                        _geometry_stack.close()
+                        for _sp, _was_muted in _orig_mute.items():
+                            self._outputs[_sp][0].mute = _was_muted
 
         # Before Blender 5.0 file output nodes ALWAYS appended the frame number
         # to the filename making our path incorrect, here we rename the file.
@@ -2907,7 +2981,10 @@ class BlenderService(rpyc.Service):
         try:
             if self._persistent_data_before_thermal is not None:
                 self.scene.render.use_persistent_data = self._persistent_data_before_thermal
-            bpy.ops.wm.save_as_mainfile(filepath=str(path))
+            from visionsim.simulate.heatsim.adapter import use_atlas_geometry
+
+            with use_atlas_geometry(self.scene, self._thermal_atlas_plan):
+                bpy.ops.wm.save_as_mainfile(filepath=str(path))
         finally:
             self.scene.render.use_persistent_data = current_persistent
 

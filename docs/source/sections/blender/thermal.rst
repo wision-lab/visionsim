@@ -66,8 +66,10 @@ Reading the outputs
 ``thermal_radiance/``
     OpenEXR from a second Cycles render, single-channel on Blender 4.3 and newer
     and RGB (identical channels) before that. The thermal material
-    emits according to temperature and emissivity and diffusely reflects
-    thermal light from other surfaces and the world. The emission is
+    emits according to temperature and emissivity and reflects
+    thermal light from other surfaces and the world. Thermal material presets
+    choose diffuse or mixed diffuse/glossy reflection; glass is opaque here.
+    The emission is
     spectrally flat, so radiance is a scalar field. This is a broadband
     gray-body image, not a calibrated image for a particular infrared camera
     band. Its emission scale follows :math:`\varepsilon\sigma T^4`, where
@@ -80,6 +82,13 @@ Keep the EXRs when quantitative values matter. The PNG is a visualization.
 Radiance is a separate render pass, so turning it off can save substantial
 render time while leaving the temperature solve and output available.
 
+During the radiance pass, VisionSim disables Cycles Filter Glossy, smooth mesh
+shading and weighted-normal modifiers. Reflections use the mesh's face normals
+to avoid artificial dark rims near edges; geometry modifiers such as bevels
+remain active. The original filtering, smoothing and modifier settings are
+restored afterward, including on failure. These overrides do not change the
+lighting bake or temperature solve.
+
 How the solve works
 -------------------
 
@@ -87,6 +96,15 @@ The Cycles bake estimates incident light and visible albedo on each sampled
 surface. VisionSim approximates absorbed heat as irradiance times
 ``1 - albedo``; ``irradiance-scale`` then multiplies that input. This is a
 broadband approximation: visible colour is not measured infrared absorptivity.
+For directly connected opaque Principled materials, the incident-light bake uses
+a white diffuse receiver only at the initial measurement point. Every subsequent
+reflection uses the original material, including reflections within one object.
+The separate colour bake reads the original Base Color, including for metals.
+This receiver requires constant Alpha 1, Transmission 0 and Subsurface 0, with no
+volume shader. Linked opacity inputs, transparent or translucent materials, and
+complex shader graphs retain their previous bake behavior. The changes apply to
+temporary material copies; authored RGB materials are restored after each bake.
+
 The point-cloud solver spreads heat among nearby samples and includes radiative
 exchange with a fixed ambient reference. Its proximity-based conduction can
 also couple nearby, physically separate surfaces. It does not model air
@@ -174,7 +192,7 @@ the named material presets.
    * - ``emissivity``
      - ``0.9``
      - Surface emissivity from 0 to 1. It controls radiative exchange in the
-       solve and the mix of emitted versus diffusely reflected thermal light
+       solve and the mix of emitted versus reflected thermal light
        in the radiance image. Low-emissivity metal can appear closer to its
        surroundings than to its own temperature.
 
@@ -189,7 +207,7 @@ Heating and integration
      - Default
      - What it changes
    * - ``irradiance-scale``
-     - ``100.0``
+     - ``1.0``
      - Multiplies absorbed input from the lighting bake. Increase it for a
        stronger temperature rise from scene lighting. Unlike
        ``radiance-scale``, it changes the solved temperature.
@@ -239,6 +257,22 @@ want atlas sampling throughout a scene, or ``VERTEX`` when diagnosing a dense
 mesh. The thermal UV layer is separate from the UVs used for RGB materials.
 If an atlas is required but its surface cannot be rasterized, or if vertex
 write-back is unsafe in ``VERTEX`` mode, VisionSim reports an error.
+
+If a UV layout covers fewer atlas texels than the mesh has distinct, safely
+addressable surface positions, ``AUTO`` retains vertices instead. Duplicate
+vertices at UV or normal seams and unused vertices do not increase that count.
+This prevents dense surfaces
+such as upholstery from losing most of their thermal resolution to empty space
+between UV charts. The lighting and albedo bakes reuse one geometry-dependent
+UV layout; their UVs remain separate from the authored RGB texture coordinates.
+Generated layouts are checked for overlaps, collapsed faces, and excessive
+stretching. Invalid charts are unwrapped, split, and repacked on a private mesh;
+the original geometry and RGB UVs are preserved. If repair fails, rendering stops
+with an error instead of baking through an invalid layout.
+Saved scenes retain the validated layouts under ``<scene>.blend.heatsim/bake_uv``
+so independent workers use identical thermal sample addresses.
+If a tiny modified surface has no covered atlas texels, ``AUTO`` can retain the
+vertices of its private render mesh without writing onto the original mesh.
 
 .. list-table::
    :header-rows: 1
@@ -336,7 +370,7 @@ common starting points are shown below. The full set of preset names is
 ``ceramic``, ``concrete``, ``copper``, ``drywall``, ``fabric``, ``foliage``,
 ``food``, ``glass``, ``iron``, ``leather``, ``li_ion``, ``marble``,
 ``metal_painted``, ``paper``, ``plaster``, ``polystyrene``, ``porcelain``,
-``pvc``, ``rubber``, ``skin``, ``stainless_steel``, ``steel``, ``water`` and
+``pvc``, ``rubber``, ``skin``, ``stainless_steel``, ``steel``, ``tile_glazed``, ``water`` and
 ``wood``. Their values are defined in
 :mod:`visionsim.simulate.heatsim.materials`. They describe generic materials
 rather than a measured piece of furniture or appliance. A coating can change

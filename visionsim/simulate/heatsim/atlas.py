@@ -196,7 +196,12 @@ def _face_normal(v0: np.ndarray, v1: np.ndarray, v2: np.ndarray) -> np.ndarray:
 
 
 def rasterize_tile(
-    verts_mm: np.ndarray, faces: np.ndarray, loop_uv: np.ndarray, tile_size: tuple[int, int]
+    verts_mm: np.ndarray,
+    faces: np.ndarray,
+    loop_uv: np.ndarray,
+    tile_size: tuple[int, int],
+    *,
+    reject_overlaps: bool = False,
 ) -> dict[str, np.ndarray]:
     """Rasterize triangles (given per-triangle-corner UVs already in tile-local [0,1] space).
 
@@ -204,6 +209,7 @@ def rasterize_tile(
     abutting triangles never double-claim a boundary texel. Triangles are processed in `faces`
     order and earlier ones win: once a texel is covered it is never revisited. Zero-UV-area
     (degenerate) triangles are skipped and contribute no texels (and no NaNs).
+    ``reject_overlaps`` rejects shared addresses with conflicting positions or normals.
 
     Returns arrays for covered texels only: ``xy`` (K,2) int tile-local texel indices,
     ``position_mm`` (K,3) barycentric-interpolated 3D positions, ``normal`` (K,3) unit face
@@ -211,6 +217,8 @@ def rasterize_tile(
     """
     width, height = tile_size
     covered: np.ndarray = np.zeros((height, width), dtype=bool)
+    positions_at = np.empty((height, width, 3)) if reject_overlaps else None
+    normals_at = np.empty((height, width, 3)) if reject_overlaps else None
 
     xy_parts: list[np.ndarray] = []
     pos_parts: list[np.ndarray] = []
@@ -267,11 +275,6 @@ def rasterize_tile(
         gxs: np.ndarray = gx + x_min
         gys: np.ndarray = gy + y_min
         keep = ~covered[gys, gxs]
-        if not keep.any():
-            continue
-        gxs, gys, gy, gx = gxs[keep], gys[keep], gy[keep], gx[keep]
-        covered[gys, gxs] = True
-
         wa = w_a[gy, gx] / area2
         wb = w_b[gy, gx] / area2
         wc = w_c[gy, gx] / area2
@@ -279,6 +282,20 @@ def rasterize_tile(
             verts_mm[ia] * wa[:, np.newaxis] + verts_mm[ib] * wb[:, np.newaxis] + verts_mm[ic] * wc[:, np.newaxis]
         )
         normal = _face_normal(verts_mm[i0], verts_mm[i1], verts_mm[i2])
+
+        if positions_at is not None and normals_at is not None:
+            used = ~keep
+            if used.any():
+                distance = np.linalg.norm(positions_at[gys[used], gxs[used]] - positions[used], axis=1)
+                agreement = normals_at[gys[used], gxs[used]] @ normal
+                if np.any((distance > 1.0) | (agreement < 0.999)):
+                    raise ValueError("Thermal UV overlap maps one texel to different surface positions or normals")
+            positions_at[gys[keep], gxs[keep]] = positions[keep]
+            normals_at[gys[keep], gxs[keep]] = normal
+        if not keep.any():
+            continue
+        gxs, gys, positions = gxs[keep], gys[keep], positions[keep]
+        covered[gys, gxs] = True
 
         xy_parts.append(np.stack([gxs, gys], axis=1).astype(np.int64))
         pos_parts.append(positions)

@@ -4,9 +4,11 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import scipy.sparse as sp
 
 from visionsim.simulate.heatsim import laplacian
-from visionsim.simulate.heatsim.solver import HeatSimFEM
+from visionsim.simulate.heatsim.physics import AMBIENT_TEMPERATURE_K, STEFAN_BOLTZMANN_MM
+from visionsim.simulate.heatsim.solver import HeatSimFEM, scipy_to_torch_sparse
 
 # Minimal surrogates for HeatSimFEM's two positional param objects: gen_params
 # (.device, .RHO, .C, .K, .NUM_FRAME_DELTA) and sim_params (.sim_radiation,
@@ -97,3 +99,66 @@ def test_only_robust_point_cloud_method_is_accepted():
         HeatSimFEM(gen_params, sim_params, laplacian_domain="MESH")
     with pytest.raises(ValueError, match="robust"):
         HeatSimFEM(gen_params, sim_params, laplacian_backend="IGL")
+
+
+@pytest.mark.parametrize("initial_K", [295.0, 280.0])
+def test_small_heating_is_resolved_across_widely_different_mass_scales(initial_K):
+    """An absolute-Kelvin residual must not bury weak flux on dense/sparse mixed samples."""
+    n = 4
+    gen, sim = _make_params(n)
+    fem = HeatSimFEM(gen, sim)
+    mass = scipy_to_torch_sparse(sp.diags([1e-4, 1.0, 1e4, 1e8]), "cpu")
+    lap = scipy_to_torch_sparse(sp.coo_matrix((n, n)), "cpu")
+    rho = np.full(n, gen.RHO)
+    heat = np.full(n, gen.C)
+    eps = np.full(n, 0.9)
+    flux = 1e-6  # 1 W/m^2
+    steps = 10
+    result = fem._simulate_heat_torch(
+        np.full(n, initial_K),
+        lap,
+        mass,
+        mass,
+        np.ones(n),
+        np.full(n, flux),
+        None,
+        rho,
+        heat,
+        eps,
+        _DT,
+        steps,
+    )
+    ambient = AMBIENT_TEMPERATURE_K
+    radiation = 4 * STEFAN_BOLTZMANN_MM * eps[0] * ambient**3 / (rho[0] * heat[0])
+    theta = initial_K - ambient
+    expected = [initial_K]
+    for _ in range(steps):
+        theta = (theta + _DT * flux / (rho[0] * heat[0])) / (1 + _DT * radiation)
+        expected.append(theta + ambient)
+    tolerance = 2e-7 if initial_K == ambient else 2e-5
+    np.testing.assert_allclose(
+        result, np.broadcast_to(np.asarray(expected)[:, None], result.shape), atol=tolerance, rtol=0
+    )
+
+
+def test_ambient_without_heating_is_preserved_exactly():
+    n = 4
+    gen, sim = _make_params(n)
+    fem = HeatSimFEM(gen, sim)
+    mass = scipy_to_torch_sparse(sp.diags([1e-4, 1.0, 1e4, 1e8]), "cpu")
+    lap = scipy_to_torch_sparse(sp.coo_matrix((n, n)), "cpu")
+    result = fem._simulate_heat_torch(
+        np.full(n, AMBIENT_TEMPERATURE_K),
+        lap,
+        mass,
+        mass,
+        np.ones(n),
+        np.zeros(n),
+        None,
+        np.full(n, gen.RHO),
+        np.full(n, gen.C),
+        np.full(n, 0.9),
+        _DT,
+        10,
+    )
+    assert np.all(result == AMBIENT_TEMPERATURE_K)
