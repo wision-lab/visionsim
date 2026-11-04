@@ -70,6 +70,20 @@ def test_bake_uvs_are_reused_until_geometry_changes(executable):
     assert result["source_uv_unchanged"]
 
 
+def test_saved_scene_workers_reuse_identical_bake_uv_addresses(executable, tmp_path):
+    scene = str(tmp_path / "uv-source.blend")
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        call_service(client, "build_scene", "grid", "Surface", subdivisions=4, lit=False)
+        call_service(client, "save_scene", scene)
+        first = call_service(client, "cached_bake_uv", scene, "Surface")
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        second = call_service(client, "cached_bake_uv", scene, "Surface", forbid_projection=True)
+    assert first["saved"] and second["saved"]
+    assert first["rgb_preserved"] and second["rgb_preserved"]
+    assert first["signature"] == second["signature"]
+    assert first["uv"] == second["uv"]
+
+
 def test_bake_uvs_use_physical_dimensions_independent_of_rgb_image_aspect(executable):
     with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
         result = call_service(client, "bake_uv_physical_layout")

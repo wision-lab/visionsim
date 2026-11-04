@@ -983,6 +983,30 @@ class HeatsimTestService(BlenderService):
             "texels": sorted(plan.texels),
         }
 
+    def exposed_cached_bake_uv(self, scene_path: str, object_name: str, forbid_projection: bool = False) -> dict:
+        """Reopen an unprepared source and verify layout reuse across Blender processes."""
+        from unittest.mock import patch
+
+        from visionsim.simulate.heatsim import irradiance
+        from visionsim.simulate.heatsim.names import BAKE_UV_LAYER_NAME
+
+        bpy.ops.wm.open_mainfile(filepath=scene_path)
+        obj = bpy.data.objects[object_name]
+        rgb = obj.data.uv_layers.active
+        original = tuple(tuple(loop.uv) for loop in rgb.data)
+        if forbid_projection:
+            with patch.object(irradiance, "repair_bake_uv", side_effect=AssertionError("regenerated cached UVs")):
+                irradiance.prepare_object_bake_uv(obj)
+        else:
+            irradiance.prepare_object_bake_uv(obj)
+        signature = obj.data["heatsim_bake_uv_signature"]
+        return {
+            "uv": [list(loop.uv) for loop in obj.data.uv_layers[BAKE_UV_LAYER_NAME].data],
+            "signature": signature,
+            "saved": (Path(scene_path + ".heatsim") / "bake_uv" / f"{signature}.npz").is_file(),
+            "rgb_preserved": tuple(tuple(loop.uv) for loop in rgb.data) == original,
+        }
+
     def exposed_bake_uv_reuse(self, object_name: str = "ThermalPlane") -> dict:
         """Verify shared bake coordinates survive repeat preparation and track geometry edits."""
         from visionsim.simulate.heatsim import irradiance

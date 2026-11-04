@@ -9,10 +9,12 @@ import warnings
 from contextlib import ExitStack
 from dataclasses import dataclass
 from functools import wraps
+from pathlib import Path
 
 import bpy  # type: ignore[import-not-found]
 import numpy as np
 
+from . import cache
 from .material_slots import MaterialSlotState, restore_material_slots, set_material_override, snapshot_material_slots
 from .names import ALBEDO_LAYER_NAME, BAKE_UV_LAYER_NAME, IRRADIANCE_LAYER_NAME
 from .physics import CYCLES_LOUT_TO_IRRADIANCE
@@ -178,7 +180,8 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
     # Repacking between the atlas rasterization, lighting bake and albedo bake
     # invalidates their shared UV addresses. Include scale/shear inherited from parents.
     transform = obj.matrix_world.to_3x3().to_4x4()
-    signature = hashlib.sha256(b"visionsim.bake-uv.v7.validated-layouts")
+    signature = hashlib.sha256(b"visionsim.bake-uv.v8.shared-layouts")
+    signature.update(bpy.app.build_hash)
     signature.update(np.asarray(transform, dtype=np.float64).tobytes())
     for collection, attribute, width, dtype in (
         (mesh.vertices, "co", 3, np.float32),
@@ -189,6 +192,14 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
         collection.foreach_get(attribute, values)
         signature.update(values.tobytes())
     layout_key = signature.hexdigest()
+    blend_path = str(getattr(bpy.data, "filepath", ""))
+    uv_cache = Path(blend_path + ".heatsim") / "bake_uv" / f"{layout_key}.npz" if blend_path else None
+    if uv_cache is not None and (cached_uv := cache.read_bake_uv(uv_cache, layout_key, len(mesh.loops))) is not None:
+        layer = mesh.uv_layers.get(BAKE_UV_LAYER_NAME)
+        if layer is None:
+            layer = mesh.uv_layers.new(name=BAKE_UV_LAYER_NAME)
+        layer.data.foreach_set("uv", cached_uv)
+        mesh["heatsim_bake_uv_signature"] = layout_key
     already_prepared = BAKE_UV_LAYER_NAME in mesh.uv_layers and mesh.get("heatsim_bake_uv_signature") == layout_key
 
     if already_prepared:
@@ -244,6 +255,8 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
         bpy.ops.object.mode_set(mode="OBJECT")
         uv: np.ndarray = np.empty(len(mesh.loops) * 2, dtype=np.float32)
         projection_mesh.uv_layers[BAKE_UV_LAYER_NAME].data.foreach_get("uv", uv)
+        if uv_cache is not None:
+            uv = cache.publish_bake_uv(uv_cache, layout_key, uv)
         if BAKE_UV_LAYER_NAME not in mesh.uv_layers:
             mesh.uv_layers.new(name=BAKE_UV_LAYER_NAME)
         mesh.uv_layers[BAKE_UV_LAYER_NAME].data.foreach_set("uv", uv)

@@ -267,6 +267,8 @@ Generated layouts are checked for overlaps, collapsed faces, and excessive
 stretching. Invalid charts are unwrapped, split, and repacked on a private mesh;
 the original geometry and RGB UVs are preserved. If repair fails, rendering stops
 with an error instead of baking through an invalid layout.
+Saved scenes retain the validated layouts under ``<scene>.blend.heatsim/bake_uv``
+so independent workers use identical thermal sample addresses.
 
 .. list-table::
    :header-rows: 1

@@ -4,10 +4,64 @@ import json
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from tests.simulate.thermal.heatsim_test_service import SERVICE_PATH, call_service
 from visionsim.simulate.blender import BlenderClient
 from visionsim.simulate.heatsim import cache
+
+
+def test_bake_uv_cache_keeps_the_first_published_addresses(tmp_path):
+    path = tmp_path / "uv.npz"
+    uv = np.array([[0.1, 0.2], [0.8, 0.2], [0.1, 0.9]], dtype=np.float32)
+    assert cache.read_bake_uv(path, "geometry", 3) is None
+    np.testing.assert_array_equal(cache.publish_bake_uv(path, "geometry", uv), uv.ravel())
+    np.testing.assert_array_equal(cache.publish_bake_uv(path, "geometry", uv[::-1]), uv.ravel())
+    np.testing.assert_array_equal(cache.read_bake_uv(path, "geometry", 3), uv.ravel())
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["uv.npz"]
+
+
+def test_bake_uv_cache_competing_writers_use_the_same_complete_layout(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    path = tmp_path / "uv.npz"
+    barrier = Barrier(4)
+    candidates = [np.array([[v, v], [v + 0.1, v], [v, v + 0.1]], dtype=np.float32) for v in [0.1, 0.2, 0.3, 0.4]]
+
+    def publish(uv):
+        barrier.wait()
+        return cache.publish_bake_uv(path, "geometry", uv)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(publish, candidates))
+    assert any(np.array_equal(results[0], uv.ravel()) for uv in candidates)
+    for result in results:
+        np.testing.assert_array_equal(result, results[0])
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["uv.npz"]
+
+
+@pytest.mark.parametrize("kind", ["signature", "count", "dtype", "nonfinite", "bounds", "truncated"])
+def test_bake_uv_cache_rejects_stale_or_damaged_layouts(tmp_path, kind):
+    path = tmp_path / "uv.npz"
+    uv = np.full((3, 2), 0.5, dtype=np.float32)
+    signature = "different" if kind == "signature" else "geometry"
+    if kind == "dtype":
+        uv = uv.astype(np.float64)
+    if kind in {"nonfinite", "bounds"}:
+        uv[0, 0] = np.nan if kind == "nonfinite" else 1.1
+    np.savez(path, signature=np.asarray(signature), uv=uv)
+    if kind == "truncated":
+        path.write_bytes(path.read_bytes()[:100])
+    with pytest.raises(ValueError, match="Invalid thermal UV cache"):
+        cache.read_bake_uv(path, "geometry", 4 if kind == "count" else 3)
+
+
+def test_bake_uv_cache_does_not_publish_invalid_coordinates(tmp_path):
+    path = tmp_path / "uv.npz"
+    with pytest.raises(ValueError, match="Invalid thermal UV cache"):
+        cache.publish_bake_uv(path, "geometry", np.full((3, 2), np.nan, dtype=np.float32))
+    assert not list(tmp_path.iterdir())
 
 
 def test_cache_roundtrip_and_miss(tmp_path):
