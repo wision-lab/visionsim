@@ -71,9 +71,26 @@ def test_opaque_receiver_measures_black_and_metal_and_preserves_other_surfaces(e
     assert result["failure_restored"], "private material resources leaked after an injected bake failure"
 
 
-def test_opaque_receiver_preserves_same_object_indirect_reflections(executable):
+def test_layered_opaque_receiver_measures_incident_light_without_changing_albedo(executable):
     with BlenderClient.spawn(executable=executable, timeout=120, service=SERVICE_PATH) as client:
-        result = call_service(client, "opaque_receiver_concave")
+        result = call_service(client, "opaque_receiver_fixture", layered=True)
+
+    assert result["eligible"] == []  # The albedo path retains its direct-Principled rule.
+    assert result["incident_eligible"] == ["layered_add", "layered_mix", "layered_nested", "layered_glossy"]
+    for kind, values in result["patches"].items():
+        if kind in result["incident_eligible"]:
+            assert values["incident"] == pytest.approx(math.pi, rel=0.02), (kind, values)
+        else:
+            assert values["incident"] == pytest.approx(values["old_incident"], abs=1e-6), (kind, values)
+        assert values["albedo"] == pytest.approx(values["old_albedo"], abs=1e-6), (kind, values)
+    assert result["restored"], "layered source materials or UV state changed"
+    assert result["failure_restored"], "private resources leaked after a failed layered bake"
+
+
+@pytest.mark.parametrize("layered", [False, True])
+def test_opaque_receiver_preserves_same_object_indirect_reflections(executable, layered):
+    with BlenderClient.spawn(executable=executable, timeout=120, service=SERVICE_PATH) as client:
+        result = call_service(client, "opaque_receiver_concave", layered=layered)
 
     assert result["measured"] == pytest.approx(result["expected"], rel=0.02), result
     assert result["global_white"] > 1.8 * result["measured"], result

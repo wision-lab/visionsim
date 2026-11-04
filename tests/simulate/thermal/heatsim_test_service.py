@@ -620,7 +620,7 @@ class HeatsimTestService(BlenderService):
             "albedo_n": None if albedo is None else len(albedo),
         }
 
-    def exposed_opaque_receiver_fixture(self) -> dict:
+    def exposed_opaque_receiver_fixture(self, layered: bool = False) -> dict:
         """Bake mixed-material coplanar patches under known uniform radiance 1."""
         from unittest.mock import patch
 
@@ -648,6 +648,21 @@ class HeatsimTestService(BlenderService):
             "translucent",
             "volume",
         )
+        if layered:
+            kinds = (
+                "layered_add",
+                "layered_mix",
+                "layered_nested",
+                "layered_glossy",
+                "layered_transparent",
+                "layered_transmission",
+                "layered_subsurface",
+                "layered_linked_alpha",
+                "layered_normal_mismatch",
+                "layered_missing",
+                "layered_unknown",
+                "layered_volume",
+            )
         vertices, faces, materials = [], [], []
         for i, kind in enumerate(kinds):
             x = i * 3
@@ -684,6 +699,41 @@ class HeatsimTestService(BlenderService):
                 links.new(nodes.new("ShaderNodeBsdfTranslucent").outputs[0], output.inputs["Surface"])
             elif kind == "volume":
                 links.new(nodes.new("ShaderNodeVolumeAbsorption").outputs[0], output.inputs["Volume"])
+            if layered:
+                second = nodes.new("ShaderNodeBsdfGlossy")
+                second.inputs["Color"].default_value = (0.3, 0.3, 0.3, 1)
+                combine = nodes.new("ShaderNodeMixShader" if kind == "layered_mix" else "ShaderNodeAddShader")
+                branches = [socket for socket in combine.inputs if socket.type == "SHADER"]
+                links.new(surface.outputs[0], branches[0])
+                links.new(second.outputs[0], branches[1])
+                links.new(combine.outputs[0], output.inputs["Surface"])
+                if kind == "layered_add":
+                    bump = nodes.new("ShaderNodeBump")
+                    for branch in (surface, second):
+                        links.new(bump.outputs["Normal"], branch.inputs["Normal"])
+                elif kind == "layered_nested":
+                    mix = nodes.new("ShaderNodeMixShader")
+                    links.new(combine.outputs[0], mix.inputs[1])
+                    links.new(nodes.new("ShaderNodeBsdfDiffuse").outputs[0], mix.inputs[2])
+                    links.new(mix.outputs[0], output.inputs["Surface"])
+                elif kind == "layered_glossy":
+                    links.new(second.outputs[0], output.inputs["Surface"])
+                elif kind == "layered_transparent":
+                    links.new(nodes.new("ShaderNodeBsdfTransparent").outputs[0], branches[1])
+                elif kind in {"layered_transmission", "layered_subsurface"}:
+                    surface.inputs[socket_names[kind.removeprefix("layered_")]].default_value = 0.5
+                elif kind == "layered_linked_alpha":
+                    value = nodes.new("ShaderNodeValue")
+                    value.outputs[0].default_value = 1
+                    links.new(value.outputs[0], surface.inputs["Alpha"])
+                elif kind == "layered_normal_mismatch":
+                    links.new(nodes.new("ShaderNodeNewGeometry").outputs["Normal"], second.inputs["Normal"])
+                elif kind == "layered_missing":
+                    links.remove(branches[1].links[0])
+                elif kind == "layered_unknown":
+                    links.new(nodes.new("ShaderNodeEmission").outputs[0], branches[1])
+                elif kind == "layered_volume":
+                    links.new(nodes.new("ShaderNodeVolumeAbsorption").outputs[0], output.inputs["Volume"])
             materials.append(mat)
         mesh = bpy.data.meshes.new("MixedReceiver")
         mesh.from_pydata(vertices, [], faces)
@@ -716,6 +766,7 @@ class HeatsimTestService(BlenderService):
 
         before = snapshot()
         eligible = [kind for kind, mat in zip(kinds, materials) if irradiance._opaque_principled_surface(mat)]
+        incident_eligible = [kind for kind, mat in zip(kinds, materials) if irradiance._opaque_incident_surface(mat)]
         uv = mesh.uv_layers[BAKE_UV_LAYER_NAME]
         centers = np.array([np.mean([uv.data[i].uv[:] for i in p.loop_indices], axis=0) for p in mesh.polygons])
 
@@ -736,6 +787,7 @@ class HeatsimTestService(BlenderService):
             failed = irradiance.bake_irradiance_map(scene, obj, 32, samples=4)
         return {
             "eligible": eligible,
+            "incident_eligible": incident_eligible,
             "patches": {
                 kind: {
                     "incident": float(flux[i]),
@@ -749,7 +801,7 @@ class HeatsimTestService(BlenderService):
             "failure_restored": failed is None and snapshot() == before,
         }
 
-    def exposed_opaque_receiver_concave(self) -> dict:
+    def exposed_opaque_receiver_concave(self, layered: bool = False) -> dict:
         """One black mesh forms both a bowl and its center measurement patch."""
         import math
 
@@ -783,6 +835,14 @@ class HeatsimTestService(BlenderService):
         surface = mat.node_tree.nodes.get("Principled BSDF")
         surface.inputs["Base Color"].default_value = (0, 0, 0, 1)
         (surface.inputs.get("Specular IOR Level") or surface.inputs["Specular"]).default_value = 0
+        if layered:
+            nodes, links = mat.node_tree.nodes, mat.node_tree.links
+            glossy = nodes.new("ShaderNodeBsdfGlossy")
+            glossy.inputs["Color"].default_value = (0, 0, 0, 1)
+            add = nodes.new("ShaderNodeAddShader")
+            links.new(surface.outputs[0], add.inputs[0])
+            links.new(glossy.outputs[0], add.inputs[1])
+            links.new(add.outputs[0], nodes.get("Material Output").inputs["Surface"])
         mesh.materials.append(mat)
         # Let production build/cache its UVs, then devote the atlas to the tiny
         # patch. Degenerate wall UVs still leave the walls in light transport.

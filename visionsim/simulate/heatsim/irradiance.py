@@ -497,18 +497,10 @@ def _install_bake_uv_material_overrides(objects: list[bpy.types.Object], uv_snap
     return state
 
 
-def _opaque_principled_surface(mat):
-    """Recognize only directly connected, provably opaque Principled surfaces.
-
-    Linked opacity inputs and complex graphs are deliberately left unchanged;
-    evaluating their transparency at a few sample points would not prove opacity.
-    """
-    output = mat.node_tree.get_output_node("CYCLES")
-    if output is None or output.inputs["Volume"].is_linked or not output.inputs["Surface"].is_linked:
-        return None
-    surface = output.inputs["Surface"].links[0].from_node
+def _is_opaque_principled(surface):
+    """Require constant opacity inputs; sampled textures cannot prove opacity."""
     if surface.type != "BSDF_PRINCIPLED":
-        return None
+        return False
     for names, expected in (
         (("Alpha",), 1.0),
         (("Transmission Weight", "Transmission"), 0.0),
@@ -516,16 +508,52 @@ def _opaque_principled_surface(mat):
     ):
         socket = next((surface.inputs.get(name) for name in names if surface.inputs.get(name) is not None), None)
         if socket is None or socket.is_linked or socket.default_value != expected:
-            return None
+            return False
     thin_wall = surface.inputs.get("Thin Wall")
-    if thin_wall is not None and (thin_wall.is_linked or thin_wall.default_value):
+    return thin_wall is None or not (thin_wall.is_linked or thin_wall.default_value)
+
+
+def _opaque_principled_surface(mat):
+    """Recognize a direct opaque Principled surface for Base Color extraction."""
+    output = mat.node_tree.get_output_node("CYCLES")
+    if output is None or output.inputs["Volume"].is_linked or not output.inputs["Surface"].is_linked:
         return None
-    return output, surface
+    surface = output.inputs["Surface"].links[0].from_node
+    return (output, surface) if _is_opaque_principled(surface) else None
+
+
+def _opaque_incident_surface(mat):
+    """Recognize opaque Add/Mix branches sharing one receiver normal."""
+    output = mat.node_tree.get_output_node("CYCLES")
+    if output is None or output.inputs["Volume"].is_linked or not output.inputs["Surface"].is_linked:
+        return None
+    leaves = []
+
+    def visit(node, path):
+        if node in path:
+            return False
+        if node.type in {"ADD_SHADER", "MIX_SHADER"}:
+            branches = [socket for socket in node.inputs if socket.type == "SHADER"]
+            return len(branches) == 2 and all(
+                socket.is_linked and visit(socket.links[0].from_node, path | {node}) for socket in branches
+            )
+        if node.type not in {"BSDF_DIFFUSE", "BSDF_GLOSSY", "BSDF_ANISOTROPIC"} and not _is_opaque_principled(node):
+            return False
+        leaves.append(node)
+        return True
+
+    if not visit(output.inputs["Surface"].links[0].from_node, set()):
+        return None
+    normals = [node.inputs["Normal"] for node in leaves]
+    keys = [socket.links[0].from_socket if socket.is_linked else tuple(socket.default_value) for socket in normals]
+    if any(key != keys[0] for key in keys[1:]):
+        return None
+    return output, leaves[0]
 
 
 def _prepare_opaque_bake_material(mat, *, incident: bool) -> None:
     """Modify a private bake copy, retaining the authored shader on later hits."""
-    opaque = _opaque_principled_surface(mat)
+    opaque = _opaque_incident_surface(mat) if incident else _opaque_principled_surface(mat)
     if opaque is None:
         return
     output, surface = opaque
@@ -860,8 +888,9 @@ def bake_albedo_map(scene, obj, texture_size: int) -> BakedFluxMap | None:
 def bake_irradiance_map(scene, obj, texture_size: int, samples: int | None = None) -> BakedFluxMap | None:
     """Bake incident irradiance (DIFFUSE DIRECT+INDIRECT) for a single object.
 
-    Known opaque Principled surfaces use a unit-white diffuse receiver only at
-    the initial bake shading point (Ray Depth == 0). Subsequent hits, including
+    Known opaque surfaces, including supported Add/Mix combinations, use a
+    unit-white diffuse receiver only at the initial bake shading point
+    (Ray Depth == 0). Subsequent hits, including
     self-reflections, use the authored shader. This avoids missing light on black
     or metallic receivers without whitening the scene's indirect illumination.
     Transparent, subsurface and unrecognized surfaces retain the authored bake.

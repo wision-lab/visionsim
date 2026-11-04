@@ -13,8 +13,8 @@ import numpy as np
 
 CACHE_SCHEMA_VERSION = 2
 # Bump when bake/solver semantics change, even if the archive layout is unchanged.
-# Revision 6 includes n-gons and unwraps evaluated geometry before thermal sampling.
-BAKE_PIPELINE_VERSION = 6
+# Revision 7 also measures incident light on supported layered opaque shaders.
+BAKE_PIPELINE_VERSION = 7
 _log = logging.getLogger("rich")
 
 
