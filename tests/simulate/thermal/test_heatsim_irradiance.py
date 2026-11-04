@@ -15,7 +15,30 @@ def test_bake_uvs_are_reused_until_geometry_changes(executable):
 
     assert result["reused_coordinates"]
     assert result["regenerated_after_geometry_edit"]
+    assert result["regenerated_after_scale_edit"]
+    assert result["reused_after_translation"]
     assert result["source_uv_unchanged"]
+
+
+def test_bake_uvs_use_physical_dimensions_independent_of_rgb_image_aspect(executable):
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        result = call_service(client, "bake_uv_physical_layout")
+
+    assert result["scaled_vs_applied_error"] < 1e-6, result
+    assert result["wide_vs_square_error"] < 1e-6, result
+    assert result["physical_spacing_ratio"] == pytest.approx(1, abs=1e-5), result
+    assert result["source_restored"], "source geometry, transforms, shape keys or RGB UVs changed"
+    assert result["failure_restored"], "UV projection failure changed the source or leaked temporary resources"
+
+
+def test_nonplanar_ngon_has_unique_thermal_uvs_without_changing_source_geometry(executable):
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        result = call_service(client, "bake_uv_folded_ngon")
+
+    assert result["thermal_points"] > 0, result
+    assert result["same_triangles"], "thermal triangulation differs from Blender's rendered geometry"
+    assert result["rgb_uv_preserved"], "private mesh changed the RGB UV coordinates"
+    assert result["source_preserved"], "source polygon was changed"
 
 
 def test_bake_albedo_map_returns_varying_pixels(executable):

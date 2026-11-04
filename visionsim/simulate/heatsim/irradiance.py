@@ -176,8 +176,10 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
         return
 
     # Repacking between the atlas rasterization, lighting bake and albedo bake
-    # invalidates their shared UV addresses. Reuse the layout until geometry changes.
-    signature = hashlib.sha256(b"visionsim.bake-uv.v2.angle80.margin002")
+    # invalidates their shared UV addresses. Include scale/shear inherited from parents.
+    transform = obj.matrix_world.to_3x3().to_4x4()
+    signature = hashlib.sha256(b"visionsim.bake-uv.v3.physical-square.angle45.margin002")
+    signature.update(np.asarray(transform, dtype=np.float64).tobytes())
     for collection, attribute, width, dtype in (
         (mesh.vertices, "co", 3, np.float32),
         (mesh.loops, "vertex_index", 1, np.int32),
@@ -208,6 +210,7 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
     view_layer = ctx.view_layer
     prev_selection = list(getattr(ctx, "selected_objects", []) or [])
     prev_active = getattr(ctx, "active_object", None)
+    projection_mesh = projection_obj = None
 
     try:
         # Establish a clean OBJECT-mode context before any selection operator.
@@ -223,16 +226,25 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
             except Exception:
                 logging.getLogger(__name__).debug("Blender thermal operation failed", exc_info=True)
         bpy.ops.object.select_all(action="DESELECT")
-        obj.select_set(True)
-        view_layer.objects.active = obj
+        # Unwrap physical dimensions on a disposable copy. Only its thermal UVs
+        # return to the source; coordinates, shape keys and RGB UVs stay untouched.
+        projection_mesh = mesh.copy()
+        projection_mesh.transform(transform, shape_keys=True)
+        projection_obj = bpy.data.objects.new("HeatSim UV projection", projection_mesh)
+        ctx.scene.collection.objects.link(projection_obj)
+        projection_obj.select_set(True)
+        view_layer.objects.active = projection_obj
 
         bpy.ops.object.mode_set(mode="EDIT")
         bpy.ops.mesh.select_all(action="SELECT")
-        # Large relative margins consumed almost the whole tile on upholstery
-        # with thousands of small charts. Favor larger charts and a smaller gap.
-        bpy.ops.uv.smart_project(angle_limit=math.radians(80), island_margin=0.002)
+        # Narrow projection cones avoid folded charts on concave surfaces; keep
+        # the small gap so dense meshes do not lose their tile to chart margins.
+        bpy.ops.uv.smart_project(angle_limit=math.radians(45), island_margin=0.002, correct_aspect=False)
         bpy.ops.object.mode_set(mode="OBJECT")
-        obj.data["heatsim_bake_uv_signature"] = layout_key
+        uv: np.ndarray = np.empty(len(mesh.loops) * 2, dtype=np.float32)
+        projection_mesh.uv_layers[BAKE_UV_LAYER_NAME].data.foreach_get("uv", uv)
+        mesh.uv_layers[BAKE_UV_LAYER_NAME].data.foreach_set("uv", uv)
+        mesh["heatsim_bake_uv_signature"] = layout_key
     except Exception as exc:  # noqa: BLE001
         # A per-object unwrap failure (smart_project.poll() and friends can fail in
         # --background on some meshes) must never abort the whole scene's bake. Warn
@@ -248,6 +260,10 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
                 bpy.ops.object.mode_set(mode="OBJECT")
             except Exception:
                 logging.getLogger(__name__).debug("Blender thermal operation failed", exc_info=True)
+        if projection_obj is not None:
+            bpy.data.objects.remove(projection_obj, do_unlink=True)
+        if projection_mesh is not None:
+            bpy.data.meshes.remove(projection_mesh)
         try:
             bpy.ops.object.select_all(action="DESELECT")
         except Exception:

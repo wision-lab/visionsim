@@ -11,11 +11,13 @@ from visionsim.simulate.heatsim.material_slots import restore_material_slots, sn
 
 
 def evaluated_meshes(objects: list) -> dict[str, Any]:
-    """Copy the render-visible modifier result without changing the source meshes."""
+    """Copy render-visible geometry and triangulate n-gons for thermal UV charts."""
     meshes = {}
     try:
         for obj in objects:
-            if not any(m.show_render or m.show_viewport for m in obj.modifiers):
+            if not any(m.show_render or m.show_viewport for m in obj.modifiers) and not any(
+                p.loop_total > 4 for p in obj.data.polygons
+            ):
                 continue
             settings = [
                 (m, "show_viewport", m.show_viewport, m.show_render)
@@ -37,6 +39,20 @@ def evaluated_meshes(objects: list) -> dict[str, Any]:
                     obj.evaluated_get(depsgraph), preserve_all_data_layers=True, depsgraph=depsgraph
                 )
                 meshes[obj.name] = mesh
+                # Nonplanar n-gons can fold within one projected UV chart. Give
+                # their triangles independent corners on the private thermal mesh.
+                if any(p.loop_total > 4 for p in mesh.polygons):
+                    import bmesh  # type: ignore[import-not-found]
+
+                    bm = bmesh.new()
+                    try:
+                        bm.from_mesh(mesh)
+                        bmesh.ops.triangulate(
+                            bm, faces=[f for f in bm.faces if len(f.verts) > 4], ngon_method="EAR_CLIP"
+                        )
+                        bm.to_mesh(mesh)
+                    finally:
+                        bm.free()
                 # Preserve Generated-coordinate bounds for authored materials.
                 mesh.use_auto_texspace = False
                 mesh.texspace_location = obj.data.texspace_location

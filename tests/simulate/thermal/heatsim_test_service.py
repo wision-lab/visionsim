@@ -952,11 +952,151 @@ class HeatsimTestService(BlenderService):
         obj.data.vertices[0].co.x += 0.1
         obj.data.update()
         irradiance.prepare_object_bake_uv(obj)
+        geometry_key = obj.data.get("heatsim_bake_uv_signature")
+        obj.scale.x *= 2
+        bpy.context.view_layer.update()
+        irradiance.prepare_object_bake_uv(obj)
+        scale_key = obj.data.get("heatsim_bake_uv_signature")
+        obj.location.x += 5
+        bpy.context.view_layer.update()
+        irradiance.prepare_object_bake_uv(obj)
         after = np.array([tuple(loop.uv) for loop in obj.data.uv_layers[source_name].data])
         return {
             "reused_coordinates": bool(np.array_equal(expected, reused)),
-            "regenerated_after_geometry_edit": obj.data.get("heatsim_bake_uv_signature") != first_key,
+            "regenerated_after_geometry_edit": geometry_key != first_key,
+            "regenerated_after_scale_edit": scale_key != geometry_key,
+            "reused_after_translation": obj.data.get("heatsim_bake_uv_signature") == scale_key,
             "source_uv_unchanged": bool(np.array_equal(source, after)),
+        }
+
+    def exposed_bake_uv_folded_ngon(self) -> dict:
+        """Retail ceiling regression: a nonplanar pentagon needs separate triangle UV corners."""
+        from visionsim.simulate.heatsim import adapter
+        from visionsim.simulate.heatsim.geometry import release_meshes
+
+        self._register()
+        self._clear()
+        mesh = bpy.data.meshes.new("nonplanar pentagon")
+        mesh.from_pydata(
+            [
+                (0, 0, 0),
+                (-5.67032, 0, 0),
+                (-5.67032, 0.000001, -0.086817),
+                (-5.682873, -0.012608, -0.074264),
+                (0, 0.000001, -0.061711),
+            ],
+            [],
+            [(0, 1, 2, 3, 4)],
+        )
+        obj = bpy.data.objects.new("nonplanar pentagon", mesh)
+        bpy.context.collection.objects.link(obj)
+        source_uv = mesh.uv_layers.new(name="RGB")
+        for i, loop in enumerate(source_uv.data):
+            loop.uv = (i / 5, i % 2)
+        before_uv = np.array([tuple(p.uv) for p in source_uv.data])
+        original_triangles, _, _ = adapter._mesh_triangles(mesh)
+        plan = adapter.build_atlas_plan(
+            bpy.context.scene,
+            [obj],
+            {
+                "render_domain": "TEXEL",
+                "atlas_tile_min": 512,
+                "atlas_tile_max": 512,
+            },
+        )
+        try:
+            with adapter.use_atlas_geometry(bpy.context.scene, plan):
+                triangles, _, _ = adapter._mesh_triangles(obj.data)
+                uv, _ = adapter._face_uv_and_slots_from_mesh(obj.data, "RGB")
+                result = {
+                    "same_triangles": sorted(map(tuple, np.sort(triangles, axis=1)))
+                    == sorted(map(tuple, np.sort(original_triangles, axis=1))),
+                    "rgb_uv_preserved": bool(np.array_equal(uv, before_uv[triangles])),
+                    "thermal_points": len(plan.texels[obj.name]["xy"]),
+                }
+        finally:
+            release_meshes(plan.meshes)
+        result["source_preserved"] = obj.data == mesh and len(mesh.polygons) == 1 and mesh.polygons[0].loop_total == 5
+        return result
+
+    def exposed_bake_uv_physical_layout(self) -> dict:
+        """Compare scaled and applied geometry, RGB image aspects, and failed projection cleanup."""
+        from unittest.mock import patch
+
+        from mathutils import Matrix
+
+        from visionsim.simulate.heatsim import irradiance
+        from visionsim.simulate.heatsim.names import BAKE_UV_LAYER_NAME
+
+        self._clear()
+        bpy.ops.mesh.primitive_plane_add(size=2)
+        obj = bpy.context.object
+        obj.shape_key_add(name="Basis")
+        obj.shape_key_add(name="Detail").data[0].co.z += 0.01
+        parent = bpy.data.objects.new("Scaled parent", None)
+        bpy.context.collection.objects.link(parent)
+        parent.scale = (10, 5, 1)
+        obj.parent = parent
+        obj.scale = (2, 2, 2.5)
+        bpy.context.view_layer.update()
+        mat = bpy.data.materials.new("Wide RGB image")
+        mat.use_nodes = True
+        texture = mat.node_tree.nodes.new("ShaderNodeTexImage")
+        texture.image = bpy.data.images.new("Wide RGB", width=1024, height=64)
+        mat.node_tree.nodes.active = texture
+        obj.data.materials.append(mat)
+
+        def source_state():
+            return (
+                tuple(tuple(v.co) for v in obj.data.vertices),
+                tuple(tuple(row) for row in obj.matrix_world),
+                tuple(tuple(loop.uv) for loop in obj.data.uv_layers["UVMap"].data),
+                tuple(tuple(p.co) for key in obj.data.shape_keys.key_blocks for p in key.data),
+                obj.data.texspace_location[:],
+                obj.data.texspace_size[:],
+            )
+
+        def layout(target):
+            irradiance.prepare_object_bake_uv(target)
+            return np.array([tuple(loop.uv) for loop in target.data.uv_layers[BAKE_UV_LAYER_NAME].data])
+
+        initial = source_state()
+        resources = (tuple(bpy.data.objects), tuple(bpy.data.meshes), tuple(bpy.data.shape_keys))
+        scaled = layout(obj)
+        restored = source_state() == initial and resources == (
+            tuple(bpy.data.objects),
+            tuple(bpy.data.meshes),
+            tuple(bpy.data.shape_keys),
+        )
+        applied = bpy.data.objects.new("Applied dimensions", obj.data.copy())
+        bpy.context.collection.objects.link(applied)
+        applied.data.transform(obj.matrix_world, shape_keys=True)
+        applied.matrix_world = Matrix.Identity(4)
+        physical = layout(applied)
+        texture.image = bpy.data.images.new("Square RGB", width=64, height=64)
+        obj.data.pop("heatsim_bake_uv_signature", None)
+        square = layout(obj)
+        # For a flat patch, equal singular values mean equal physical distance per UV unit.
+        xyz = np.array([tuple(obj.matrix_world @ obj.data.vertices[loop.vertex_index].co) for loop in obj.data.loops])
+        jacobian = np.stack((xyz[1] - xyz[0], xyz[3] - xyz[0]), axis=1) @ np.linalg.inv(
+            np.stack((scaled[1] - scaled[0], scaled[3] - scaled[0]), axis=1)
+        )
+        singular = np.linalg.svd(jacobian, compute_uv=False)
+        resources = (tuple(bpy.data.objects), tuple(bpy.data.meshes), tuple(bpy.data.shape_keys))
+        before_uv = square.copy()
+        obj.data.pop("heatsim_bake_uv_signature", None)
+        with patch.object(irradiance.math, "radians", side_effect=RuntimeError("injected UV failure")):
+            failed = layout(obj)
+        return {
+            "scaled_vs_applied_error": float(np.max(np.abs(scaled - physical))),
+            "wide_vs_square_error": float(np.max(np.abs(scaled - square))),
+            "physical_spacing_ratio": float(singular.max() / singular.min()),
+            "source_restored": bool(restored and source_state() == initial),
+            "failure_restored": bool(
+                np.array_equal(failed, before_uv)
+                and resources == (tuple(bpy.data.objects), tuple(bpy.data.meshes), tuple(bpy.data.shape_keys))
+                and obj.data.get("heatsim_bake_uv_signature") is None
+            ),
         }
 
     def exposed_absorbed_flux(
