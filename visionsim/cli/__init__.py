@@ -18,6 +18,8 @@ from natsort import natsorted
 from rich.logging import RichHandler
 from rich.traceback import install
 
+import visionsim
+
 from . import blender, dataset, emulate, ffmpeg, interpolate, transforms
 
 logging.basicConfig(
@@ -276,5 +278,9 @@ def _cli_dict() -> dict[str, Any]:
 
 def main():
     # Capture bare script name to keep help text short and accurate
-    script, *_ = sys.argv
-    tyro.extras.subcommand_cli_from_dict(_cli_dict(), prog=Path(script).name)
+    script, *args = sys.argv
+    prog = Path(script).name
+    if args in (["--version"], ["-V"]):
+        print(f"{prog} {visionsim.__version__}")
+        return
+    tyro.extras.subcommand_cli_from_dict(_cli_dict(), prog=prog)
