@@ -13,8 +13,8 @@ import numpy as np
 
 CACHE_SCHEMA_VERSION = 2
 # Bump when bake/solver semantics change, even if the archive layout is unchanged.
-# Revision 8 unwraps physical surface dimensions into square thermal bake maps.
-BAKE_PIPELINE_VERSION = 8
+# Revision 13 validates bake UVs and samples images at pixel centers.
+BAKE_PIPELINE_VERSION = 13
 _log = logging.getLogger("rich")
 
 

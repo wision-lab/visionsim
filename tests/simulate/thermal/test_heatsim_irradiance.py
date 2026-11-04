@@ -8,6 +8,56 @@ from tests.simulate.thermal.heatsim_test_service import SERVICE_PATH, call_servi
 from visionsim.simulate.blender import BlenderClient
 
 
+def test_repaired_thin_charts_preserve_uniform_incident_light(executable):
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        result = call_service(client, "thin_chart_irradiance")
+
+    assert result["source_preserved"]
+    assert result["flux"] == pytest.approx([math.pi] * 8, rel=0.02), result
+    assert result["pixel_centers"] == pytest.approx(list(range(12)))
+
+
+def test_uv_validation_distinguishes_collinearity_noise_from_unmapped_surfaces(executable):
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        invalid_faces = call_service(client, "bake_uv_degenerate_faces")
+
+    assert invalid_faces == [1], "A real unmapped triangle must fail; float32 collinearity noise must not"
+
+
+def test_warped_face_repair_preserves_render_triangle_edge_lengths(executable):
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        result = call_service(client, "bake_uv_warped_face")
+
+    assert result["invalid_faces"] == 0, result
+    assert result["edge_scale_ratio"] == pytest.approx(1, abs=1e-5), result
+    assert result["source_preserved"], result
+
+
+@pytest.mark.parametrize("kind", ["overlap", "collapsed", "stretched", "subpixel", "hidden"])
+def test_generated_bake_uvs_are_repaired_and_reused_without_changing_rgb(executable, kind):
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        result = call_service(client, "bake_uv_repair", kind)
+
+    assert result["invalid_before"] > 0, result
+    assert result["invalid_after"] == 0, result
+    assert "error" not in result, result
+    assert result["reused"], result
+    assert result["source_preserved"] and result["resources_restored"], result
+    assert result["sync_restored"] and result["object_mode"], result
+    if kind == "subpixel":
+        assert result["raster_missed_subpixel_overlap"], result
+
+
+def test_unrepairable_uvs_fail_without_publishing_an_invalid_layout(executable):
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        result = call_service(client, "bake_uv_repair", "failure")
+
+    assert "thermal UV repair left" in result["error"], result
+    assert result["unpublished"], result
+    assert result["source_preserved"] and result["resources_restored"], result
+    assert result["sync_restored"] and result["object_mode"], result
+
+
 def test_bake_uvs_are_reused_until_geometry_changes(executable):
     with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
         call_service(client, "build_scene", "grid", "ThermalPlane", subdivisions=10, material="checker")

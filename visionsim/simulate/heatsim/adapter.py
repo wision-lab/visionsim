@@ -737,8 +737,8 @@ def _sample_bilinear(pixels: np.ndarray, width: int, height: int, uv: np.ndarray
     clamp/floor/lerp math and Rec.709 luma weights) but for many points at once."""
     u = np.clip(uv[:, 0], 0.0, 1.0)
     v = np.clip(uv[:, 1], 0.0, 1.0)
-    x = u * (width - 1)
-    y = v * (height - 1)
+    x = np.clip(u * width - 0.5, 0.0, width - 1)
+    y = np.clip(v * height - 0.5, 0.0, height - 1)
     x0 = np.floor(x).astype(np.int64)
     y0 = np.floor(y).astype(np.int64)
     x1 = np.minimum(x0 + 1, width - 1)

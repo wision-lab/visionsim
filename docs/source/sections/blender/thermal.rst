@@ -263,6 +263,10 @@ vertices, ``AUTO`` retains those vertices instead. This prevents dense surfaces
 such as upholstery from losing most of their thermal resolution to empty space
 between UV charts. The lighting and albedo bakes reuse one geometry-dependent
 UV layout; their UVs remain separate from the authored RGB texture coordinates.
+Generated layouts are checked for overlaps, collapsed faces, and excessive
+stretching. Invalid charts are unwrapped, split, and repacked on a private mesh;
+the original geometry and RGB UVs are preserved. If repair fails, rendering stops
+with an error instead of baking through an invalid layout.
 
 .. list-table::
    :header-rows: 1

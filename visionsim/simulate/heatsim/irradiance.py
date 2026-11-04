@@ -16,7 +16,7 @@ import numpy as np
 from .material_slots import MaterialSlotState, restore_material_slots, set_material_override, snapshot_material_slots
 from .names import ALBEDO_LAYER_NAME, BAKE_UV_LAYER_NAME, IRRADIANCE_LAYER_NAME
 from .physics import CYCLES_LOUT_TO_IRRADIANCE
-from .uv_utils import restore_uv_states, snapshot_uv_states
+from .uv_utils import repair_bake_uv, restore_uv_states, snapshot_uv_states
 
 
 @dataclass
@@ -160,7 +160,7 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
 
     This mirrors the shared baking pipeline, but operates on a single object:
     - Create/activate `BAKE_UV_LAYER_NAME`
-    - Smart Project unwrap into that layer to get a non-overlapping 0..1 bake UVs
+    - Generate and validate non-overlapping thermal UVs on a disposable copy
     """
     if obj is None or obj.type != "MESH":
         return
@@ -178,7 +178,7 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
     # Repacking between the atlas rasterization, lighting bake and albedo bake
     # invalidates their shared UV addresses. Include scale/shear inherited from parents.
     transform = obj.matrix_world.to_3x3().to_4x4()
-    signature = hashlib.sha256(b"visionsim.bake-uv.v3.physical-square.angle45.margin002")
+    signature = hashlib.sha256(b"visionsim.bake-uv.v7.validated-layouts")
     signature.update(np.asarray(transform, dtype=np.float64).tobytes())
     for collection, attribute, width, dtype in (
         (mesh.vertices, "co", 3, np.float32),
@@ -191,25 +191,15 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
     layout_key = signature.hexdigest()
     already_prepared = BAKE_UV_LAYER_NAME in mesh.uv_layers and mesh.get("heatsim_bake_uv_signature") == layout_key
 
-    # Ensure bake UV layer exists
-    if BAKE_UV_LAYER_NAME not in mesh.uv_layers:
-        try:
-            mesh.uv_layers.new(name=BAKE_UV_LAYER_NAME)
-        except Exception:  # noqa: BLE001
-            return
-
-    # Set bake UV active for unwrap + baking
-    try:
-        mesh.uv_layers[BAKE_UV_LAYER_NAME].active = True
-        mesh.uv_layers[BAKE_UV_LAYER_NAME].active_render = True
-    except Exception:
-        logging.getLogger(__name__).debug("Blender thermal operation failed", exc_info=True)
     if already_prepared:
+        mesh.uv_layers.active = mesh.uv_layers[BAKE_UV_LAYER_NAME]
+        mesh.uv_layers[BAKE_UV_LAYER_NAME].active_render = True
         return
     ctx = bpy.context
     view_layer = ctx.view_layer
     prev_selection = list(getattr(ctx, "selected_objects", []) or [])
     prev_active = getattr(ctx, "active_object", None)
+    prev_uv_sync = ctx.scene.tool_settings.use_uv_select_sync
     projection_mesh = projection_obj = None
 
     try:
@@ -230,27 +220,38 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
         # return to the source; coordinates, shape keys and RGB UVs stay untouched.
         projection_mesh = mesh.copy()
         projection_mesh.transform(transform, shape_keys=True)
+        # Packing must use a square thermal target, independent of RGB image aspect.
+        projection_mesh.materials.clear()
+        if BAKE_UV_LAYER_NAME not in projection_mesh.uv_layers:
+            projection_mesh.uv_layers.new(name=BAKE_UV_LAYER_NAME)
+        projection_mesh.uv_layers.active = projection_mesh.uv_layers[BAKE_UV_LAYER_NAME]
+        projection_mesh.uv_layers[BAKE_UV_LAYER_NAME].active_render = True
         projection_obj = bpy.data.objects.new("HeatSim UV projection", projection_mesh)
         ctx.scene.collection.objects.link(projection_obj)
         projection_obj.select_set(True)
         view_layer.objects.active = projection_obj
+        ctx.scene.tool_settings.use_uv_select_sync = False
 
         bpy.ops.object.mode_set(mode="EDIT")
+        # Edit-mode hiding does not hide geometry from Cycles rendering.
+        bpy.ops.mesh.reveal(select=True)
         bpy.ops.mesh.select_all(action="SELECT")
+        bpy.ops.uv.reveal(select=True)
         # Narrow projection cones avoid folded charts on concave surfaces; keep
         # the small gap so dense meshes do not lose their tile to chart margins.
         bpy.ops.uv.smart_project(angle_limit=math.radians(45), island_margin=0.002, correct_aspect=False)
+        repair_bake_uv(projection_mesh, obj.name, mesh)
         bpy.ops.object.mode_set(mode="OBJECT")
         uv: np.ndarray = np.empty(len(mesh.loops) * 2, dtype=np.float32)
         projection_mesh.uv_layers[BAKE_UV_LAYER_NAME].data.foreach_get("uv", uv)
+        if BAKE_UV_LAYER_NAME not in mesh.uv_layers:
+            mesh.uv_layers.new(name=BAKE_UV_LAYER_NAME)
         mesh.uv_layers[BAKE_UV_LAYER_NAME].data.foreach_set("uv", uv)
+        mesh.uv_layers.active = mesh.uv_layers[BAKE_UV_LAYER_NAME]
+        mesh.uv_layers[BAKE_UV_LAYER_NAME].active_render = True
         mesh["heatsim_bake_uv_signature"] = layout_key
-    except Exception as exc:  # noqa: BLE001
-        # A per-object unwrap failure (smart_project.poll() and friends can fail in
-        # --background on some meshes) must never abort the whole scene's bake. Warn
-        # and keep whatever UVs the object already has; the albedo kernel treats a
-        # missing/degenerate bake as full absorption, a documented fallback.
-        warnings.warn(f"HeatSim: bake-UV prep failed for {obj.name}; using existing UVs. {exc}")
+    except Exception as exc:
+        raise RuntimeError(f"HeatSim: cannot prepare thermal UVs for {obj.name!r}: {exc}") from exc
     finally:
         # Restore selection / active / mode best-effort, but always return to OBJECT mode:
         # this function enters EDIT mode above, and if smart_project raised, the next
@@ -264,6 +265,7 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
             bpy.data.objects.remove(projection_obj, do_unlink=True)
         if projection_mesh is not None:
             bpy.data.meshes.remove(projection_mesh)
+        ctx.scene.tool_settings.use_uv_select_sync = prev_uv_sync
         try:
             bpy.ops.object.select_all(action="DESELECT")
         except Exception:
@@ -664,8 +666,8 @@ def _bilinear_sample(rgb_pixels: np.ndarray, width: int, height: int, uv: np.nda
     """Sample luminance from an RGB image at UV coordinates using bilinear filtering."""
     u = float(np.clip(uv[0], 0.0, 1.0))
     v = float(np.clip(uv[1], 0.0, 1.0))
-    x = u * (width - 1)
-    y = v * (height - 1)
+    x = float(np.clip(u * width - 0.5, 0.0, width - 1))
+    y = float(np.clip(v * height - 0.5, 0.0, height - 1))
 
     x0 = int(np.floor(x))
     y0 = int(np.floor(y))

@@ -51,6 +51,54 @@ def call_service(client: Any, name: str, *args: Any, **kwargs: Any) -> Any:
 class HeatsimTestService(BlenderService):
     """Composable primitives (``exposed_*``) that the heatsim tests assemble into scenarios."""
 
+    def exposed_thin_chart_irradiance(self) -> dict:
+        """A repaired narrow strip must retain the same uniform lighting as its neighbors."""
+        from unittest.mock import patch
+
+        from visionsim.simulate.heatsim import irradiance
+
+        self._register()
+        self._clear()
+        self._enable_cycles(samples=16)
+        mesh = bpy.data.meshes.new("Thin connected strip")
+        vertices = [(x, y, 0) for y in (0, 1) for x in (0, 1, 1.0002, 2)]
+        mesh.from_pydata(vertices, [], [(0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6)])
+        obj = bpy.data.objects.new("Thin connected strip", mesh)
+        bpy.context.collection.objects.link(obj)
+        mat = bpy.data.materials.new("Opaque strip")
+        mat.use_nodes = True
+        mesh.materials.append(mat)
+        world = bpy.data.worlds.new("Uniform incident light")
+        world.use_nodes = True
+        world.node_tree.nodes.get("Background").inputs["Color"].default_value = (1, 1, 1, 1)
+        world.node_tree.nodes.get("Background").inputs["Strength"].default_value = 1
+        bpy.context.scene.world = world
+        native = irradiance.repair_bake_uv
+
+        def inject(projected, name, source):
+            bpy.ops.object.mode_set(mode="OBJECT")
+            uv = []
+            for loop in projected.loops:
+                x, y, _ = projected.vertices[loop.vertex_index].co
+                if 1.0001 < x < 1.0003:
+                    x = 0.9998
+                uv.extend((0.1 + 0.4 * x, 0.1 + 0.4 * y))
+            projected.uv_layers.active.data.foreach_set("uv", uv)
+            bpy.ops.object.mode_set(mode="EDIT")
+            native(projected, name, source)
+
+        with patch.object(irradiance, "repair_bake_uv", side_effect=inject):
+            baked = irradiance.bake_irradiance_map(bpy.context.scene, obj, 64, samples=16)
+        assert baked is not None
+        values = baked.vertex_flux
+        pixels = np.repeat(np.arange(12, dtype=float).reshape(3, 4, 1), 3, axis=2)
+        centers = [((x + 0.5) / 4, (y + 0.5) / 3) for y in range(3) for x in range(4)]
+        return {
+            "flux": values.tolist(),
+            "pixel_centers": [irradiance._bilinear_sample(pixels, 4, 3, np.array(uv)) for uv in centers],
+            "source_preserved": len(mesh.vertices) == 8 and len(mesh.polygons) == 3,
+        }
+
     def exposed_ngon_geometry(self) -> dict:
         """Extract and sample a concave six-sided face beside a different material."""
         from visionsim.simulate.heatsim import adapter, atlas
@@ -1019,6 +1067,215 @@ class HeatsimTestService(BlenderService):
         result["source_preserved"] = obj.data == mesh and len(mesh.polygons) == 1 and mesh.polygons[0].loop_total == 5
         return result
 
+    def exposed_bake_uv_degenerate_faces(self) -> list[int]:
+        """Separate float32 collinearity noise from a real surface with missing UVs."""
+        from visionsim.simulate.heatsim import uv_utils
+
+        self._clear()
+        mesh = bpy.data.meshes.new("UV degeneracy")
+        mesh.from_pydata(
+            [
+                (0, 0, 0),
+                (1, 0, 0),
+                (0.5, 1e-8, 0),
+                (2, 0, 0),
+                (3, 0, 0),
+                (2, 1, 0),
+                (4, 0, 0),
+                (4.01, 0, 0),
+                (4, 1e-10, 0),
+                (5, 0, 0),
+                (6, 0, 0),
+                (5, 1, 0),
+                (7, 0, 0),
+                (8, 0, 0),
+                (7, 1, 0),
+            ],
+            [],
+            [(0, 1, 2), (3, 4, 5), (6, 7, 8), (9, 10, 11), (12, 13, 14)],
+        )
+        uv = mesh.uv_layers.new(name="Bake")
+        coordinates = np.zeros((15, 2))
+        # A physically collapsed bevel can still have a finite UV footprint.
+        # It must not make a healthy chart look as though two surfaces overlap.
+        coordinates[:3] = ((0.2, 0.2), (0.8, 0.2), (0.2, 0.8))
+        coordinates[9:12] = ((0, 0), (1, 0), (0, 1))
+        # Packing shared chart boundaries can round by one float32 coordinate step.
+        coordinates[12:] = ((1, 1), (0, 1 - 6e-8), (1 - 6e-8, 0))
+        uv.data.foreach_set("uv", coordinates.reshape(-1))
+        obj = bpy.data.objects.new("UV degeneracy", mesh)
+        bpy.context.collection.objects.link(obj)
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        sync = bpy.context.scene.tool_settings.use_uv_select_sync
+        bpy.context.scene.tool_settings.use_uv_select_sync = False
+        try:
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.mesh.select_all(action="SELECT")
+            return sorted(uv_utils._invalid_bake_uv_faces(mesh))
+        finally:
+            bpy.ops.object.mode_set(mode="OBJECT")
+            bpy.context.scene.tool_settings.use_uv_select_sync = sync
+
+    def exposed_bake_uv_warped_face(self) -> dict:
+        """Unfold a warped sofa-like quad across the renderer's diagonal."""
+        from visionsim.simulate.heatsim import adapter, uv_utils
+
+        self._clear()
+        source = bpy.data.meshes.new("Warped quad")
+        source.from_pydata(
+            [(0, 0, 0), (-0.138, -0.816, 0.354), (-0.125, -0.014, -0.053), (-0.424, 0.185, 0.772)],
+            [],
+            [(0, 1, 2, 3)],
+        )
+        rgb = source.uv_layers.new(name="RGB")
+        for loop, uv in zip(rgb.data, [(0, 0), (1, 0), (1, 1), (0, 1)]):
+            loop.uv = uv
+        before = (tuple(v.co[:] for v in source.vertices), tuple(loop.uv[:] for loop in rgb.data))
+        mesh = source.copy()
+        obj = bpy.data.objects.new("Private warped UV projection", mesh)
+        bpy.context.collection.objects.link(obj)
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        old_sync = bpy.context.scene.tool_settings.use_uv_select_sync
+        bpy.context.scene.tool_settings.use_uv_select_sync = False
+        try:
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.mesh.select_all(action="SELECT")
+            uv_utils._unfold_bake_uv_faces(mesh, {0}, source)
+            bpy.ops.uv.select_all(action="SELECT")
+            bpy.ops.uv.pack_islands(margin=0.002, margin_method="FRACTION", merge_overlap=False)
+            invalid = uv_utils._invalid_bake_uv_faces(mesh, source)
+            bpy.ops.object.mode_set(mode="OBJECT")
+            vertices = np.array([v.co[:] for v in source.vertices])
+            triangles, loops, _ = adapter._mesh_triangles(source)
+            uv = np.array([loop.uv[:] for loop in mesh.uv_layers.active.data])[loops]
+            positions = vertices[triangles]
+            lengths = np.linalg.norm(np.roll(positions, -1, axis=1) - positions, axis=2)
+            uv_lengths = np.linalg.norm(np.roll(uv, -1, axis=1) - uv, axis=2)
+            scale = uv_lengths / lengths
+            return {
+                "invalid_faces": len(invalid),
+                "edge_scale_ratio": float(scale.max() / scale.min()),
+                "source_preserved": before
+                == (tuple(v.co[:] for v in source.vertices), tuple(loop.uv[:] for loop in rgb.data)),
+            }
+        finally:
+            if bpy.context.mode != "OBJECT":
+                bpy.ops.object.mode_set(mode="OBJECT")
+            bpy.data.objects.remove(obj, do_unlink=True)
+            bpy.data.meshes.remove(mesh)
+            bpy.context.scene.tool_settings.use_uv_select_sync = old_sync
+
+    def exposed_bake_uv_repair(self, kind: str) -> dict:
+        """Inject an invalid generated layout on a private mesh and exercise repair."""
+        from unittest.mock import patch
+
+        from visionsim.simulate.heatsim import adapter, atlas, irradiance, uv_utils
+        from visionsim.simulate.heatsim.names import BAKE_UV_LAYER_NAME
+
+        self._clear()
+        mesh = bpy.data.meshes.new("UV repair source")
+        mesh.from_pydata(
+            [(x + 2 * i, y, i) for i in range(4) for x, y in [(0, 0), (1, 0), (1, 1), (0, 1)]],
+            [],
+            [tuple(range(4 * i, 4 * i + 4)) for i in range(4)],
+        )
+        obj = bpy.data.objects.new("UV repair fixture", mesh)
+        bpy.context.collection.objects.link(obj)
+        obj.scale = (1.5, 0.75, 1)
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        bpy.context.view_layer.update()
+        rgb = mesh.uv_layers.new(name="RGB")
+        for i, loop in enumerate(rgb.data):
+            loop.uv = (i / 40, i / 50)
+        mat = bpy.data.materials.new("Wide RGB texture")
+        mat.use_nodes = True
+        texture = mat.node_tree.nodes.new("ShaderNodeTexImage")
+        texture.image = bpy.data.images.new("Wide UV repair RGB", width=256, height=16)
+        mat.node_tree.nodes.active = texture
+        mesh.materials.append(mat)
+        if kind == "hidden":
+            mesh.polygons[0].hide = True
+
+        def state():
+            return (
+                tuple(tuple(v.co) for v in mesh.vertices),
+                tuple(tuple(loop.uv) for loop in rgb.data),
+                tuple(edge.use_seam for edge in mesh.edges),
+                tuple(face.hide for face in mesh.polygons),
+                tuple(mesh.materials),
+                uv_utils.get_uv_state(obj),
+            )
+
+        initial = state()
+        resources = (len(bpy.data.objects), len(bpy.data.meshes), len(bpy.data.materials))
+        original_sync = bpy.context.scene.tool_settings.use_uv_select_sync
+        bpy.context.scene.tool_settings.use_uv_select_sync = True
+        result = {}
+        native_repair = irradiance.repair_bake_uv
+
+        def inject(projected, name, source_mesh):
+            bpy.ops.object.mode_set(mode="OBJECT")
+            uv = np.zeros((16, 2), dtype=np.float32)
+            square = np.array([[0, 0], [2, 0], [2, 1], [0, 1]])
+            for i in range(4):
+                if kind == "collapsed":
+                    continue
+                if kind == "stretched":
+                    uv[4 * i : 4 * i + 4] = square * (0.1, 0.001) + (0.22 * i, 0.1)
+                elif kind == "subpixel" and i < 2:
+                    uv[4 * i : 4 * i + 4] = square * 0.0001 + (0.123, 0.456)
+                else:
+                    uv[4 * i : 4 * i + 4] = square * 0.1 + ((0.22 * i if kind == "subpixel" else 0), 0.1)
+            projected.uv_layers.active.data.foreach_set("uv", uv.reshape(-1))
+            vertices = np.array([v.co[:] for v in projected.vertices]) * 1000
+            faces, loops, _ = adapter._mesh_triangles(projected)
+            if kind == "subpixel":
+                atlas.rasterize_tile(vertices, faces, uv[loops], (64, 64), reject_overlaps=True)
+                result["raster_missed_subpixel_overlap"] = True
+            bpy.ops.object.mode_set(mode="EDIT")
+            result["invalid_before"] = len(uv_utils._invalid_bake_uv_faces(projected))
+            if kind == "failure":
+                with patch.object(uv_utils, "_invalid_bake_uv_faces", return_value={0}):
+                    native_repair(projected, name, source_mesh)
+            else:
+                native_repair(projected, name, source_mesh)
+            result["invalid_after"] = len(uv_utils._invalid_bake_uv_faces(projected))
+
+        try:
+            with patch.object(irradiance, "repair_bake_uv", side_effect=inject):
+                try:
+                    irradiance.prepare_object_bake_uv(obj)
+                except RuntimeError as exc:
+                    result["error"] = str(exc)
+            if kind != "failure":
+                coordinates = np.array([loop.uv[:] for loop in mesh.uv_layers[BAKE_UV_LAYER_NAME].data])
+                with patch.object(irradiance, "repair_bake_uv", side_effect=AssertionError("regenerated UVs")):
+                    irradiance.prepare_object_bake_uv(obj)
+                result["reused"] = bool(
+                    np.array_equal(
+                        coordinates, np.array([loop.uv[:] for loop in mesh.uv_layers[BAKE_UV_LAYER_NAME].data])
+                    )
+                )
+            else:
+                result["unpublished"] = (
+                    BAKE_UV_LAYER_NAME not in mesh.uv_layers and "heatsim_bake_uv_signature" not in mesh
+                )
+            uv_utils.set_uv_state(obj, initial[-1])
+            result["source_preserved"] = state() == initial
+            result["resources_restored"] = resources == (
+                len(bpy.data.objects),
+                len(bpy.data.meshes),
+                len(bpy.data.materials),
+            )
+            result["sync_restored"] = bpy.context.scene.tool_settings.use_uv_select_sync
+            result["object_mode"] = bpy.context.mode == "OBJECT"
+        finally:
+            bpy.context.scene.tool_settings.use_uv_select_sync = original_sync
+        return result
+
     def exposed_bake_uv_physical_layout(self) -> dict:
         """Compare scaled and applied geometry, RGB image aspects, and failed projection cleanup."""
         from unittest.mock import patch
@@ -1085,8 +1342,12 @@ class HeatsimTestService(BlenderService):
         resources = (tuple(bpy.data.objects), tuple(bpy.data.meshes), tuple(bpy.data.shape_keys))
         before_uv = square.copy()
         obj.data.pop("heatsim_bake_uv_signature", None)
+        failed = None
         with patch.object(irradiance.math, "radians", side_effect=RuntimeError("injected UV failure")):
-            failed = layout(obj)
+            try:
+                layout(obj)
+            except RuntimeError:
+                failed = np.array([tuple(loop.uv) for loop in obj.data.uv_layers[BAKE_UV_LAYER_NAME].data])
         return {
             "scaled_vs_applied_error": float(np.max(np.abs(scaled - physical))),
             "wide_vs_square_error": float(np.max(np.abs(scaled - square))),

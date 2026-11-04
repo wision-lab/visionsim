@@ -19,6 +19,13 @@ _DEFAULTS = {
 _SOLVER_CFG = {"domain": "POINTS"}
 
 
+def test_bake_sampling_at_texel_centers_returns_the_exact_pixel_values():
+    pixels = np.repeat(np.arange(12, dtype=float).reshape(3, 4, 1), 3, axis=2)
+    centers = np.array([((x + 0.5) / 4, (y + 0.5) / 3) for y in range(3) for x in range(4)])
+
+    assert adapter._sample_bilinear(pixels, 4, 3, centers) == pytest.approx(np.arange(12))
+
+
 # ---------------------------------------------------------------------------
 # Fake-bpy fixtures (mirrors test_heatsim_assignments_integration.py)
 # ---------------------------------------------------------------------------
