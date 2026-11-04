@@ -22,7 +22,7 @@ Then you can **install the latest stable release** via `pip <https://pip.pypa.io
 Generating a dataset
 --------------------
 
-We will create a small scale dataset of a furnished living room as if it was captured by a realistic 25fps conventional RGB camera, a 1.6kHz single photon camera, an event camera, an indirect time-of-flight camera, an inertial measurement unit and a thermal camera, for 4 seconds. To achieve this, we will:
+We will create a small scale dataset of a furnished living room as if it was captured by a realistic 25fps conventional RGB camera, a 1.6kHz single photon camera, an event camera, an indirect time-of-flight camera, an inertial measurement unit and a thermal camera. To achieve this, we will:
 
 - Render a small dataset of 201 ground truth frames, plus depth maps, using the :func:`blender.render-animation <visionsim.cli.blender.render_animation>` CLI,
 - Interpolate this dataset 32-fold using the :func:`interpolate.dataset <visionsim.cli.interpolate.dataset>` CLI,
@@ -219,6 +219,7 @@ A thermal camera sees emitted and reflected thermal radiation. :func:`blender.re
         --config.thermal.assignments=assets/thermal/ultramodern.thermal.json \
         --config.thermal.sim-time-s=600 --config.thermal.timestep-s=1 \
         --config.thermal.irradiance-texture-size=1024 \
+        --config.max-samples=2048 --config.adaptive-threshold=0.0001 \
         --config.no-use-denoising
 
     visionsim transforms.colorize-temperatures \
@@ -230,14 +231,14 @@ A thermal camera sees emitted and reflected thermal radiation. :func:`blender.re
         --input-dir=quickstart/ultramodern-thermal/radiance-colorized \
         --pattern='*.png' --outfile=quickstart/ultramodern-thermal/thermal_global.mp4
 
-The solve writes temperature EXRs in Kelvin under ``quickstart/ultramodern-thermal/temperature`` and thermal-radiance EXRs under ``thermal_radiance``. Blender 4.3 and newer store a single channel; earlier versions store RGB with identical channels. :func:`transforms.colorize-temperatures <visionsim.cli.transforms.colorize_temperatures>` maps the radiance through the ``inferno`` palette using one range across the sequence, and ``ffmpeg.animate`` creates ``thermal_global.mp4``. The :doc:`thermal rendering section <sections/blender/thermal>` covers the simulation parameters, material assignments, and heat sources.
+The solve writes temperature EXRs in Kelvin under ``quickstart/ultramodern-thermal/temperature`` and thermal-radiance EXRs under ``thermal_radiance``. Blender 4.3 and newer store a single channel; earlier versions store RGB with identical channels. :func:`transforms.colorize-temperatures <visionsim.cli.transforms.colorize_temperatures>` maps the radiance through the ``inferno`` palette using one range across the sequence, and ``ffmpeg.animate`` creates ``thermal_global.mp4``. The thermal clip below is a compressed 320×320 preview of the full 600-frame sequence, played at 25fps. The :doc:`thermal rendering section <sections/blender/thermal>` covers the simulation parameters, material assignments, and heat sources.
 
 |
 
 Results
 -------
 
-Four seconds of the same living room, as seen by each camera, plus the trajectories integrated from its IMU readings:
+The same living room, as seen by each camera, plus the trajectories integrated from its IMU readings:
 
 .. grid:: 3
     :gutter: 2

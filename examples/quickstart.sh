@@ -36,6 +36,7 @@ visionsim blender.render-animation ultramodern.blend quickstart/ultramodern-ther
     --config.thermal.assignments=assets/thermal/ultramodern.thermal.json \
     --config.thermal.sim-time-s=600 --config.thermal.timestep-s=1 \
     --config.thermal.irradiance-texture-size=1024 \
+    --config.max-samples=2048 --config.adaptive-threshold=0.0001 \
     --config.no-use-denoising
 visionsim transforms.colorize-temperatures \
     --input-dir=quickstart/ultramodern-thermal/thermal_radiance \

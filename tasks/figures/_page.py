@@ -250,18 +250,21 @@ INTERMEDIATES: dict[str, Node] = {
     ),
     "ultramodern-thermal": Node(
         name="ultramodern-thermal",
-        # Thermal solves the scene's heat once, then renders that field; the guide
-        # colorizes the temperature EXRs with the ironbow palette for viewing.
-        files=(CACHE / "quickstart" / "ultramodern-thermal" / "temperature-colorized",),
+        # Render the final 600-second state and globally colorize its radiance.
+        files=(CACHE / "quickstart" / "ultramodern-thermal" / "radiance-colorized",),
         recipe=_command_recipe(
             "ultramodern-thermal",
             "visionsim blender.render-animation ultramodern.blend quickstart/ultramodern-thermal/"
-            " --frame-start=150 --frame-end=350"
-            " --config.keyframe-multiplier=1.0 --config.no-include-frames"
-            " --config.include-thermal --config.thermal.no-radiance{executable}{force}",
+            " --frame-start=1 --frame-end=600"
+            " --config.no-include-frames --config.include-thermal"
+            " --config.thermal.assignments=../assets/thermal/ultramodern.thermal.json"
+            " --config.thermal.sim-time-s=600 --config.thermal.timestep-s=1"
+            " --config.thermal.irradiance-texture-size=1024"
+            " --config.max-samples=2048 --config.adaptive-threshold=0.0001"
+            " --config.no-use-denoising{executable}{force}",
             "visionsim transforms.colorize-temperatures"
-            " --input-dir=quickstart/ultramodern-thermal/temperature"
-            " --output-dir=quickstart/ultramodern-thermal/temperature-colorized",
+            " --input-dir=quickstart/ultramodern-thermal/thermal_radiance"
+            " --output-dir=quickstart/ultramodern-thermal/radiance-colorized --cmap=inferno",
         ),
     ),
     # Used for the playblast tutorial. ``loft.blend`` animates frames 1..600; checking the
