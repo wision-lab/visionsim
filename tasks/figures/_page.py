@@ -255,7 +255,7 @@ INTERMEDIATES: dict[str, Node] = {
         recipe=_command_recipe(
             "ultramodern-thermal",
             "visionsim blender.render-animation ultramodern.blend quickstart/ultramodern-thermal/"
-            " --frame-start=1 --frame-end=600"
+            " --frame-start=150 --frame-end=350"
             " --config.no-include-frames --config.include-thermal"
             " --config.thermal.assignments=../assets/thermal/ultramodern.thermal.json"
             " --config.thermal.sim-time-s=600 --config.thermal.timestep-s=1"

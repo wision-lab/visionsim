@@ -77,10 +77,10 @@ NODES = (
         name="ultramodern-thermal-preview",
         files=(static("quick-start/ultramodern-thermal-preview.mp4"),),
         is_figure=True,
-        # Keep all 600 camera poses at 25fps, matching the full thermal video.
+        # Match frames 150..350 at the authored 50fps, like the ground-truth clip.
         requires=("ultramodern-thermal",),
         recipe=video_recipe(
-            "quickstart/ultramodern-thermal/radiance-colorized/*.png", 1, "quick-start/ultramodern-thermal-preview"
+            "quickstart/ultramodern-thermal/radiance-colorized/*.png", 2, "quick-start/ultramodern-thermal-preview"
         ),
     ),
 )
