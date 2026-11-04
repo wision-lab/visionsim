@@ -496,6 +496,14 @@ def test_atlas_digest_stable_across_identical_builds(monkeypatch):
     assert plan1.digest == plan2.digest
 
 
+@pytest.mark.parametrize("attribute", ["xy", "uv", "position_mm", "normal", "face_material_index"])
+def test_atlas_digest_changes_with_mapping_even_when_counts_match(monkeypatch, attribute):
+    plan = _build_two_object_plan(monkeypatch, drop_second=False)
+    plan.texels["obj_a"][attribute].flat[0] += 1
+    changed = adapter._atlas_digest(plan.layout, plan.tile_min, plan.tile_max, plan.soft_max, plan.texels)
+    assert changed != plan.digest
+
+
 # ---------------------------------------------------------------------------
 # solve_scene cache key
 # ---------------------------------------------------------------------------

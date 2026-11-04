@@ -51,6 +51,185 @@ def call_service(client: Any, name: str, *args: Any, **kwargs: Any) -> Any:
 class HeatsimTestService(BlenderService):
     """Composable primitives (``exposed_*``) that the heatsim tests assemble into scenarios."""
 
+    def exposed_ngon_geometry(self) -> dict:
+        """Extract and sample a concave six-sided face beside a different material."""
+        from visionsim.simulate.heatsim import adapter, atlas
+
+        self._register()
+        self._clear()
+        mesh = bpy.data.meshes.new("concave")
+        mesh.from_pydata(
+            [(0, 0, 0), (2, 0, 0), (2, 1, 0), (1, 1, 0), (1, 2, 0), (0, 2, 0), (3, 0, 0), (4, 0, 0), (3, 1, 0)],
+            [],
+            [(0, 1, 2, 3, 4, 5), (6, 7, 8)],
+        )
+        obj = bpy.data.objects.new("concave", mesh)
+        bpy.context.collection.objects.link(obj)
+        mesh.polygons[1].material_index = 1
+        uv = mesh.uv_layers.new(name="original")
+        for loop in mesh.loops:
+            uv.data[loop.index].uv = mesh.vertices[loop.vertex_index].co[:2]
+        verts, faces, _ = adapter._extract_geometry(obj)
+        loop_uv, slots = adapter._extract_evaluated_face_uv_and_slots(obj, "original")
+        result = {
+            "triangles": len(faces),
+            "area_m2": atlas.surface_area_m2(verts, faces),
+            "uv_error": float(np.max(np.abs(loop_uv - verts[faces, :2] / 1000))),
+            "material_counts": np.bincount(slots, minlength=2).tolist(),
+        }
+        plan = adapter.build_atlas_plan(bpy.context.scene, [obj], {"render_domain": "TEXEL"})
+        result["ngon_samples"] = int(np.count_nonzero(plan.texels[obj.name]["position_mm"][:, 0] < 2500))
+        return result
+
+    def exposed_evaluated_thermal_uvs(self) -> dict:
+        """Unwrap a bevelled corner after evaluation and verify exception restoration."""
+        from visionsim.simulate.heatsim import adapter
+        from visionsim.simulate.heatsim.geometry import release_meshes
+
+        self._register()
+        self._clear()
+        mesh = bpy.data.meshes.new("panels")
+        mesh.from_pydata(
+            [(0, 0, 0), (0, 0, 3), (4, 0, 3), (4, 0, 0), (4, 2, 0), (4, 2, 3)], [], [(0, 3, 2, 1), (3, 4, 5, 2)]
+        )
+        obj = bpy.data.objects.new("panels", mesh)
+        bpy.context.collection.objects.link(obj)
+        material = self._checker_material()
+        hidden_material = bpy.data.materials.new("hidden_data_material")
+        mesh.materials.append(hidden_material)
+        obj.material_slots[0].link = "OBJECT"
+        obj.material_slots[0].material = material
+        uv = mesh.uv_layers.new(name="original")
+        for loop in mesh.loops:
+            uv.data[loop.index].uv = (loop.index / 10, loop.index / 20)
+        original_uv = np.array([tuple(p.uv) for p in uv.data])
+        solidify = obj.modifiers.new("Thickness", "SOLIDIFY")
+        solidify.thickness = 0.2
+        bevel = obj.modifiers.new("Bevel", "BEVEL")
+        bevel.width, bevel.segments = 0.05, 2
+        bpy.context.view_layer.update()
+        before = adapter._extract_geometry(obj)
+        evaluated_uv = np.array(
+            [
+                tuple(p.uv)
+                for p in obj.evaluated_get(bpy.context.evaluated_depsgraph_get()).data.uv_layers["original"].data
+            ]
+        )
+        cfg = {"render_domain": "AUTO", "atlas_texel_density": 0.01, "atlas_tile_min": 128, "atlas_tile_max": 128}
+        try:
+            adapter._build_atlas_plan(bpy.context.scene, [obj], cfg)
+            baseline_overlap = False
+        except ValueError as exc:
+            baseline_overlap = "Thermal UV overlap" in str(exc)
+        plan = adapter.build_atlas_plan(bpy.context.scene, [obj], cfg)
+        try:
+            try:
+                with adapter.use_atlas_geometry(bpy.context.scene, plan):
+                    after = adapter._extract_geometry(obj)
+                    same_geometry = np.array_equal(before[1], after[1]) and np.allclose(before[0], after[0])
+                    copied = obj.data != mesh and all(not m.show_render for m in obj.modifiers)
+                    source_uv_preserved = np.array_equal(
+                        evaluated_uv, [tuple(p.uv) for p in obj.data.uv_layers["original"].data]
+                    )
+                    material_preserved = obj.material_slots[0].material == material
+                    raise RuntimeError("test restoration")
+            except RuntimeError as exc:
+                assert str(exc) == "test restoration"
+            return {
+                "baseline_overlap": baseline_overlap,
+                "same_geometry": bool(same_geometry),
+                "copied": bool(copied),
+                "source_uv_preserved": bool(source_uv_preserved),
+                "material_preserved": bool(material_preserved),
+                "points": len(plan.texels[obj.name]["xy"]),
+                "restored": obj.data == mesh
+                and all(m.show_render and m.show_viewport for m in obj.modifiers)
+                and np.array_equal(original_uv, [tuple(p.uv) for p in mesh.uv_layers["original"].data])
+                and obj.material_slots[0].link == "OBJECT"
+                and obj.material_slots[0].material == material
+                and mesh.materials[0] == hidden_material,
+            }
+        finally:
+            release_meshes(plan.meshes)
+
+    def exposed_render_evaluated_thermal_mesh(self, root_path: str) -> dict:
+        """Exercise native baking, both render passes and saving with a render-only bevel."""
+        from dataclasses import asdict
+
+        from visionsim.simulate.config import ThermalConfig
+        from visionsim.simulate.heatsim.names import ATLAS_UV_LAYER_NAME
+
+        self._register()
+        self._clear()
+        bpy.ops.mesh.primitive_cube_add()
+        obj = bpy.context.object
+        obj.name = "bevelled"
+        obj.data.materials.append(self._checker_material())
+        modifier = obj.modifiers.new("Render bevel", "BEVEL")
+        modifier.width, modifier.segments = 0.1, 2
+        modifier.show_viewport = False
+        subdivision = obj.modifiers.new("Render subdivision", "SUBSURF")
+        subdivision.levels, subdivision.render_levels = 1, 1
+        modifier.show_viewport = True
+        bpy.context.view_layer.update()
+        expected_vertices = len(obj.evaluated_get(bpy.context.evaluated_depsgraph_get()).data.vertices)
+        subdivision.levels = 0
+        modifier.show_viewport = False
+        bpy.ops.object.camera_add(location=(4, -4, 3))
+        camera = bpy.context.object
+        camera.rotation_euler = (-camera.location).to_track_quat("-Z", "Y").to_euler()
+        bpy.context.scene.camera = camera
+        self._add_world_light()
+        self._enable_cycles(samples=8)
+        root = Path(root_path)
+        root.mkdir(parents=True, exist_ok=True)
+        source = root / "source.blend"
+        bpy.ops.wm.save_as_mainfile(filepath=str(source))
+        self.exposed_initialize(source, root)
+        self.exposed_set_resolution(width=32, height=32)
+        self.exposed_cycles_settings(device_type="cpu", use_cpu=True, max_samples=8, use_denoising=False)
+        BlenderService.exposed_configure_thermal(
+            self,
+            asdict(
+                ThermalConfig(
+                    sim_time_s=1,
+                    timestep_s=1,
+                    device="cpu",
+                    render_domain="TEXEL",
+                    preview=False,
+                    bake_samples=1,
+                    irradiance_texture_size=16,
+                    atlas_tile_min=32,
+                    atlas_tile_max=32,
+                )
+            ),
+        )
+        self.exposed_render_frame(1, allow_skips=False)
+        obj = self.scene.objects["bevelled"]
+        restored = (
+            len(obj.data.vertices) == 8
+            and obj.modifiers[0].show_render
+            and not obj.modifiers[0].show_viewport
+            and obj.modifiers[1].levels == 0
+        )
+        finite = True
+        for kind in ("temperature", "thermal_radiance"):
+            image = bpy.data.images.load(str(next((root / kind).rglob("*.exr"))))
+            values = np.array(image.pixels[:])
+            finite &= bool(np.isfinite(values).all() and values.max() > 0)
+            bpy.data.images.remove(image)
+        frozen = root / "thermal.blend"
+        self.exposed_save_file(frozen)
+        bpy.ops.wm.open_mainfile(filepath=str(frozen))
+        obj = bpy.context.scene.objects["bevelled"]
+        return {
+            "restored": bool(restored),
+            "finite_outputs": bool(finite),
+            "saved_final_mesh": len(obj.data.vertices) == expected_vertices
+            and ATLAS_UV_LAYER_NAME in obj.data.uv_layers,
+            "saved_modifiers_disabled": not any(m.show_render or m.show_viewport for m in obj.modifiers),
+        }
+
     @staticmethod
     def _register() -> None:
         """Register the heatsim PropertyGroup once per Blender process, idempotently."""

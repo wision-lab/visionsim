@@ -13,8 +13,8 @@ import numpy as np
 
 CACHE_SCHEMA_VERSION = 2
 # Bump when bake/solver semantics change, even if the archive layout is unchanged.
-# Revision 5 resolves small heating increments without absolute-Kelvin cancellation.
-BAKE_PIPELINE_VERSION = 5
+# Revision 6 includes n-gons and unwraps evaluated geometry before thermal sampling.
+BAKE_PIPELINE_VERSION = 6
 _log = logging.getLogger("rich")
 
 
