@@ -274,6 +274,9 @@ class HeatsimTestService(BlenderService):
         bpy.context.scene.camera = camera
         self._add_world_light()
         self._enable_cycles(samples=8)
+        # New factory scenes use GPU compositing; hosted CPU runners lack a GPU context.
+        if hasattr(bpy.context.scene.render, "compositor_device"):
+            bpy.context.scene.render.compositor_device = "CPU"
         root = Path(root_path)
         root.mkdir(parents=True, exist_ok=True)
         source = root / "source.blend"
