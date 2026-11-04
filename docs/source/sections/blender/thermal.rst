@@ -370,7 +370,7 @@ common starting points are shown below. The full set of preset names is
 ``ceramic``, ``concrete``, ``copper``, ``drywall``, ``fabric``, ``foliage``,
 ``food``, ``glass``, ``iron``, ``leather``, ``li_ion``, ``marble``,
 ``metal_painted``, ``paper``, ``plaster``, ``polystyrene``, ``porcelain``,
-``pvc``, ``rubber``, ``skin``, ``stainless_steel``, ``steel``, ``water`` and
+``pvc``, ``rubber``, ``skin``, ``stainless_steel``, ``steel``, ``tile_glazed``, ``water`` and
 ``wood``. Their values are defined in
 :mod:`visionsim.simulate.heatsim.materials`. They describe generic materials
 rather than a measured piece of furniture or appliance. A coating can change

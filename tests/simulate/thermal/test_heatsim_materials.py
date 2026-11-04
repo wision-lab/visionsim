@@ -15,7 +15,7 @@ from visionsim.simulate.heatsim import materials
 
 
 def test_library_is_well_formed():
-    assert len(materials.PRESETS) == 29
+    assert len(materials.PRESETS) == 30
     for key, preset in materials.PRESETS.items():
         assert preset.key == key
         assert preset.alpha_mm2_s > 0.0, key
@@ -60,6 +60,7 @@ def test_reflection_controls_follow_finish_and_keep_existing_emissivities(tmp_pa
                 "polished": {"preset": "aluminium_polished"},
                 "brushed": {"preset": "stainless_steel", "specular_fraction_ir": 0.9, "roughness_ir": 0.3},
                 "paint": {"preset": "metal_painted"},
+                "tile": {"preset": "tile_glazed"},
                 "fallback": {"roughness_ir": 0.7},
             },
         )
@@ -68,6 +69,8 @@ def test_reflection_controls_follow_finish_and_keep_existing_emissivities(tmp_pa
     assert sa.reflection_for("polished") == (0.98, 0.08)
     assert sa.reflection_for("brushed") == (0.9, 0.3)
     assert sa.reflection_for("paint")[0] == 0.0
+    assert sa.reflection_for("tile") == (0.8, 0.2)
+    assert materials.PRESETS["tile_glazed"].emissivity_ir == 0.92
     assert sa.reflection_for("fallback") == (0.0, 0.7)
     assert sa.reflection_for("missing") == (0.0, 0.5)
     assert materials.PRESETS["glass"].emissivity_ir == 0.84

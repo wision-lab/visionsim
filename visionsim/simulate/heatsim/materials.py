@@ -167,6 +167,9 @@ _PRESET_TABLE = (
     ("ceramic", 0.6, 2300.0, 850.0, 0.93, "Approximate glazed ceramic: tile, sanitaryware, pottery."),
     # [18] Porcelain eps: glazed surface, T at 20 C.
     ("porcelain", 0.7, 2400.0, 840.0, 0.92, "Approximate vitrified porcelain: tableware, basins."),
+    # Same estimated porcelain bulk and total-spectrum emissivity as above.
+    # The tile finish below is an appearance estimate, not a measured LWIR BRDF.
+    ("tile_glazed", 0.7, 2400.0, 840.0, 0.92, "Approximate glazed porcelain floor tile; finish dependent."),
     # Bulk estimates imply k ~ 2.85, within [5] table 9's marble range (1.2-4.3 W/(m.K)).
     # That range does not source the individual density, specific heat, or alpha values.
     ("marble", 1.2, 2700.0, 880.0, 0.94, "Approximate natural marble; other worktop materials may differ."),
@@ -214,6 +217,7 @@ _PRESET_TABLE = (
 # Roughness is Cycles' dimensionless MULTI_GGX width, not surface height in um.
 _REFLECTION_ESTIMATES = {
     "glass": (0.95, 0.05),
+    "tile_glazed": (0.80, 0.20),
     "aluminium_polished": (0.98, 0.08),
     "stainless_steel": (0.95, 0.18),
     "aluminium": (0.80, 0.35),

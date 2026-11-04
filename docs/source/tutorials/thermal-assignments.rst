@@ -98,6 +98,9 @@ The current reflection-shape estimates are:
    * - Smooth glass
      - 0.95
      - 0.05
+   * - Glazed floor tile (``tile_glazed``)
+     - 0.80
+     - 0.20
    * - Polished aluminium
      - 0.98
      - 0.08
@@ -127,6 +130,12 @@ transmission. Ordinary glass is specular despite high emissivity (see
 show how strongly metal scattering depends on finish; their Table 2 averages
 are not 8–14 µm band averages. The existing scalar emissivities retain their
 documented approximations.
+
+``tile_glazed`` reuses the estimated porcelain bulk properties and emissivity
+0.92. The latter is a total-spectrum value for glazed porcelain in
+`FLIR's emissivity table <https://support.flir.com/docdownload/assets/web/27eh/en-us/T505002.xml.html>`_,
+not an 8–14 µm measurement. Its specular fraction and roughness are finish
+estimates; emissivity still limits total reflectance to 0.08.
 
 Check and render
 ----------------
