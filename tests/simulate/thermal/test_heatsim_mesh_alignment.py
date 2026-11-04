@@ -18,6 +18,8 @@ render:
 
 from __future__ import annotations
 
+import sys
+
 from tests.simulate.thermal.heatsim_test_service import SERVICE_PATH, call_service
 from visionsim.simulate.blender import BlenderClient
 
@@ -57,7 +59,7 @@ def test_evaluated_faces_have_unique_thermal_uvs_and_restore_source(executable):
 
 
 def test_native_render_and_save_use_the_evaluated_thermal_mesh(executable, tmp_path):
-    with BlenderClient.spawn(executable=executable, timeout=120, service=SERVICE_PATH) as client:
+    with BlenderClient.spawn(executable=executable, timeout=120, service=SERVICE_PATH, log=sys.stdout) as client:
         result = call_service(client, "render_evaluated_thermal_mesh", str(tmp_path))
 
     assert result["restored"]
