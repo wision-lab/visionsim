@@ -178,7 +178,7 @@ class ThermalConfig:
     emissivity: float = 0.9
     """Default surface emissivity in [0, 1]"""
     # --- solver ---
-    irradiance_scale: float = 100.0
+    irradiance_scale: float = 1.0
     """Scale factor applied to computed irradiance (heating input)"""
     sim_time_s: float = 1.0
     """Total simulated time in seconds (static scene mode)"""

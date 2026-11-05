@@ -1,0 +1,222 @@
+{
+  "schema_version": 1,
+  "scene": "ultramodern.blend",
+  "defaults": {},
+  "materials": {
+    "black": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.35,
+      "reason": "Black details on electrical outlets and curtain rails; no node shader is available. PVC is an assumed plastic surrogate; the actual material is unspecified."
+    },
+    "carpet": {
+      "preset": "carpet",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Material on the carpet mesh; nonmetallic Principled shader with roughness 0.9 supports a textile floor covering."
+    },
+    "ceiling_lights": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.5,
+      "reason": "Emissive faces of ceiling_round_lights (Emission strength 75); glass approximates a lamp cover or diffuser. Emission strength does not establish a temperature, so the surface is unpinned. LWIR specular fraction and Cycles roughness are finish estimates, not measured 8\u201314 um BRDF fits.",
+      "specular_fraction_ir": 0,
+      "roughness_ir": 0.5
+    },
+    "chrome": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.45,
+      "reason": "Chrome-named trim and fixtures are modeled as matte painted metal under the Ultramodern scene policy. Painted steel is the thermal proxy; the material name and RGB metallic value do not establish the actual coating or substrate."
+    },
+    "cloth": {
+      "preset": "fabric",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Curtain material using Fabric036_4K_Roughness.jpg and translucent/transparent shader components; fabric is the matching thermal preset."
+    },
+    "cloth.dark": {
+      "preset": "fabric",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Darker curtain variant using the same Fabric036 texture family and cloth shader as cloth."
+    },
+    "cloth.pillows.grey": {
+      "preset": "fabric",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Sofa pillow upholstery with Fabric036 color, normal and roughness textures; nonmetallic textile."
+    },
+    "cloth.pillows.grey.001": {
+      "preset": "fabric",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Second sofa pillow material using the same Fabric036 upholstery textures as cloth.pillows.grey."
+    },
+    "cloth.pillows.grey.002": {
+      "preset": "fabric",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Third sofa pillow material using the same Fabric036 upholstery textures as cloth.pillows.grey."
+    },
+    "cloth.sofa": {
+      "preset": "fabric",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Main sofa upholstery with Fabric036 color, normal and roughness textures; fabric approximates the visible textile surface."
+    },
+    "cloth.sofa.seams": {
+      "preset": "fabric",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Sofa seam material uses the same Fabric036 textile texture family as the main upholstery."
+    },
+    "dark": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.35,
+      "reason": "Dark nonmetallic sofa feet or lower supports, confined to z=0.006-0.081 m. PVC approximates molded plastic feet; wood or another construction material remains possible."
+    },
+    "emissions": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.45,
+      "reason": "Warm emissive strip around the living_room ceiling at z=2.7375-2.8125 m (Emission strength 48). Glass is a diffuser surrogate; its construction and operating temperature are unspecified, so it is unpinned. LWIR specular fraction and Cycles roughness are finish estimates, not measured 8\u201314 um BRDF fits.",
+      "specular_fraction_ir": 0,
+      "roughness_ir": 0.5
+    },
+    "emissions.lamp": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.7,
+      "reason": "Small emissive elements inside lamp and lamp.001, enclosed by lamp.glass (Emission strength 150); glass approximates bulb envelopes. No fixed temperature is inferred from RGB emission. LWIR specular fraction and Cycles roughness are finish estimates, not measured 8\u201314 um BRDF fits.",
+      "specular_fraction_ir": 0,
+      "roughness_ir": 0.5
+    },
+    "floor.tiles": {
+      "preset": "marble",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Floor tiles use Marble013_4K_Color.jpg.001 with matching normal and roughness textures. Marble is the visual material proxy; the texture cannot establish the actual stone or exclude imitation tile."
+    },
+    "glass": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Window panes, table glass and table decoration share a transparent shader with Principled transmission 1; soda-lime glass is the available thermal proxy. LWIR specular fraction and Cycles roughness are finish estimates, not measured 8\u201314 um BRDF fits.",
+      "specular_fraction_ir": 0.95,
+      "roughness_ir": 0.05
+    },
+    "lamp.glass": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.9,
+      "reason": "Amber lamp shades on lamp and lamp.001; explicitly glass-named material with Principled transmission 1 and translucent/transparent components. LWIR specular fraction and Cycles roughness are finish estimates, not measured 8\u201314 um BRDF fits.",
+      "specular_fraction_ir": 0.95,
+      "roughness_ir": 0.1
+    },
+    "metal_dark": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Dark window-frame material is named metal but its Principled metallic value is 0, consistent with a nonmetallic coating. Painted steel is an approximation; frame alloy and coating are unverified."
+    },
+    "metal_tables": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.45,
+      "reason": "Metal surfaces on table.001 and table.002 are modeled as matte painted metal under the Ultramodern scene policy, matching the painted-metal preview. Painted steel is the thermal proxy; the actual coating and substrate are unspecified."
+    },
+    "metal_white": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.4,
+      "reason": "Bright ceiling-light trim is modeled as matte painted metal under the Ultramodern scene policy. Painted steel is the thermal proxy; the RGB metallic shader and material name do not establish the actual coating or substrate."
+    },
+    "pattern": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "pattern.jpg is mapped onto two thin rectangular wall decorations (pattern and pattern.001). Paper/card approximates printed artwork; canvas or another backing remains possible."
+    },
+    "plastic_white": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Explicitly plastic-named material on electrical outlet/switch plates and curtain rails, with Principled metallic 0; PVC is the library proxy for molded plastic."
+    },
+    "sakura": {
+      "preset": "paper",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.8,
+      "reason": "sakura.jpg covers a thin rectangular wall artwork at x=2.6752-2.7 m, rather than plant geometry. Paper/card approximates the print; its actual support could be canvas."
+    },
+    "tv.chrome": {
+      "preset": "metal_painted",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.45,
+      "reason": "Chrome-named TV trim is modeled as matte painted metal under the Ultramodern scene policy. Painted steel is the thermal proxy; the material name and RGB metallic value do not establish the actual coating or substrate."
+    },
+    "tv.plastic": {
+      "preset": "pvc",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.85,
+      "reason": "Black TV housing is explicitly plastic-named and nonmetallic. PVC approximates the housing polymer; no powered-device temperature is prescribed."
+    },
+    "tv.screen": {
+      "preset": "glass",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.6,
+      "reason": "Glossy nonmetallic TV display face, roughness 0.03, with no nonzero RGB emission. Glass approximates the display front; its laminate construction and operating state are unspecified. LWIR specular fraction and Cycles roughness are finish estimates, not measured 8\u201314 um BRDF fits.",
+      "specular_fraction_ir": 0.95,
+      "roughness_ir": 0.05
+    },
+    "wall": {
+      "preset": "plaster",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.75,
+      "reason": "Large off-white nonmetallic room walls on living_room with procedural surface detail. Gypsum plaster approximates the visible finish; substrate and wall assembly are unspecified. The separate walls.borders mesh has no material slots and uses global ThermalConfig fallback properties."
+    },
+    "white": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.35,
+      "reason": "Matte white borders/backings shared by the thin sakura and pattern wall artworks. Painted wood approximates picture frames or backing boards; the plain shader does not identify the substrate."
+    },
+    "wood.black": {
+      "preset": "wood",
+      "role": "FEM_PARTICIPANT",
+      "dirichlet_K": null,
+      "confidence": 0.95,
+      "reason": "Door, furniture and table surfaces use Wood050_4K color, normal and roughness textures; wood is the matching thermal preset."
+    }
+  }
+}
