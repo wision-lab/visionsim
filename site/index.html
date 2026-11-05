@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0b0c0d">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=20261105e">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://wision-lab.github.io/visionsim/">
 <meta property="og:title" content="VisionSIM — perception is complementary">
@@ -66,32 +66,32 @@
            aria-label="One instant of a rendered room, read by many sensors in turn, resolving into a segmentation and an object detection.">
         <div class="deck__stack">
           <figure class="deck__layer" style="--i:0">
-            <video muted playsinline loop preload="none" poster="media/posters/sensor-rgb.webp">
-              <source src="media/sensor-rgb.mp4" type="video/mp4"></video>
+            <video muted playsinline loop preload="none" poster="media/posters/sensor-rgb.webp?v=20261105e">
+              <source src="media/sensor-rgb.mp4?v=20261105e" type="video/mp4"></video>
           </figure>
           <figure class="deck__layer" style="--i:1">
-            <video muted playsinline loop preload="none" poster="media/posters/sensor-imu.webp">
-              <source src="media/sensor-imu.mp4" type="video/mp4"></video>
+            <video muted playsinline loop preload="none" poster="media/posters/sensor-imu.webp?v=20261105e">
+              <source src="media/sensor-imu.mp4?v=20261105e" type="video/mp4"></video>
           </figure>
           <figure class="deck__layer" style="--i:2">
-            <video muted playsinline loop preload="none" poster="media/posters/sensor-lidar.webp">
-              <source src="media/sensor-lidar.mp4" type="video/mp4"></video>
+            <video muted playsinline loop preload="none" poster="media/posters/sensor-lidar.webp?v=20261105e">
+              <source src="media/sensor-lidar.mp4?v=20261105e" type="video/mp4"></video>
           </figure>
           <figure class="deck__layer" style="--i:3">
-            <video muted playsinline loop preload="none" poster="media/posters/sensor-thermal.webp">
-              <source src="media/sensor-thermal.mp4" type="video/mp4"></video>
+            <video muted playsinline loop preload="none" poster="media/posters/sensor-thermal.webp?v=20261105e">
+              <source src="media/sensor-thermal.mp4?v=20261105e" type="video/mp4"></video>
           </figure>
           <figure class="deck__layer" style="--i:4">
-            <video muted playsinline loop preload="none" poster="media/posters/sensor-itof.webp">
-              <source src="media/sensor-itof.mp4" type="video/mp4"></video>
+            <video muted playsinline loop preload="none" poster="media/posters/sensor-itof.webp?v=20261105e">
+              <source src="media/sensor-itof.mp4?v=20261105e" type="video/mp4"></video>
           </figure>
           <figure class="deck__layer" style="--i:5">
-            <video muted playsinline loop preload="none" poster="media/posters/sensor-dvs.webp">
-              <source src="media/sensor-dvs.mp4" type="video/mp4"></video>
+            <video muted playsinline loop preload="none" poster="media/posters/sensor-dvs.webp?v=20261105e">
+              <source src="media/sensor-dvs.mp4?v=20261105e" type="video/mp4"></video>
           </figure>
           <figure class="deck__layer" style="--i:6">
-            <video muted playsinline loop preload="none" poster="media/posters/sensor-spc.webp">
-              <source src="media/sensor-spc.mp4" type="video/mp4"></video>
+            <video muted playsinline loop preload="none" poster="media/posters/sensor-spc.webp?v=20261105e">
+              <source src="media/sensor-spc.mp4?v=20261105e" type="video/mp4"></video>
           </figure>
 
         </div>
@@ -118,27 +118,25 @@
   <div class="wrap">
     <div class="sec__head">
       <div><h2>Fourteen annotations for every view.</h2></div>
-      <p>Every view arrives with what the renderer already knew: how far each pixel is, which way
-        the surface faces, where it moved from and to, what object it belongs to, what it is made of,
-        where it sits in the world, how hot it is. Camera intrinsics and extrinsics are exact for
-        every frame — nothing here is estimated.</p>
+      <p>These are the renderer's own outputs. Exact for every frame, camera intrinsics
+        provided, synchronised with the sensor readings above.</p>
     </div>
 
     <div class="layers-grid">
-      <figure><video muted playsinline loop preload="none" poster="media/posters/layer-rgb.webp"><source src="media/layer-rgb.mp4" type="video/mp4"></video><figcaption><span>Frames</span><em>colour + HDR</em></figcaption></figure>
-      <figure><video muted playsinline loop preload="none" poster="media/posters/layer-depth.webp"><source src="media/layer-depth.mp4" type="video/mp4"></video><figcaption><span>Depth</span><em>distance</em></figcaption></figure>
-      <figure><video muted playsinline loop preload="none" poster="media/posters/layer-normals.webp"><source src="media/layer-normals.mp4" type="video/mp4"></video><figcaption><span>Normals</span><em>direction</em></figcaption></figure>
-      <figure><video muted playsinline loop preload="none" poster="media/posters/layer-flow.webp"><source src="media/layer-flow.mp4" type="video/mp4"></video><figcaption><span>Flow</span><em>fwd + back</em></figcaption></figure>
-      <figure><video muted playsinline loop preload="none" poster="media/posters/layer-segments.webp"><source src="media/layer-segments.mp4" type="video/mp4"></video><figcaption><span>Segments</span><em>objects</em></figcaption></figure>
-      <figure><video muted playsinline loop preload="none" poster="media/posters/layer-materials.webp"><source src="media/layer-materials.mp4" type="video/mp4"></video><figcaption><span>Materials</span><em>material</em></figcaption></figure>
-      <figure><video muted playsinline loop preload="none" poster="media/posters/layer-points.webp"><source src="media/layer-points.mp4" type="video/mp4"></video><figcaption><span>Points</span><em>position</em></figcaption></figure>
-      <figure><video muted playsinline loop preload="none" poster="media/posters/layer-temperature.webp"><source src="media/layer-temperature.mp4" type="video/mp4"></video><figcaption><span>Temperature</span><em>kelvin</em></figcaption></figure>
-      <figure><video muted playsinline loop preload="none" poster="media/posters/layer-direct-diffuse.webp"><source src="media/layer-direct-diffuse.mp4" type="video/mp4"></video><figcaption><span>Direct</span><em>diffuse</em></figcaption></figure>
-      <figure><video muted playsinline loop preload="none" poster="media/posters/layer-direct-specular.webp"><source src="media/layer-direct-specular.mp4" type="video/mp4"></video><figcaption><span>Direct</span><em>specular</em></figcaption></figure>
-      <figure><video muted playsinline loop preload="none" poster="media/posters/layer-indirect-diffuse.webp"><source src="media/layer-indirect-diffuse.mp4" type="video/mp4"></video><figcaption><span>Indirect</span><em>diffuse</em></figcaption></figure>
-      <figure><video muted playsinline loop preload="none" poster="media/posters/layer-indirect-specular.webp"><source src="media/layer-indirect-specular.mp4" type="video/mp4"></video><figcaption><span>Indirect</span><em>specular</em></figcaption></figure>
-      <figure><video muted playsinline loop preload="none" poster="media/posters/layer-diffuse-color.webp"><source src="media/layer-diffuse-color.mp4" type="video/mp4"></video><figcaption><span>Albedo</span><em>base colour</em></figcaption></figure>
-      <figure><video muted playsinline loop preload="none" poster="media/posters/layer-specular-color.webp"><source src="media/layer-specular-color.mp4" type="video/mp4"></video><figcaption><span>Specular</span><em>tint</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none" poster="media/posters/layer-rgb.webp?v=20261105e"><source src="media/layer-rgb.mp4?v=20261105e" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-rgb.webp?v=20261105e" alt="" loading="lazy" decoding="async"></div><figcaption><span>Frames</span><em>colour + HDR</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none" poster="media/posters/layer-depth.webp?v=20261105e"><source src="media/layer-depth.mp4?v=20261105e" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-depth.webp?v=20261105e" alt="" loading="lazy" decoding="async"></div><figcaption><span>Depth</span><em>distance</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none" poster="media/posters/layer-normals.webp?v=20261105e"><source src="media/layer-normals.mp4?v=20261105e" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-normals.webp?v=20261105e" alt="" loading="lazy" decoding="async"></div><figcaption><span>Normals</span><em>direction</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none" poster="media/posters/layer-flow.webp?v=20261105e"><source src="media/layer-flow.mp4?v=20261105e" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-flow.webp?v=20261105e" alt="" loading="lazy" decoding="async"></div><figcaption><span>Flow</span><em>fwd + back</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none" poster="media/posters/layer-segments.webp?v=20261105e"><source src="media/layer-segments.mp4?v=20261105e" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-segments.webp?v=20261105e" alt="" loading="lazy" decoding="async"></div><figcaption><span>Segments</span><em>objects</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none" poster="media/posters/layer-materials.webp?v=20261105e"><source src="media/layer-materials.mp4?v=20261105e" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-materials.webp?v=20261105e" alt="" loading="lazy" decoding="async"></div><figcaption><span>Materials</span><em>material</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none" poster="media/posters/layer-points.webp?v=20261105e"><source src="media/layer-points.mp4?v=20261105e" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-points.webp?v=20261105e" alt="" loading="lazy" decoding="async"></div><figcaption><span>Points</span><em>position</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none" poster="media/posters/layer-temperature.webp?v=20261105e"><source src="media/layer-temperature.mp4?v=20261105e" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-temperature.webp?v=20261105e" alt="" loading="lazy" decoding="async"></div><figcaption><span>Temperature</span><em>kelvin</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none" poster="media/posters/layer-direct-diffuse.webp?v=20261105e"><source src="media/layer-direct-diffuse.mp4?v=20261105e" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-direct-diffuse.webp?v=20261105e" alt="" loading="lazy" decoding="async"></div><figcaption><span>Direct</span><em>diffuse</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none" poster="media/posters/layer-direct-specular.webp?v=20261105e"><source src="media/layer-direct-specular.mp4?v=20261105e" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-direct-specular.webp?v=20261105e" alt="" loading="lazy" decoding="async"></div><figcaption><span>Direct</span><em>specular</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none" poster="media/posters/layer-indirect-diffuse.webp?v=20261105e"><source src="media/layer-indirect-diffuse.mp4?v=20261105e" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-indirect-diffuse.webp?v=20261105e" alt="" loading="lazy" decoding="async"></div><figcaption><span>Indirect</span><em>diffuse</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none" poster="media/posters/layer-indirect-specular.webp?v=20261105e"><source src="media/layer-indirect-specular.mp4?v=20261105e" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-indirect-specular.webp?v=20261105e" alt="" loading="lazy" decoding="async"></div><figcaption><span>Indirect</span><em>specular</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none" poster="media/posters/layer-diffuse-color.webp?v=20261105e"><source src="media/layer-diffuse-color.mp4?v=20261105e" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-diffuse-color.webp?v=20261105e" alt="" loading="lazy" decoding="async"></div><figcaption><span>Albedo</span><em>base colour</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none" poster="media/posters/layer-specular-color.webp?v=20261105e"><source src="media/layer-specular-color.mp4?v=20261105e" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-specular-color.webp?v=20261105e" alt="" loading="lazy" decoding="async"></div><figcaption><span>Specular</span><em>tint</em></figcaption></figure>
     </div>
   </div>
 </section>
@@ -146,14 +144,14 @@
 <section class="sec" id="dataset">
   <div class="wrap">
     <div class="dataset">
-      <video muted playsinline loop preload="none" poster="media/posters/dataset-grid.webp" aria-label="A grid of rendered scenes from the release">
-        <source src="media/dataset-grid.mp4" type="video/mp4"></video>
+      <div class="clip"><video muted playsinline loop preload="none" poster="media/posters/dataset-grid.webp?v=20261105e" aria-label="A grid of rendered scenes from the release">
+        <source src="media/dataset-grid.mp4?v=20261105e" type="video/mp4"></video><img class="clip__poster" src="media/posters/dataset-grid.webp?v=20261105e" alt="" loading="lazy" decoding="async"></div>
       <div>
         <h2>Batteries included.</h2>
-        <p style="color:var(--ink-2);max-width:52ch;margin:1rem 0 0">
+        <p class="dataset__lede">
           It comes with a large-scale dataset rendered through this pipeline: <b>100M raw data
           points</b> from eight sensors, across <b>100 indoor scenes</b>, with <b>480k synchronized
-          ground-truth views</b>. Coming soon — the <a href="https://visionsim.readthedocs.io/en/latest/tutorials/large-dataset.html" style="color:var(--ink);border-bottom:1px solid var(--line-2);text-decoration:none">prerelease</a> is available in the meantime.</p>
+          ground-truth views</b>. Coming soon. The <a href="https://visionsim.readthedocs.io/en/latest/tutorials/large-dataset.html" class="dataset__link">prerelease</a> is available in the meantime.</p>
         <ul>
           <li><a href="https://visionsim.readthedocs.io/en/latest/quick-start.html">Quick start <em>install · first render</em></a></li>
           <li><a href="https://visionsim.readthedocs.io/en/latest/sections/datasets.html">Dataset layout <em>formats · conventions</em></a></li>
@@ -176,7 +174,7 @@
       </svg>
         <span>Vision<em>SIM</em></span>
       </a>
-      <p style="margin:.9rem 0 0;max-width:34ch">A modular simulator for distributed rendering with pixel-perfect
+      <p class="foot__note">A modular simulator for distributed rendering with pixel-perfect
         annotations and realistic sensor emulation. CoRL 2026.</p>
     </div>
     <div>
@@ -205,6 +203,6 @@
 </footer>
 
 </main>
-<script src="main.js"></script>
+<script src="main.js?v=20261105e"></script>
 </body>
 </html>

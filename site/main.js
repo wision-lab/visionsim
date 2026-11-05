@@ -37,26 +37,41 @@
 
   function videoOf(el) { return el ? el.querySelector("video") : null; }
 
-  function play(v) {
+  /* ---- clips ------------------------------------------------------------
+     A poster image rides over every clip and only steps aside while frames
+     are really arriving, so a refused, stalled or unloaded decode shows the
+     frame instead of a black square. */
+  function syncLive(v) {
+    var clip = v.closest(".clip");
+    if (clip) clip.classList.toggle("is-live", !v.paused && v.readyState >= 2);
+  }
+
+  function setClip(v, on) {
     if (!v) return;
-    if (v.preload === "none") v.preload = "auto";
-    v.dataset.on = "1";
-    var pr = v.play();
-    if (pr && pr.catch) pr.catch(function () {});
+    if (on) {
+      if (v.preload === "none") v.preload = "auto";
+      v.dataset.on = "1";
+      var pr = v.play();
+      if (pr && pr.catch) pr.catch(function () {});
+    } else if (v.dataset.on) {
+      delete v.dataset.on;
+      v.pause();
+    }
+    syncLive(v);
   }
 
-  function pause(v) {
-    if (!v || !v.dataset.on) return;
-    delete v.dataset.on;
-    v.pause();
-  }
+  ["playing", "timeupdate", "seeked", "loadeddata", "canplay",
+   "pause", "waiting", "stalled", "error", "emptied", "ended"].forEach(function (type) {
+    [].forEach.call(document.querySelectorAll(".clip > video"), function (v) {
+      v.addEventListener(type, function () { syncLive(v); });
+    });
+  });
 
-  /* only the reading on screen runs; the rest wait on their poster */
+  /* only the reading on screen runs, and only while the hero is in view */
+  var heroOnScreen = true;
   function onlyPlaying(index) {
     layers.forEach(function (el, k) {
-      var v = videoOf(el);
-      if (!v) return;
-      if (k === index) play(v); else pause(v);
+      setClip(videoOf(el), k === index && heroOnScreen);
     });
   }
 
@@ -184,15 +199,88 @@
     });
   });
 
-  var gridVideos = [].slice.call(document.querySelectorAll(".layers-grid video, .dataset video"));
-  if ("IntersectionObserver" in window && gridVideos.length) {
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) {
-        var v = e.target;
-        if (e.isIntersecting) play(v); else pause(v);
+  if (deckSec && "IntersectionObserver" in window) {
+    new IntersectionObserver(function (entries) {
+      var vis = entries[0].isIntersecting;
+      if (vis === heroOnScreen) return;
+      heroOnScreen = vis;
+      if (state >= 0) onlyPlaying(state === SETTLE ? -1 : state);
+    }, {}).observe(deckSec);
+  }
+
+  var datasetVideo = document.querySelector(".dataset video");
+  if (datasetVideo && "IntersectionObserver" in window) {
+    new IntersectionObserver(function (entries) {
+      setClip(datasetVideo, entries[0].isIntersecting);
+    }, { threshold: 0.25 }).observe(datasetVideo);
+  }
+
+  /* ---- the annotation grid is one shot read fourteen ways --------------
+     All fourteen clips are the same 9.01 s camera move, so they are not a
+     slideshow of independent loops: they are pulled down a few at a time,
+     and only when the last one is buffered does the whole grid start, every
+     tile from zero. Until that moment each tile sits on its poster. */
+  var ensemble = [].slice.call(document.querySelectorAll(".layers-grid video"));
+  var gridReady = false, gridInView = false, gridRunning = false, drift = null;
+
+  /* all fourteen clips are the same 9.01 s camera move, so the grid is one
+     clock: nothing moves until the last clip is buffered, then every tile
+     starts from zero and is nudged back if its decoder drifts */
+  function syncGrid() {
+    var run = gridReady && gridInView;
+    if (run === gridRunning) return;
+    gridRunning = run;
+    clearInterval(drift);
+    ensemble.forEach(function (v) { setClip(v, run); });
+    if (!run) return;
+    ensemble.forEach(function (v) { try { v.currentTime = 0; } catch (e) {} });
+    ensemble.forEach(function (v) { setClip(v, true); });
+    drift = setInterval(function () {
+      var t = ensemble[0].currentTime;
+      ensemble.forEach(function (v) {
+        if (v === ensemble[0]) return;
+        if (v.paused) setClip(v, true);
+        else if (Math.abs(v.currentTime - t) > 0.18) { try { v.currentTime = t; } catch (e) {} }
       });
-    }, { threshold: 0.25 });
-    gridVideos.forEach(function (v) { io.observe(v); });
+    }, 1200);
+  }
+
+  /* buffered a few at a time, so the posters win the first of the bandwidth */
+  function preloadAll(list, done) {
+    var i = 0, live = 0, finished = false;
+    function step() {
+      while (live < 3 && i < list.length) {
+        (function (v) {
+          live++;
+          function settle() {
+            v.removeEventListener("canplaythrough", settle);
+            v.removeEventListener("loadeddata", settle);
+            v.removeEventListener("error", settle);
+            live--; step();
+          }
+          v.addEventListener("canplaythrough", settle);
+          v.addEventListener("loadeddata", settle);
+          v.addEventListener("error", settle);
+          v.preload = "auto";
+          v.load();
+        })(list[i++]);
+      }
+      if (!finished && i >= list.length && live === 0) { finished = true; done(); }
+    }
+    step();
+  }
+
+  var gridEl = document.querySelector(".layers-grid");
+  if (gridEl && ensemble.length && "IntersectionObserver" in window) {
+    new IntersectionObserver(function (entries) {
+      if (!entries[0].isIntersecting) return;
+      preloadAll(ensemble.slice(), function () { gridReady = true; syncGrid(); });
+    }, { rootMargin: "600px 0px", threshold: 0 }).observe(gridEl);
+
+    new IntersectionObserver(function (entries) {
+      gridInView = entries[0].isIntersecting;
+      syncGrid();
+    }, { threshold: [0, 0.15] }).observe(gridEl);
   }
 
   var onNav = function () {
