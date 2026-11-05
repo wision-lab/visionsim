@@ -4,8 +4,6 @@
 @font-face { font-family: "Hanken"; src: url("fonts/hanken-grotesk-latin-500-normal.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap }
 @font-face { font-family: "Hanken"; src: url("fonts/hanken-grotesk-latin-700-normal.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap }
 @font-face { font-family: "Spline"; src: url("fonts/spline-sans-mono-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap }
-@font-face { font-family: "Spline"; src: url("fonts/spline-sans-mono-latin-500-normal.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap }
-
 :root {
   --bg:      #0b0c0d;
   --bg-2:    #101214;
@@ -33,7 +31,6 @@ body {
   font-family: var(--f-text); font-size: 16px; line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
-body.locked { overflow: hidden }
 ::selection { background: var(--ink); color: var(--bg) }
 a { color: inherit }
 img, video { display: block; max-width: 100% }
@@ -190,11 +187,6 @@ h2 {
   letter-spacing: -.024em; font-weight: 500; max-width: 24ch;
 }
 .sec__head p { margin: clamp(.9rem, 1.8vh, 1.4rem) 0 0; color: var(--ink-2); max-width: 68ch }
-.eyebrow {
-  font-family: var(--f-mono); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--ink-3); margin: 0 0 .8rem;
-}
-
 .layers-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-top: clamp(2rem, 5vh, 3.4rem) }
 .layers-grid figure { margin: 0; background: var(--bg); position: relative }
 .layers-grid video, .layers-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; background: #0e0f10 }

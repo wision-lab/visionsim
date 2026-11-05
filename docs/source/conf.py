@@ -43,6 +43,7 @@ html_favicon = "_static/favicon.svg"
 html_logo = "_static/logo.svg"
 html_css_files = [
     "css/custom.css",
+    "css/brand.css",
 ]
 html_js_files = [
     "js/sync-videos.js",
@@ -50,6 +51,7 @@ html_js_files = [
 ]
 
 html_theme_options = {
+    "sidebar_hide_name": True,
     "footer_icons": [
         {
             "name": "GitHub",
