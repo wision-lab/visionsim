@@ -1,5 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 26 26" width="32" height="32" role="img" aria-label="VisionSIM">
-  <rect width="26" height="26" rx="5" fill="#f3f1ea"/>
   <g fill="none" stroke="#c02d0c" stroke-width="2.6">
     <rect x="1.9" y="4.3" width="16.4" height="11.6" rx="2.5" opacity=".42"/>
     <rect x="5.3" y="7.7" width="16.4" height="11.6" rx="2.5" opacity=".74"/>
