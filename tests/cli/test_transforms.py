@@ -3,13 +3,13 @@ import numpy as np
 import OpenEXR
 import pytest
 
-from visionsim.cli.transforms import colorize_depths
+from visionsim.cli.transforms import colorize_depths, colorize_segmentations
 
 HEADER = {"compression": OpenEXR.ZIP_COMPRESSION, "type": OpenEXR.scanlineimage}
 
 
 def _write_exr(path, channel, data):
-    with OpenEXR.File(HEADER, {channel: OpenEXR.Channel(data)}) as f:
+    with OpenEXR.File(HEADER.copy(), {channel: OpenEXR.Channel(data)}) as f:
         f.write(str(path))
 
 
@@ -38,3 +38,14 @@ def test_colorize_depths_accepts_scalar(tmp_path):
     colorize_depths(src, tmp_path / "out")
 
     assert iio.imread(tmp_path / "out" / "0000.png").shape == (4, 5, 4)
+
+
+@pytest.mark.parametrize("labels", [[[0, 3]], [[0, -1]]])
+def test_colorize_segmentations_rejects_out_of_range_labels(tmp_path, labels):
+    src = tmp_path / "in"
+    src.mkdir()
+    (src / "0000").mkdir()
+    _write_exr(src / "0000" / "0000.exr", "V", np.array(labels, dtype=np.float32))
+
+    with pytest.raises(ValueError, match="Segmentation labels"):
+        colorize_segmentations(src, tmp_path / "out", num_objects=2)

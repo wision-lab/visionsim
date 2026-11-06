@@ -39,3 +39,20 @@ def linearrgb_to_srgb(img: torch.Tensor | npt.NDArray) -> torch.Tensor | npt.NDA
     img[mask] = img[mask] * 12.92  # type: ignore
     img[~mask] = module.clip(1.055 * img[~mask] ** (1.0 / 2.4) - 0.055, 0.0, 1.0)
     return img
+
+
+def to_grayscale(img: npt.NDArray) -> npt.NDArray[np.floating]:
+    """Convert an image to Rec.709 luma.
+
+    Args:
+        img (npt.NDArray): Image of shape ``(H, W)``, ``(H, W, 1)`` or ``(H, W, 3+)``.
+
+    Returns:
+        npt.NDArray[np.floating]: Two-dimensional luma image.
+    """
+    if img.ndim == 2:
+        return img.astype(float)
+    if img.shape[-1] == 1:
+        return img[..., 0].astype(float)
+    r, g, b, *_ = np.moveaxis(img, -1, 0)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b

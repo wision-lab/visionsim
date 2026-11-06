@@ -77,11 +77,10 @@ NODES = (
         name="ultramodern-thermal-preview",
         files=(static("quick-start/ultramodern-thermal-preview.mp4"),),
         is_figure=True,
-        # The thermal frame rate follows the render's 50fps, so step by two to play
-        # the four-second pass at 25fps like the other quick-start clips.
+        # Match frames 150..350 at the authored 50fps, like the ground-truth clip.
         requires=("ultramodern-thermal",),
         recipe=video_recipe(
-            "quickstart/ultramodern-thermal/temperature-colorized/*.png", 2, "quick-start/ultramodern-thermal-preview"
+            "quickstart/ultramodern-thermal/radiance-colorized/*.png", 2, "quick-start/ultramodern-thermal-preview"
         ),
     ),
 )

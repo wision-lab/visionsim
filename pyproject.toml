@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "visionsim"
-description = "Towards a Sensor-Realistic World Simulator"
+description = "Beyond Idealized Sensors — A Multi-Modal Simulator for Robot Perception"
 dynamic = ["version"]
 requires-python = ">=3.10,<3.15"
 readme = "README.md"
@@ -45,9 +45,13 @@ dependencies = [
 ]
 license = "GPL-3.0-or-later"
 license-files = ["LICEN[CS]E*"]
+authors = [{ name = "WISION Lab" }]
 
 [project.urls]
 "GitHub" = "https://github.com/WISION-Lab/visionsim"
+"Documentation" = "https://visionsim.readthedocs.io/en/latest/"
+"Changelog" = "https://github.com/WISION-Lab/visionsim/blob/main/docs/source/changelog.rst"
+"Issues" = "https://github.com/WISION-Lab/visionsim/issues"
 
 [project.scripts]
 visionsim = "visionsim.cli:main"
@@ -55,6 +59,14 @@ vsim = "visionsim.cli:main"
 
 [tool.hatch.version]
 path = "visionsim/__init__.py"
+
+# Hatchling's default sdist includes every file not ignored by git, which drags in the docs media,
+# dashboards and whatever untracked files a checkout happens to contain.
+[tool.hatch.build.targets.sdist]
+include = ["/visionsim", "/README.md", "/LICENSE.md", "/pyproject.toml"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["visionsim"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -22,7 +22,7 @@ Then you can **install the latest stable release** via `pip <https://pip.pypa.io
 Generating a dataset
 --------------------
 
-We will create a small scale dataset of a furnished living room as if it was captured by a realistic 25fps conventional RGB camera, a 1.6kHz single photon camera, an event camera, an indirect time-of-flight camera, an inertial measurement unit and a thermal camera, for 4 seconds. To achieve this, we will:
+We will create a small scale dataset of a furnished living room as if it was captured by a realistic 25fps conventional RGB camera, a 1.6kHz single photon camera, an event camera, an indirect time-of-flight camera, an inertial measurement unit and a thermal camera. To achieve this, we will:
 
 - Render a small dataset of 201 ground truth frames, plus depth maps, using the :func:`blender.render-animation <visionsim.cli.blender.render_animation>` CLI,
 - Interpolate this dataset 32-fold using the :func:`interpolate.dataset <visionsim.cli.interpolate.dataset>` CLI,
@@ -50,7 +50,7 @@ To create the dataset, we render the 201 frames between 150 and 350, leaving the
 
     The ``--config.keyframe-multiplier`` option stretches every keyframe in the file, so ``2.0`` plays the animation back at half speed and ``0.5`` at double speed. The command above leaves it at its default of ``1.0``, which keeps the camera moving at the speed it was keyed at.
 
-    If the above command does not work, you might have to change some settings, notably the ``device-type``. For instance on older GPUs that do not support Optix you can do ``--config.device-type=cuda`` to use CUDA.
+    If the above command does not work, you might have to change some settings, notably ``--config.device-type``. For instance on older GPUs that do not support Optix you can do ``--config.device-type=cuda`` to use CUDA.
     
     Finer grain control can be had using the :class:`BlenderClient API <visionsim.simulate.blender.BlenderClient>`.
 
@@ -209,20 +209,37 @@ The readings are what a real IMU would report, so integrating them back into a t
 Thermal Camera
 --------------
 
-A thermal camera measures the heat surfaces radiate rather than the light they reflect, so the emulations above do not apply to it and VisionSim instead simulates the scene's heating. :func:`blender.render-animation <visionsim.cli.blender.render_animation>` enables this with ``--config.include-thermal``, which bakes the scene's lighting with Cycles, integrates a temperature field for the requested simulation time, and renders that field from each camera pose:
+A thermal camera sees emitted and reflected thermal radiation. :func:`blender.render-animation <visionsim.cli.blender.render_animation>` enables this with ``--config.include-thermal``, which bakes the scene's lighting with Cycles, simulates heating, and renders the resulting temperature field from each camera pose. From a source checkout, this example uses the Ultramodern material assignments and a 600-second heat solve:
 
-.. literalinclude:: ../../examples/quickstart.sh
-   :language: bash
-   :lines: 33-39
+.. code-block:: bash
 
-The solve writes a single-channel OpenEXR per frame under ``quickstart/ultramodern-thermal/temperature``, holding absolute temperature in Kelvin. Passing ``--config.thermal.no-radiance`` skips the second render that would also produce a thermal-radiance image. :func:`transforms.colorize-temperatures <visionsim.cli.transforms.colorize_temperatures>` then estimates one temperature range across the whole sequence and maps it through the ``ironbow`` thermal palette by default, so ``temperature-colorized`` holds a viewable PNG per frame. The :doc:`thermal rendering section <sections/blender/thermal>` covers the heat-solve parameters, the radiance pass and how to assign materials and heat sources.
+    visionsim blender.render-animation ultramodern.blend quickstart/ultramodern-thermal/ \
+        --frame-start=150 --frame-end=350 \
+        --config.include-thermal --config.no-include-frames \
+        --config.thermal.assignments=assets/thermal/ultramodern.thermal.json \
+        --config.thermal.sim-time-s=600 --config.thermal.timestep-s=1 \
+        --config.thermal.irradiance-texture-size=1024 \
+        --config.max-samples=2048 --config.adaptive-threshold=0.0001 \
+        --config.no-use-denoising
+
+    visionsim transforms.colorize-temperatures \
+        --input-dir=quickstart/ultramodern-thermal/thermal_radiance \
+        --output-dir=quickstart/ultramodern-thermal/radiance-colorized \
+        --cmap=inferno
+
+    visionsim ffmpeg.animate \
+        --input-dir=quickstart/ultramodern-thermal/radiance-colorized \
+        --pattern='*.png' --step=2 \
+        --outfile=quickstart/ultramodern-thermal/thermal_global.mp4
+
+The solve writes temperature EXRs in Kelvin under ``quickstart/ultramodern-thermal/temperature`` and thermal-radiance EXRs under ``thermal_radiance``. Blender 4.3 and newer store a single channel; earlier versions store RGB with identical channels. :func:`transforms.colorize-temperatures <visionsim.cli.transforms.colorize_temperatures>` maps the radiance through the ``inferno`` palette using one range across the sequence, and ``ffmpeg.animate`` creates ``thermal_global.mp4``. The thermal clip below is a compressed 320×320 preview of frames 150–350, keeping every second frame at 25fps to match the other previews. The :doc:`thermal rendering section <sections/blender/thermal>` covers the simulation parameters, material assignments, and heat sources.
 
 |
 
 Results
 -------
 
-Four seconds of the same living room, as seen by each camera, plus the trajectories integrated from its IMU readings:
+The same living room, as seen by each camera, plus the trajectories integrated from its IMU readings:
 
 .. grid:: 3
     :gutter: 2

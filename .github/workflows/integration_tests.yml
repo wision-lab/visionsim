@@ -1,6 +1,9 @@
 name: Run Tests
 
-on: [push]
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 jobs:
   build:
@@ -8,10 +11,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.14"]
-        blender-version: ["3.6", "4.5", "latest"]
-        # os: ["macos-latest", "ubuntu-latest", "windows-latest"]
-        os: ["ubuntu-latest", "windows-latest"]
+        include:
+        # Oldest and newest supported combinations, on both platforms.
+        - python-version: "3.10"
+          blender-version: "3.6"
+          os: ubuntu-latest
+        - python-version: "3.10"
+          blender-version: "3.6"
+          os: windows-latest
+        - python-version: "3.14"
+          blender-version: "latest"
+          os: ubuntu-latest
+        - python-version: "3.14"
+          blender-version: "latest"
+          os: windows-latest
     steps:
       - name: Checkout Codebase
         uses: actions/checkout@v7

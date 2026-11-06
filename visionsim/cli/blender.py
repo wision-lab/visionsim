@@ -60,7 +60,9 @@ def _resolve_autoscale(config: RenderConfig) -> RenderConfig:
     if not config.autoscale:
         return config
 
-    if config.max_job_vram is not None and config.max_job_vram <= 0:
+    if config.max_job_vram is None:
+        raise ValueError("Autoscaling requires `max_job_vram`, the VRAM budget per job (e.g. `8GB`).")
+    if config.max_job_vram <= 0:
         raise ValueError(f"`max_job_vram` must be positive, got {config.max_job_vram}.")
 
     config = deepcopy(config)
@@ -96,7 +98,7 @@ def _require_blender(executable: str | os.PathLike | None = None) -> None:
     """
     from visionsim.cli import _run  # avoid circular import
 
-    if _run(f"{executable or 'blender'} --version", shell=True, hide=True).returncode != 0:
+    if _run(f"{executable or 'blender'} --version", shell=True, hide=True, check=False).returncode != 0:
         raise RuntimeError("No blender installation found on path!")
 
 
@@ -209,7 +211,7 @@ def heatsim_solve(
     from visionsim.simulate.blender import BlenderClients
     from visionsim.utils.progress import ElapsedProgress
 
-    if _run(f"{config.executable or 'blender'} --version", shell=True, hide=True).returncode != 0:
+    if _run(f"{config.executable or 'blender'} --version", shell=True, hide=True, check=False).returncode != 0:
         raise RuntimeError("No blender installation found on path!")
     if not (blend_file := blend_file.resolve()).exists():
         raise FileNotFoundError(f"Blender file {blend_file} not found.")
@@ -476,7 +478,7 @@ def optimize_rate(
     probe_config = deepcopy(config)
     probe_config.resolution_percentage = resolution_percentage
     probe_config.max_samples = 1
-    probe_config.adaptive_threshold = False
+    probe_config.adaptive_threshold = 0.0
     probe_config.include_flows = True
 
     probe_config.use_denoising = False

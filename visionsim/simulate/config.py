@@ -180,7 +180,7 @@ class ThermalConfig:
     emissivity: float = 0.9
     """Default surface emissivity in [0, 1]"""
     # --- solver ---
-    irradiance_scale: float = 100.0
+    irradiance_scale: float = 1.0
     """Scale factor applied to computed irradiance (heating input)"""
     sim_time_s: float = 1.0
     """Total simulated time in seconds (static scene mode)"""
@@ -338,7 +338,8 @@ class RenderConfig(ConfigIO):
     autoscale: bool = False
     """Set number of jobs automatically based on available VRAM and `max_job_vram` when enabled"""
     max_job_vram: MemSize | None = None
-    """Maximum allowable VRAM per job in bytes (limit is not enforced, simply used for `autoscale`)"""
+    """Maximum allowable VRAM per job in bytes (limit is not enforced, simply used for `autoscale`);
+    required when `autoscale` is enabled"""
     camera_offset: tuple[float, float, float] | None = None
     """Camera offset to apply in local coordinates (x, y, z)."""
 

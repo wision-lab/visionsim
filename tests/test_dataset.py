@@ -118,12 +118,78 @@ def test_dataset_slicing_notimplemented(tmp_path_factory, mode, bitpack_dim, idx
         ds[idx]
 
 
+def test_metadata_from_frames_uses_frame_cameras():
+    frame = {
+        "file_path": "a.png",
+        "transform_matrix": np.eye(4).tolist(),
+        "fl_x": 1.0,
+        "fl_y": 1.0,
+        "cx": 0.5,
+        "cy": 0.5,
+        "w": 1,
+        "h": 1,
+    }
+
+    meta = Metadata.from_frames([frame])
+
+    assert meta.frames[0].fl_x == 1.0
+    assert meta.frames[0].cx == 0.5
+
+
+def test_metadata_from_frames_accepts_global_camera():
+    camera = {"fl_x": 2.0, "fl_y": 2.0, "cx": 0.5, "cy": 0.5, "w": 2, "h": 2}
+    frame = {"file_path": "a.png", "transform_matrix": np.eye(4).tolist()}
+
+    meta = Metadata.from_frames([frame], camera=camera)
+
+    assert meta.fl_x == 2.0
+
+
+def test_metadata_accepts_zero_principal_point():
+    frame = {
+        "file_path": "a.png",
+        "transform_matrix": np.eye(4).tolist(),
+        "fl_x": 1.0,
+        "fl_y": 1.0,
+        "cx": 0.0,
+        "cy": 0.0,
+        "w": 1,
+        "h": 1,
+    }
+
+    meta = Metadata.from_frames([frame])
+
+    assert meta.frames[0].cx == 0.0
+
+
+def test_metadata_rejects_empty_frames():
+    with pytest.raises(ValueError, match="at least one frame"):
+        Metadata(fl_x=1.0, fl_y=1.0, cx=0.5, cy=0.5, w=1, h=1, frames=[])
+
+
+def test_metadata_from_dense_transforms_rejects_empty():
+    with pytest.raises(ValueError, match="empty transforms"):
+        Metadata.from_dense_transforms([])
+
+
 def test_metadata_roundtrip_from_json(tmp_path):
     setup_dataset(tmp_path)
     meta = Metadata.load(tmp_path / "transforms.json")
     meta.save(tmp_path / "transforms.db")
 
     assert Metadata.load(tmp_path / "transforms.db").model_dump() == meta.model_dump()
+
+
+def test_metadata_roundtrip_from_json_bitpacked(tmp_path):
+    data, _ = setup_dataset(tmp_path, mode="npy", w=10, h=10, n=3, bitpack_dim=2)
+    meta = Metadata.load(tmp_path / "transforms.json")
+    meta.save(tmp_path / "transforms.db")
+
+    reloaded = Metadata.load(tmp_path / "transforms.db")
+    assert reloaded.model_dump() == meta.model_dump()
+
+    ds = Dataset.from_path(tmp_path / "transforms.db")
+    assert np.array_equal(ds[0][0], data[0])
 
 
 def test_path_transforms_simple(tmp_path):

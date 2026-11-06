@@ -20,6 +20,40 @@ def test_completions(tmpdir):
     _run(rf"visionsim --tyro-write-completion {shell_name} {tmpdir}/visionsim", check=True, shell=True, log_path=tmpdir)
 
 
+@pytest.mark.skipif("win" in sys.platform, reason="No autocomplete on windows")
+@pytest.mark.parametrize(
+    ("shell", "filename", "alias_filename", "registration"),
+    [
+        ("bash", "visionsim", "vsim", "complete -F _tyro_visionsim visionsim"),
+        ("zsh", "_visionsim", "_vsim", "#compdef visionsim"),
+        ("fish", "visionsim.fish", "vsim.fish", "complete --no-files --command 'visionsim'"),
+    ],
+)
+def test_completion_command(tmp_path, shell, filename, alias_filename, registration):
+    _run(["visionsim", "completion", "--shell", shell, "--path", str(tmp_path)], check=True)
+    target = tmp_path / filename
+
+    assert registration in target.read_text()
+    assert (tmp_path / alias_filename).exists()
+    # Multi-line help must not leak description fragments as completion candidates.
+    assert "print(*completion.splitlines())" in target.read_text()
+    assert "print(completion)" not in target.read_text()
+    if shell == "fish":
+        # tyro's default -c invocation exceeds Linux's per-argument size limit for this CLI.
+        assert '-c "$pycode"' not in target.read_text()
+        assert "| $python_cmd -" in target.read_text()
+
+    # Re-running must overwrite cleanly; tyro's choice ordering is not byte-stable.
+    _run(["visionsim", "completion", "--shell", shell, "--path", str(tmp_path)], check=True)
+    assert registration in target.read_text()
+
+    _run(
+        ["visionsim", "completion", "--mode", "uninstall", "--shell", shell, "--path", str(tmp_path)],
+        check=True,
+    )
+    assert not list(tmp_path.iterdir())
+
+
 @pytest.mark.parametrize("module", _cli_modules)
 def test_help_is_full(module):
     for func_name, func in inspect.getmembers(module, inspect.isfunction):

@@ -68,23 +68,26 @@ The same configuration is available through the :meth:`blender.render-animation 
 .. code-block:: bash
 
     # OpenEXR at 32-bit float, lossless ZIP compression
-    visionsim blender.render-animation scene.blend ./output \\
-        --config.frames.file-format OPEN_EXR \\
-        --config.frames.bit-depth 32 \\
+    visionsim blender.render-animation scene.blend ./output \
+        --config.frames.file-format OPEN_EXR \
+        --config.frames.bit-depth 32 \
         --config.frames.exr-codec ZIP
 
     # Radiance HDR (always 32-bit float, RGB only)
-    visionsim blender.render-animation scene.blend ./output \\
-        --config.frames.file-format HDR \\
+    visionsim blender.render-animation scene.blend ./output \
+        --config.frames.file-format HDR \
         --config.frames.color-mode RGB
+
+Radiance HDR is 32-bit float only, so the bit depth is set to 32 automatically for that format and
+``--config.frames.bit-depth`` does not need to be passed.
 
 Composites work the same way (provided the compositor setup does not do any tonemapping already) but must first be enabled:
 
 .. code-block:: bash
 
-    visionsim blender.render-animation scene.blend ./output \\
-        --config.include-composites \\
-        --config.composites.file-format OPEN_EXR \\
+    visionsim blender.render-animation scene.blend ./output \
+        --config.include-composites \
+        --config.composites.file-format OPEN_EXR \
         --config.composites.bit-depth 32
 
 .. note::
@@ -127,8 +130,8 @@ A single display-referred image cannot show both ends of that range: tone-mappin
 
 .. code-block:: bash
 
-    visionsim transforms.tonemap-frames \\
-        --input-dir attic-frame/frames \\
+    visionsim transforms.tonemap-frames \
+        --input-dir attic-frame/frames \
         --output-dir attic-frame-preview
 
 The ``.exr`` frames under ``attic-frame/frames`` are the ones to hand to the sensor emulation pipeline; the PNGs in ``attic-frame-preview`` are only for display.

@@ -94,6 +94,7 @@ _REGISTRY_REUSE_LOGGED: bool = False
 ITEMS_PER_SUBFOLDER: int = 1000
 INDEX_PADDING: int = np.ceil(np.log10(ITEMS_PER_SUBFOLDER)).astype(int)
 
+
 # Taken from blender/scripts/addons_core/node_wrangler/operators/save_viewer_image.py
 FORMATS: dict[str, str] = {
     "BMP": ".bmp",
@@ -707,7 +708,8 @@ class BlenderService(rpyc.Service):
             node.format.file_format = file_format
             node.format.color_mode = color_mode
             node.format.exr_codec = exr_codec
-            node.format.color_depth = str(bit_depth)
+            # Radiance HDR is 32-bit float only; the config default of 8 is meant for PNGs.
+            node.format.color_depth = "32" if file_format.upper() == "HDR" else str(bit_depth)
             slot.name = str(Path(slot.name).with_suffix(FORMATS[file_format.upper()]))
 
         if denoise and self.scene.render.engine.upper() == "CYCLES":
@@ -1031,6 +1033,8 @@ class BlenderService(rpyc.Service):
         if file_format is not None:
             self.scene.render.image_settings.file_format = file_format.upper()
         if bit_depth is not None:
+            # Radiance HDR is 32-bit float only; the config default of 8 is meant for PNGs.
+            bit_depth = 32 if self.scene.render.image_settings.file_format == "HDR" else bit_depth
             self.scene.render.image_settings.color_depth = str(bit_depth)
         if color_mode is not None:
             self.scene.render.image_settings.color_mode = color_mode.upper()
@@ -1324,8 +1328,7 @@ class BlenderService(rpyc.Service):
         indices = np.arange(len(data))
 
         if shuffle:
-            np.random.seed(seed=seed)
-            np.random.shuffle(indices)
+            np.random.default_rng(seed).shuffle(indices)
 
         for i, item in zip(indices, data):
             item.pass_index = i + 1
@@ -1732,17 +1735,63 @@ class BlenderService(rpyc.Service):
             }
             atlas_plan = adapter.build_atlas_plan(self.scene, sim_objects, atlas_cfg)
 
-        history = adapter.solve_scene(
-            self.scene,
-            defaults=defaults,
-            solver_cfg=solver_cfg,
-            cache_root=cache_root,
-            assignment=assignment,
-            atlas_plan=atlas_plan,
-            source_digest=source_digest,
-            recompute=recompute,
-        )
+        try:
+            with adapter.use_atlas_geometry(self.scene, atlas_plan):
+                history = adapter.solve_scene(
+                    self.scene,
+                    defaults=defaults,
+                    solver_cfg=solver_cfg,
+                    cache_root=cache_root,
+                    assignment=assignment,
+                    atlas_plan=atlas_plan,
+                    source_digest=source_digest,
+                    recompute=recompute,
+                )
+        except Exception:
+            if atlas_plan is not None:
+                from visionsim.simulate.heatsim.geometry import release_meshes
+
+                release_meshes(atlas_plan.meshes)
+            raise
         return history, atlas_plan, cache_root
+
+    @staticmethod
+    def _thermal_atlas_reader_is_managed(material: Any, node: Any) -> bool:
+        """Allow replacement only for thermal readers, never ordinary RGB paths."""
+        from visionsim.simulate.heatsim.thermal_shader import _gray_body_material_name
+
+        scale = material.get("heatsim_thermal_radiance_scale")
+        if (
+            isinstance(scale, (int, float))
+            and material.name
+            == _gray_body_material_name(
+                scale,
+                material.get("heatsim_thermal_specular_fraction", 0.0),
+                material.get("heatsim_thermal_roughness", 0.5),
+            )
+            and "heatsim_thermal_default_emissivity" in material
+        ):
+            return True
+        visited = set()
+        pending = [node]
+        temperature_aov = False
+        while pending:
+            current = pending.pop()
+            if current.as_pointer() in visited:
+                continue
+            visited.add(current.as_pointer())
+            for output in current.outputs:
+                for link in output.links:
+                    target = link.to_node
+                    if target.type == "OUTPUT_MATERIAL":
+                        return False
+                    if target.type == "OUTPUT_AOV":
+                        temperature_aov |= (
+                            getattr(target, "aov_name", None) == "temperature" or target.name == "temperature"
+                        )
+                    else:
+                        pending.append(target)
+        return temperature_aov
 
     def _thermal_load_pack_atlas_image(self, atlas_path: Path) -> None:
         """Load the EXR :func:`adapter.write_atlas` wrote and (re)register it as the
@@ -1759,7 +1808,7 @@ class BlenderService(rpyc.Service):
             raise RuntimeError(f"Image {ATLAS_IMAGE_NAME!r} is user-owned; cannot replace it with a thermal atlas")
         bound_nodes = (
             [
-                node
+                (mat, node)
                 for mat in bpy.data.materials
                 if mat.use_nodes and mat.node_tree is not None
                 for node in mat.node_tree.nodes
@@ -1769,13 +1818,18 @@ class BlenderService(rpyc.Service):
             else []
         )
         if existing is not None:
+            # A generated atlas can later become an authored RGB texture. Only
+            # replace it when every reference is an identified thermal reader.
+            unknown_users = existing.users - int(existing.use_fake_user) > len(bound_nodes)
+            if unknown_users or any(not self._thermal_atlas_reader_is_managed(mat, node) for mat, node in bound_nodes):
+                raise RuntimeError(f"Image {ATLAS_IMAGE_NAME!r} has RGB or unrecognized users; cannot replace it safely")
             bpy.data.images.remove(existing)
         image = bpy.data.images.load(str(atlas_path))
         image.name = ATLAS_IMAGE_NAME
         image["heatsim_generated"] = True
         image.colorspace_settings.name = "Non-Color"
         image.pack()
-        for node in bound_nodes:
+        for _, node in bound_nodes:
             node.image = image
 
     @require_initialized_service
@@ -1788,7 +1842,7 @@ class BlenderService(rpyc.Service):
         density_kg_m3: float = ThermalConfig.density_kg_m3,
         specific_heat_J_kgK: float = ThermalConfig.specific_heat_J_kgK,
         emissivity: float = ThermalConfig.emissivity,
-        irradiance_scale: float = 100.0,
+        irradiance_scale: float = 1.0,
         sim_time_s: float = 1.0,
         timestep_s: float = 0.05,
         bake_samples: int = 1024,
@@ -1808,6 +1862,10 @@ class BlenderService(rpyc.Service):
         """Solve a fixed thermal field, write attributes or atlas, and set up the AOV."""
         from visionsim.simulate.heatsim import adapter, thermal_shader
 
+        if self._thermal_atlas_plan is not None:
+            from visionsim.simulate.heatsim.geometry import release_meshes
+
+            release_meshes(self._thermal_atlas_plan.meshes)
         self._thermal_atlas_plan = None
 
         # Cycles' persistent data keeps device-side scene state alive between frames, but
@@ -1841,48 +1899,49 @@ class BlenderService(rpyc.Service):
             recompute=recompute,
         )
         self._thermal_atlas_plan = atlas_plan
-        # Write the ambient fallback before per-object Dirichlet values. AOV setup
-        # follows atlas loading because its shader nodes reference the packed image.
-        thermal_shader.stamp_default_temperatures(self.scene, default_K=initial_temperature_K)
+        with adapter.use_atlas_geometry(self.scene, atlas_plan):
+            # Write the ambient fallback before per-object Dirichlet values. AOV setup
+            # follows atlas loading because its shader nodes reference the packed image.
+            thermal_shader.stamp_default_temperatures(self.scene, default_K=initial_temperature_K)
 
-        # Unset per-object properties resolve from these global defaults.
-        adapter.write_frame_attributes(
-            self.scene,
-            history,
-            -1,
-            {
-                "initial_temperature_K": initial_temperature_K,
-                "thermal_diffusivity_mm2_s": thermal_diffusivity_mm2_s,
-                "density_kg_m3": density_kg_m3,
-                "specific_heat_J_kgK": specific_heat_J_kgK,
-                "emissivity": emissivity,
-            },
-            assignment=self._thermal_assignment,
-            atlas_plan=atlas_plan,
-        )
-        # Global preview range over the solved scene (already pools TEXEL texel and VERTEX
-        # vertex temperatures, since `history` doesn't distinguish them). Stashed on the
-        # service: the caller's `include_thermal` is a separate RPC call on this instance.
-        self._thermal_temp_range = adapter.global_temperature_range(history, initial_temperature_K)
-
-        if atlas_plan is not None and atlas_plan.texels:
-            atlas_path = adapter.write_atlas(
+            # Unset per-object properties resolve from these global defaults.
+            adapter.write_frame_attributes(
+                self.scene,
                 history,
-                atlas_plan,
-                cache_root,
-                defaults={
+                -1,
+                {
                     "initial_temperature_K": initial_temperature_K,
                     "thermal_diffusivity_mm2_s": thermal_diffusivity_mm2_s,
                     "density_kg_m3": density_kg_m3,
                     "specific_heat_J_kgK": specific_heat_J_kgK,
                     "emissivity": emissivity,
-                    "irradiance_scale": irradiance_scale,
                 },
                 assignment=self._thermal_assignment,
+                atlas_plan=atlas_plan,
             )
-            self._thermal_load_pack_atlas_image(atlas_path)
+            # Global preview range over the solved scene (already pools TEXEL texel and VERTEX
+            # vertex temperatures, since `history` doesn't distinguish them). Stashed on the
+            # service: the caller's `include_thermal` is a separate RPC call on this instance.
+            self._thermal_temp_range = adapter.global_temperature_range(history, initial_temperature_K)
 
-        thermal_shader.setup_temperature_aov(self.scene, self.view_layer)
+            if atlas_plan is not None and atlas_plan.texels:
+                atlas_path = adapter.write_atlas(
+                    history,
+                    atlas_plan,
+                    cache_root,
+                    defaults={
+                        "initial_temperature_K": initial_temperature_K,
+                        "thermal_diffusivity_mm2_s": thermal_diffusivity_mm2_s,
+                        "density_kg_m3": density_kg_m3,
+                        "specific_heat_J_kgK": specific_heat_J_kgK,
+                        "emissivity": emissivity,
+                        "irradiance_scale": irradiance_scale,
+                    },
+                    assignment=self._thermal_assignment,
+                )
+                self._thermal_load_pack_atlas_image(atlas_path)
+
+            thermal_shader.setup_temperature_aov(self.scene, self.view_layer)
 
     @require_initialized_service
     def exposed_heatsim_solve(
@@ -1894,7 +1953,7 @@ class BlenderService(rpyc.Service):
         density_kg_m3: float = ThermalConfig.density_kg_m3,
         specific_heat_J_kgK: float = ThermalConfig.specific_heat_J_kgK,
         emissivity: float = ThermalConfig.emissivity,
-        irradiance_scale: float = 100.0,
+        irradiance_scale: float = 1.0,
         sim_time_s: float = 1.0,
         timestep_s: float = 0.05,
         bake_samples: int = 1024,
@@ -1911,8 +1970,9 @@ class BlenderService(rpyc.Service):
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
     ) -> None:
-        """Solve and cache a fixed thermal field without adding render outputs."""
-        self._thermal_solve(
+        """Solve and cache a fixed thermal field without render outputs, ignoring the render-output
+        parameters it accepts for symmetry with :class:`ThermalConfig`."""
+        _, atlas_plan, _ = self._thermal_solve(
             initial_temperature_K=initial_temperature_K,
             thermal_diffusivity_mm2_s=thermal_diffusivity_mm2_s,
             density_kg_m3=density_kg_m3,
@@ -1932,6 +1992,10 @@ class BlenderService(rpyc.Service):
             atlas_texel_soft_max=atlas_texel_soft_max,
             recompute=recompute,
         )
+        if atlas_plan is not None:
+            from visionsim.simulate.heatsim.geometry import release_meshes
+
+            release_meshes(atlas_plan.meshes)
 
     @require_initialized_service
     def exposed_include_thermal(
@@ -1943,7 +2007,7 @@ class BlenderService(rpyc.Service):
         density_kg_m3: float = ThermalConfig.density_kg_m3,
         specific_heat_J_kgK: float = ThermalConfig.specific_heat_J_kgK,
         emissivity: float = ThermalConfig.emissivity,
-        irradiance_scale: float = 100.0,
+        irradiance_scale: float = 1.0,
         sim_time_s: float = 1.0,
         timestep_s: float = 0.05,
         bake_samples: int = 1024,
@@ -2001,6 +2065,10 @@ class BlenderService(rpyc.Service):
             )
 
         if radiance:
+            if assignments is not None:
+                from visionsim.simulate.heatsim.materials import load_assignments
+
+                self._thermal_assignment = load_assignments(Path(str(assignments)))
             # Emission is spectrally flat, so collapse to one channel; before 4.3 the RGB
             # fallback needs identical channels for `load_data(auto_collapse=True)`.
             radiance_bw = self.tree.nodes.new("CompositorNodeRGBToBW")
@@ -2075,10 +2143,10 @@ class BlenderService(rpyc.Service):
         Args:
             height (tuple[int] | list[int] | int | None, optional): Height of render in pixels. Defaults to value from file.
             width (int | None, optional): Width of render in pixels. Defaults to value from file.
-            resolution_percentage (float, optional): Percentage of the original resolution to render at. Defaults to 100%.
+            resolution_percentage (int, optional): Percentage of the original resolution to render at. Defaults to 100%.
 
         Raises:
-            ValueError: raised if resolution is not understood.
+            ValueError: raised if the resolution is not understood, or if a dimension is not positive.
         """
         if isinstance(height, (tuple, list)):
             if width is not None:
@@ -2087,10 +2155,16 @@ class BlenderService(rpyc.Service):
                 )
             height, width = height  # type: ignore
 
-        if height:
+        if height is not None:
+            if height <= 0:
+                raise ValueError(f"`height` must be positive, got {height}.")
             self.scene.render.resolution_y = int(height)
-        if width:
+        if width is not None:
+            if width <= 0:
+                raise ValueError(f"`width` must be positive, got {width}.")
             self.scene.render.resolution_x = int(width)
+        if resolution_percentage <= 0:
+            raise ValueError(f"`resolution_percentage` must be positive, got {resolution_percentage}.")
         self.scene.render.resolution_percentage = int(resolution_percentage)
 
     @require_initialized_service
@@ -2118,6 +2192,24 @@ class BlenderService(rpyc.Service):
             if fcurve not in self._disabled_fcurves:
                 fcurve.mute = not enable
         self._use_animation = enable
+
+    @staticmethod
+    def _select_devices(devices: Iterable[Any], device_type: str, use_cpu: bool) -> list[Any]:
+        """Pick the devices of the requested type, plus the CPU when ``use_cpu`` is set.
+
+        Args:
+            devices (Iterable[Any]): Devices exposed by the Cycles preferences.
+            device_type (str): Requested device type, for instance ``CUDA`` or ``CPU``.
+            use_cpu (bool): Also enable CPU devices alongside a GPU backend.
+
+        Returns:
+            list[Any]: Devices to activate.
+        """
+        device_type = device_type.upper()
+        selected = [d for d in devices if d.type.upper() == device_type]
+        if use_cpu and device_type != "CPU":
+            selected += [d for d in devices if d.type == "CPU"]
+        return selected
 
     @require_initialized_service
     def exposed_cycles_settings(
@@ -2177,15 +2269,18 @@ class BlenderService(rpyc.Service):
             for device in cycles_preferences.devices:
                 device.use = False
 
+            requested = device_type.upper()
             activated_devices = []
-            devices = filter(lambda d: d.type.upper() == device_type.upper(), cycles_preferences.devices)
 
-            for device in itertools.chain(devices, filter(lambda d: d.type == "CPU" and use_cpu, devices)):
+            for device in self._select_devices(cycles_preferences.devices, requested, use_cpu):
                 self.log.info(f"Activated device {device.name}, {device.type}")
                 activated_devices.append(device.name)
                 device.use = True
-            cycles_preferences.compute_device_type = "NONE" if device_type.upper() == "CPU" else device_type.upper()
-            self.scene.cycles.device = "CPU" if device_type.upper() == "CPU" else "GPU"
+
+            # "NONE" (and "CPU") make Cycles use the CPU regardless of the requested backend.
+            gpu = requested not in ("CPU", "NONE")
+            cycles_preferences.compute_device_type = requested if gpu else "NONE"
+            self.scene.cycles.device = "GPU" if gpu else "CPU"
             return activated_devices
         return []
 
@@ -2484,7 +2579,7 @@ class BlenderService(rpyc.Service):
 
         Args:
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+                Applies to every selected output; the render is skipped only when all of them exist. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
         """
         folder_index = f"{self.scene.frame_current // ITEMS_PER_SUBFOLDER:04}"
@@ -2525,7 +2620,12 @@ class BlenderService(rpyc.Service):
                 _thermal_armed = getattr(self, "_thermal_radiance", None)
                 _orig_mute: dict[str, bool] = {}
                 _thermal_state = None
+                _geometry_stack = ExitStack()
                 try:
+                    if self._thermal_atlas_plan is not None:
+                        from visionsim.simulate.heatsim import adapter
+
+                        _geometry_stack.enter_context(adapter.use_atlas_geometry(self.scene, self._thermal_atlas_plan))
                     if _thermal_armed:
                         from visionsim.simulate.heatsim import thermal_shader
 
@@ -2556,18 +2656,23 @@ class BlenderService(rpyc.Service):
                             _entry[0].mute = _sp != "thermal_radiance"
 
                         _thermal_state = thermal_shader.enter_thermal_scene(
-                            self.scene, radiance_scale=_thermal_armed["radiance_scale"]
+                            self.scene,
+                            radiance_scale=_thermal_armed["radiance_scale"],
+                            assignment=self._thermal_assignment,
                         )
                         bpy.ops.render.render(animation=False, write_still=False)
                 finally:
                     # Restore the thermal scene (if entered) and all node mute states to their
                     # pre-render originals, regardless of which render pass (if any) raised.
-                    if _thermal_state is not None:
-                        from visionsim.simulate.heatsim import thermal_shader
+                    try:
+                        if _thermal_state is not None:
+                            from visionsim.simulate.heatsim import thermal_shader
 
-                        thermal_shader.restore_scene(self.scene, _thermal_state)
-                    for _sp, _was_muted in _orig_mute.items():
-                        self._outputs[_sp][0].mute = _was_muted
+                            thermal_shader.restore_scene(self.scene, _thermal_state)
+                    finally:
+                        _geometry_stack.close()
+                        for _sp, _was_muted in _orig_mute.items():
+                            self._outputs[_sp][0].mute = _was_muted
 
         # Before Blender 5.0 file output nodes ALWAYS appended the frame number
         # to the filename making our path incorrect, here we rename the file.
@@ -2601,7 +2706,7 @@ class BlenderService(rpyc.Service):
         Args:
             frame_numbers (Iterable[int]): frames to render.
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+                Applies to every selected output; the render is skipped only when all of them exist. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
             update_fn (UpdateFn, optional): callback function to track render progress. Will first be called with ``total`` kwarg,
                 indicating number of steps to be taken, then will be called with ``advance=1`` at every step. Closely mirrors the
@@ -2617,6 +2722,9 @@ class BlenderService(rpyc.Service):
         # Set total number of steps
         if update_fn is not None:
             update_fn(total=len(frame_numbers))
+
+        if not frame_numbers:
+            return
 
         # Max number of frames is 1,048,574 as of Blender 3.4
         # See: https://docs.blender.org/manual/en/latest/advanced/limits.html
@@ -2780,8 +2888,10 @@ class BlenderService(rpyc.Service):
             if bpy.app.version >= (5, 0, 0):
                 self.scene.render.image_settings.media_type = "IMAGE"
             self.scene.render.image_settings.file_format = "PNG"
-            self.scene.render.filepath = str(blasts / ("#" * INDEX_PADDING))
-            skip = allow_skips and all((blasts / f"{f:0{INDEX_PADDING}}.png").exists() for f in frames)
+            skip = allow_skips and all(
+                (blasts / f"{f // ITEMS_PER_SUBFOLDER:04}" / f"{f % ITEMS_PER_SUBFOLDER:0{INDEX_PADDING}}.png").exists()
+                for f in frames
+            )
 
             # Register a database-only output (no compositor node is involved in viewport renders),
             # mirroring `register_output_type` so `_save_metadata` can persist camera info.
@@ -2822,13 +2932,26 @@ class BlenderService(rpyc.Service):
                 )
 
             with bpy.context.temp_override(window=window, screen=window.screen, area=area, region=region):
-                bpy.ops.render.opengl(animation=True, view_context=False)
+                if video:
+                    bpy.ops.render.opengl(animation=True, view_context=False)
+                else:
+                    # Write each frame to its final path so an interrupted run leaves no staging files.
+                    for frame in frames:
+                        folder = f"{frame // ITEMS_PER_SUBFOLDER:04}"
+                        index = f"{frame % ITEMS_PER_SUBFOLDER:0{INDEX_PADDING}}"
+                        (blasts / folder).mkdir(parents=True, exist_ok=True)
+                        self.scene.frame_set(frame)
+                        self.scene.render.filepath = str(blasts / folder / index)
+                        bpy.ops.render.opengl(write_still=True, view_context=False)
 
         if not video:
             for frame in frames:
                 self.exposed_set_current_frame(frame)
                 self._save_metadata(
-                    paths={"playblast": Path(f"{frame:0{INDEX_PADDING}}.png")},
+                    paths={
+                        "playblast": Path(f"{frame // ITEMS_PER_SUBFOLDER:04}")
+                        / f"{frame % ITEMS_PER_SUBFOLDER:0{INDEX_PADDING}}.png"
+                    },
                     transform_matrix=self.exposed_camera_extrinsics().tolist(),
                     camera_info=self.exposed_camera_info(),
                     index=frame,
@@ -2858,7 +2981,10 @@ class BlenderService(rpyc.Service):
         try:
             if self._persistent_data_before_thermal is not None:
                 self.scene.render.use_persistent_data = self._persistent_data_before_thermal
-            bpy.ops.wm.save_as_mainfile(filepath=str(path))
+            from visionsim.simulate.heatsim.adapter import use_atlas_geometry
+
+            with use_atlas_geometry(self.scene, self._thermal_atlas_plan):
+                bpy.ops.wm.save_as_mainfile(filepath=str(path))
         finally:
             self.scene.render.use_persistent_data = current_persistent
 
@@ -3003,8 +3129,8 @@ class BlenderClient:
         and return an rpyc.AsyncResult.
 
         Args:
-            *args: Same as :meth:`BlendService.exposed_render_animation`
-            *kwargs: Same as :meth:`BlendService.exposed_render_animation`
+            *args: Same as :meth:`BlenderService.exposed_render_animation`
+            *kwargs: Same as :meth:`BlenderService.exposed_render_animation`
 
         Returns:
             rpyc.AsyncResult: Result encapsulating the return value of ``render_animation``.
@@ -3024,8 +3150,8 @@ class BlenderClient:
         and return an rpyc.AsyncResult.
 
         Args:
-            *args: Same as :meth:`BlendService.exposed_render_frames`
-            *kwargs: Same as :meth:`BlendService.exposed_render_frames`
+            *args: Same as :meth:`BlenderService.exposed_render_frames`
+            *kwargs: Same as :meth:`BlenderService.exposed_render_frames`
 
         Returns:
             rpyc.AsyncResult: Result encapsulating the return value of ``render_frames``.
@@ -3045,8 +3171,8 @@ class BlenderClient:
         and return an rpyc.AsyncResult.
 
         Args:
-            *args: Same as :meth:`BlendService.exposed_render_playblast`
-            *kwargs: Same as :meth:`BlendService.exposed_render_playblast`
+            *args: Same as :meth:`BlenderService.exposed_render_playblast`
+            *kwargs: Same as :meth:`BlenderService.exposed_render_playblast`
 
         Returns:
             rpyc.AsyncResult: Result encapsulating the return value of ``render_playblast``.
@@ -3091,6 +3217,15 @@ class BlenderClient:
         logger.setLevel(logging.INFO)
         self.with_logger(logger)
         return self
+
+    def common_animation_range(self) -> range:
+        """Get the animation range of this client as range(start, end+1, step).
+
+        Returns:
+            range: Range of frames in animation.
+        """
+        start, end, step = self.animation_range_tuple()
+        return range(start, end + 1, step)
 
     def __getattr__(self, name: str) -> rpyc.BaseNetref:
         """Retrieve remote attribute if client is connected.
@@ -3461,7 +3596,7 @@ class BlenderClients(tuple):
         Args:
             frame_numbers (Collection[int]): frames to render.
             allow_skips (bool, optional): if true, blender will not re-render and overwrite existing frames.
-                This does not however apply to depth/normals/etc, which cannot be skipped. Defaults to True.
+                Applies to every selected output; the render is skipped only when all of them exist. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
             update_fn (UpdateFn, optional): callback function to track render progress. Will first be called with ``total`` kwarg,
                 indicating number of steps to be taken, then will be called with ``advance=1`` at every step. Closely mirrors the
