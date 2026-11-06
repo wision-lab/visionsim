@@ -8,6 +8,12 @@ All notable changes to VisionSIM are documented here. The format follows
 [Unreleased]
 ------------
 
+Added
+^^^^^
+
+- ``--config.load`` and ``--config.dump`` options for render commands, so a ``RenderConfig``
+  can be read from a YAML or JSON file and the effective configuration written back.
+
 [0.2.0]
 -------
 

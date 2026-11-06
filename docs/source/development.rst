@@ -96,7 +96,8 @@ These are read at runtime; none of them are required.
 
 ``VSIM_LOG_LEVEL``
     Log level for the CLI, passed to ``logging.basicConfig``. Defaults to ``INFO``; set it to
-    ``DEBUG`` for verbose output or ``WARNING`` to quiet the renderers.
+    ``DEBUG`` for verbose output (including the resolved configuration) or ``WARNING`` to
+    quiet the renderers.
 
 ``CI``
     Set to ``true`` to send Blender's output to stdout instead of a per-test log directory.

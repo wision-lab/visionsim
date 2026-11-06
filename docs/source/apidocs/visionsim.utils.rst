@@ -20,6 +20,14 @@ visionsim.utils.colormaps module
    :show-inheritance:
    :undoc-members:
 
+visionsim.utils.config\_file module
+-----------------------------------
+
+.. automodule:: visionsim.utils.config_file
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 visionsim.utils.pose module
 ---------------------------
 

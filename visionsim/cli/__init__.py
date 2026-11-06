@@ -21,6 +21,7 @@ from rich.traceback import install
 import visionsim
 
 from . import blender, dataset, emulate, ffmpeg, interpolate, transforms
+from ._config_file import bind_config_file
 
 logging.basicConfig(
     level=os.environ.get("VSIM_LOG_LEVEL", "INFO").upper(),
@@ -283,4 +284,9 @@ def main():
     if args in (["--version"], ["-V"]):
         print(f"{prog} {visionsim.__version__}")
         return
-    tyro.extras.subcommand_cli_from_dict(_cli_dict(), prog=prog)
+    cli_dict = _cli_dict()
+    if args:
+        command, *command_args = args
+        if command in cli_dict:
+            cli_dict[command] = bind_config_file(cli_dict[command], command_args)
+    tyro.extras.subcommand_cli_from_dict(cli_dict, prog=prog)
