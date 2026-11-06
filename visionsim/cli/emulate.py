@@ -64,7 +64,8 @@ def spad(
                 # Image has been tonemapped so undo mapping
                 data = srgb_to_linearrgb((data / 255.0).astype(float))
             else:
-                data = data.astype(float) / 255.0
+                # EXR/HDR frames are already linear; only display-encoded images need undoing.
+                data = data.astype(float)
 
             # Default to bitpacking width
             binary_img = emulate_spc(data, factor=factor, rng=rng) * 255
@@ -161,6 +162,7 @@ def events(
     from visionsim.dataset import Dataset
     from visionsim.emulate.dvs import EventEmulator
     from visionsim.simulate.blender import INDEX_PADDING, ITEMS_PER_SUBFOLDER
+    from visionsim.utils.color import to_grayscale
     from visionsim.utils.progress import ElapsedProgress
 
     if input_dir.resolve() == output_dir.resolve():
@@ -185,6 +187,8 @@ def events(
         fps = framerates.pop()
     if fps is None:
         raise ValueError("FPS not provided and could not be inferred from dataset, please specify.")
+    if fps <= 0:
+        raise ValueError(f"FPS must be positive, got {fps}.")
 
     if only_preview and preview_step is None:
         preview_step = 1
@@ -215,17 +219,14 @@ def events(
         viz = None
 
         for idx, (frame, _) in enumerate(dataset):  # type: ignore
-            # Manually grayscale as we've already converted to floating point pixel values
-            # Values from http://en.wikipedia.org/wiki/Grayscale
-            r, g, b, *_ = np.transpose(frame, (2, 0, 1))
-            luma = 0.0722 * b + 0.7152 * g + 0.2126 * r
+            luma = to_grayscale(frame)
             if blur_sigma > 0:
                 luma = gaussian_filter(luma, sigma=blur_sigma)
-            events = emulator.generate_events(luma, idx / int(fps))
+            events = emulator.generate_events(luma, idx / fps)
 
             if events is not None:
                 events[:, 0] *= 1e6
-                rate = len(events) * int(fps) / 1e3
+                rate = len(events) * fps / 1e3
 
                 if not only_preview:
                     np.savetxt(out, events.astype(int), fmt="%d", delimiter=",")
@@ -649,7 +650,7 @@ def itof(
     from visionsim.dataset import Dataset, Metadata
     from visionsim.emulate.itof.coding import make_coding_functions
     from visionsim.emulate.itof.simulation import simulate_measurements
-    from visionsim.utils.color import srgb_to_linearrgb
+    from visionsim.utils.color import srgb_to_linearrgb, to_grayscale
     from visionsim.utils.progress import ElapsedProgress
 
     if input_dir.resolve() == output_dir.resolve():
@@ -741,11 +742,8 @@ def itof(
                 # 8-bit container holding linear data, rescale to [0, 1] only.
                 albedo = albedo.astype(float) / 255.0
 
-            # iToF sensors are monochromatic, so we convert RGB albedo to grayscale (luma)
-            # This ensures we get true scalar measurements/correlations per pixel
-            if albedo.ndim == 3 and albedo.shape[-1] >= 3:
-                r, g, b, *_ = np.transpose(albedo, (2, 0, 1))
-                albedo = 0.0722 * b + 0.7152 * g + 0.2126 * r
+            # iToF sensors are monochromatic, so scalar albedo gives scalar measurements.
+            albedo = to_grayscale(albedo)
 
             if dataset_depth is not None:
                 depth, _ = dataset_depth[i]

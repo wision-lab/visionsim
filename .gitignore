@@ -92,9 +92,6 @@ uv.lock
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
-/site
-
 # mypy
 .mypy_cache/
 
@@ -152,3 +149,11 @@ examples/sensors/aspc/aspc_report.html
 examples/sensors/aspc/aspc_detection_report.html
 examples/sensors/aspc/detection_checks.tsv
 examples/sensors/aspc/aspc_forward_model_report.html
+
+
+# simulation render intermediates (frames, passes, emulator output)
+/renders
+/assets/robot
+
+# Blender save backups
+*.blend1

@@ -11,6 +11,7 @@ import visionsim
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "VisionSIM"
+html_title = "VisionSIM"
 copyright = "VisionSIM developers, 2026"
 author = "Sacha Jungerman"
 version = visionsim.__version__
@@ -38,8 +39,11 @@ exclude_patterns = ["roadmap.rst"]
 
 html_theme = "furo"
 html_static_path = ["_static"]
+html_favicon = "_static/favicon.svg"
+html_logo = "_static/logo.svg"
 html_css_files = [
     "css/custom.css",
+    "css/brand.css",
 ]
 html_js_files = [
     "js/sync-videos.js",
@@ -47,6 +51,7 @@ html_js_files = [
 ]
 
 html_theme_options = {
+    "sidebar_hide_name": True,
     "footer_icons": [
         {
             "name": "GitHub",

@@ -14,7 +14,7 @@ def video(input_file: Path, output_file: Path, method: str = "rife", n: int = 2)
         input_file: path to video file from which to extract frames
         output_file: path in which to save interpolated video
         method: interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife'
-        n: interpolation factor, must be a multiple of 2, default: 2
+        n: interpolation factor, must be a power of two, default: 2
     """
     import tempfile
 
@@ -73,8 +73,11 @@ def dataset(
         pattern: used to find source image files to interpolate from,
             not needed when ``input_dir`` points to a valid dataset.
         method: interpolation method to use, only RIFE (ECCV22) is supported for now, default: 'rife'
-        n: interpolation factor, must be a multiple of 2, default: 2
+        n: interpolation factor, must be a power of two, default: 2
     """
+    if n < 2 or not n & (n - 1) == 0:
+        raise ValueError(f"Can only interpolate by a power of 2, greater or equal to 2, not {n}.")
+
     from natsort import natsorted
 
     from visionsim.cli import _log

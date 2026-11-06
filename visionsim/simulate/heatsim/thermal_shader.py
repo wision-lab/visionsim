@@ -15,10 +15,14 @@ Provides four entry points consumed by the thermal render pipeline:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Any
 
+import numpy as np
+
 from visionsim.simulate.config import ThermalConfig
+from visionsim.simulate.heatsim.materials import SceneAssignment
 from visionsim.simulate.heatsim.names import ATLAS_COVERAGE_PROP, ATLAS_IMAGE_NAME, ATLAS_UV_LAYER_NAME
 
 try:
@@ -48,6 +52,12 @@ _KEY_MATERIAL_OVERRIDES: str = "orig_material_overrides"
 _KEY_LIGHT_HIDE_RENDER: str = "light_hide_render"
 _KEY_LIGHT_HIDE_VIEWPORT: str = "light_hide_viewport"
 _KEY_CLAMP: str = "orig_sample_clamp"
+_KEY_BOUNCES: str = "orig_thermal_bounces"
+_KEY_MATERIAL_SLOTS: str = "orig_material_slots"
+_KEY_EMPTY_MESHES: str = "orig_empty_materials"
+_KEY_GLOSSY_FILTER: str = "orig_glossy_filter"
+_KEY_MESH_SMOOTHING: str = "orig_mesh_smoothing"
+_KEY_NORMAL_MODIFIERS: str = "orig_normal_modifiers"
 
 
 # ---------------------------------------------------------------------------
@@ -250,14 +260,22 @@ def _build_emissivity_source_chain(nodes: Any, links: Any, x0: float, y0: float)
     return mix.outputs["Result"]
 
 
-def _build_gray_body_material(radiance_scale: float) -> Any:
-    """Create (or return a cached) gray-body emission material for thermal rendering.
+def _gray_body_material_name(radiance_scale: float, specular_fraction: float = 0.0, roughness: float = 0.5) -> str:
+    name = f"HeatSim_ThermalShader_vs_{radiance_scale:.6g}"
+    if specular_fraction == 0.0:
+        return name
+    # Short, exact cache key, including for high-precision sidecar values.
+    shape = f"{float(specular_fraction)!r},{float(roughness)!r}"
+    return f"{name}_ir_{hashlib.sha256(shape.encode()).hexdigest()[:16]}"
 
-    Shader graph — gray-body Kirchhoff (ε + ρ = 1) with Stefan-Boltzmann T⁴ emission:
 
-        T_eff ─→ POWER(4) ─→ MUL(σ) ─→ MUL(radiance_scale) ─→ Emission(Color=1, Str)─┐
-                                                                                        ├─ Mix(Fac=1-ε) ─→ Out
-                                                               Diffuse(Color=1, R=0) ──┘
+def _build_gray_body_material(radiance_scale: float, *, specular_fraction: float = 0.0, roughness: float = 0.5) -> Any:
+    """Create a gray-body material with diffuse and optional glossy reflection.
+
+    The opaque gray model is ε·σT⁴ + (1−ε)·[(1−s)·Diffuse + s·MULTI_GGX].
+    The white multiple-scattering glossy lobe preserves the reflection budget;
+    roughness changes its width. There is no visible-light Fresnel/transmission
+    shader. These scalar controls approximate a finish, not a spectral BRDF.
 
     ``T_eff`` is read from per-vertex ``sim_temperature`` (falling back to the per-object
     ``heatsim_default_temperature`` custom property when the attribute is absent).
@@ -267,11 +285,15 @@ def _build_gray_body_material(radiance_scale: float) -> Any:
     Args:
         radiance_scale: Scalar multiplier after σ·T⁴ — tune this to adjust rendered
             radiance brightness relative to physical W/m² magnitudes.
+        specular_fraction: Fraction of reflected energy in the glossy lobe, in [0, 1].
+        roughness: Dimensionless Cycles glossy roughness, in [0, 1].
 
     Returns:
         A ``bpy.types.Material`` configured for gray-body thermal rendering.
     """
-    mat_name = f"HeatSim_ThermalShader_vs_{radiance_scale:.6g}"
+    if not 0.0 <= specular_fraction <= 1.0 or not 0.0 <= roughness <= 1.0:
+        raise ValueError("thermal specular_fraction and roughness must be in [0, 1]")
+    mat_name = _gray_body_material_name(radiance_scale, specular_fraction, roughness)
     existing = bpy.data.materials.get(mat_name)
     if existing is not None:
         return existing
@@ -317,6 +339,18 @@ def _build_gray_body_material(radiance_scale: float) -> Any:
     diffuse.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
     diffuse.inputs["Roughness"].default_value = 0.0  # Lambertian
 
+    reflection_socket = diffuse.outputs["BSDF"]
+    if specular_fraction > 0.0:
+        glossy = nodes.new("ShaderNodeBsdfGlossy")
+        glossy.distribution = "MULTI_GGX"
+        glossy.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+        glossy.inputs["Roughness"].default_value = roughness
+        reflection = nodes.new("ShaderNodeMixShader")
+        reflection.inputs[0].default_value = specular_fraction
+        links.new(diffuse.outputs["BSDF"], reflection.inputs[1])
+        links.new(glossy.outputs["BSDF"], reflection.inputs[2])
+        reflection_socket = reflection.outputs["Shader"]
+
     # Fac = 1 - ε so the Emission slot gets weight ε and Diffuse gets weight 1-ε.
     # ε is per-vertex, not a scene-wide constant -- see _build_emissivity_source_chain.
     eps_socket = _build_emissivity_source_chain(nodes, links, x0=-800.0, y0=-260.0)
@@ -331,7 +365,7 @@ def _build_gray_body_material(radiance_scale: float) -> Any:
     mix_shader.inputs["Fac"].default_value = 1.0 - _DEFAULT_EMISSIVITY
     links.new(one_minus_eps.outputs["Value"], mix_shader.inputs["Fac"])
     links.new(emission.outputs["Emission"], mix_shader.inputs[1])
-    links.new(diffuse.outputs["BSDF"], mix_shader.inputs[2])
+    links.new(reflection_socket, mix_shader.inputs[2])
 
     out = nodes.new("ShaderNodeOutputMaterial")
     out.location = (840.0, 340.0)
@@ -339,6 +373,8 @@ def _build_gray_body_material(radiance_scale: float) -> Any:
 
     mat["heatsim_thermal_radiance_scale"] = float(radiance_scale)
     mat["heatsim_thermal_default_emissivity"] = _DEFAULT_EMISSIVITY
+    mat["heatsim_thermal_specular_fraction"] = specular_fraction
+    mat["heatsim_thermal_roughness"] = roughness
     return mat
 
 
@@ -544,17 +580,21 @@ def setup_temperature_aov(scene: Any, view_layer: Any) -> str:
     return aov_name
 
 
-def enter_thermal_scene(scene: Any, *, radiance_scale: float) -> dict:
+def enter_thermal_scene(scene: Any, *, radiance_scale: float, assignment: SceneAssignment | None = None) -> dict:
     """Swap *scene* into thermal rendering state for a gray-body radiance pass.
 
-    Overrides view-layer materials with the gray-body emission material,
-    hides all light objects from render, and sets a uniform-background thermal world.
+    Uses per-slot gray-body materials when an assignment is supplied, otherwise
+    a uniform diffuse view-layer override. All thermal materials are opaque.
+    Disables glossy filtering, smooth mesh shading and weighted normals to avoid
+    losing reflected thermal energy near edges.
+    Hides light objects and sets a uniform-background thermal world.
     Returns an opaque state dict; pass it to :func:`restore_scene` to undo all changes.
 
     Args:
         scene: The Blender scene.
         radiance_scale: Multiplier applied after σ·T⁴; controls the brightness of the
             rendered radiance image relative to physical W/m² values.
+        assignment: Thermal sidecar providing per-material reflection controls.
 
     Returns:
         An opaque state dict for passing to :func:`restore_scene`.
@@ -575,14 +615,66 @@ def enter_thermal_scene(scene: Any, *, radiance_scale: float) -> dict:
     state[_KEY_MATERIAL_OVERRIDES] = material_overrides
     state[_KEY_LIGHT_HIDE_RENDER] = hide_render
     state[_KEY_LIGHT_HIDE_VIEWPORT] = hide_viewport
+    mesh_smoothing: dict[Any, Any] = {}
+    normal_modifiers: list[tuple[Any, bool, bool]] = []
+    state[_KEY_MESH_SMOOTHING] = mesh_smoothing
+    state[_KEY_NORMAL_MODIFIERS] = normal_modifiers
 
     try:
+        cy = getattr(scene, "cycles", None)
+        if cy is not None:
+            state[_KEY_GLOSSY_FILTER] = cy.blur_glossy
+            cy.blur_glossy = 0.0
+
+        # Record shared mesh data once, before changing it. Geometry modifiers
+        # such as bevels stay active; only normal-smoothing modifiers are disabled.
+        for obj in scene.objects:
+            if obj.type != "MESH":
+                continue
+            mesh = obj.data
+            if mesh not in mesh_smoothing:
+                smooth: np.ndarray = np.empty(len(mesh.polygons), dtype=bool)
+                mesh.polygons.foreach_get("use_smooth", smooth)
+                mesh_smoothing[mesh] = smooth
+                mesh.polygons.foreach_set("use_smooth", np.zeros(len(mesh.polygons), dtype=bool))
+                mesh.update()
+            for modifier in obj.modifiers:
+                if modifier.type == "WEIGHTED_NORMAL":
+                    normal_modifiers.append((modifier, modifier.show_render, modifier.show_viewport))
+                    modifier.show_render = modifier.show_viewport = False
+
         thermal_mat = _build_gray_body_material(radiance_scale)
 
-        # Render overrides preserve face indices, shared meshes and object-linked slots.
+        # Without a sidecar, retain the original uniform diffuse override.
         for view_layer in scene.view_layers:
             material_overrides[view_layer.name] = view_layer.material_override
-            view_layer.material_override = thermal_mat
+            view_layer.material_override = thermal_mat if assignment is None else None
+
+        if assignment is not None:
+            # Snapshot ALL objects before touching shared mesh material collections.
+            slots = {
+                obj.name: [(s.link, s.material) for s in obj.material_slots]
+                for obj in scene.objects
+                if obj.type in _RENDERABLE_GEOMETRY_TYPES
+            }
+            state[_KEY_MATERIAL_SLOTS] = slots
+            empty_data: list[Any] = []
+            state[_KEY_EMPTY_MESHES] = empty_data
+            for name, original in slots.items():
+                obj = scene.objects[name]
+                if not obj.material_slots:
+                    empty_data.append(obj.data)
+                    obj.data.materials.append(thermal_mat)
+                for i, slot in enumerate(obj.material_slots):
+                    source = original[i][1] if i < len(original) else None
+                    specular, roughness = assignment.reflection_for(
+                        source.name if source is not None else "", object_name=obj.name
+                    )
+                    replacement = _build_gray_body_material(
+                        radiance_scale, specular_fraction=specular, roughness=roughness
+                    )
+                    slot.link = "OBJECT"
+                    slot.material = replacement
 
         # -- Save and disable all lights (hide from render + viewport) ----------
         for obj in scene.objects:
@@ -596,6 +688,12 @@ def enter_thermal_scene(scene: Any, *, radiance_scale: float) -> dict:
         # Save both clamp settings for restoration after rendering.
         cy = getattr(scene, "cycles", None)
         if cy is not None:
+            saved_bounces = {key: getattr(cy, key) for key in ("max_bounces", "diffuse_bounces", "glossy_bounces")}
+            state[_KEY_BOUNCES] = saved_bounces
+            for key, value in saved_bounces.items():
+                # A source RGB scene may allow just one bounce. Thermal mirrors
+                # must also see radiation reflected by other thermal surfaces.
+                setattr(cy, key, max(value, 16))
             saved_clamp: dict[str, Any] = {}
             for attr in ("sample_clamp_direct", "sample_clamp_indirect"):
                 if hasattr(cy, attr):
@@ -650,6 +748,23 @@ def restore_scene(scene: Any, state: dict) -> None:
             :func:`enter_thermal_scene`).
         state: The opaque dict returned by :func:`enter_thermal_scene`.
     """
+    for mesh, smooth in state.get(_KEY_MESH_SMOOTHING, {}).items():
+        mesh.polygons.foreach_set("use_smooth", smooth)
+        mesh.update()
+    for modifier, show_render, show_viewport in state.get(_KEY_NORMAL_MODIFIERS, []):
+        modifier.show_render = show_render
+        modifier.show_viewport = show_viewport
+
+    # Restore object-linked overrides before removing any temporary empty-mesh slot.
+    for name, slots in state.get(_KEY_MATERIAL_SLOTS, {}).items():
+        obj = scene.objects.get(name)
+        if obj is not None:
+            for slot, (link, material) in zip(obj.material_slots, slots):
+                slot.material = material
+                slot.link = link
+    for data in state.get(_KEY_EMPTY_MESHES, []):
+        data.materials.clear()
+
     # -- Restore view-layer material overrides --------------------------------
     material_overrides = state.get(_KEY_MATERIAL_OVERRIDES, {})
     for view_layer in scene.view_layers:
@@ -659,6 +774,10 @@ def restore_scene(scene: Any, state: dict) -> None:
     # -- Restore Cycles sample clamps -------------------------------------------
     cy = getattr(scene, "cycles", None)
     if cy is not None:
+        if _KEY_GLOSSY_FILTER in state:
+            cy.blur_glossy = state[_KEY_GLOSSY_FILTER]
+        for attr, value in state.get(_KEY_BOUNCES, {}).items():
+            setattr(cy, attr, value)
         for attr, value in (state.get(_KEY_CLAMP, {}) or {}).items():
             try:
                 setattr(cy, attr, value)
