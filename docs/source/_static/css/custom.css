@@ -147,27 +147,22 @@ table.borderless th {
     width: 100%;
 }
 
-/* Furo stacks the logo above the project name; keep them on one row instead. */
+/* The logo carries the wordmark, so the sidebar only has to give it a height:
+   Furo's default sizing assumes a square mark. */
 .sidebar-brand {
     flex-direction: row;
     align-items: center;
-    gap: 0.6rem;
     padding-top: 1.25rem;
 }
 
 .sidebar-logo-container {
     margin: 0;
+    width: auto;
     flex-shrink: 0;
 }
 
 .sidebar-logo {
-    width: 2rem;
-    height: auto;
-    /* The mark's visual mass sits a hair below its box center. */
-    transform: translateY(-1px);
-}
-
-.sidebar-brand-text {
-    margin: 0;
-    line-height: 1;
+    width: auto;
+    height: 2rem;
+    max-width: 100%;
 }

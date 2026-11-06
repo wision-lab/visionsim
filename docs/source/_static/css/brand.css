@@ -1,7 +1,6 @@
-/* VisionSIM brand for the docs, matching site/index.html.
-   Two colours: the near-black ground, and the mark's red for accents.
-   Links on the dark ground use a lighter tint of that red — #c02d0c on
-   #0b0c0d is 3.3:1, which clears large text but not body copy. */
+/* VisionSIM brand for the docs, matching site/index.html: Hanken Grotesk for
+   text, Spline Sans Mono for code. Both colour palettes live in `conf.py`, in
+   `html_theme_options`, so Furo can switch them with its appearance toggle. */
 
 @font-face {
     font-family: "Hanken";
@@ -31,75 +30,15 @@
     font-style: normal;
     font-display: swap;
 }
-/* Furo reads its palette from these variables on `body`, so both its light and
-   dark appearance land on the same ground; the docs are dark because the page is. */
+
 body {
     --font-stack: "Hanken", "Helvetica Neue", Arial, sans-serif;
     --font-stack--monospace: "Spline", ui-monospace, "SFMono-Regular", monospace;
-
-    --color-brand-primary: #ff7a5c;
-    --color-brand-content: #ff7a5c;
-
-    --color-background-primary: #0b0c0d;
-    --color-background-secondary: #0f1113;
-    --color-background-hover: #171a1c;
-    --color-background-border: #22262a;
-    --color-background-item: #141719;
-
-    --color-foreground-primary: #f3f3f0;
-    --color-foreground-secondary: #c2c5c2;
-    --color-foreground-muted: #8f938f;
-    --color-foreground-border: #2a2e31;
-
-    --color-admonition-background: #121517;
-    --color-admonition-title-background: #171a1d;
-    --color-highlight-on-target: #1b1f22;
-
-    --color-api-name: #ff7a5c;
-    --color-api-pre-name: #8f938f;
-    --color-inline-code-background: #15181a;
-    --color-guilabel-background: #171a1d;
-    --color-guilabel-border: #2a2e31;
 }
 
-/* the mark's own red, where it carries a shape rather than a sentence */
+/* the landing page sets its headings in the 500 weight and tracks them tighter */
 h1,
 h2 {
     letter-spacing: -0.02em;
-}
-
-h1,
-h2 {
     font-weight: 500;
-}
-
-/* code and tables inherit the ground instead of Furo's light defaults */
-div.highlight,
-pre {
-    background: #121517;
-    border-color: var(--color-background-border);
-}
-
-code.literal {
-    border-color: var(--color-background-border);
-}
-
-table.docutils td,
-table.docutils th {
-    border-color: var(--color-background-border);
-}
-
-/* one colour scheme, so the appearance toggle would do nothing */
-.theme-toggle {
-    display: none;
-}
-
-/* the logo carries the wordmark now, so it sets its own width from a fixed height */
-.sidebar-logo-container {
-    width: auto;
-}
-.sidebar-logo {
-    width: auto;
-    height: 2rem;
-    max-width: 100%;
 }

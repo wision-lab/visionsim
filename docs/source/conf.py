@@ -40,7 +40,6 @@ exclude_patterns = ["roadmap.rst"]
 html_theme = "furo"
 html_static_path = ["_static"]
 html_favicon = "_static/favicon.svg"
-html_logo = "_static/logo.svg"
 html_css_files = [
     "css/custom.css",
     "css/brand.css",
@@ -52,6 +51,57 @@ html_js_files = [
 
 html_theme_options = {
     "sidebar_hide_name": True,
+    # Two wordmarks: the near-white one only reads on the dark ground.
+    "light_logo": "logo-light.svg",
+    "dark_logo": "logo.svg",
+    # Furo writes these into its own `body`, `body[data-theme=dark]` and
+    # prefers-dark rules, so the appearance toggle switches a whole palette
+    # instead of fighting a single override on `body`.
+    "light_css_variables": {
+        "color-brand-primary": "#c02d0c",
+        "color-brand-content": "#c02d0c",
+        "color-brand-visited": "#8f2a10",
+        "color-problematic": "#b30000",
+        "color-foreground-primary": "#17191b",
+        "color-foreground-secondary": "#4b5054",
+        "color-foreground-muted": "#666b6e",
+        "color-foreground-border": "#a29d94",
+        "color-background-primary": "#fbfaf7",
+        "color-background-secondary": "#f3f1ea",
+        "color-background-hover": "#ece9e1",
+        "color-background-hover--transparent": "#ece9e100",
+        "color-background-border": "#e3ded4",
+        "color-background-item": "#d9d3c8",
+        "color-api-name": "#c02d0c",
+        "color-api-pre-name": "#666b6e",
+        "color-inline-code-background": "#f0eee7",
+        "color-highlight-on-target": "#fff3cf",
+        "color-guilabel-background": "#e9e5dc80",
+        "color-guilabel-border": "#d5cfc480",
+    },
+    "dark_css_variables": {
+        "color-brand-primary": "#ff7a5c",
+        "color-brand-content": "#ff7a5c",
+        "color-brand-visited": "#ffb38f",
+        "color-problematic": "#ee5151",
+        "color-foreground-primary": "#f3f3f0",
+        "color-foreground-secondary": "#c2c5c2",
+        "color-foreground-muted": "#8f938f",
+        "color-foreground-border": "#2a2e31",
+        "color-background-primary": "#0b0c0d",
+        "color-background-secondary": "#0f1113",
+        "color-background-hover": "#171a1c",
+        "color-background-hover--transparent": "#171a1c00",
+        "color-background-border": "#22262a",
+        "color-background-item": "#141719",
+        "color-admonition-background": "#121517",
+        "color-api-name": "#ff7a5c",
+        "color-api-pre-name": "#8f938f",
+        "color-inline-code-background": "#15181a",
+        "color-highlight-on-target": "#1b1f22",
+        "color-guilabel-background": "#171a1d",
+        "color-guilabel-border": "#2a2e31",
+    },
     "footer_icons": [
         {
             "name": "GitHub",
