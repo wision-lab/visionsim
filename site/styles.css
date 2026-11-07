@@ -199,12 +199,13 @@ h2 {
   margin: 0; background: var(--bg); position: relative;
   border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
 }
-.clip { position: relative; overflow: hidden }
+.clip { position: relative; overflow: hidden; background: var(--frame) }
 /* absolutely placed: a percentage height against an aspect-ratio box
    collapses to zero in some WebKit builds */
 .clip > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover }
 /* the poster is a plain image underneath, so a clip that is not decoding
-   shows the frame instead of a black square */
+   shows the frame instead of a black square. */
+
 .clip__poster {
   position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: cover; pointer-events: none;
@@ -452,3 +453,7 @@ h2 {
   .rail { display: none }
   .deck__layer, .deck__stack { transition: none }
 }
+
+/* the 20px stand-in behind a clip: it has to outrank the per-section clip
+   backgrounds above, so it lives at the end of the file */
+.clip[style*="--lqip"] { background-image: var(--lqip); background-size: cover; background-position: center }

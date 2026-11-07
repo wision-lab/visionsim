@@ -279,7 +279,7 @@
     new IntersectionObserver(function (entries) {
       if (!entries[0].isIntersecting) return;
       preloadAll(ensemble.slice(), function () { gridReady = true; syncGrid(); });
-    }, { rootMargin: "600px 0px", threshold: 0 }).observe(gridEl);
+    }, { rootMargin: "250px 0px", threshold: 0 }).observe(gridEl);
 
     new IntersectionObserver(function (entries) {
       gridInView = entries[0].isIntersecting;
@@ -503,6 +503,14 @@
       arrows.forEach(function (a) { a.disabled = false; });
     }
 
+    /* metadata for the next clip costs a few kilobytes and buys a faster
+       first frame when the sequence gets there */
+    function warmNext(i) {
+      var next = videos[(i + 1) % videos.length];
+      videos.forEach(function (v) { if (v && v !== videos[current] && v !== next) v.preload = "none"; });
+      if (next && next !== videos[i]) next.preload = "metadata";
+    }
+
     function play(i) {
       stop();
       current = i;
@@ -510,6 +518,7 @@
       var r = readings[i], v = videos[i];
       r.classList.add("is-on");
       focusTree(i);
+      warmNext(i);
       steps = stepsFor(i);
       stepAt = 0;
       total = steps.reduce(function (sum, s) { return sum + stepMs(s); }, 0) || 1;
@@ -617,10 +626,11 @@
       if ("ResizeObserver" in window) new ResizeObserver(measure).observe(plate);
     });
 
+    /* only the clip on screen should ever be fetched whole; the rest wait */
     videos.forEach(function (v, i) {
       if (!v) return;
       v.loop = plan[i].loop;
-      v.preload = "auto";
+      v.preload = "none";
       v.setAttribute("data-walk", "1");
     });
 
