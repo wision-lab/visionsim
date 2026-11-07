@@ -302,6 +302,12 @@ h2 {
 /* the heading earns the width; the note beside it is happy to wrap. Desktop
    only, or the one-column phone layout would be split in two. */
 @media (min-width: 901px) {
+  /* annotations: the note sits under its heading, same as the readings head */
+  #layers .sec__head { grid-template-columns: minmax(0, 1fr); gap: .85rem; align-items: start }
+  /* one line each: the caps were breaking both of them for no reason */
+  #layers .sec__head h2 { max-width: none }
+  #layers .sec__head p { max-width: none; margin: 0; font-size: .95rem }
+
   /* the note sits under the heading rather than beside it */
   .walk .sec__head { grid-template-columns: minmax(0, 1fr); gap: .85rem; align-items: start }
   .walk .sec__head h2 { max-width: 46ch }
