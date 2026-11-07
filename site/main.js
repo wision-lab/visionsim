@@ -43,7 +43,11 @@
      frame instead of a black square. */
   function syncLive(v) {
     var clip = v.closest(".clip");
-    if (clip) clip.classList.toggle("is-live", !v.paused && v.readyState >= 2);
+    if (clip) {
+      /* a scrubbed clip never plays, so its frames count as live ones */
+      var live = v.dataset.walk ? v.readyState >= 2 : (!v.paused && v.readyState >= 2);
+      clip.classList.toggle("is-live", live);
+    }
   }
 
   function setClip(v, on) {
@@ -281,6 +285,432 @@
       gridInView = entries[0].isIntersecting;
       syncGrid();
     }, { threshold: [0, 0.15] }).observe(gridEl);
+  }
+
+  /* ---- the readings walk ------------------------------------------------
+     A player, not a scroll scrub. Each reading declares how long it wants to
+     sit on each of its beats; the player turns that into a step timeline, so
+     the meter is not decoration — a segment reaching 100% is what starts the
+     next reading. The four cycle forever; arrows and swipes step by hand. */
+  var walkEl = document.querySelector(".walk");
+  var walkArmed = !!walkEl && !reduceMotion;
+
+  function startWalk() {
+    var readings = [].slice.call(walkEl.querySelectorAll(".reading"));
+    var videos = readings.map(function (r) { return r.querySelector("video"); });
+    var segs = [].slice.call(walkEl.querySelectorAll(".walk__meter span"));
+    var arrows = [].slice.call(walkEl.querySelectorAll(".walk__arrow"));
+    var toggleEl = walkEl.querySelector(".walk__toggle");
+    var N = readings.length;
+    var current = -1, timers = [], frame = 0, playing = false;
+
+    var plan = readings.map(function (r) {
+      var beats = (r.getAttribute("data-beats") || "").split(",").filter(Boolean).map(function (b) {
+        var p = b.split(":");
+        return { t: parseFloat(p[0]), inset: parseInt(p[1], 10), dwell: parseInt(p[2] || "0", 10) };
+      });
+      return {
+        beats: beats,
+        loop: r.hasAttribute("data-loop"),
+        reveal: parseFloat(r.getAttribute("data-reveal")) || 0,
+        ms: parseInt(r.getAttribute("data-ms") || "0", 10),
+        passes: parseInt(r.getAttribute("data-passes") || "2", 10)
+      };
+    });
+
+    /* a reading becomes a list of steps: play to a beat, sit on it, play on */
+    function stepsFor(i) {
+      var p = plan[i], out = [];
+      if (p.loop) { out.push({ kind: "loop", from: 0, to: null, reveal: p.reveal, ms: p.ms || 6000, passes: p.passes }); return out; }
+      if (!p.beats.length) { out.push({ kind: "hold", inset: 0, ms: p.ms || 4000 }); return out; }
+      out.push({ kind: "play", from: 0, to: p.beats[0].t });
+      p.beats.forEach(function (b, k) {
+        out.push({ kind: "hold", inset: b.inset, at: b.t, ms: b.dwell || 2800 });
+        var next = p.beats[k + 1];
+        if (next) out.push({ kind: "play", from: b.t, to: next.t });
+      });
+      return out;
+    }
+
+    var steps = [], stepAt = 0, stepStart = 0, total = 1;
+
+    function stepMs(s) {
+      if (s.kind === "play") return Math.max(1, (s.to - s.from) * 1000);
+      return s.ms;
+    }
+
+    function clearTimers() { timers.forEach(function (t) { clearTimeout(t.id); }); timers = []; }
+    /* a timer leaves the list the moment it fires, or a later resume would
+       re-arm it with no time left and jump the sequence forward */
+    function later(fn, ms) {
+      var rec = { remaining: ms, due: Date.now() + ms, id: 0 };
+      rec.run = function () {
+        var at = timers.indexOf(rec);
+        if (at >= 0) timers.splice(at, 1);
+        fn();
+      };
+      rec.id = setTimeout(rec.run, ms);
+      timers.push(rec);
+    }
+    function armTimers() {
+      timers.forEach(function (t) {
+        t.due = Date.now() + t.remaining;
+        t.id = setTimeout(t.run, t.remaining);
+      });
+    }
+    function disarmTimers() {
+      var now = Date.now();
+      timers.forEach(function (t) { clearTimeout(t.id); t.remaining = Math.max(0, t.due - now); });
+    }
+    function paint(r, inset) { r.setAttribute("data-beat", String(inset)); r.classList.add("is-held"); }
+
+    var endedHandler = null;
+    function stopVideo(v) {
+      if (!v) return;
+      if (endedHandler) { v.removeEventListener("ended", endedHandler); endedHandler = null; }
+      v.pause();
+      v.removeAttribute("data-pending");
+      syncLive(v);
+    }
+
+    /* pause is a set of reasons: leaving the tab, hovering to read, scrolling,
+       tabbing in, or pressing the button. Playing means the set is empty. */
+    var holds = {}, paused = false, frozen = false, wasPlaying = false, pauseAt = 0;
+
+    function setHold(reason, on) {
+      if (on) holds[reason] = 1; else delete holds[reason];
+      var want = Object.keys(holds).length > 0;
+      paused = want;
+      /* the flag follows the timers, not the reasons: a sequence that starts
+         while a hold is up must freeze at once, or it runs on with a dead bar */
+      if (paused && !frozen) { frozen = true; freeze(); }
+      else if (!paused && frozen) { frozen = false; thaw(); }
+      toggleEl.setAttribute("aria-pressed", paused ? "true" : "false");
+      toggleEl.setAttribute("aria-label", paused ? "Play the sequence" : "Pause the sequence");
+    }
+
+    function freeze() {
+      pauseAt = Date.now();
+      disarmTimers();
+      cancelAnimationFrame(frame);
+      var v = videos[current];
+      wasPlaying = !!v && !v.paused;
+      if (v) { v.pause(); syncLive(v); }
+    }
+
+    function thaw() {
+      if (!playing || current < 0) return;
+      var waited = Date.now() - pauseAt;
+      stepStart += waited;
+      armTimers();
+      var v = videos[current];
+      if (wasPlaying && v) setClip(v, true);
+      if (current >= 0 && playing) {
+        meter(current);
+        if (steps[stepAt] && steps[stepAt].kind === "play") watchStep(current, steps[stepAt]);
+      }
+    }
+
+    function stop() {
+      clearTimers();
+      cancelAnimationFrame(frame);
+      frozen = false;
+      playing = false;
+      videos.forEach(stopVideo);
+      readings.forEach(function (r) { r.classList.remove("is-on", "is-held"); r.removeAttribute("data-beat"); });
+    }
+
+    /* how far through the current step we are, 0 to 1 */
+    function stepFraction() {
+      var s = steps[stepAt];
+      if (!s) return 1;
+      if (s.kind === "play") {
+        var v = videos[current];
+        if (!v || !s.to) return 0;
+        return clamp((v.currentTime - s.from) / (s.to - s.from), 0, 1);
+      }
+      if (!s.ms) return 1;
+      return clamp((Date.now() - stepStart) / s.ms, 0, 1);
+    }
+
+    function meter(i) {
+      segs.forEach(function (s, k) {
+        s.classList.toggle("is-past", k < i);
+        if (k !== i) s.style.setProperty("--p", k < i ? "1" : "0");
+      });
+      (function tick() {
+        if (current !== i || !playing || paused) return;
+        var done = 0;
+        for (var k = 0; k < stepAt; k++) done += stepMs(steps[k]);
+        var value = Math.min(1, (done + stepMs(steps[stepAt]) * stepFraction()) / total);
+        segs[i].style.setProperty("--p", value.toFixed(3));
+        /* the bar is the clock: full means the next reading starts */
+        if (value >= 1) { advance(1); return; }
+        frame = requestAnimationFrame(tick);
+      })();
+    }
+
+    /* the four cycle; the last one hands back to the first */
+    function advance(step) {
+      if (!playing) return;
+      var next = (current + step + N) % N;
+      play(next);
+    }
+
+    /* an explicit step means "go", so the courtesies let go of the playhead */
+    function resumeForAction() {
+      delete holds.manual; delete holds.hover; delete holds.scroll; delete holds.focus;
+      setHold("noop", false);
+    }
+
+    function render() {
+      arrows.forEach(function (a) { a.disabled = false; });
+    }
+
+    function play(i) {
+      stop();
+      current = i;
+      playing = true;
+      var r = readings[i], v = videos[i];
+      r.classList.add("is-on");
+      steps = stepsFor(i);
+      stepAt = 0;
+      total = steps.reduce(function (sum, s) { return sum + stepMs(s); }, 0) || 1;
+      meter(i);
+      runStep(i);
+      if (paused && !frozen) { frozen = true; freeze(); }
+      render();
+    }
+
+    function runStep(i) {
+      var s = steps[stepAt], r = readings[i], v = videos[i];
+      if (!s) { advance(1); return; }
+      stepStart = Date.now();
+
+      if (s.kind === "loop") {
+        /* count whole passes rather than a stopwatch, so the clip always plays
+           out instead of being cut mid-motion */
+        s.passes = s.passes || 2;
+        if (v.duration) {
+          s.ms = Math.round(v.duration * 1000 * s.passes);
+          total = steps.reduce(function (sum, x) { return sum + stepMs(x); }, 0) || 1;
+        }
+        v.loop = false;
+        try { v.currentTime = 0; } catch (e) {}
+        setClip(v, true);
+        later(function () { if (current === i) paint(r, 0); }, s.reveal * 1000);
+
+        var played = 0;
+        endedHandler = function () {
+          if (current !== i || !playing) return;
+          played++;
+          if (played < s.passes) {
+            try { v.currentTime = 0; } catch (e) {}
+            setClip(v, true);
+          } else {
+            v.removeEventListener("ended", endedHandler);
+            endedHandler = null;
+            nextStep(i);
+          }
+        };
+        v.addEventListener("ended", endedHandler);
+        return;
+      }
+
+      if (s.kind === "hold") {
+        if (v) { v.pause(); try { v.currentTime = s.at; } catch (e) {} syncLive(v); }
+        paint(r, s.inset);
+        later(function () { if (current === i) nextStep(i); }, s.ms);
+        return;
+      }
+
+      /* the crop already on screen stays while the clip plays on: the dark
+         end keeps its evidence until the bright one joins it */
+
+      if (!v) { nextStep(i); return; }
+      try { v.currentTime = s.from; } catch (e) {}
+      setClip(v, true);
+      (function watch() {
+        if (current !== i || !playing) return;
+        if (v.currentTime >= s.to - 0.03 || v.paused) { nextStep(i); return; }
+        frame = requestAnimationFrame(watch);
+      })();
+    }
+
+    function watchStep(i, s) {
+      var v = videos[i];
+      (function watch() {
+        if (current !== i || !playing || paused) return;
+        if (v.currentTime >= s.to - 0.03 || v.paused) { nextStep(i); return; }
+        frame = requestAnimationFrame(watch);
+      })();
+    }
+
+    function nextStep(i) {
+      if (current !== i) return;
+      stepAt++;
+      if (stepAt >= steps.length) { advance(1); return; }
+      runStep(i);
+    }
+
+    /* the crops size themselves against the plate, so measure it and keep the
+       number current when the layout changes */
+    readings.forEach(function (r) {
+      /* the frame is the preview; the figure also holds a caption */
+      var plate = r.querySelector(".plate__frame") || r.querySelector(".plate");
+      if (!plate) return;
+      var measure = function () {
+        var frameH = plate.getBoundingClientRect().height;
+        var caps = [].slice.call(r.querySelectorAll(".zoom figcaption"));
+        /* outer height: the caption's own top margin sits between image and text */
+        var capH = caps.reduce(function (sum, c) {
+          return sum + c.getBoundingClientRect().height + parseFloat(getComputedStyle(c).marginTop || 0);
+        }, 0);
+        var n = Math.max(1, caps.length);
+        var each = (frameH - capH - (n - 1) * 8 - 4) / n;
+        r.style.setProperty("--plate-h", Math.round(frameH) + "px");
+        r.style.setProperty("--crop-max", Math.max(40, Math.floor(each)) + "px");
+      };
+      measure();
+      if ("ResizeObserver" in window) new ResizeObserver(measure).observe(plate);
+    });
+
+    videos.forEach(function (v, i) {
+      if (!v) return;
+      v.loop = plan[i].loop;
+      v.preload = "auto";
+      v.setAttribute("data-walk", "1");
+    });
+
+    /* the button is the explicit control; the rest are courtesies */
+    toggleEl.addEventListener("click", function () {
+      if (paused) { delete holds.hover; delete holds.focus; setHold("manual", false); }
+      else setHold("manual", true);
+    });
+
+    /* a pointer resting on the media holds the sequence: that is where you
+       look at the frame, and the reading should not change underneath you.
+       Text and controls are left alone, and a finger is ignored. */
+    var hoverIn = 0, hoverOut = 0;
+    function mediaEnter(e) {
+      if (e.pointerType !== "mouse") return;
+      clearTimeout(hoverOut);
+      clearTimeout(hoverIn);
+      hoverIn = setTimeout(function () { setHold("hover", true); }, 240);
+    }
+    function mediaLeave(e) {
+      if (e.pointerType !== "mouse") return;
+      clearTimeout(hoverIn);
+      /* a beat of grace: crossing from the plate to the crops is one gesture */
+      clearTimeout(hoverOut);
+      hoverOut = setTimeout(function () { setHold("hover", false); }, 180);
+    }
+    readings.forEach(function (r) {
+      var media = r.querySelector(".reading__media");
+      if (!media) return;
+      media.addEventListener("pointerenter", mediaEnter);
+      media.addEventListener("pointerleave", mediaLeave);
+    });
+
+    /* while the page is moving, the sequence waits; it catches up a beat later */
+    var scrollIdle = 0;
+    window.addEventListener("scroll", function () {
+      if (!playing) return;
+      setHold("scroll", true);
+      clearTimeout(scrollIdle);
+      scrollIdle = setTimeout(function () { setHold("scroll", false); }, 700);
+    }, { passive: true });
+
+    /* a keyboard user should not have the reading change underneath them */
+    walkEl.addEventListener("focusin", function (e) {
+      if (e.target && e.target.closest && e.target.closest(".walk__controls")) return;
+      setHold("focus", true);
+    });
+    walkEl.addEventListener("focusout", function () {
+      setTimeout(function () {
+        if (!walkEl.contains(document.activeElement)) setHold("focus", false);
+      }, 0);
+    });
+
+    document.addEventListener("visibilitychange", function () {
+      setHold("hidden", document.hidden);
+    });
+
+    arrows.forEach(function (a) {
+      a.addEventListener("click", function () {
+        var step = parseInt(a.getAttribute("data-step"), 10);
+        resumeForAction();
+        play(current < 0 ? 0 : (current + step + N) % N);
+      });
+    });
+
+    /* a sideways swipe steps the sequence, the way the arrows do */
+    var t0x = 0, t0y = 0, tracked = false;
+    walkEl.addEventListener("touchstart", function (e) {
+      var t = e.changedTouches[0];
+      t0x = t.clientX; t0y = t.clientY; tracked = true;
+    }, { passive: true });
+    walkEl.addEventListener("touchend", function (e) {
+      if (!tracked) return;
+      tracked = false;
+      var t = e.changedTouches[0], dx = t.clientX - t0x, dy = t.clientY - t0y;
+      if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      resumeForAction();
+      play((current + (dx < 0 ? 1 : -1) + N) % N);
+    }, { passive: true });
+
+    /* run while the section is on screen; stop the clock when it leaves */
+    if ("IntersectionObserver" in window) {
+      var seen = false;
+      new IntersectionObserver(function (entries) {
+        var on = entries[0].isIntersecting;
+        if (on && !playing) {
+          play(seen ? Math.max(0, current) : 0);
+          seen = true;
+        } else if (!on && playing) {
+          var keep = Math.max(0, current);
+          stop();
+          current = keep;
+          readings[current].classList.add("is-on");
+        }
+      }, { threshold: 0.35 }).observe(walkEl);
+    } else {
+      play(0);
+    }
+
+    render();
+  }
+
+  if (walkArmed) {
+    walkEl.classList.add("is-armed");
+    startWalk();
+  }
+
+  /* the event flood and the conventional view of the same window run together,
+     so the flood lands on the frame where the lamp actually comes on */
+  var eventsRow = walkArmed ? null : document.querySelectorAll(".reading")[2];
+  var flood = eventsRow && eventsRow.querySelector(".clip video:not([data-follow])");
+  var followers = walkArmed ? [] : [].slice.call(document.querySelectorAll(".reading .clip video[data-follow]"));
+
+  [].forEach.call(walkArmed ? [] : document.querySelectorAll(".reading .clip video"), function (v) {
+    new IntersectionObserver(function (entries) {
+      var on = entries[0].isIntersecting;
+      setClip(v, on);
+      if (on && v !== flood) {
+        try { v.currentTime = flood.currentTime; } catch (e) {}
+      }
+    }, { threshold: 0.3 }).observe(v);
+  });
+
+  if (flood && followers.length) {
+    setInterval(function () {
+      if (flood.paused) return;
+      followers.forEach(function (v) {
+        if (Math.abs(v.currentTime - flood.currentTime) > 0.12) {
+          try { v.currentTime = flood.currentTime; } catch (e) {}
+        }
+      });
+    }, 500);
   }
 
   var onNav = function () {

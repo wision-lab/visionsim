@@ -221,6 +221,7 @@ h2 {
 .dataset__lede { color: var(--ink-2); margin: 1rem 0 0 }
 .dataset__link { color: var(--ink); border-bottom: 1px solid var(--line-2); text-decoration: none }
 .foot__note { margin: .9rem 0 0; max-width: 34ch }
+.foot__licence { margin: .55rem 0 0 }
 .dataset ul { list-style: none; margin: 1.4rem 0 0; padding: 0; display: grid; gap: .1rem }
 .dataset li a {
   display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
@@ -241,6 +242,142 @@ h2 {
   max-width: var(--wrap); margin: 2.6rem auto 0; padding-top: 1.2rem; border-top: 1px solid var(--line);
   display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
   font-family: var(--f-mono); font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------ readings --
+   copy beside the plate, crops in a column next to it */
+.readings { max-width: 1240px; margin: clamp(2rem, 5vh, 3.4rem) auto 0; border-top: 1px solid var(--line) }
+.reading {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(1.4rem, 4vw, 3rem); align-items: start;
+  padding: clamp(2rem, 5vh, 3.2rem) 0; border-bottom: 1px solid var(--line);
+}
+.reading:nth-of-type(even) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) }
+.reading:nth-of-type(even) .reading__copy { order: 2 }
+.reading:nth-of-type(even) .reading__media { order: 1 }
+
+.reading__copy h3 {
+  text-wrap: balance;
+  margin: 0 0 .8rem; font-size: clamp(1.15rem, 1.5vw, 1.4rem);
+  font-weight: 500; letter-spacing: -.015em; line-height: 1.25;
+}
+.reading__copy p { text-wrap: pretty; margin: 0; color: var(--ink-2); font-size: 1rem; line-height: 1.62; max-width: 66ch }
+
+.reading__media { display: flex; gap: .8rem; align-items: flex-start }
+.plate { position: relative; flex: 1 1 auto; margin: 0; min-width: 0 }
+.plate img, .plate .clip { display: block; width: 100%; aspect-ratio: 1; background: #060707 }
+.plate img { object-fit: cover }
+.plate .clip img { height: 100% }
+.plate .clip video { object-fit: cover }
+.plate__frame { position: relative; display: block }
+.plate__box {
+  position: absolute; left: var(--bx); top: var(--by); width: var(--bw); height: var(--bh);
+  border: 1.5px solid var(--bc); pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.55);
+}
+.plate figcaption, .zoom figcaption {
+  margin-top: .5rem; font-family: var(--f-mono); font-size: .58rem; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--ink-3); overflow-wrap: anywhere;
+}
+.plate figcaption b, .zoom figcaption b { color: var(--ink-2); font-weight: 500 }
+.zooms { display: flex; flex-direction: column; gap: .8rem; flex: 0 0 26%; min-width: 0 }
+
+/* ---- the readings walk ------------------------------------------------
+   A player, not a scroll scrub: one reading is on at a time, its clip runs on
+   its own clock, and the sequence advances on a timer. Arrows step through
+   the four by hand; the meter under the stage fills one segment per reading.
+   Without JS, or with motion reduced, every reading is simply shown. */
+/* the plate keeps its own height. If the row stretched it to the crops, the
+   crops would be measured against a plate they just inflated. */
+.reading__media { align-items: flex-start }
+.zooms { align-self: flex-start }
+.zoom { flex: 0 0 auto }
+/* the player measures the preview frame and what the captions cost, then
+   writes --crop-max: the tallest a crop may be and still leave the stack
+   inside the frame it annotates */
+.zoom img { max-height: var(--crop-max, 190px); width: auto; max-width: 100%; height: auto }
+
+.walk__head { margin-bottom: clamp(1.6rem, 4.5vh, 2.8rem) }
+/* the heading earns the width; the note beside it is happy to wrap. Desktop
+   only, or the one-column phone layout would be split in two. */
+@media (min-width: 901px) {
+  /* the note sits under the heading rather than beside it */
+  .walk .sec__head { grid-template-columns: minmax(0, 1fr); gap: .85rem; align-items: start }
+  .walk .sec__head h2 { max-width: 46ch }
+  .walk .sec__head p { max-width: none; margin: 0 }
+}
+
+/* a phone cannot stack copy, plate and crops and still show them together,
+   so the media goes side by side and the plate takes the width */
+@media (max-width: 900px) {
+  /* a flick on a phone skips the whole section, so it gets a place to land */
+  html { scroll-snap-type: y proximity }
+  .walk { scroll-snap-align: start; scroll-margin-top: 0 }
+
+  .walk .reading__media { flex-direction: row; align-items: stretch; gap: .5rem }
+  .walk .plate { flex: 1 1 0; min-width: 0 }
+  .walk .zooms { flex: 0 0 34%; flex-direction: column; gap: .5rem; max-width: none }
+  .walk .zoom figcaption { font-size: .5rem }
+}
+.walk__stage { display: grid }
+.walk .reading { grid-area: 1 / 1; margin: 0; border-bottom: 0; padding-block: 0 }
+
+.walk.is-armed .reading { opacity: 0; pointer-events: none; transition: opacity .45s var(--ease) }
+.walk.is-armed .reading.is-on { opacity: 1; pointer-events: auto }
+
+/* the crops arrive when the playhead has stopped on the frame they came from */
+.walk.is-armed .zoom { opacity: 0; transform: translateY(7px); transition: opacity .4s var(--ease), transform .4s var(--ease) }
+.walk.is-armed .reading.is-held .zoom { opacity: 1; transform: none }
+/* first beat shows the dark crop alone; the bright one joins it on the second */
+.walk.is-armed .reading[data-beat="0"] .zoom:nth-child(2) { opacity: 0 }
+
+.walk.is-armed .plate__box { opacity: 0; transition: opacity .35s var(--ease) }
+.walk.is-armed .reading.is-held .plate__box { opacity: 1 }
+.walk.is-armed .reading[data-beat="0"] .plate__box + .plate__box { opacity: 0 }
+
+.walk__controls { display: none }
+.walk.is-armed .walk__controls { display: flex; align-items: center; gap: .7rem; margin-top: clamp(1.2rem, 3.4vh, 2rem) }
+.walk__toggle {
+  display: grid; place-items: center; width: 2.1rem; height: 2.1rem; padding: 0; margin-right: .4rem;
+  background: none; color: var(--ink); border: 1px solid var(--line-2); border-radius: 50%; cursor: pointer;
+  transition: border-color .2s var(--ease);
+}
+.walk__toggle:hover { border-color: var(--ink-2) }
+.walk__toggle .walk__play-icon { display: none }
+.walk__toggle[aria-pressed="true"] .walk__play-icon { display: block }
+.walk__toggle[aria-pressed="true"] .walk__pause-icon { display: none }
+.walk__arrow {
+  display: grid; place-items: center; width: 2.1rem; height: 2.1rem; padding: 0;
+  background: none; color: var(--ink-2); border: 1px solid var(--line-2); border-radius: 50%;
+  cursor: pointer; transition: color .2s var(--ease), border-color .2s var(--ease);
+}
+.walk__arrow:hover { color: var(--ink); border-color: var(--ink-2) }
+.walk__arrow:disabled { opacity: .35; cursor: default }
+.walk__meter { position: relative; display: flex; flex: 1 1 auto; gap: .4rem }
+.walk__meter span { position: relative; flex: 1 1 0; height: 2px; overflow: hidden; background: rgba(243,243,240,.13) }
+/* --p is written by the player, 0 to 1 of that reading's own run time */
+.walk__meter span::after {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--p, 0) * 100%);
+  background: var(--ink); transition: width .1s linear;
+}
+.walk__meter span.is-past::after { width: 100% }
+
+/* on a phone the row is taller than the screen, so the controls ride along
+   the bottom instead of waiting below the media */
+@media (max-width: 900px) {
+  .walk.is-armed .walk__controls {
+    position: sticky; bottom: 0; z-index: 3; margin-top: 0;
+    padding: .7rem 0 calc(.7rem + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(to top, var(--bg) 72%, rgba(11,12,13,0));
+  }
+}
+
+
+.zoom { margin: 0 }
+/* the box takes the crop's own aspect, so nothing is letterboxed */
+.zoom img {
+  display: block; width: 100%; height: auto;
+  border: 1.5px solid var(--zc);
 }
 
 @media (max-width: 1180px) {
@@ -273,6 +410,18 @@ h2 {
   /* a tighter pile keeps the fan inside a phone's width; the offset centres it */
   .deck { --du: 46; transform: translateX(-7%) }
   .layers-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) }
+  /* readings stack once the media column drops under ~460px */
+  /* the copy comes out of the picture and sits above it */
+  .reading, .reading:nth-of-type(even) { grid-template-columns: 1fr; gap: 1rem }
+  .reading:nth-of-type(even) .reading__copy, .reading:nth-of-type(even) .reading__media { order: 0 }
+  /* stretch, so every plate sits on the same left and right edge */
+  .reading__media { flex-direction: column; align-items: stretch; gap: .8rem }
+  .plate { width: 100% }
+  /* crops sit side by side at half width, never full-bleed squares */
+  .zooms { flex: 0 0 auto; width: 100%; max-width: 34rem; flex-direction: row; align-items: flex-start; gap: .6rem }
+  .zoom { flex: 1 1 0; min-width: 0 }
+  .zoom:only-child { flex: 0 0 calc(50% - .3rem) }
+  .zoom img { flex: none; height: auto }
 }
 
 @media (max-width: 760px) {
@@ -282,6 +431,7 @@ h2 {
   .sec__head p { margin-top: .9rem }
   .layers-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) }
   .dataset { grid-template-columns: 1fr }
+
   .foot__inner { grid-template-columns: 1fr }
 }
 
