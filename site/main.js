@@ -301,6 +301,7 @@
     var segs = [].slice.call(walkEl.querySelectorAll(".walk__meter span"));
     var arrows = [].slice.call(walkEl.querySelectorAll(".walk__arrow"));
     var toggleEl = walkEl.querySelector(".walk__toggle");
+    var statusEl = walkEl.querySelector(".walk__status");
     var N = readings.length;
     var current = -1, timers = [], frame = 0, playing = false;
 
@@ -318,6 +319,14 @@
       };
     });
 
+    /* how long the row's copy takes to read, so the sequence never swaps out
+       from under someone reading it. ~4 words a second plus a beat to arrive. */
+    function readingMs(i) {
+      var p = readings[i].querySelector(".reading__copy p");
+      var words = p ? p.textContent.trim().split(/\s+/).length : 0;
+      return Math.round(words * 250) + 900;
+    }
+
     /* a reading becomes a list of steps: play to a beat, sit on it, play on */
     function stepsFor(i) {
       var p = plan[i], out = [];
@@ -329,6 +338,15 @@
         var next = p.beats[k + 1];
         if (next) out.push({ kind: "play", from: b.t, to: next.t });
       });
+      /* if the media finishes before the copy has been read, the last step
+         keeps going, so the meter and the hand-over stay one clock */
+      var need = readingMs(i);
+      var have = out.reduce(function (sum, s) { return sum + stepMs(s); }, 0);
+      if (have < need) {
+        var last = out[out.length - 1];
+        if (last.kind === "loop") last.passes = Math.ceil(need / last.ms) * last.passes;
+        else last.ms += need - have;
+      }
       return out;
     }
 
@@ -363,6 +381,19 @@
       timers.forEach(function (t) { clearTimeout(t.id); t.remaining = Math.max(0, t.due - now); });
     }
     function paint(r, inset) { r.setAttribute("data-beat", String(inset)); r.classList.add("is-held"); }
+
+    /* the stage shows one reading at a time, so the other three leave the
+       accessibility tree with it */
+    function focusTree(i) {
+      readings.forEach(function (r, k) {
+        if (k === i) r.removeAttribute("aria-hidden");
+        else r.setAttribute("aria-hidden", "true");
+      });
+      if (statusEl) {
+        var h3 = readings[i].querySelector("h3");
+        statusEl.textContent = "Reading " + (i + 1) + " of " + readings.length + ": " + (h3 ? h3.textContent : "");
+      }
+    }
 
     var endedHandler = null;
     function stopVideo(v) {
@@ -417,7 +448,11 @@
       frozen = false;
       playing = false;
       videos.forEach(stopVideo);
-      readings.forEach(function (r) { r.classList.remove("is-on", "is-held"); r.removeAttribute("data-beat"); });
+      readings.forEach(function (r) {
+        r.classList.remove("is-on", "is-held");
+        r.removeAttribute("data-beat");
+        r.removeAttribute("aria-hidden");
+      });
     }
 
     /* how far through the current step we are, 0 to 1 */
@@ -444,8 +479,9 @@
         for (var k = 0; k < stepAt; k++) done += stepMs(steps[k]);
         var value = Math.min(1, (done + stepMs(steps[stepAt]) * stepFraction()) / total);
         segs[i].style.setProperty("--p", value.toFixed(3));
-        /* the bar is the clock: full means the next reading starts */
-        if (value >= 1) { advance(1); return; }
+        /* the bar is the clock: full means the next reading starts, but only
+           once — a step timer may already have handed over this frame */
+        if (value >= 1) { if (current === i) advance(1); return; }
         frame = requestAnimationFrame(tick);
       })();
     }
@@ -473,9 +509,13 @@
       playing = true;
       var r = readings[i], v = videos[i];
       r.classList.add("is-on");
+      focusTree(i);
       steps = stepsFor(i);
       stepAt = 0;
       total = steps.reduce(function (sum, s) { return sum + stepMs(s); }, 0) || 1;
+      /* the first meter tick runs synchronously, so the clock has to be set
+         before it, or it measures against the previous row's start */
+      stepStart = Date.now();
       meter(i);
       runStep(i);
       if (paused && !frozen) { frozen = true; freeze(); }
@@ -492,6 +532,8 @@
            out instead of being cut mid-motion */
         s.passes = s.passes || 2;
         if (v.duration) {
+          var need = readingMs(i);
+          while (Math.round(v.duration * 1000 * s.passes) < need) s.passes++;
           s.ms = Math.round(v.duration * 1000 * s.passes);
           total = steps.reduce(function (sum, x) { return sum + stepMs(x); }, 0) || 1;
         }
