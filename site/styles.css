@@ -440,7 +440,10 @@ h2 {
   .layers-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) }
   .dataset { grid-template-columns: 1fr }
 
-  .foot__inner { grid-template-columns: 1fr }
+  /* the two link columns are narrow enough to share a row; only the brand
+     needs the full width */
+  .foot__inner { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem 1.2rem }
+  .foot__inner > div:first-child { grid-column: 1 / -1 }
 }
 
 @media (prefers-reduced-motion: reduce) {
