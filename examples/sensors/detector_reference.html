@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  * { margin: 0; padding: 0; }
+  img, svg, video { display: block; max-width: 100%; }
+  ul, ol { list-style-position: outside; }
+  table { border-collapse: collapse; }
+  :focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+</style>
+<title>Photon Timestamp Detector</title>
+<style>
+  :root {
+    --paper:      #EDF0F4;
+    --surface:    #FFFFFF;
+    --surface-2:  #F6F8FA;
+    --ink:        #141A21;
+    --ink-soft:   #4A5663;
+    --ink-faint:  #78848F;
+    --rule:       #D3DAE2;
+    --rule-soft:  #E4E9EF;
+    --accent:     #0B6E75;
+    --accent-dim: #0B6E7518;
+    --signal:     #9A5B12;
+    --signal-dim: #9A5B1218;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0E1216;
+      --surface:    #151A20;
+      --surface-2:  #1B2128;
+      --ink:        #DCE3EA;
+      --ink-soft:   #9EAAB6;
+      --ink-faint:  #6F7C88;
+      --rule:       #2A323B;
+      --rule-soft:  #222932;
+      --accent:     #56C2C8;
+      --accent-dim: #56C2C81F;
+      --signal:     #D9A257;
+      --signal-dim: #D9A2571F;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:      #0E1216;
+    --surface:    #151A20;
+    --surface-2:  #1B2128;
+    --ink:        #DCE3EA;
+    --ink-soft:   #9EAAB6;
+    --ink-faint:  #6F7C88;
+    --rule:       #2A323B;
+    --rule-soft:  #222932;
+    --accent:     #56C2C8;
+    --accent-dim: #56C2C81F;
+    --signal:     #D9A257;
+    --signal-dim: #D9A2571F;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 62rem;
+    margin: 0 auto;
+    padding: 4rem 1.5rem 6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3.25rem;
+  }
+
+  /* ---------- masthead ---------- */
+  .masthead { display: flex; flex-direction: column; gap: 1rem; }
+  .kicker {
+    font-family: var(--mono);
+    font-size: .72rem;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(1.85rem, 4.2vw, 2.7rem);
+    line-height: 1.12;
+    font-weight: 600;
+    letter-spacing: -.02em;
+    text-wrap: balance;
+  }
+  .lede { max-width: 40em; color: var(--ink-soft); font-size: 1.06rem; }
+  .facts {
+    display: flex; flex-wrap: wrap; gap: 0 2.25rem;
+    padding-top: .75rem; border-top: 1px solid var(--rule);
+    font-family: var(--mono); font-size: .78rem; color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .facts b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- sections ---------- */
+  section { display: flex; flex-direction: column; gap: 1.15rem; }
+  h2 {
+    font-family: var(--mono);
+    font-size: 1.12rem; font-weight: 600; letter-spacing: -.01em;
+    padding-bottom: .55rem; border-bottom: 2px solid var(--ink);
+    display: flex; align-items: baseline; gap: .7rem;
+  }
+  h2 span {
+    font-size: .68rem; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-faint); font-weight: 500; margin-left: auto;
+  }
+  h3 {
+    font-family: var(--mono); font-size: .95rem; font-weight: 600;
+    display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap;
+  }
+  h3 em {
+    font-style: normal; font-family: var(--sans); font-size: .8rem;
+    font-weight: 400; color: var(--ink-faint);
+  }
+  p { max-width: 42em; }
+  code {
+    font-family: var(--mono); font-size: .86em;
+    background: var(--surface-2); border: 1px solid var(--rule-soft);
+    border-radius: 3px; padding: .05em .32em;
+  }
+  a { color: var(--accent); }
+
+  /* ---------- pipeline strip ---------- */
+  .pipe {
+    display: grid; gap: .5rem;
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  }
+  .pipe > div {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-top: 2px solid var(--accent);
+    padding: .8rem .85rem; display: flex; flex-direction: column; gap: .3rem;
+  }
+  .pipe b { font-family: var(--mono); font-size: .82rem; font-weight: 600; }
+  .pipe small { color: var(--ink-faint); font-size: .78rem; line-height: 1.45; }
+
+  /* ---------- figure ---------- */
+  figure {
+    background: var(--surface); border: 1px solid var(--rule);
+    padding: 1.25rem 1.25rem 1rem; overflow-x: auto;
+  }
+  figcaption {
+    font-size: .82rem; color: var(--ink-faint); margin-top: .85rem;
+    padding-top: .7rem; border-top: 1px solid var(--rule-soft); max-width: 46em;
+  }
+  svg { display: block; min-width: 34rem; }
+
+  /* ---------- tables ---------- */
+  .scroll { overflow-x: auto; border: 1px solid var(--rule); background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: .875rem; }
+  th, td {
+    text-align: left; padding: .62rem .85rem;
+    border-bottom: 1px solid var(--rule-soft); vertical-align: top;
+  }
+  thead th {
+    font-family: var(--mono); font-size: .7rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-faint); font-weight: 500;
+    background: var(--surface-2); border-bottom: 1px solid var(--rule);
+    position: sticky; top: 0;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.t { font-family: var(--mono); font-size: .8rem; white-space: nowrap; }
+  td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--ink-soft); }
+  td.why { color: var(--ink-soft); }
+  th.n { text-align: right; }
+
+  .tag {
+    display: inline-block; font-family: var(--mono); font-size: .68rem;
+    letter-spacing: .06em; padding: .12em .45em; border-radius: 3px;
+    border: 1px solid var(--accent); color: var(--accent); background: var(--accent-dim);
+    white-space: nowrap;
+  }
+  .tag.s { border-color: var(--signal); color: var(--signal); background: var(--signal-dim); }
+
+  /* ---------- setting blocks ---------- */
+  .settings { display: flex; flex-direction: column; gap: 1.5rem; }
+  .setting {
+    display: grid; gap: .35rem 1.5rem;
+    grid-template-columns: minmax(11rem, 15rem) 1fr;
+    padding-bottom: 1.4rem; border-bottom: 1px solid var(--rule);
+  }
+  .setting:last-child { border-bottom: none; padding-bottom: 0; }
+  .setting > .k { display: flex; flex-direction: column; gap: .3rem; }
+  .setting .k b { font-family: var(--mono); font-size: .88rem; font-weight: 600; color: var(--accent); }
+  .setting .k small { font-family: var(--mono); font-size: .74rem; color: var(--ink-faint); line-height: 1.5; }
+  .setting > .v { display: flex; flex-direction: column; gap: .5rem; }
+  .setting ul { display: flex; flex-direction: column; gap: .35rem; padding-left: 1.1rem; }
+  .setting li { font-size: .93rem; }
+  .setting li::marker { color: var(--ink-faint); }
+  @media (max-width: 40rem) { .setting { grid-template-columns: 1fr; } }
+
+  /* ---------- test group ---------- */
+  .group { display: flex; flex-direction: column; gap: .8rem; }
+  .groups { display: flex; flex-direction: column; gap: 2.25rem; }
+
+  .note {
+    background: var(--surface-2); border-left: 2px solid var(--signal);
+    padding: .85rem 1rem; font-size: .9rem; color: var(--ink-soft);
+  }
+  .note b { color: var(--ink); font-weight: 600; }
+  footer {
+    font-family: var(--mono); font-size: .76rem; color: var(--ink-faint);
+    border-top: 1px solid var(--rule); padding-top: 1rem;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="kicker">visionsim / emulate / aspc / detector.py</div>
+    <h1>simulate_photon_timestamps</h1>
+    <p class="lede">The Monte-Carlo reference for the active-SPC photon flux&nbsp;&rarr;&nbsp;detection stage. It turns a per-bin arrival rate into the raw detection timestamps a TDC would emit — with dead time, quench behaviour and hit caps all modelled explicitly, rather than assumed away by a closed form.</p>
+    <div class="facts">
+      <span><b>7</b> settings</span>
+      <span><b>10</b> test classes</span>
+      <span><b>36</b> test functions</span>
+      <span><b>106</b> collected cases</span>
+      <span><b>0</b> xfail</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>What it simulates <span>signal path</span></h2>
+    <p>One pixel, <code>n_pulses</code> laser cycles, <code>n_tbins</code> time bins per cycle. Everything downstream of the arrival rate is sampled, not approximated.</p>
+    <div class="pipe">
+      <div>
+        <b>φ̄ per bin</b>
+        <small>Arrival rate from the transient. Negative entries (convolution artefacts) are clamped to zero.</small>
+      </div>
+      <div>
+        <b>Poisson counts</b>
+        <small>N<sub>b</sub> ~ Poisson(φ̄<sub>b</sub>) — the photon <em>count</em> in the bin, not a yes/no flag.</small>
+      </div>
+      <div>
+        <b>Dead-time walk</b>
+        <small>Sequential scan over occupied cells tracking <code>t_armed</code> in absolute bins.</small>
+      </div>
+      <div>
+        <b>Timestamps</b>
+        <small>Int64 <code>(cycle, bin)</code> rows, sorted, not necessarily unique.</small>
+      </div>
+      <div>
+        <b>Histogram</b>
+        <small>A separate reduction — exactly as real hardware bins a TDC stream after the fact.</small>
+      </div>
+    </div>
+    <div class="note"><b>Why counts, not Bernoulli.</b> A Bernoulli-per-bin sampler caps detections at one per bin and yields <code>1 − e<sup>−φ</sup></code> instead of <code>φ</code> — a flux-dependent undercount of 4.8% at φ=0.1/bin, 21% at φ=0.5, 37% at φ=1. Drawing the count instead lets the one-detection-per-bin behaviour <em>emerge</em> from the dead time rather than being baked in. Photons within a bin all arrive at the bin centre, so the half-bin offset cancels out of every dead-time comparison and the walk is exact in bin units. The cost: sub-bin dead times are not representable.</div>
+  </section>
+
+  <section>
+    <h2>Non-paralyzable vs paralyzable <span>the only line that differs</span></h2>
+    <figure>
+      <svg viewBox="0 0 720 236" role="img" aria-label="Timing diagram comparing non-paralyzable and paralyzable dead time over sixteen bins">
+        <defs>
+          <style>
+            .ax   { stroke: var(--rule); stroke-width: 1; }
+            .tick { fill: var(--ink-faint); font-family: var(--mono); font-size: 9px; }
+            .lbl  { fill: var(--ink); font-family: var(--mono); font-size: 11px; font-weight: 600; }
+            .sub  { fill: var(--ink-faint); font-family: var(--mono); font-size: 9.5px; }
+            .arr  { stroke: var(--ink-soft); stroke-width: 1.5; }
+            .det  { fill: var(--accent); }
+            .miss { fill: none; stroke: var(--ink-faint); stroke-width: 1.2; stroke-dasharray: 2 2; }
+          </style>
+        </defs>
+
+        <!-- arrivals -->
+        <text class="lbl" x="0" y="16">arrivals</text>
+        <line class="ax" x1="96" y1="34" x2="688" y2="34" />
+        <g class="arr">
+          <line x1="133" y1="34" x2="133" y2="10" /><line x1="170" y1="34" x2="170" y2="10" />
+          <line x1="207" y1="34" x2="207" y2="10" /><line x1="244" y1="34" x2="244" y2="10" />
+          <line x1="318" y1="34" x2="318" y2="10" />
+        </g>
+        <g class="tick" text-anchor="middle">
+          <text x="133" y="46">1</text><text x="170" y="46">2</text><text x="207" y="46">3</text>
+          <text x="244" y="46">4</text><text x="318" y="46">6</text>
+        </g>
+
+        <!-- non-paralyzable -->
+        <text class="lbl" x="0" y="94">non-par.</text>
+        <text class="sub" x="0" y="108">active quench</text>
+        <line class="ax" x1="96" y1="112" x2="688" y2="112" />
+        <rect x="133" y="80" width="111" height="32" fill="var(--accent-dim)" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3 2" />
+        <rect x="244" y="80" width="111" height="32" fill="var(--accent-dim)" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3 2" />
+        <g class="det">
+          <circle cx="133" cy="112" r="4.5" /><circle cx="244" cy="112" r="4.5" />
+        </g>
+        <g class="miss">
+          <circle cx="170" cy="112" r="4" /><circle cx="207" cy="112" r="4" /><circle cx="318" cy="112" r="4" />
+        </g>
+        <text class="sub" x="694" y="97" text-anchor="end" fill="var(--accent)">detects bins 1 and 4</text>
+
+        <!-- paralyzable -->
+        <text class="lbl" x="0" y="176">paralyz.</text>
+        <text class="sub" x="0" y="190">passive quench</text>
+        <line class="ax" x1="96" y1="194" x2="688" y2="194" />
+        <rect x="133" y="162" width="111" height="32" fill="var(--signal-dim)" stroke="var(--signal)" stroke-width="1" stroke-dasharray="3 2" />
+        <rect x="170" y="162" width="111" height="32" fill="var(--signal-dim)" stroke="var(--signal)" stroke-width="1" stroke-dasharray="3 2" />
+        <rect x="207" y="162" width="111" height="32" fill="var(--signal-dim)" stroke="var(--signal)" stroke-width="1" stroke-dasharray="3 2" />
+        <rect x="244" y="162" width="111" height="32" fill="var(--signal-dim)" stroke="var(--signal)" stroke-width="1" stroke-dasharray="3 2" />
+        <g class="det">
+          <circle cx="133" cy="194" r="4.5" />
+        </g>
+        <g class="miss">
+          <circle cx="170" cy="194" r="4" /><circle cx="207" cy="194" r="4" />
+          <circle cx="244" cy="194" r="4" /><circle cx="318" cy="194" r="4" />
+        </g>
+        <text class="sub" x="694" y="179" text-anchor="end" fill="var(--signal)">detects bin 1 only</text>
+
+        <text class="sub" x="96" y="224">bin index →   dead window τ = 3 bins   ● detected   ○ arrived, suppressed</text>
+      </svg>
+      <figcaption>Same arrivals, same τ. Actively quenched, the window opened at bin&nbsp;1 expires at bin&nbsp;4, so bin&nbsp;4 fires. Passively quenched, the undetected arrivals at bins&nbsp;2, 3 and 4 each re-extend the window, so the recovery clock never restarts and bin&nbsp;4 is lost too — one detection instead of two. In <code>_walk_occupied</code> the whole difference is a single <code>elif paralyzable: t_armed = g + dead_time_bins</code> branch.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Settings <span>7 knobs</span></h2>
+    <div class="settings">
+
+      <div class="setting">
+        <div class="k"><b>dead_time_bins</b><small>int ≥ 0 · default 0</small></div>
+        <div class="v">
+          <ul>
+            <li><b>0</b> — every photon is detected; several photons in one bin each emit a row.</li>
+            <li><b>&gt; 0</b> — only the first photon in an occupied bin can fire; the rest sit inside the window it just opened.</li>
+            <li><b>&gt; n_tbins</b> — supported in free-running mode, because <code>t_armed</code> is tracked in absolute bins rather than modulo the cycle.</li>
+          </ul>
+          <p style="font-size:.9rem;color:var(--ink-faint)">Fractional and negative values raise <code>ValueError</code>.</p>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="k"><b>free_running</b><small>bool · default True</small></div>
+        <div class="v"><ul>
+          <li><b>True (asynchronous)</b> — the detector re-arms <code>dead_time_bins</code> after each detection regardless of cycle boundaries. Dead time wraps across cycles. Inherently multi-hit.</li>
+          <li><b>False (gated / synchronous)</b> — re-armed at every cycle start, so dead time never crosses a boundary. Cycles with no arrivals are skipped entirely.</li>
+        </ul></div>
+      </div>
+
+      <div class="setting">
+        <div class="k"><b>paralyzable</b><small>bool · default False</small></div>
+        <div class="v"><ul>
+          <li><b>False</b> — active quenching: only detections retrigger the dead window.</li>
+          <li><b>True</b> — passive quenching: <em>every</em> arrival retriggers it, detected or not.</li>
+        </ul></div>
+      </div>
+
+      <div class="setting">
+        <div class="k"><b>max_detections_per_cycle</b><small>-1 | None | int ≥ 1 · default -1</small></div>
+        <div class="v"><ul>
+          <li><b>-1</b> — per-mode default: 1 when gated, unlimited when free-running.</li>
+          <li><b>None</b> — unlimited (gated multi-hit).</li>
+          <li><b>int ≥ 1</b> — an explicit cap. Free-running rejects any cap.</li>
+        </ul></div>
+      </div>
+
+      <div class="setting">
+        <div class="k"><b>sparse</b><small>None | bool · default None</small></div>
+        <div class="v">
+          <p>Arrival-sampling strategy, a pure performance switch. Auto-selects sparse when <code>sum(φ)·n_pulses &lt; 0.25·n_pulses·n_tbins</code> — the normal low-flux regime, where the dense grid would be mostly zeros. The sparse path exploits Poisson superposition (total ~ Poisson(n_pulses·Σφ), each photon then placed uniformly in cycle and categorically in bin), which is exact rather than approximate. Both paths consume the RNG differently, so a fixed seed only reproduces a stream for a fixed choice.</p>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="k"><b>generator</b><small>torch.Generator | None</small></div>
+        <div class="v"><p>Optional RNG for reproducibility.</p></div>
+      </div>
+
+      <div class="setting">
+        <div class="k"><b>n_hist_bins</b><small>timestamps_to_histogram · default n_tbins</small></div>
+        <div class="v"><p>Histogram resolution for the reduction step. A coarser histogram merges adjacent time bins and requires <code>n_tbins</code> to be an exact multiple of <code>n_hist_bins</code>; finer than the TDC is rejected.</p></div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Mode coverage <span>MODES in the test file</span></h2>
+    <p>Seven <code>(free_running, paralyzable, cap)</code> combinations are swept exhaustively. The cap <code>1&lt;&lt;62</code> stands in for "unlimited".</p>
+    <div class="scroll"><table>
+      <thead><tr><th>#</th><th>free_running</th><th>paralyzable</th><th class="n">cap</th><th>Device this represents</th></tr></thead>
+      <tbody>
+        <tr><td class="n">1</td><td class="t">True</td><td class="t">False</td><td class="n">∞</td><td>Free-running, actively quenched — the default</td></tr>
+        <tr><td class="n">2</td><td class="t">True</td><td class="t">True</td><td class="n">∞</td><td>Free-running, passively quenched</td></tr>
+        <tr><td class="n">3</td><td class="t">False</td><td class="t">False</td><td class="n">1</td><td>Conventional gated single-hit lidar (Coates regime)</td></tr>
+        <tr><td class="n">4</td><td class="t">False</td><td class="t">True</td><td class="n">1</td><td>Gated single-hit, passive quench</td></tr>
+        <tr><td class="n">5</td><td class="t">False</td><td class="t">False</td><td class="n">∞</td><td>Gated multi-hit</td></tr>
+        <tr><td class="n">6</td><td class="t">False</td><td class="t">True</td><td class="n">∞</td><td>Gated multi-hit, passive quench</td></tr>
+        <tr><td class="n">7</td><td class="t">False</td><td class="t">False</td><td class="n">2</td><td>Explicit finite hit cap</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="groups">
+    <h2>Tests <span>10 classes · 36 functions · 106 cases</span></h2>
+
+    <div class="group">
+      <h3>TestExhaustiveOracle <em>2 functions · 43 cases</em> <span class="tag">all 7 modes</span></h3>
+      <p>The central test. It enumerates <em>every</em> possible arrival pattern over a handful of bins and compares the production walk against an independently written per-photon reference. Because it enumerates rather than samples there is no Monte-Carlo error, so any disagreement is a real defect, not noise.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Test</th><th>Covers</th><th class="why">Logic</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="t">test_walk_matches_reference<br><span style="color:var(--ink-faint)">7 modes × 6 (n_tbins, dt)</span></td>
+            <td class="t">all modes<br>dt ∈ {0,1,2,3}</td>
+            <td class="why">For 2 cycles × up to 4 bins with counts 0–2, iterates all 3<sup>n</sup> patterns and asserts the emitted <code>(cycle, bin)</code> list is identical to <code>reference_detect</code> — a deliberately naive implementation that materialises each individual photon instead of using the production "one detection per occupied bin" shortcut. It also asserts the pattern count itself, so a broken generator can't silently shrink the sweep.</td>
+          </tr>
+          <tr>
+            <td class="t">test_dead_time_longer_than_cycle</td>
+            <td class="t">free-running<br>dt = 2·n_tbins+1</td>
+            <td class="why">Regression M3. Exhaustive over 4 cycles × 3 bins with a dead time deliberately longer than a full cycle, checking the walk does not saturate at one cycle — the failure mode of any implementation that stores dead time modulo the cycle.</td>
+          </tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="group">
+      <h3>TestExpectedRates <em>3 functions</em> <span class="tag">dt = 0</span></h3>
+      <p>Exact expectations by Poisson-weighted enumeration — no sampling error in the first test, and two Monte-Carlo checks that pin the modelling choice.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Test</th><th>Covers</th><th class="why">Logic</th></tr></thead>
+        <tbody>
+          <tr><td class="t">test_zero_dead_time_recovers_phi</td><td class="t">exact</td><td class="why">Weights every arrival pattern by its Poisson pmf and sums the resulting detections. With no dead time every photon must be detected, so E[counts] must equal φ to 1e-6. Also asserts the enumerated probability mass sums to 1, confirming truncating the Poisson support at 8 leaves only ~6e-8 unaccounted.</td></tr>
+          <tr><td class="t">test_zero_dead_time_mc_matches_phi</td><td class="t">free-running</td><td class="why">The same claim end-to-end through the sampler: 200k pulses, histogram / n_pulses must converge to φ within 2%.</td></tr>
+          <tr><td class="t">test_bernoulli_model_would_undercount</td><td class="t">free-running</td><td class="why">A guard on the modelling decision rather than the code. At φ=0.5/bin the measured rate must be 0.5, and must differ from the Bernoulli answer <code>1−e<sup>−0.5</sup></code> by more than 0.05 — so a regression back to a Bernoulli-per-bin sampler fails loudly instead of quietly biasing every result 21% low.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="group">
+      <h3>TestSparseSampler <em>5 functions</em> <span class="tag">sparse=True/False/auto</span></h3>
+      <p>The sparse path is an optimisation, so the bar is that it is a statistically indistinguishable drop-in — not that it reproduces the same stream.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Test</th><th class="why">Logic</th></tr></thead>
+        <tbody>
+          <tr><td class="t">test_matches_dense_per_bin_rate</td><td class="why">Runs both strategies at 100k pulses. Because they consume the RNG differently the draws are independent, so each is compared against φ rather than against each other.</td></tr>
+          <tr><td class="t">test_matches_dense_under_dead_time</td><td class="why">Equivalence must survive the dead-time walk, not just the sampler: with dt=8 the total detection count from both paths must agree within 3%.</td></tr>
+          <tr><td class="t">test_cycles_are_uniformly_distributed</td><td class="why">Guards the superposition argument the sparse sampler rests on. If cycle indices were not uniform, the two halves of the run would not receive equal detection counts (within 5%).</td></tr>
+          <tr><td class="t">test_auto_selects_sparse_at_low_flux</td><td class="why">φ=1e-5 over 200 bins puts the auto-selector deep in the sparse branch; asserts it runs and still honours the documented output contract.</td></tr>
+          <tr><td class="t">test_zero_rate_yields_no_detections</td><td class="why">The degenerate input both paths must survive: all-zero φ returns an empty <code>(0, 2)</code> tensor that histograms to zero, with no divide-by-total blowup in the sparse path.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="group">
+      <h3>TestAnalyticRates <em>3 functions · 25 cases</em> <span class="tag">free-running</span> <span class="tag s">paralyzable + non-par.</span></h3>
+      <p>External oracles. The exhaustive test above checks the code against a reference encoding the <em>same</em> semantics, so it cannot catch a physics error common to both. These formulas come independently from renewal theory — the discrete-bin analogues of the textbook counter results <code>λ/(1+λτ)</code> and <code>λe<sup>−λτ</sup></code>. Each runs 8 seeds × 60k pulses and applies a z-test at |z| &lt; 4 against the standard error, so the tolerance is derived rather than hand-tuned.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Test</th><th class="n">cases</th><th class="why">Logic</th></tr></thead>
+        <tbody>
+          <tr><td class="t">test_non_paralyzable_rate</td><td class="n">12</td><td class="why">Renewal argument: each detection is followed by τ dead bins plus a Geometric(p) wait, p = 1−e<sup>−λ</sup>, giving rate = 1/(τ + (1−p)/p). Swept over λ ∈ {0.01, 0.05, 0.2, 0.5} × τ ∈ {1, 3, 10}. The <code>τ−1</code> vs <code>τ</code> convention matters here: a detection in bin g blocks g+1 … g+τ−1, leaving g+τ live.</td></tr>
+          <tr><td class="t">test_paralyzable_rate</td><td class="n">12</td><td class="why">A bin detects iff it is occupied and the preceding τ−1 bins are empty, so rate = p·e<sup>−λ(τ−1)</sup>. Same λ × τ sweep.</td></tr>
+          <tr><td class="t">test_paralyzable_rate_is_non_monotonic_in_flux</td><td class="n">1</td><td class="why">The qualitative signature that distinguishes the two devices, and it must <em>emerge</em> from the simulation rather than be asserted anywhere in the code. Across λ up to 1.5 the paralyzable rate must rise then collapse; the non-paralyzable rate must increase monotonically and saturate near 1/τ.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="group">
+      <h3>TestCoatesRoundTrip <em>2 functions · 4 cases</em> <span class="tag">gated single-hit</span></h3>
+      <p>Gated single-hit is the one regime the Coates estimator inverts exactly, which makes it a closed loop: simulate pile-up, invert it, and the original φ must come back.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Test</th><th class="why">Logic</th></tr></thead>
+        <tbody>
+          <tr><td class="t">test_recovers_phi<br><span style="color:var(--ink-faint)">scale ∈ {0.02, 0.1, 0.4}</span></td><td class="why">A ramped φ over 12 bins, 400k pulses. Coates recovers φ from the first-photon-wins histogram by tracking how many cycles are still "alive" entering each bin. Recovery within 5% at three flux levels means the pile-up produced by the simulator is quantitatively the pile-up the estimator assumes.</td></tr>
+          <tr><td class="t">test_raw_histogram_is_pile_up_distorted</td><td class="why">The negative half of the same claim — a correct simulator must produce a <em>distorted</em> histogram. With flat φ=0.4 any decay is pure pile-up, so the first bin must exceed the last by more than 2×, and Coates must still invert it back to flat.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="group">
+      <h3>TestDeadTimeInvariants <em>4 functions · 6 cases</em> <span class="tag">free-running + gated</span></h3>
+      <p>Properties checked directly on the timestamp stream, with no model to compare against.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Test</th><th class="why">Logic</th></tr></thead>
+        <tbody>
+          <tr><td class="t">test_no_two_detections_closer_than_dead_time<br><span style="color:var(--ink-faint)">dt ∈ {1, 3, 7}</span></td><td class="why">The defining property of dead time: converting timestamps to absolute bin indices, the minimum gap between consecutive detections must be ≥ dt. Also asserts &gt;50 detections were produced, so the invariant can't pass vacuously on an empty stream.</td></tr>
+          <tr><td class="t">test_gated_resets_at_cycle_boundary</td><td class="why">A hand-built two-cycle pattern — a photon in the last bin of cycle 0, another in the first bin of cycle 1, dt=3. Gated must keep both; free-running must suppress the second. One fixture proving the two modes differ exactly where they should.</td></tr>
+          <tr><td class="t">test_paralyzable_detects_no_more_than_non_paralyzable</td><td class="why">Ordering that must hold on identical arrivals: at φ=0.8 the paralyzable count must be strictly lower, since extending the window can only ever remove detections.</td></tr>
+          <tr><td class="t">test_paralyzable_equals_non_paralyzable_at_low_flux</td><td class="why">The other end of the same axis: at φ=0.002 coincident arrivals are rare, so the two models must converge to within 5%. Together these bracket the paralyzable branch from both sides.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="group">
+      <h3>TestGatedSingleHit <em>4 functions · 7 cases</em> <span class="tag">gated, cap=1</span></h3>
+      <p>The gated single-hit case bypasses the scan entirely for a vectorised path, so it needs its own equivalence proof.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Test</th><th class="why">Logic</th></tr></thead>
+        <tbody>
+          <tr><td class="t">test_matches_first_occupied_bin</td><td class="why">Reseeds an identical generator to draw the same arrivals independently, then asserts the output is exactly the first occupied bin of each non-empty cycle — the definition of first-photon-wins, computed outside the module.</td></tr>
+          <tr><td class="t">test_dead_time_is_irrelevant<br><span style="color:var(--ink-faint)">dt ∈ {0, 1, 5, 100}</span></td><td class="why">Since the detector stops after the first photon and re-arms at the cycle boundary, dead time can never bind. Output for every dt must be bit-identical to dt=0 — which is also what licenses the fast path to ignore it.</td></tr>
+          <tr><td class="t">test_fast_path_agrees_with_walk</td><td class="why">Runs the general <code>_deadtime_walk</code> with cap=1 on the same arrivals and requires it to match the vectorised argmax result, so the optimisation and the reference scan cannot drift apart.</td></tr>
+          <tr><td class="t">test_multi_hit_gated_detects_more</td><td class="why">Confirms <code>max_detections_per_cycle=None</code> actually changes behaviour: on the same seed, gated multi-hit must yield strictly more detections than gated single-hit.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="group">
+      <h3>TestHistogramReduction <em>5 functions</em> <span class="tag">timestamps_to_histogram</span></h3>
+      <div class="scroll"><table>
+        <thead><tr><th>Test</th><th class="why">Logic</th></tr></thead>
+        <tbody>
+          <tr><td class="t">test_defaults_to_tdc_resolution</td><td class="why">Hand-checked counts on a four-row fixture, including a repeated bin — confirming duplicate timestamps accumulate rather than deduplicate.</td></tr>
+          <tr><td class="t">test_rebins_to_coarser_histogram</td><td class="why">Regression M2: 6 time bins → 3 histogram bins must merge adjacent pairs, not truncate or interpolate.</td></tr>
+          <tr><td class="t">test_rejects_non_divisible_rebin</td><td class="why">10 → 3 would put unequal numbers of time bins in each output bin, silently skewing the transient. Must raise.</td></tr>
+          <tr><td class="t">test_rejects_finer_than_tdc</td><td class="why">Asking for more histogram bins than TDC bins would fabricate resolution that was never measured. Must raise.</td></tr>
+          <tr><td class="t">test_empty_timestamps</td><td class="why">Zero detections must still return a correctly shaped zero histogram — the shape callers index into downstream.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="group">
+      <h3>TestApiContract <em>8 functions</em> <span class="tag">validation</span></h3>
+      <div class="scroll"><table>
+        <thead><tr><th>Test</th><th class="why">Logic</th></tr></thead>
+        <tbody>
+          <tr><td class="t">test_reproducible_with_generator</td><td class="why">Two runs on the same seed must be identical — the precondition for every Monte-Carlo test above being debuggable.</td></tr>
+          <tr><td class="t">test_free_running_rejects_per_cycle_cap</td><td class="why">Free-running mode has no meaningful cycle to cap against; silently ignoring the argument would give a plausible but wrong answer, so it raises.</td></tr>
+          <tr><td class="t">test_rejects_fractional_dead_time</td><td class="why">Sub-bin dead time is not representable in this model; accepting 1.5 and rounding it would hide a modelling limit behind a plausible number.</td></tr>
+          <tr><td class="t">test_rejects_negative_dead_time</td><td class="why">Nonsensical input, and one that would corrupt <code>t_armed</code> arithmetic rather than fail visibly.</td></tr>
+          <tr><td class="t">test_rejects_multi_pixel_input</td><td class="why">The module is single-pixel by design; a 2-D φ would otherwise broadcast into a silently wrong result.</td></tr>
+          <tr><td class="t">test_negative_rates_are_clamped</td><td class="why">Convolution and offset arithmetic upstream can emit small negative rates. Clamping must zero them without disturbing the positive bins.</td></tr>
+          <tr><td class="t">test_timestamps_are_sorted</td><td class="why">The sort order is part of the contract, and the dead-time walk itself depends on the input being ordered.</td></tr>
+          <tr><td class="t">test_output_shape_and_dtype</td><td class="why">Shape, int64 dtype, and both index columns in range — the structural guarantees callers rely on.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+  </section>
+
+  <footer>tests/test_aspc_detector.py · 106 passed, 0 xfailed · branch active-spc</footer>
+</div>
+</body>
+</html>

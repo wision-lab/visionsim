@@ -7,6 +7,7 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
+   visionsim.emulate.aspc
    visionsim.emulate.dvs
    visionsim.emulate.itof
 

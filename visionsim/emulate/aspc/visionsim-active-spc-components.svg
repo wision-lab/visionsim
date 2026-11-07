@@ -1,0 +1,603 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="305.65833mm"
+   height="200.02502mm"
+   viewBox="0 0 1155.244 756.00011"
+   version="1.1"
+   id="svg1"
+   inkscape:version="0.92.3 (2405546, 2018-03-11)"
+   sodipodi:docname="transients (1).svg">
+  <metadata
+     id="metadata100">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     inkscape:zoom="0.70710678"
+     inkscape:cx="599.6027"
+     inkscape:cy="140.4397"
+     inkscape:window-width="1853"
+     inkscape:window-height="1145"
+     inkscape:window-x="1987"
+     inkscape:window-y="27"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1"
+     showgrid="false" />
+  <defs
+     id="defs1">
+    <linearGradient
+       id="linearGradient9"
+       inkscape:collect="always">
+      <stop
+         style="stop-color:#ffff00;stop-opacity:1;"
+         offset="0.5155822"
+         id="stop9" />
+      <stop
+         style="stop-color:#ffff00;stop-opacity:0;"
+         offset="1"
+         id="stop10" />
+    </linearGradient>
+    <inkscape:path-effect
+       effect="bspline"
+       id="path-effect3"
+       is_visible="true"
+       lpeversion="1.3"
+       weight="33.333333"
+       steps="2"
+       helper_size="0"
+       apply_no_weight="true"
+       apply_with_weight="true"
+       only_selected="false"
+       uniform="false" />
+    <radialGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient9"
+       id="radialGradient10"
+       cx="256.40936"
+       cy="530.37799"
+       fx="256.40936"
+       fy="530.37799"
+       r="30.94488"
+       gradientTransform="matrix(1,0,0,1.0161578,0,-8.6596698)"
+       gradientUnits="userSpaceOnUse" />
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(1641.6419,-925.48192)">
+    <rect
+       style="fill:none;fill-opacity:0;stroke:#808080;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+       id="rect1"
+       width="328.77451"
+       height="220.0118"
+       x="1151.5267"
+       y="1374.5709"
+       ry="18.897638"
+       transform="rotate(90)"
+       rx="18.897638" />
+    <rect
+       style="fill:none;fill-opacity:0;stroke:#808080;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+       id="rect1-3"
+       width="131.54358"
+       height="151.91197"
+       x="1192.028"
+       y="1408.6208"
+       ry="18.897638"
+       transform="rotate(90)"
+       rx="18.897638" />
+    <rect
+       style="fill:none;fill-opacity:0;stroke:#808080;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+       id="rect1-3-9"
+       width="92.5495"
+       height="180.25035"
+       x="1366.2017"
+       y="1394.4517"
+       ry="18.897638"
+       transform="rotate(90)"
+       rx="18.897638" />
+    <text
+       xml:space="preserve"
+       style="font-weight:bold;font-size:22.99959946px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:2.79713988;stroke-linecap:round;stroke-dasharray:none"
+       x="-1484.7723"
+       y="1174.8674"
+       id="text3-2-4"><tspan
+         sodipodi:role="line"
+         id="tspan3-3-7"
+         x="-1484.7723"
+         y="1174.8674"
+         style="font-size:22.99959946px;stroke-width:2.79713988">Scene Info</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-weight:bold;font-size:17.76180077px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:2.79713988;stroke-linecap:round;stroke-dasharray:none"
+       x="-1484.8433"
+       y="1215.0708"
+       id="text3-1"><tspan
+         sodipodi:role="line"
+         id="tspan3-8"
+         x="-1484.8433"
+         y="1215.0708"
+         style="stroke-width:2.79713988">Illumination</tspan></text>
+    <g
+       id="g19"
+       transform="translate(-1483.7162,1031.9463)">
+      <g
+         id="g2"
+         transform="translate(301.00001,-321.00001)">
+        <g
+           id="g10">
+          <rect
+             style="fill:none;fill-opacity:0;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+             id="rect2"
+             width="133"
+             height="122"
+             x="161"
+             y="497"
+             ry="0" />
+          <ellipse
+             style="fill:#ff0000;fill-opacity:1;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+             id="path2"
+             cx="193.5"
+             cy="531.5"
+             rx="30"
+             ry="30.5" />
+          <ellipse
+             style="fill:#0000ff;fill-opacity:1;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+             id="path2-1"
+             cx="194.44489"
+             cy="584.94489"
+             rx="30"
+             ry="30.5" />
+          <ellipse
+             style="fill:#00ff00;fill-opacity:1;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+             id="path2-36"
+             cx="252.44489"
+             cy="583.94489"
+             rx="30"
+             ry="30.5" />
+          <ellipse
+             style="fill:url(#radialGradient10);fill-opacity:1;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+             id="path2-3"
+             cx="259.94489"
+             cy="535.94489"
+             rx="30"
+             ry="30.5" />
+        </g>
+      </g>
+      <text
+         xml:space="preserve"
+         style="font-weight:bold;font-size:12px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#ffff00;fill-opacity:1;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+         x="670"
+         y="200"
+         id="text2"><tspan
+           sodipodi:role="line"
+           id="tspan2"
+           x="670"
+           y="200"
+           style="fill:#000000;stroke:none">FoV Zones</tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-weight:bold;font-size:12px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:none;fill-opacity:1;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+         x="609.04169"
+         y="223.57137"
+         id="text6"><tspan
+           sodipodi:role="line"
+           id="tspan6"
+           x="609.04169"
+           y="223.57137"
+           style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none">Encodes:</tspan><tspan
+           sodipodi:role="line"
+           x="609.04169"
+           y="238.57137"
+           id="tspan7"
+           style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none">  - Output Resolution</tspan><tspan
+           sodipodi:role="line"
+           x="609.04169"
+           y="253.57137"
+           style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+           id="tspan8">  - FoV of each pixel</tspan><tspan
+           sodipodi:role="line"
+           x="609.04169"
+           y="268.57135"
+           style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+           id="tspan9">  - Optical effects (vignetting)</tspan></text>
+    </g>
+    <g
+       id="g6"
+       transform="translate(-1298.8941,703.78854)">
+      <path
+         style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+         d="m 110,754.00002 c 5.33333,0.0833 10.66656,0.16666 20.00008,0.33333 9.33352,0.16667 22.66659,0.41667 31.99997,-6.62514 9.33339,-7.04181 14.66662,-21.37486 18.3333,-37.54171 3.66669,-16.16684 5.66665,-34.16648 9.58337,-32.20793 3.91673,1.95855 9.74983,23.87434 14.54159,39.833 4.79177,15.95865 8.54162,25.95825 26.79199,31.16669 18.25036,5.20843 50.99972,5.62509 83.74971,6.04176"
+         id="path3"
+         inkscape:path-effect="#path-effect3"
+         inkscape:original-d="m 110,754.00002 c 5.33333,0.0833 10.66656,0.16666 16,0.25 13.3336,0.25 26.66667,0.5 40,0.75 5.33344,-14.33362 10.66667,-28.66667 16,-43 2.00004,-18.00036 4,-36 6,-54 5.83345,21.9171 11.66655,43.83289 17.5,65.75 3.75008,10.0002 7.49993,19.9998 11.25001,30 32.75065,0.41667 65.50001,0.83333 98.25,1.25"
+         sodipodi:nodetypes="cccccccc"
+         inkscape:connector-curvature="0" />
+      <text
+         xml:space="preserve"
+         style="font-weight:bold;font-size:12px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#ffff00;fill-opacity:1;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+         x="212.26169"
+         y="769.86353"
+         id="text2-2"><tspan
+           sodipodi:role="line"
+           id="tspan2-8"
+           x="212.26169"
+           y="769.86353"
+           style="fill:#000000;stroke:none">Pulse Characteristics</tspan></text>
+    </g>
+    <text
+       xml:space="preserve"
+       style="font-weight:bold;font-size:12px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:none;fill-opacity:1;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+       x="-1022.8941"
+       y="1385.4525"
+       id="text6-2"><tspan
+         sodipodi:role="line"
+         id="tspan6-0"
+         x="-1022.8941"
+         y="1385.4525"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none">Encodes:</tspan><tspan
+         sodipodi:role="line"
+         x="-1022.8941"
+         y="1400.4525"
+         id="tspan7-6"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none">  - Pulse wavelength</tspan><tspan
+         sodipodi:role="line"
+         x="-1022.8941"
+         y="1415.4525"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan8-1">  - Total #photons</tspan><tspan
+         sodipodi:role="line"
+         x="-1022.8941"
+         y="1430.4525"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan9-5">  - Rep-Rate</tspan><tspan
+         sodipodi:role="line"
+         x="-1022.8941"
+         y="1445.4525"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan22">  - Time jitter </tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-weight:bold;font-size:22.99959946px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:3.62197995;stroke-linecap:round;stroke-dasharray:none"
+       x="-888.15082"
+       y="1174.8674"
+       id="text3-2"><tspan
+         sodipodi:role="line"
+         id="tspan3-3"
+         x="-888.15082"
+         y="1174.8674"
+         style="stroke-width:3.62197995">Single Photon Sensor</tspan></text>
+    <rect
+       style="fill:none;fill-opacity:1;stroke:#808080;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+       id="rect10"
+       width="670.07013"
+       height="336.61938"
+       x="-1227.2546"
+       y="1151.6304"
+       ry="18.897638"
+       rx="18.897638" />
+    <text
+       xml:space="preserve"
+       style="font-weight:bold;font-size:17.76180077px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:2.79713988;stroke-linecap:round;stroke-dasharray:none"
+       x="-716.51483"
+       y="1366.2513"
+       id="text3-2-3"><tspan
+         sodipodi:role="line"
+         x="-716.51483"
+         y="1366.2513"
+         style="stroke-width:2.79713988"
+         id="tspan4">Histogrammer</tspan></text>
+    <rect
+       style="fill:none;fill-opacity:1;stroke:#808080;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+       id="rect10-3"
+       width="313.67365"
+       height="131.05823"
+       x="-882.41754"
+       y="1346.9398"
+       ry="18.897638"
+       rx="18.897638" />
+    <rect
+       style="fill:none;fill-opacity:1;stroke:#808080;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+       id="rect10-3-4"
+       width="184.88107"
+       height="87.396545"
+       x="-761.97308"
+       y="1374.1471"
+       ry="18.897638"
+       rx="18.897638" />
+    <text
+       xml:space="preserve"
+       style="font-weight:bold;font-size:17.76180077px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:2.79713988;stroke-linecap:round;stroke-dasharray:none"
+       x="-1142.6112"
+       y="1369.5195"
+       id="text3"><tspan
+         sodipodi:role="line"
+         id="tspan3"
+         x="-1142.6112"
+         y="1369.5195"
+         style="stroke-width:2.79713988">Active Source</tspan></text>
+    <rect
+       style="fill:none;fill-opacity:1;stroke:#808080;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+       id="rect10-3-5"
+       width="313.39566"
+       height="128.13768"
+       x="-1215.2312"
+       y="1350.2817"
+       ry="18.897638"
+       rx="18.897638" />
+    <text
+       xml:space="preserve"
+       style="font-weight:bold;font-size:17.76180077px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:2.79713988;stroke-linecap:round;stroke-dasharray:none"
+       x="-1163.7352"
+       y="1213.0884"
+       id="text3-9"><tspan
+         sodipodi:role="line"
+         id="tspan3-2"
+         x="-1163.7352"
+         y="1213.0884"
+         style="stroke-width:2.79713988">Detector</tspan></text>
+    <rect
+       style="fill:none;fill-opacity:1;stroke:#808080;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+       id="rect10-3-5-6"
+       width="647.38696"
+       height="145.65791"
+       x="-1215.9131"
+       y="1192.2883"
+       ry="18.897638"
+       rx="18.897638" />
+    <g
+       id="g18"
+       transform="translate(-527.68165,1313.5248)">
+      <g
+         id="g20"
+         transform="translate(-277.19938,-42.680451)">
+        <text
+           xml:space="preserve"
+           style="font-weight:bold;font-size:12px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:none;fill-opacity:1;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+           x="105.45201"
+           y="-26.036289"
+           id="text6-2-0"><tspan
+             sodipodi:role="line"
+             x="105.45201"
+             y="-26.036289"
+             style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+             id="tspan8-1-7">- Pixel Dimensions</tspan><tspan
+             sodipodi:role="line"
+             x="105.45201"
+             y="-11.036289"
+             style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+             id="tspan21">    - Pitch/Area</tspan><tspan
+             sodipodi:role="line"
+             x="105.45201"
+             y="3.9637108"
+             style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+             id="tspan9-5-1">- Quantum Efficiency </tspan><tspan
+             sodipodi:role="line"
+             x="105.45201"
+             y="18.963711"
+             style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+             id="tspan16">- Fill factor</tspan><tspan
+             sodipodi:role="line"
+             x="105.45201"
+             y="33.963711"
+             style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+             id="tspan17">- Dark Current</tspan><tspan
+             sodipodi:role="line"
+             x="105.45201"
+             y="48.963711"
+             style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+             id="tspan18">- ... etc. </tspan></text>
+        <text
+           xml:space="preserve"
+           style="font-weight:bold;font-size:17.76180077px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:2.79713988;stroke-linecap:round;stroke-dasharray:none"
+           x="158.53159"
+           y="-45.500977"
+           id="text3-2-3-0"><tspan
+             sodipodi:role="line"
+             x="158.53159"
+             y="-45.500977"
+             style="stroke-width:2.79713988"
+             id="tspan4-7">Pixel</tspan></text>
+        <rect
+           style="fill:none;fill-opacity:1;stroke:#808080;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+           id="rect10-3-8"
+           width="137.67657"
+           height="124.52797"
+           x="90.332718"
+           y="-64.162094"
+           ry="18.897638"
+           rx="18.897638" />
+      </g>
+    </g>
+    <text
+       xml:space="preserve"
+       style="font-weight:bold;font-size:12px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:none;fill-opacity:1;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+       x="-1206.662"
+       y="1249.6083"
+       id="text6-2-2"><tspan
+         sodipodi:role="line"
+         x="-1206.662"
+         y="1249.6083"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan23">Optical Characteristics ?</tspan><tspan
+         sodipodi:role="line"
+         x="-1206.662"
+         y="1264.6083"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan24">  - Inherited from RGBD stream?  </tspan><tspan
+         sodipodi:role="line"
+         x="-1206.662"
+         y="1279.6083"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan5">  - Bandpass filter</tspan><tspan
+         sodipodi:role="line"
+         x="-1206.662"
+         y="1294.6083"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan10">  - Fov? Focal Length?</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-weight:bold;font-size:17.76180077px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:2.79713988;stroke-linecap:round;stroke-dasharray:none"
+       x="-846.82617"
+       y="1390.3274"
+       id="text3-2-3-09"><tspan
+         sodipodi:role="line"
+         x="-846.82617"
+         y="1390.3274"
+         style="stroke-width:2.79713988"
+         id="tspan4-1">EDH</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-weight:bold;font-size:17.76180077px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:2.79713988;stroke-linecap:round;stroke-dasharray:none"
+       x="-725.59851"
+       y="1400.8401"
+       id="text3-2-3-09-5"><tspan
+         sodipodi:role="line"
+         x="-725.59851"
+         y="1400.8401"
+         style="stroke-width:2.79713988"
+         id="tspan4-1-9">EWH</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-weight:bold;font-size:17.76180077px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:2.79713988;stroke-linecap:round;stroke-dasharray:none"
+       x="-1484.7633"
+       y="1390.6708"
+       id="text3-1-9"><tspan
+         sodipodi:role="line"
+         id="tspan3-8-3"
+         x="-1484.7633"
+         y="1390.6708"
+         style="stroke-width:2.79713988">Scene Geometry</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-weight:bold;font-size:12px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:none;fill-opacity:1;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+       x="-1557.3809"
+       y="1418.5023"
+       id="text6-2-2-5"><tspan
+         sodipodi:role="line"
+         x="-1557.3809"
+         y="1418.5023"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan23-0">RGBD Stream</tspan><tspan
+         sodipodi:role="line"
+         x="-1557.3809"
+         y="1433.5023"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan30">- Frame rate? </tspan><tspan
+         sodipodi:role="line"
+         x="-1557.3809"
+         y="1448.5023"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan31">- Multi-frame per histogram?</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-weight:bold;font-size:12px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:none;fill-opacity:1;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+       x="-1547.6428"
+       y="1239.7208"
+       id="text6-2-2-56"><tspan
+         sodipodi:role="line"
+         x="-1547.6428"
+         y="1239.7208"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan24-1">Type of illumination:</tspan><tspan
+         sodipodi:role="line"
+         x="-1547.6428"
+         y="1254.7208"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan25">Indoor? Black Body? </tspan><tspan
+         sodipodi:role="line"
+         x="-1547.6428"
+         y="1269.7208"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan27">What wavelengths? </tspan><tspan
+         sodipodi:role="line"
+         x="-1547.6428"
+         y="1284.7208"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan26">What power/nm? </tspan><tspan
+         sodipodi:role="line"
+         x="-1547.6428"
+         y="1299.7208"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan28">Constant? Time varying? </tspan><tspan
+         sodipodi:role="line"
+         x="-1547.6428"
+         y="1314.7208"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan11">Flicker...</tspan><tspan
+         sodipodi:role="line"
+         x="-1547.6428"
+         y="1329.7208"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan29" /></text>
+    <text
+       xml:space="preserve"
+       style="font-weight:bold;font-size:12px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:none;fill-opacity:1;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+       x="35.30299"
+       y="-106.66693"
+       id="text6-2-2-8"><tspan
+         sodipodi:role="line"
+         x="35.30299"
+         y="-96.049744"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan1" /></text>
+    <text
+       xml:space="preserve"
+       style="font-weight:bold;font-size:12px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:none;fill-opacity:1;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+       x="-750.33661"
+       y="1418.4374"
+       id="text6-2-2-5-1"><tspan
+         sodipodi:role="line"
+         x="-750.33661"
+         y="1418.4374"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan31-9">Number of bins</tspan><tspan
+         sodipodi:role="line"
+         x="-750.33661"
+         y="1433.4374"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan33">min/max range (indep. of laser?)</tspan><tspan
+         sodipodi:role="line"
+         x="-750.33661"
+         y="1448.4374"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan34">....</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-weight:bold;font-size:12px;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Bold';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:none;fill-opacity:1;stroke:#000000;stroke-width:1.88976002;stroke-linecap:round;stroke-dasharray:none"
+       x="-851.80035"
+       y="1410.6494"
+       id="text6-2-2-5-1-8"><tspan
+         sodipodi:role="line"
+         x="-851.80035"
+         y="1410.6494"
+         style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-family:'CMU Sans Serif';-inkscape-font-specification:'CMU Sans Serif Medium';text-align:start;text-anchor:start;fill:#000000;stroke:none"
+         id="tspan34-4">...</tspan></text>
+  </g>
+</svg>
