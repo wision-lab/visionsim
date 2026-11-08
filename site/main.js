@@ -48,6 +48,8 @@
     if (clip) clip.classList.toggle("is-live", live);
     var layer = v.closest(".deck__layer");
     if (layer) layer.classList.toggle("is-live", live);
+    var media = v.closest(".card__media");
+    if (media) media.classList.toggle("is-live", live);
   }
 
   function setClip(v, on) {
@@ -66,7 +68,7 @@
 
   ["playing", "timeupdate", "seeked", "loadeddata", "canplay",
    "pause", "waiting", "stalled", "error", "emptied", "ended"].forEach(function (type) {
-    [].forEach.call(document.querySelectorAll(".clip > video, .deck__layer > video"), function (v) {
+    [].forEach.call(document.querySelectorAll(".clip > video, .deck__layer > video, .card__media > video"), function (v) {
       v.addEventListener(type, function () { syncLive(v); });
     });
   });
