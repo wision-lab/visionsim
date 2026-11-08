@@ -142,6 +142,14 @@ img, video { display: block; max-width: 100% }
   position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: cover; border-radius: inherit;
 }
+/* the poster is a layer under the clip, not the video's own attribute: an
+   attribute is dropped the moment play() is called, which is the black flash */
+.deck__poster {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; border-radius: inherit; pointer-events: none;
+  transition: opacity .16s linear;
+}
+.deck__layer.is-live .deck__poster { opacity: 0 }
 
 .hero__group {
   /* the block is as wide as its content; the reading sets the size, and the gap
@@ -296,7 +304,10 @@ h2 {
 /* the player measures the preview frame and what the captions cost, then
    writes --crop-max: the tallest a crop may be and still leave the stack
    inside the frame it annotates */
-.zoom img { max-height: var(--crop-max, 190px); width: auto; max-width: 100%; height: auto }
+/* both caps are written by the player as a matched pair, so whichever one
+   binds the image keeps its aspect: capping height alone stretched the crops
+   whenever the column was narrower than the height allowed */
+.zoom img { max-height: var(--crop-max, 190px); max-width: min(100%, var(--crop-max-w, 100%)); width: auto; height: auto }
 
 .walk__head { margin-bottom: clamp(1.6rem, 4.5vh, 2.8rem) }
 /* the heading earns the width; the note beside it is happy to wrap. Desktop
@@ -324,7 +335,6 @@ h2 {
   .walk .sec__head p { font-size: .95rem; line-height: 1.5 }
   .walk.is-armed .walk__controls { margin-top: .6rem }
   .walk .reading__copy p { font-size: .95rem; line-height: 1.55 }
-  .walk .plate { max-width: 66% }
 
   /* a flick on a phone skips the whole section, so it gets a place to land */
   html { scroll-snap-type: y proximity }
@@ -333,8 +343,13 @@ h2 {
   .walk { scroll-snap-align: start; scroll-margin-top: 62px }
 
   .walk .reading__media { flex-direction: row; align-items: stretch; gap: .5rem }
-  .walk .plate { flex: 1 1 0; min-width: 0 }
-  .walk .zooms { flex: 0 0 34%; flex-direction: column; gap: .5rem; max-width: none }
+  /* the plate gives up a little width so the whole reading clears a 360x800
+     screen with room to spare; the crops follow, since they are capped by it */
+  .walk .plate { flex: 0 0 52%; min-width: 0 }
+  .walk .zooms { flex: 1 1 0; min-width: 0; flex-direction: column; gap: .5rem; max-width: none }
+  /* the plate caption runs under both columns instead of wrapping inside a
+     168px box; the crops finish above this line, so nothing collides */
+  .walk .plate figcaption { width: max-content; max-width: calc(100% + 8rem); white-space: nowrap }
   .walk .zoom figcaption { font-size: .5rem }
 }
 .walk__stage { display: grid }
@@ -376,7 +391,7 @@ h2 {
 }
 .walk__arrow:disabled { opacity: .35; cursor: default }
 .walk__meter { position: relative; display: flex; flex: 1 1 auto; gap: .4rem }
-.walk__meter span { position: relative; flex: 1 1 0; height: 2px; overflow: hidden; background: rgba(243,243,240,.13) }
+.walk__meter span { position: relative; flex: 1 1 0; height: 2px; overflow: hidden; background: rgba(243,243,240,.3) }
 /* --p is written by the player, 0 to 1 of that reading's own run time */
 .walk__meter span::after {
   content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--p, 0) * 100%);

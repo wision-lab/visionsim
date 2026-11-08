@@ -42,12 +42,12 @@
      are really arriving, so a refused, stalled or unloaded decode shows the
      frame instead of a black square. */
   function syncLive(v) {
+    /* a scrubbed clip never plays, so its frames count as live ones */
+    var live = v.dataset.walk ? v.readyState >= 2 : (!v.paused && v.readyState >= 2);
     var clip = v.closest(".clip");
-    if (clip) {
-      /* a scrubbed clip never plays, so its frames count as live ones */
-      var live = v.dataset.walk ? v.readyState >= 2 : (!v.paused && v.readyState >= 2);
-      clip.classList.toggle("is-live", live);
-    }
+    if (clip) clip.classList.toggle("is-live", live);
+    var layer = v.closest(".deck__layer");
+    if (layer) layer.classList.toggle("is-live", live);
   }
 
   function setClip(v, on) {
@@ -66,7 +66,7 @@
 
   ["playing", "timeupdate", "seeked", "loadeddata", "canplay",
    "pause", "waiting", "stalled", "error", "emptied", "ended"].forEach(function (type) {
-    [].forEach.call(document.querySelectorAll(".clip > video"), function (v) {
+    [].forEach.call(document.querySelectorAll(".clip > video, .deck__layer > video"), function (v) {
       v.addEventListener(type, function () { syncLive(v); });
     });
   });
@@ -249,7 +249,9 @@
     }, 1200);
   }
 
-  /* buffered a few at a time, so the posters win the first of the bandwidth */
+  /* buffered a few at a time, and only once the grid is actually on screen: a
+     lookahead here used to pull 4.8 MB while the reader was still in the
+     sensor section, where the clips are two screens away */
   function preloadAll(list, done) {
     var i = 0, live = 0, finished = false;
     function step() {
@@ -279,7 +281,7 @@
     new IntersectionObserver(function (entries) {
       if (!entries[0].isIntersecting) return;
       preloadAll(ensemble.slice(), function () { gridReady = true; syncGrid(); });
-    }, { rootMargin: "250px 0px", threshold: 0 }).observe(gridEl);
+    }, { rootMargin: "0px", threshold: 0 }).observe(gridEl);
 
     new IntersectionObserver(function (entries) {
       gridInView = entries[0].isIntersecting;
@@ -619,8 +621,17 @@
         }, 0);
         var n = Math.max(1, caps.length);
         var each = (frameH - capH - (n - 1) * 8 - 4) / n;
+        /* each crop needs a width cap that corresponds to the height cap it
+           was given, or max-width and max-height clamp independently and the
+           picture is stretched rather than scaled */
+        var maxH = Math.max(40, Math.floor(each));
         r.style.setProperty("--plate-h", Math.round(frameH) + "px");
-        r.style.setProperty("--crop-max", Math.max(40, Math.floor(each)) + "px");
+        r.style.setProperty("--crop-max", maxH + "px");
+        r.querySelectorAll(".zoom img").forEach(function (im) {
+          var w = parseFloat(im.getAttribute("width")), h = parseFloat(im.getAttribute("height"));
+          if (!w || !h) return;
+          im.style.setProperty("--crop-max-w", Math.round(maxH * (w / h)) + "px");
+        });
       };
       measure();
       if ("ResizeObserver" in window) new ResizeObserver(measure).observe(plate);
