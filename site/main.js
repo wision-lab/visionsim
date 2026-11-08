@@ -749,6 +749,21 @@
     startWalk();
   }
 
+  /* ---- example cards: the clips play while their card is on screen ------ */
+  [].forEach.call(document.querySelectorAll(".card video"), function (v) {
+    if (!("IntersectionObserver" in window)) return;
+    new IntersectionObserver(function (entries) {
+      var e = entries[0];
+      if (e.isIntersecting) {
+        if (v.preload === "none") v.preload = "auto";
+        var pr = v.play();
+        if (pr && pr.catch) pr.catch(function () {});
+      } else {
+        v.pause();
+      }
+    }, { threshold: 0.4 }).observe(v);
+  });
+
   /* the event flood and the conventional view of the same window run together,
      so the flood lands on the frame where the lamp actually comes on */
   var eventsRow = walkArmed ? null : document.querySelectorAll(".reading")[2];
