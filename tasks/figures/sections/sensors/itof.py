@@ -53,7 +53,6 @@ def _apply_theme(dark: bool) -> None:
 
     # Registers the "science"/"nature"/"ieee" matplotlib styles; the import has no
     # stubs. Kept here so importing this module does not need the docs-only dep.
-    import scienceplots  # type: ignore[import-untyped]  # noqa: F401
 
     if dark:
         plt.style.use(["science", "no-latex", "dark_background"])

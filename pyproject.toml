@@ -42,6 +42,8 @@ dependencies = [
     "peewee",
     "pydantic",
     "typing-extensions",
+    "pint",
+    "ruamel.yaml",
 ]
 license = "GPL-3.0-or-later"
 license-files = ["LICEN[CS]E*"]
@@ -116,3 +118,10 @@ docs = [
     "furo",
     "scienceplots",
 ]
+[[tool.mypy.overrides]]
+module = [
+    "pint.*",
+    "ruamel.*",
+    "OpenEXR.*",
+]
+ignore_missing_imports = true

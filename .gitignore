@@ -84,7 +84,7 @@ celerybeat-schedule
 .venv
 venv/
 ENV/
-
+uv.lock
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -141,6 +141,15 @@ AGENTS.md
 # Local planning 
 docs/thermal_integration/
 docs/notes/
+
+# Active-SPC example output (regenerate with examples/sensors/aspc_transients_synthetic.py
+# then examples/sensors/build_aspc_report.py)
+examples/sensors/aspc/figures/
+examples/sensors/aspc/aspc_report.html
+examples/sensors/aspc/aspc_detection_report.html
+examples/sensors/aspc/detection_checks.tsv
+examples/sensors/aspc/aspc_forward_model_report.html
+
 
 # simulation render intermediates (frames, passes, emulator output)
 /renders
