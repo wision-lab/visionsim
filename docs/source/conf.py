@@ -31,8 +31,7 @@ extensions = [
     "visionsim.sphinx_ext",
 ]
 templates_path = ["_templates"]
-# Kept locally for now, so it is not published and does not warn about being unlinked.
-exclude_patterns = ["roadmap.rst"]
+exclude_patterns = []
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
