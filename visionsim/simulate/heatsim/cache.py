@@ -96,6 +96,204 @@ def file_digest(path: Path) -> str:
     return digest.hexdigest()
 
 
+def transient_scene_digest(scene: Any, initial: Any) -> str:
+    """Fingerprint live thermal inputs before attaching another render worker.
+
+    The saved blend's hash alone misses RPC edits and future animation keys.
+    Ignore generated thermal UVs/AOV branches, which are outputs of preparation,
+    while retaining authored geometry, shading, motion, and external image data.
+    """
+    import bpy
+
+    from visionsim.simulate.heatsim.names import ATLAS_UV_LAYER_NAME, BAKE_UV_LAYER_NAME
+
+    def properties(value):
+        result = {}
+        for prop in value.bl_rna.properties:
+            key = prop.identifier
+            if prop.is_readonly or key == "rna_type":
+                continue
+            item = getattr(value, key)
+            if prop.type in {"BOOLEAN", "INT", "FLOAT", "STRING", "ENUM"}:
+                if getattr(prop, "is_array", False):
+                    item = np.asarray(item).tolist()
+                elif isinstance(item, set):
+                    item = sorted(item)
+                result[key] = item
+            elif prop.type == "POINTER" and isinstance(item, bpy.types.ID):
+                result[key] = (item.bl_rna.identifier, item.name_full)
+        try:
+            custom = value.items()
+        except (AttributeError, TypeError):
+            custom = ()
+        result["custom"] = {}
+        if custom:
+            # Thermal preparation adds cache bookkeeping and render attributes.
+            result["custom"] = {
+                str(k): v.to_dict() if hasattr(v, "to_dict") else v.to_list() if hasattr(v, "to_list") else v
+                for k, v in custom
+                if not str(k).startswith("heatsim_")
+                and k
+                not in {"heat_sim_flux_uv", "heat_sim_irradiance_image", "heat_sim_albedo_uv", "heat_sim_albedo_image"}
+                and (isinstance(v, (int, float, str, list, tuple)) or hasattr(v, "to_dict") or hasattr(v, "to_list"))
+            }
+        return result
+
+    def animation(value):
+        data = getattr(value, "animation_data", None)
+        if data is None:
+            return None
+        return {
+            "settings": properties(data),
+            "drivers": [curve(c) for c in data.drivers],
+            "nla": [(properties(t), [properties(s) for s in t.strips]) for t in data.nla_tracks],
+        }
+
+    def curve(value):
+        result = {
+            "settings": properties(value),
+            "keys": [properties(k) for k in value.keyframe_points],
+            "samples": [properties(k) for k in value.sampled_points],
+            "modifiers": [properties(m) for m in value.modifiers],
+        }
+        if value.driver is not None:
+            result["driver"] = properties(value.driver)
+            result["variables"] = [(properties(v), [properties(t) for t in v.targets]) for v in value.driver.variables]
+        return result
+
+    images = {}
+    trees = {}
+    tree_keys = {}
+    uv_trees = set()
+
+    def tree(value, key=None):
+        if value is None:
+            return None
+        pointer = value.as_pointer()
+        if pointer in tree_keys:
+            return tree_keys[pointer]
+        key = key or f"nodegroup/{value.name_full}"
+        tree_keys[pointer] = key
+        trees[key] = None
+        # Follow authored output dependencies; temperature AOV nodes are generated
+        # after solving and must not prevent attachment to the same scene.
+        retained = set()
+
+        def visit(node):
+            if node in retained:
+                return
+            retained.add(node)
+            for socket in node.inputs:
+                for link in socket.links:
+                    visit(link.from_node)
+
+        for node in value.nodes:
+            if node.type in {"OUTPUT_MATERIAL", "OUTPUT_WORLD", "OUTPUT_LIGHT", "GROUP_OUTPUT"}:
+                visit(node)
+        nodes = []
+        for node in sorted(retained, key=lambda n: n.name):
+            record = properties(node)
+            record["inputs"] = [properties(socket) for socket in node.inputs]
+            record["animation"] = animation(node.id_data)
+            if getattr(node, "node_tree", None) is not None:
+                record["group"] = tree(node.node_tree)
+                if record["group"] in uv_trees:
+                    uv_trees.add(key)
+            if node.type in {"TEX_IMAGE", "UVMAP", "ATTRIBUTE"} or (
+                node.type == "TEX_COORD" and any(l.to_node in retained for l in node.outputs["UV"].links)
+            ):
+                uv_trees.add(key)
+            image = getattr(node, "image", None)
+            if image is not None and image.name_full not in images:
+                if image.source not in {"FILE", "GENERATED"}:
+                    raise ValueError("Transient attachment cannot fingerprint animated image inputs")
+                pixels = np.empty(len(image.pixels), dtype=np.float32)
+                image.pixels.foreach_get(pixels)
+                images[image.name_full] = hashlib.sha256(pixels.tobytes()).hexdigest()
+                if image.source == "FILE" and image.packed_file is None:
+                    path = Path(bpy.path.abspath(image.filepath, library=image.library))
+                    images[image.name_full] += file_digest(path)
+            nodes.append(record)
+        trees[key] = {
+            "nodes": nodes,
+            "links": sorted(
+                (l.from_node.name, l.from_socket.identifier, l.to_node.name, l.to_socket.identifier)
+                for l in value.links
+                if l.from_node in retained and l.to_node in retained
+            ),
+        }
+        return key
+
+    def shading(value):
+        if value is None:
+            return None
+        return (
+            properties(value),
+            animation(value),
+            tree(getattr(value, "node_tree", None), f"{value.bl_rna.identifier}/{value.name_full}/nodes"),
+        )
+
+    objects = []
+    for obj in sorted(scene.objects, key=lambda o: o.name):
+        if obj.type == "CAMERA":
+            continue
+        record = {
+            "object": properties(obj),
+            "animation": animation(obj),
+            "modifiers": [properties(m) for m in obj.modifiers],
+            "constraints": [properties(c) for c in obj.constraints],
+        }
+        record["node_groups"] = [tree(m.node_group) for m in obj.modifiers if m.type == "NODES"]
+        if hasattr(obj, "heat_sim_material"):
+            record["thermal"] = properties(obj.heat_sim_material)
+        if obj.type == "MESH":
+            mesh = obj.data
+            record["materials"] = [shading(s.material) for s in obj.material_slots]
+            uses_uv = any(material is not None and material[2] in uv_trees for material in record["materials"])
+            record["mesh"] = {
+                "vertices": [tuple(v.co) for v in mesh.vertices],
+                "faces": [(tuple(p.vertices), p.material_index) for p in mesh.polygons],
+                "uv": [
+                    (uv.name, [tuple(v.uv) for v in uv.data])
+                    for uv in mesh.uv_layers
+                    if uses_uv and uv.name not in {ATLAS_UV_LAYER_NAME, BAKE_UV_LAYER_NAME}
+                ],
+                "animation": animation(mesh),
+                "shape_keys": None
+                if mesh.shape_keys is None
+                else (
+                    animation(mesh.shape_keys),
+                    [(properties(k), [tuple(v.co) for v in k.data]) for k in mesh.shape_keys.key_blocks],
+                ),
+            }
+        elif obj.type == "LIGHT":
+            record["light"] = shading(obj.data)
+        objects.append(record)
+    actions = []
+    for action in sorted(bpy.data.actions, key=lambda a: a.name):
+        if getattr(action, "is_action_layered", False):
+            curves = [
+                c for layer in action.layers for strip in layer.strips for bag in strip.channelbags for c in bag.fcurves
+            ]
+        else:
+            curves = list(action.fcurves)
+        actions.append((properties(action), [curve(c) for c in curves]))
+    payload = {
+        "pipeline": BAKE_PIPELINE_VERSION,
+        "scene": properties(scene),
+        "objects": objects,
+        "actions": actions,
+        "world": shading(scene.world),
+        "trees": trees,
+        "images": images,
+    }
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode())
+    for name in ("verts", "faces", "t0", "alpha", "density", "c", "eps", "boundary_mask"):
+        digest.update(name.encode())
+        digest.update(np.ascontiguousarray(getattr(initial, name)).tobytes())
+    return digest.hexdigest()
+
+
 def source_identity(blend_data: Any) -> str | None:
     """Identify an unmodified saved blend and its external image/library inputs.
 

@@ -573,6 +573,8 @@ class BlenderService(rpyc.Service):
         # (tmin, tmax) preview colormap span from the most recent exposed_prepare_thermal
         # call, read back by the separate exposed_include_thermal call; None until then.
         self._thermal_temp_range: tuple[float, float] | None = None
+        self._thermal_transient: dict | None = None
+        self._thermal_cache_root: Path | None = None
 
     def _clear_cached_properties(self) -> None:
         # Based on: https://stackoverflow.com/a/71579485
@@ -621,6 +623,8 @@ class BlenderService(rpyc.Service):
         self._persistent_data_before_thermal = None
         self._thermal_atlas_plan = None
         self._thermal_temp_range = None
+        self._thermal_transient = None
+        self._thermal_cache_root = None
 
     def register_output_type(
         self,
@@ -1675,7 +1679,7 @@ class BlenderService(rpyc.Service):
                 len(scene_assignment.materials),
                 assignment_path,
             )
-        cache_root = Path(str(self.blend_file) + ".heatsim")
+        cache_root = self._thermal_cache_root or Path(str(self.blend_file) + ".heatsim")
         return defaults, solver_cfg, cache_root, scene_assignment
 
     def _thermal_solve(
@@ -1858,9 +1862,26 @@ class BlenderService(rpyc.Service):
         exr_codec: EXR_CODECS = "ZIP",
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
+        mode: Literal["STATIC", "TRANSIENT"] = "STATIC",
+        substeps_per_frame: int = 1,
+        laplacian_update_every_steps: int = 1,
+        irradiance_bake_mode: Literal["ONCE", "EVERY_N_FRAMES", "EVERY_STEP"] = "EVERY_N_FRAMES",
+        irradiance_bake_every_n_frames: int = 1,
+        simulation_start_frame: int | None = None,
+        simulation_end_frame: int | None = None,
+        cache_root: str | None = None,
     ) -> None:
         """Solve a fixed thermal field, write attributes or atlas, and set up the AOV."""
+        if mode == "TRANSIENT":
+            options = {k: v for k, v in locals().items() if k in ThermalConfig.__dataclass_fields__}
+            self.exposed_prepare_transient(options, render_outputs=True)
+            return
+        if cache_root is not None:
+            self._thermal_cache_root = Path(str(cache_root))
+
         from visionsim.simulate.heatsim import adapter, thermal_shader
+
+        self._thermal_transient = None
 
         if self._thermal_atlas_plan is not None:
             from visionsim.simulate.heatsim.geometry import release_meshes
@@ -1969,9 +1990,24 @@ class BlenderService(rpyc.Service):
         exr_codec: EXR_CODECS = "ZIP",
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
+        mode: Literal["STATIC", "TRANSIENT"] = "STATIC",
+        substeps_per_frame: int = 1,
+        laplacian_update_every_steps: int = 1,
+        irradiance_bake_mode: Literal["ONCE", "EVERY_N_FRAMES", "EVERY_STEP"] = "EVERY_N_FRAMES",
+        irradiance_bake_every_n_frames: int = 1,
+        simulation_start_frame: int | None = None,
+        simulation_end_frame: int | None = None,
+        cache_root: str | None = None,
     ) -> None:
         """Solve and cache a fixed thermal field without render outputs, ignoring the render-output
         parameters it accepts for symmetry with :class:`ThermalConfig`."""
+        if mode == "TRANSIENT":
+            options = {k: v for k, v in locals().items() if k in ThermalConfig.__dataclass_fields__}
+            self.exposed_prepare_transient(options, render_outputs=False)
+            return
+        if cache_root is not None:
+            self._thermal_cache_root = Path(str(cache_root))
+
         _, atlas_plan, _ = self._thermal_solve(
             initial_temperature_K=initial_temperature_K,
             thermal_diffusivity_mm2_s=thermal_diffusivity_mm2_s,
@@ -2023,6 +2059,14 @@ class BlenderService(rpyc.Service):
         exr_codec: EXR_CODECS = "ZIP",
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
+        mode: Literal["STATIC", "TRANSIENT"] = "STATIC",
+        substeps_per_frame: int = 1,
+        laplacian_update_every_steps: int = 1,
+        irradiance_bake_mode: Literal["ONCE", "EVERY_N_FRAMES", "EVERY_STEP"] = "EVERY_N_FRAMES",
+        irradiance_bake_every_n_frames: int = 1,
+        simulation_start_frame: int | None = None,
+        simulation_end_frame: int | None = None,
+        cache_root: str | None = None,
     ) -> None:
         """Add the temperature AOV and optional preview and radiance outputs."""
         # Temperature ground-truth output (Kelvin), driven by the "temperature" AOV
@@ -2110,13 +2154,124 @@ class BlenderService(rpyc.Service):
     def exposed_configure_thermal(self, config: dict[str, Any]) -> None:
         """Validate one serialized ThermalConfig and prepare both thermal outputs."""
         values = self._thermal_values(config)
+        from visionsim.simulate.heatsim.transient import TRANSIENT_FIELDS
+
+        if values["mode"] == "TRANSIENT":
+            self.exposed_prepare_transient(values)
+            return
+        self._thermal_cache_root = Path(str(values["cache_root"])) if values["cache_root"] is not None else None
+        values = {k: v for k, v in values.items() if k not in TRANSIENT_FIELDS}
         self.exposed_prepare_thermal(**values)
         self.exposed_include_thermal(**values)
 
     @require_initialized_service
     def exposed_heatsim_solve_config(self, config: dict[str, Any]) -> None:
         """Validate one serialized ThermalConfig and solve without render outputs."""
-        self.exposed_heatsim_solve(**self._thermal_values(config))
+        from visionsim.simulate.heatsim.transient import TRANSIENT_FIELDS
+
+        values = self._thermal_values(config)
+        if values["mode"] == "TRANSIENT":
+            self.exposed_prepare_transient(values, render_outputs=False)
+            return
+        self._thermal_cache_root = Path(str(values["cache_root"])) if values["cache_root"] is not None else None
+        self.exposed_heatsim_solve(**{k: v for k, v in values.items() if k not in TRANSIENT_FIELDS})
+
+    @require_initialized_service
+    def exposed_prepare_transient(
+        self, config: dict[str, Any], trajectory: str | None = None, render_outputs: bool = True
+    ) -> str:
+        """Precompute animated heat once, or attach a completed trajectory for another render worker."""
+        from visionsim.simulate.heatsim import adapter, cache, thermal_shader, transient
+        from visionsim.simulate.heatsim.geometry import release_meshes
+
+        values = self._thermal_values(config)
+        cfg = ThermalConfig(**values)
+        if cfg.mode != "TRANSIENT":
+            raise ValueError("prepare_transient requires thermal.mode=TRANSIENT")
+        if self._thermal_atlas_plan is not None:
+            release_meshes(self._thermal_atlas_plan.meshes)
+        self._thermal_atlas_plan = None
+        self._thermal_transient = None
+        self._thermal_cache_root = Path(str(cfg.cache_root)) if cfg.cache_root is not None else None
+        defaults, solver_cfg, cache_root, assignment = self._thermal_config(
+            **{
+                k: values[k]
+                for k in (
+                    "initial_temperature_K",
+                    "thermal_diffusivity_mm2_s",
+                    "density_kg_m3",
+                    "specific_heat_J_kgK",
+                    "emissivity",
+                    "irradiance_scale",
+                    "sim_time_s",
+                    "timestep_s",
+                    "bake_samples",
+                    "irradiance_texture_size",
+                    "device",
+                    "assignments",
+                )
+            }
+        )
+        identity = {
+            "blend": str(self.blend_file),
+            "source": cache.file_digest(Path(str(self.blend_file))),
+            "keyframe_scale": self._keyframe_scale,
+            "cache_root": str(cache_root),
+            "assignment": None if assignment is None else assignment.digest,
+        }
+        plan, session = transient.prepare(self.scene, cfg, defaults, solver_cfg, assignment, identity, trajectory)
+        self._thermal_atlas_plan = plan
+        self._thermal_assignment = assignment
+        self._thermal_transient = {**session, "defaults": defaults}
+        self.log.info("thermal transient trajectory: %s", session["root"])
+        self._thermal_temp_range = tuple(session["manifest"]["preview_range"])
+        if render_outputs:
+            if self.scene.render.use_persistent_data:
+                self._persistent_data_before_thermal = self._loaded_persistent_data
+                self.scene.render.use_persistent_data = False
+            original_frame, original_subframe = self.scene.frame_current, self.scene.frame_subframe
+            try:
+                self.scene.frame_set(session["manifest"]["frame_start"])
+                self._apply_transient_frame()
+                with adapter.use_atlas_geometry(self.scene, plan):
+                    thermal_shader.setup_temperature_aov(self.scene, self.view_layer)
+                self.exposed_include_thermal(**{k: v for k, v in values.items() if k not in transient.TRANSIENT_FIELDS})
+            finally:
+                self.scene.frame_set(original_frame, subframe=original_subframe)
+        return str(session["root"])
+
+    def _apply_transient_frame(self) -> None:
+        """Playback only: rendering the same frame twice never advances heat."""
+        from visionsim.simulate.heatsim import adapter, thermal_shader, transient
+
+        session = self._thermal_transient
+        if session is None:
+            return
+        if self.scene.frame_subframe != 0:
+            raise ValueError("Thermal playback requires a saved integer animation frame")
+        history = transient.read_frame(session, self.scene.frame_current)
+        plan = self._thermal_atlas_plan
+        adapter.refresh_atlas_geometry(self.scene, plan)
+        with adapter.use_atlas_geometry(self.scene, plan):
+            defaults = session["defaults"]
+            thermal_shader.stamp_default_temperatures(self.scene, default_K=defaults["initial_temperature_K"])
+            adapter.write_frame_attributes(
+                self.scene, history, 0, defaults, assignment=self._thermal_assignment, atlas_plan=plan
+            )
+            if plan.texels:
+                if "atlas_root" not in session:
+                    import tempfile
+
+                    session["atlas_root"] = Path(tempfile.mkdtemp(prefix="playback-", dir=session["root"]))
+                path = adapter.write_atlas(
+                    history,
+                    plan,
+                    session["atlas_root"],
+                    defaults=defaults,
+                    assignment=self._thermal_assignment,
+                    timestep=0,
+                )
+                self._thermal_load_pack_atlas_image(path)
 
     @require_initialized_service
     def exposed_load_addons(self, *addons: str) -> None:
@@ -2582,6 +2737,8 @@ class BlenderService(rpyc.Service):
                 Applies to every selected output; the render is skipped only when all of them exist. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
         """
+        if self._thermal_transient is not None and not dry_run:
+            self._apply_transient_frame()
         folder_index = f"{self.scene.frame_current // ITEMS_PER_SUBFOLDER:04}"
         frame_index = f"{self.scene.frame_current % ITEMS_PER_SUBFOLDER:0{INDEX_PADDING}}"
         paths = {}

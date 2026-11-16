@@ -190,11 +190,13 @@ def heatsim_solve(
 ) -> None:
     """Run the FEM heat-transfer solve on a blend-file without rendering.
 
-    Primes the scene's heat simulation cache so that a subsequent
+    In STATIC mode, primes the scene's heat simulation cache so that a subsequent
     ``vsim blender.render-animation`` call with ``config.include_thermal = True``
     can skip the expensive solve step. Opens the blend-file in a single background
     Blender instance, runs the FEM solve via ``clients.heatsim_solve``, and
-    optionally saves the modified blend-file to disk.
+    optionally saves the modified blend-file to disk. TRANSIENT mode prepares a
+    fresh frame history and logs its directory; reuse requires explicit attachment
+    through ``prepare_transient(..., trajectory=...)``.
 
     Args:
         blend_file: Path to blend file.
@@ -232,6 +234,10 @@ def heatsim_solve(
     ):
         progress.add_task(f"Solving {blend_file.stem}...")
         clients.initialize(blend_file, blend_file.parent)
+        if config.thermal.mode == "TRANSIENT":
+            clients.use_animations(config.use_animations)
+            clients.load_addons(*(config.addons or []))
+            clients.move_keyframes(scale=config.keyframe_multiplier)
         clients.heatsim_solve_config(asdict(config.thermal))
         if output_file is not None:
             clients.save_file(output_file)
