@@ -4,6 +4,14 @@ visionsim.simulate.heatsim package
 Submodules
 ----------
 
+visionsim.simulate.heatsim.transient module
+-----------------------------------------
+
+.. automodule:: visionsim.simulate.heatsim.transient
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 visionsim.simulate.heatsim.adapter module
 -----------------------------------------
 

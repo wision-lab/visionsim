@@ -6,14 +6,102 @@ result as temperature and thermal-camera images. Enable it alongside the usual
 RGB and other outputs with ``--config.include-thermal``. VisionSim bakes the
 scene's lighting with Cycles, integrates a temperature field for the requested
 simulation time, and renders that final field from each requested camera pose.
-A render animation therefore shows the same solved thermal state from different
-views; it does not advance the heat simulation between frames.
+By default, a render animation shows the same solved thermal state from different
+views. Enable ``--config.thermal.mode TRANSIENT`` to evolve heat as objects move.
 
 The scene's world, lights, emissive surfaces, materials and geometry affect the
 Cycles lighting bake. The heat solve uses surface sample points and a robust
 point-cloud Laplacian [1]_. The point-cloud approach tolerates typical scene
 meshes, though scene scale, surface detail and sensible thermal material values
 still matter.
+
+Animated heat
+-------------
+
+Transient mode follows the animation and carries temperatures forward. The
+combined point-cloud Laplacian is rebuilt at a configurable interval, so moving
+objects exchange heat with changing nearby surface samples. This retains
+HeatSim Blender's proximity-based contact approximation.
+
+For example::
+
+    vsim blender.render-animation scene.blend out/ \
+        --config.include-thermal \
+        --config.thermal.mode TRANSIENT \
+        --config.thermal.simulation-start-frame 1 \
+        --config.thermal.simulation-end-frame 60 \
+        --config.thermal.substeps-per-frame 2 \
+        --config.thermal.laplacian-update-every-steps 1 \
+        --config.thermal.irradiance-bake-mode EVERY_N_FRAMES \
+        --config.thermal.irradiance-bake-every-n-frames 1 \
+        --config.thermal.cache-root out/heat-cache
+
+There are three independent rates:
+
+* ``substeps-per-frame`` controls temperature integration. At 60 fps, two steps
+  per frame give a timestep of 1/120 second. Geometry is evaluated at each
+  substep, including subframes.
+* ``laplacian-update-every-steps`` controls rebuilding the Laplacian and mass
+  matrices. The default 1 rebuilds every thermal step. Larger intervals reuse
+  the previous connections and mass and can retain a contact after objects move
+  apart, until the next update.
+* ``irradiance-bake-mode`` chooses ``ONCE``, ``EVERY_N_FRAMES`` (default), or
+  ``EVERY_STEP``. ``irradiance-bake-every-n-frames`` defaults to 1. Every run
+  includes an initial bake. Between bakes, the previous absorbed flux is held.
+  Each bake includes stationary receivers, since other objects can change
+  their shadows. Reflections are evaluated by Cycles during each render.
+
+For a 60 fps scene with two thermal substeps per frame, set
+``laplacian-update-every-steps 2`` and ``irradiance-bake-every-n-frames 1``
+to update both the Laplacian and lighting at 60 Hz. Render with
+``--frame-step 1`` to retain every animation frame. The built-in video exporter
+can then encode the RGB and thermal-preview PNG sequences::
+
+    vsim ffmpeg.animate out/frames --pattern '**/*.png' --fps 60 --outfile out/rgb.mp4
+    vsim ffmpeg.animate out/previews/temperature --pattern '**/*.png' --fps 60 --outfile out/temperature.mp4
+
+Set the export fps to the scene's effective fps for normal-speed playback.
+
+Transient duration uses the simulation frame range and the scene's effective
+fps, after keyframe retiming. It defaults to the scene's full range. The static
+``sim-time-s`` and ``timestep-s`` settings do not control this mode. Selecting
+only a subset of frames for rendering does not skip the preceding thermal
+history. The initial frame contains the initial temperatures.
+
+Rigid motion and stable-topology deformation are supported, including thermal
+atlas samples attached to deforming triangles. Mesh/sample correspondence must
+remain stable. Topology changes and changes in participating object membership
+raise errors. Fast motion and small contact regions require sufficiently fine
+timesteps and surface samples. Animated simulation materials should retain
+their roles and diffusivity when matrices are reused.
+For Blender physics, bake the motion cache first so separate workers and
+out-of-order renders evaluate the same poses. Transient preparation does not
+bake Blender's physics caches.
+
+The simulation runs chronologically once before distributed rendering. Frame
+states are stored under a unique ``transient-*`` cache directory; only completed
+runs have ``manifest.json``. This manifest records timing and update counts.
+Render workers share the frame states and maintain separate atlas playback files.
+There is no automatic reuse of an old transient trajectory, and interrupted
+simulations currently restart from the beginning. The Python service API can
+explicitly attach a completed run::
+
+    trajectory = producer.prepare_transient(thermal_config_dict)
+    consumer.prepare_transient(thermal_config_dict, trajectory=trajectory)
+
+Both workers must have the same scene, animation and thermal configuration.
+Attachment is intended for equivalently loaded and configured workers. Its input
+fingerprint checks geometry, thermal values, animation and shading, but does not
+cover every Blender dependency (such as external physics caches or arbitrary
+mesh attributes). Prepare a fresh trajectory after other scene edits.
+``blender.heatsim-solve`` also supports transient preparation; its log reports
+the trajectory directory. Use an explicit ``cache-root`` to isolate experiments
+from caches beside a shared input blend file. A saved prepared blend is a frame
+snapshot; continuing playback requires the trajectory and preparation API.
+Use a new render output directory when attaching a trajectory for another job:
+service initialization currently replaces existing ``transforms.db`` metadata.
+Reusing an output directory can therefore retain images while losing metadata
+for earlier frames.
 
 Getting started
 ---------------
