@@ -141,7 +141,7 @@ patch is mainly heated by the spotlight; it is not solely a contact trail.
 
     .. grid-item::
 
-        .. video:: ../../_static/thermal-transient/rolling-ball-rgb.mp4
+        .. video:: ../../_static/thermal-transient/rolling-ball-rgb-20fps.mp4
             :loop:
             :autoplay:
             :muted:
@@ -150,11 +150,11 @@ patch is mainly heated by the spotlight; it is not solely a contact trail.
             :nocontrols:
             :playsinline:
             :align: center
-            :caption: RGB — 60 fps
+            :caption: RGB — 20 fps (3× slower)
 
     .. grid-item::
 
-        .. video:: ../../_static/thermal-transient/rolling-ball-temperature.mp4
+        .. video:: ../../_static/thermal-transient/rolling-ball-temperature-20fps.mp4
             :loop:
             :autoplay:
             :muted:
@@ -163,9 +163,10 @@ patch is mainly heated by the spotlight; it is not solely a contact trail.
             :nocontrols:
             :playsinline:
             :align: center
-            :caption: Temperature — 60 fps
+            :caption: Temperature — 20 fps (3× slower)
 
-All 180 frames are rendered at 640 × 512 and 60 fps. Heat integration runs at
+The clips play all 180 frames at 20 fps, three times slower than the simulation.
+Rendering remains at 640 × 512 and 60 fps. Heat integration runs at
 120 Hz; the Laplacian and lighting update every frame. The heat input is
 multiplied by 300 to make the short heating sequence visible, without changing
 the spotlight's RGB brightness.

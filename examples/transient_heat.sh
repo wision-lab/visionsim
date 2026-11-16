@@ -10,6 +10,6 @@ visionsim blender.render-animation scene_initial_295K.blend rolling-ball/renders
   --config.thermal.irradiance-texture-size 256 --config.thermal.cache-root rolling-ball/cache
 
 visionsim ffmpeg.animate --input-dir rolling-ball/renders/frames --pattern '0000/*.png' \
-  --outfile rolling-ball/rgb.mp4 --fps 60 --crf 18
+  --outfile rolling-ball/rgb.mp4 --fps 20 --crf 18
 visionsim ffmpeg.animate --input-dir rolling-ball/renders/previews/temperature --pattern '0000/*.png' \
-  --outfile rolling-ball/temperature.mp4 --fps 60 --crf 18
+  --outfile rolling-ball/temperature.mp4 --fps 20 --crf 18
