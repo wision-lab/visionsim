@@ -5,7 +5,7 @@ Submodules
 ----------
 
 visionsim.simulate.heatsim.transient module
------------------------------------------
+-------------------------------------------
 
 .. automodule:: visionsim.simulate.heatsim.transient
    :members:
