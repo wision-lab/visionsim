@@ -7,6 +7,7 @@ import json
 import runpy
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
@@ -83,7 +84,7 @@ def run(output):
         mode="TRANSIENT",
         device="cpu",
         simulation_start_frame=1,
-        simulation_end_frame=2,
+        simulation_end_frame=3,
         irradiance_bake_mode="ONCE",
         irradiance_scale=0,
         bake_samples=1,
@@ -99,6 +100,43 @@ def run(output):
     # Actual same-process attachment also exercises manifest comparison when
     # the caller enables scene_digest in transient.prepare.
     assert service.exposed_prepare_transient(config, trajectory=trajectory, render_outputs=False) == trajectory
+    # Reuse must avoid both lighting bakes and solver calls, including when
+    # attaching a forced run on another rendering worker.
+    from visionsim.simulate.heatsim.solver import HeatSimFEM
+
+    def reuse(expected, **options):
+        with (
+            patch.object(adapter, "_compute_irradiance", side_effect=AssertionError("Unexpected bake")),
+            patch.object(HeatSimFEM, "simulate_for_pose", side_effect=AssertionError("Unexpected solve")),
+        ):
+            assert service.exposed_prepare_transient({**config, **options}, render_outputs=False) == expected
+
+    reuse(trajectory)
+    forced = service.exposed_prepare_transient({**config, "recompute": True}, render_outputs=False)
+    assert forced != trajectory
+    with patch.object(HeatSimFEM, "simulate_for_pose", side_effect=AssertionError("Worker recomputed")):
+        assert (
+            service.exposed_prepare_transient({**config, "recompute": True}, trajectory=forced, render_outputs=False)
+            == forced
+        )
+    # Prefer the newest completed run, including one produced with True.
+    reuse(forced)
+    for key, value in (
+        ("substeps_per_frame", 2),
+        ("laplacian_update_every_steps", 2),
+        ("irradiance_bake_mode", "EVERY_STEP"),
+        ("irradiance_bake_every_n_frames", 2),
+        ("simulation_end_frame", 2),
+    ):
+        changed = service.exposed_prepare_transient({**config, key: value}, render_outputs=False)
+        assert changed != forced, key
+        reuse(changed, **{key: value})
+    # A complete manifest with a damaged middle frame must not be reused.
+    (Path(trajectory) / "manifest.json").unlink()
+    (Path(forced) / "frame-2" / "temperatures.npz").write_bytes(b"broken archive")
+    trajectory = service.exposed_prepare_transient(config, render_outputs=False)
+    assert trajectory != forced
+    reuse(trajectory)
     scene.objects["HotBall"].heat_sim_material.dirichlet_temperature_K += 1
     try:
         service.exposed_prepare_transient(config, trajectory=trajectory, render_outputs=False)
@@ -106,6 +144,20 @@ def run(output):
         assert "does not match" in str(error)
     else:
         raise AssertionError("Stale source temperatures were accepted during attachment")
+    material_changed = service.exposed_prepare_transient(config, render_outputs=False)
+    assert material_changed != trajectory
+    reuse(material_changed)
+    scene.render.fps += 1
+    timing_changed = service.exposed_prepare_transient(config, render_outputs=False)
+    assert timing_changed != material_changed
+    reuse(timing_changed)
+    manifest_path = Path(timing_changed) / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    del manifest["preview_range"]
+    manifest_path.write_text(json.dumps(manifest))
+    repaired = service.exposed_prepare_transient(config, render_outputs=False)
+    assert repaired != timing_changed
+    reuse(repaired)
     print("TRANSIENT_CACHE_VALIDATION", json.dumps({"digest": after, "trajectory": trajectory}))
 
 

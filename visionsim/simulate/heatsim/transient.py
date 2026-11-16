@@ -45,6 +45,28 @@ def read_frame(session: dict, frame: int) -> dict:
     return history
 
 
+def _load_trajectory(root: Path, stamp: dict) -> dict:
+    manifest = json.loads((root / "manifest.json").read_text())
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("version") != 1
+        or any(manifest.get(k) != v for k, v in stamp.items())
+    ):
+        raise ValueError("Transient trajectory does not match this scene and configuration")
+    preview = manifest.get("preview_range")
+    if (
+        not isinstance(preview, list)
+        or len(preview) != 2
+        or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in preview)
+        or preview[0] > preview[1]
+    ):
+        raise ValueError("Invalid transient preview range")
+    session = {"root": root, "manifest": manifest}
+    for frame in range(stamp["frame_start"], stamp["frame_end"] + 1):
+        read_frame(session, frame)
+    return session
+
+
 def prepare(
     scene,
     config: ThermalConfig,
@@ -54,9 +76,9 @@ def prepare(
     identity: dict,
     trajectory: str | None = None,
 ):
-    """Prepare a fresh trajectory or attach an explicitly shared, completed run.
+    """Prepare or reuse a matching completed trajectory.
 
-    Reuse is explicit: no automatic cache hit can hide edits to an animated scene.
+    Explicit worker attachment is read-only, even when recompute is enabled.
     Only frame states are stored; thermal substeps remain bounded in memory.
     """
     from visionsim.simulate.heatsim.geometry import release_meshes
@@ -68,6 +90,7 @@ def prepare(
     if end < start or not math.isfinite(fps) or fps <= 0:
         raise ValueError("Invalid transient frame range or frame rate")
     cfg = json.loads(json.dumps(vars(config), default=str))
+    cfg.pop("recompute", None)
     stamp = {"config": cfg, "identity": identity, "frame_start": start, "frame_end": end, "fps": fps}
     original_frame, original_subframe = scene.frame_current, scene.frame_subframe
     base = Path(str(config.cache_root)) if config.cache_root is not None else Path(identity["cache_root"])
@@ -90,14 +113,21 @@ def prepare(
         stamp["atlas_digest"] = plan.digest
         stamp["scene_digest"] = cache.transient_scene_digest(scene, initial)
         if trajectory is not None:
-            root = Path(trajectory)
-            manifest = json.loads((root / "manifest.json").read_text())
-            if manifest.get("version") != 1 or any(manifest.get(k) != v for k, v in stamp.items()):
-                raise ValueError("Transient trajectory does not match this scene and configuration")
-            session = {"root": root, "manifest": manifest}
-            read_frame(session, start)
-            read_frame(session, end)
-            return plan, session
+            return plan, _load_trajectory(Path(trajectory), stamp)
+        if not config.recompute:
+            candidates = []
+            for manifest_path in base.glob("transient-*/manifest.json"):
+                try:
+                    candidates.append((manifest_path.stat().st_mtime_ns, manifest_path.parent))
+                except OSError:
+                    continue
+            for _, root in sorted(candidates, reverse=True):
+                try:
+                    session = _load_trajectory(root, stamp)
+                except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+                    # Missing manifests and invalid frame files are cache misses.
+                    continue
+                return plan, session
 
         base.mkdir(parents=True, exist_ok=True)
         root = Path(tempfile.mkdtemp(prefix="transient-", dir=base))

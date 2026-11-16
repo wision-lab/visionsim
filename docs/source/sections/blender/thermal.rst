@@ -220,18 +220,18 @@ The simulation runs chronologically once before distributed rendering. Frame
 states are stored under a unique ``transient-*`` cache directory; only completed
 runs have ``manifest.json``. This manifest records timing and update counts.
 Render workers share the frame states and maintain separate atlas playback files.
-There is no automatic reuse of an old transient trajectory, and interrupted
-simulations currently restart from the beginning. The Python service API can
-explicitly attach a completed run::
+With ``recompute=False``, a matching complete trajectory is reused; otherwise
+the simulation starts from the beginning. ``recompute=True`` forces a fresh run.
+The Python service API can explicitly attach a completed run (read-only,
+regardless of ``recompute``)::
 
     trajectory = producer.prepare_transient(thermal_config_dict)
     consumer.prepare_transient(thermal_config_dict, trajectory=trajectory)
 
 Both workers must have the same scene, animation and thermal configuration.
-Attachment is intended for equivalently loaded and configured workers. Its input
-fingerprint checks geometry, thermal values, animation and shading, but does not
-cover every Blender dependency (such as external physics caches or arbitrary
-mesh attributes). Prepare a fresh trajectory after other scene edits.
+Reuse checks timing, update frequencies, geometry, thermal values, animation
+and shading, but does not cover every Blender dependency (such as external
+physics caches or arbitrary mesh attributes). Set ``recompute=True`` after changes to these dependencies.
 ``blender.heatsim-solve`` also supports transient preparation; its log reports
 the trajectory directory. Use an explicit ``cache-root`` to isolate experiments
 from caches beside a shared input blend file. A saved prepared blend is a frame
@@ -435,10 +435,9 @@ Heating and integration
        unavailable, the CUDA choice falls back to CPU.
    * - ``recompute``
      - ``False``
-     - Static only
-     - Bypasses reusable static bake/solve results. Ignored in transient
-       mode, where preparation creates a fresh trajectory unless one is
-       explicitly attached through the Python API.
+     - Both
+     - Forces a fresh bake/solve. When false, reuses matching cached results;
+       transient reuse requires a complete trajectory.
 
 Choosing surface samples
 ~~~~~~~~~~~~~~~~~~~~~~~~
