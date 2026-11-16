@@ -184,3 +184,125 @@ def test_pcg_checks_true_residual_on_stiff_system(dtype):
         assert dtype == torch.float32
         return
     assert torch.linalg.vector_norm(rhs - matrix @ solution) <= 1e-6 * torch.linalg.vector_norm(rhs)
+
+
+def _two_node_pose(monkeypatch):
+    """An analytic two-node conduction system, independent of point-cloud meshing."""
+    from visionsim.simulate.heatsim import solver
+
+    builds = []
+
+    def matrices(points, **kwargs):
+        builds.append(points.copy())
+        weight = 1.0 / np.linalg.norm(points[0] - points[1])
+        return sp.csr_matrix([[weight, -weight], [-weight, weight]]), sp.eye(2, format="csr")
+
+    monkeypatch.setattr(solver, "point_cloud_laplacian_and_mass", matrices)
+    gen, sim = _make_params(2)
+    gen.K = 1.0
+    sim.sim_radiation = False
+    fem = HeatSimFEM(gen, sim, dtype=torch.float64)
+    args = {
+        "verts_np": np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+        "faces_np": None,
+        "boundary_verts_mask": np.ones(2),
+        "irradiance_map": np.zeros(2),
+        "thermal_diffusivity_map": np.ones(2),
+        "density_map": np.ones(2),
+        "specific_heat_map": np.ones(2),
+        "emissivity_map": np.zeros(2),
+        "dt": 1.0,
+        "num_substeps": 1,
+    }
+    return fem, args, builds
+
+
+def test_pose_steps_continue_the_same_temperature_history(monkeypatch):
+    fem, args, builds = _two_node_pose(monkeypatch)
+    initial = np.array([400.0, 295.0])
+    continuous = fem.simulate_for_pose(**{**args, "num_substeps": 5}, u_prev=initial)
+    first = fem.simulate_for_pose(**{**args, "num_substeps": 2}, u_prev=initial)
+    second = fem.simulate_for_pose(
+        **{**args, "num_substeps": 3},
+        u_prev=first[-1],
+        rebuild_matrices=False,
+    )
+    np.testing.assert_allclose(np.vstack([first, second]), continuous, atol=1e-10, rtol=0)
+    # Closed equal-capacity bodies conserve their mean temperature.
+    np.testing.assert_allclose(continuous.mean(axis=1), initial.mean(), atol=1e-10, rtol=0)
+    assert len(builds) == 2
+
+
+def test_pose_reservoir_is_enforced_in_free_node_equations(monkeypatch):
+    fem, args, _ = _two_node_pose(monkeypatch)
+    pinned = {"dirichlet_indices": np.array([0]), "dirichlet_values": np.array([400.0])}
+    states = fem.simulate_for_pose(**{**args, "num_substeps": 2}, u_prev=np.array([295.0, 295.0]), **pinned)
+    # Implicit Euler with a genuinely fixed reservoir: T_next=(T_prev+400)/2.
+    # Solving both nodes then clamping the reservoir would fail this check.
+    np.testing.assert_allclose(states, [[400.0, 347.5], [400.0, 373.75]], atol=1e-10, rtol=0)
+    states = fem.simulate_for_pose(
+        **args,
+        u_prev=states[-1],
+        rebuild_matrices=False,
+        dirichlet_indices=[0],
+        dirichlet_values=[300.0],
+    )
+    np.testing.assert_allclose(states, [[300.0, 336.875]], atol=1e-10, rtol=0)
+
+
+def test_pose_refresh_changes_coupling_and_reuse_holds_old_pose(monkeypatch):
+    fem, args, builds = _two_node_pose(monkeypatch)
+    initial = np.array([400.0, 295.0])
+    old = fem.simulate_for_pose(**args, u_prev=initial)
+    moved = {**args, "verts_np": np.array([[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]])}
+    reused = fem.simulate_for_pose(**moved, u_prev=initial, rebuild_matrices=False)
+    refreshed = fem.simulate_for_pose(**moved, u_prev=initial)
+    np.testing.assert_allclose(reused, old, atol=1e-10, rtol=0)
+    assert refreshed[0, 1] < old[0, 1]
+    assert len(builds) == 2
+
+
+def test_pose_recovery_reuses_original_pose_coefficients(monkeypatch):
+    fem, args, builds = _two_node_pose(monkeypatch)
+    fem.dtype = torch.float32
+    initial = np.array([400.0, 295.0])
+    reference = fem.simulate_for_pose(**args, u_prev=initial)
+    advance = fem._simulate_heat_torch
+
+    def fail_single_precision(*a, **kw):
+        if fem.dtype == torch.float32:
+            raise ConjugateGradientError("injected float32 failure")
+        return advance(*a, **kw)
+
+    monkeypatch.setattr(fem, "_simulate_heat_torch", fail_single_precision)
+    moved = {**args, "verts_np": np.array([[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]])}
+    recovered = fem.simulate_for_pose(**moved, u_prev=initial, rebuild_matrices=False)
+    assert fem.dtype == torch.float64
+    assert len(builds) == 1
+    np.testing.assert_allclose(recovered, reference, atol=1e-5, rtol=0)
+
+
+def test_pose_reuse_rejects_missing_or_changed_system(monkeypatch):
+    fem, args, _ = _two_node_pose(monkeypatch)
+    initial = np.array([400.0, 295.0])
+    with pytest.raises(ValueError, match="before reusing"):
+        fem.simulate_for_pose(**args, u_prev=initial, rebuild_matrices=False)
+    fem.simulate_for_pose(**args, u_prev=initial)
+    with pytest.raises(ValueError, match="diffusivity changes"):
+        fem.simulate_for_pose(
+            **{**args, "thermal_diffusivity_map": np.array([1.0, 2.0])},
+            u_prev=initial,
+            rebuild_matrices=False,
+        )
+
+
+def test_zero_pose_steps_initialize_cache_without_advancing(monkeypatch):
+    fem, args, builds = _two_node_pose(monkeypatch)
+    initial = np.array([400.0, 295.0])
+    states = fem.simulate_for_pose(**{**args, "num_substeps": 0}, u_prev=initial)
+    assert states.shape == (0, 2)
+    assert len(builds) == 1
+    advanced = fem.simulate_for_pose(**args, u_prev=initial, rebuild_matrices=False)
+    assert advanced.shape == (1, 2)
+    assert advanced[0, 1] > initial[1]
+    assert len(builds) == 1

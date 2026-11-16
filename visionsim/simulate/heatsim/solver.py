@@ -131,6 +131,9 @@ class HeatSimFEM:
             raise ValueError("Only the robust Laplacian is supported")
         self.robust_mollify_factor = float(kwargs.get("robust_mollify_factor", 1e-5))
         self.pointcloud_neighbors = int(kwargs.get("pointcloud_neighbors", 30))
+        self._pose_matrices = None
+        self._pose_sources = None
+        self._pose_alpha = None
 
         if self.irradiance_map is not None:
             _log.debug("irradiance_map %s", self.irradiance_map.shape)
@@ -156,6 +159,8 @@ class HeatSimFEM:
         steady_state: bool = False,
         tol_K_per_s: float = 0.0,
         store_only_final: bool = False,
+        dirichlet_indices=None,
+        dirichlet_values=None,
     ):
         """
         Main implicit Euler heat simulation using CG, in torch.
@@ -167,6 +172,11 @@ class HeatSimFEM:
         ambient = AMBIENT_TEMPERATURE_K
         theta_prev = torch.as_tensor(u0_np.reshape(-1) - ambient, device=self.device, dtype=self.dtype)
         theta_prev = theta_prev.unsqueeze(1)  # (N,1)
+        pinned = None
+        if dirichlet_indices is not None and len(dirichlet_indices):
+            pinned = torch.as_tensor(dirichlet_indices, device=self.device, dtype=torch.long)
+            targets = torch.as_tensor(dirichlet_values, device=self.device, dtype=self.dtype).reshape(-1, 1) - ambient
+            theta_prev[pinned] = targets
 
         # ------------------------------------------------------------------
         # Build constants + (optionally) time-varying lighting source terms
@@ -235,10 +245,14 @@ class HeatSimFEM:
         # Pre-define matrix-free operator A(u)
         def mv(x):
             # x: (N,1)
+            free_x = x
+            if pinned is not None:
+                free_x = x.clone()
+                free_x[pinned] = 0
             # M @ x
-            Mx = torch.sparse.mm(M_t, x)
+            Mx = torch.sparse.mm(M_t, free_x)
             # L @ x
-            Lx = torch.sparse.mm(L_t, x)
+            Lx = torch.sparse.mm(L_t, free_x)
             # Basic diffusion term
             if alpha_np is None:
                 # Backward-compatible scalar diffusivity
@@ -251,14 +265,19 @@ class HeatSimFEM:
 
             # Radiation / convection on A side
             if vec_rad_A is not None:
-                tmp = vec_rad_A.unsqueeze(1) * x
+                tmp = vec_rad_A.unsqueeze(1) * free_x
                 out = out + torch.sparse.mm(M_boundary_t, tmp)
             if vec_conv_A is not None:
-                tmp = vec_conv_A.unsqueeze(1) * x
+                tmp = vec_conv_A.unsqueeze(1) * free_x
                 out = out + torch.sparse.mm(M_boundary_t, tmp)
 
             if reg_value > 0.0:
-                out = out + reg_value * x
+                out = out + reg_value * free_x
+
+            # Solve zero increments at prescribed nodes. Projecting both rows
+            # and columns retains symmetry for CG and the free-node equations.
+            if pinned is not None:
+                out[pinned] = x[pinned]
 
             return out
 
@@ -296,6 +315,8 @@ class HeatSimFEM:
                 diagA = diagA + dMb * vec_conv_A
         if reg_value > 0.0:
             diagA = diagA + reg_value
+        if pinned is not None:
+            diagA[pinned] = 1
         Minv = (1.0 / torch.clamp(diagA, min=1e-12)).unsqueeze(1)
 
         for step in range(num_steps):
@@ -312,6 +333,8 @@ class HeatSimFEM:
                 rhs = rhs - torch.sparse.mm(M_boundary_t, vec_conv_A.unsqueeze(1) * theta_prev)
             if reg_value > 0.0:
                 rhs = rhs - reg_value * (theta_prev + ambient)
+            if pinned is not None:
+                rhs[pinned] = 0
             increment = pcg_solve(mv, rhs, Minv, tol=1e-6, rtol=1e-6, max_iter=self.cg_max_iter)
             theta_next = theta_prev + increment
             if not bool(torch.isfinite(theta_next).all()):
@@ -429,7 +452,117 @@ class HeatSimFEM:
             if alpha.shape != (len(points),) or not np.isfinite(alpha).all() or np.any(alpha < 0):
                 raise ValueError("Thermal diffusivity must be nonnegative and match the point count")
             L = self._apply_vertex_weighted_laplacian(L, alpha)
-        return tuple(scipy_to_torch_sparse(matrix, self.device, self.dtype) for matrix in (L, M, M))
+        self._matrix_sources = (L, M, M)
+        return tuple(scipy_to_torch_sparse(matrix, self.device, self.dtype) for matrix in self._matrix_sources)
+
+    def simulate_for_pose(
+        self,
+        verts_np,
+        faces_np,
+        boundary_verts_mask,
+        u_prev,
+        irradiance_map,
+        thermal_diffusivity_map,
+        density_map,
+        specific_heat_map,
+        emissivity_map,
+        num_substeps,
+        dt,
+        dirichlet_indices=None,
+        dirichlet_values=None,
+        rebuild_matrices=True,
+    ):
+        """Continue heat evolution and return only post-step states, shaped (steps, N).
+
+        As in HeatSim Blender's per-pose solve, temperature identities are
+        preserved while geometry changes. Call with ``rebuild_matrices=False``
+        to intentionally retain the preceding pose's conduction and mass.
+        Flux and prescribed temperatures can change independently of that pose.
+        Zero substeps initializes the matrices without advancing temperatures.
+        """
+        points = np.asarray(verts_np, dtype=np.float64)
+        n = len(points)
+        if points.shape != (n, 3) or not np.isfinite(points).all():
+            raise ValueError("Thermal pose requires finite 3D points")
+        if (
+            not np.isfinite(dt)
+            or dt <= 0
+            or isinstance(num_substeps, bool)
+            or not np.isfinite(num_substeps)
+            or int(num_substeps) != num_substeps
+            or num_substeps < 0
+        ):
+            raise ValueError("Thermal pose requires positive dt and a nonnegative integer substep count")
+
+        def vector(value, name, optional=False):
+            if optional and value is None:
+                return None
+            result = np.asarray(value, dtype=np.float64).reshape(-1)
+            if result.shape != (n,) or not np.isfinite(result).all():
+                raise ValueError(f"{name} must be finite and match the thermal point count")
+            return result
+
+        previous = vector(u_prev, "u_prev")
+        boundary = vector(boundary_verts_mask, "boundary_verts_mask")
+        flux = vector(irradiance_map, "irradiance_map", optional=True)
+        alpha = vector(thermal_diffusivity_map, "thermal_diffusivity_map", optional=True)
+        rho = vector(density_map, "density_map", optional=True)
+        heat = vector(specific_heat_map, "specific_heat_map", optional=True)
+        eps = vector(emissivity_map, "emissivity_map", optional=True)
+        for name, values in (("density", rho), ("specific heat", heat)):
+            if values is not None and np.any(values <= 0):
+                raise ValueError(f"Thermal {name} must be positive")
+        indices = np.asarray([] if dirichlet_indices is None else dirichlet_indices)
+        targets = np.asarray([] if dirichlet_values is None else dirichlet_values, dtype=np.float64).reshape(-1)
+        if (
+            indices.ndim != 1
+            or targets.shape != indices.shape
+            or not np.isfinite(indices).all()
+            or not np.isfinite(targets).all()
+            or np.any(indices != indices.astype(np.int64))
+            or np.any(indices < 0)
+            or np.any(indices >= n)
+            or len(np.unique(indices)) != len(indices)
+        ):
+            raise ValueError("Dirichlet indices and values must be finite, unique, and match valid thermal nodes")
+        indices = indices.astype(np.int64)
+        if rebuild_matrices:
+            self._pose_matrices = self._build_matrices(points, faces_np, alpha_vec=alpha)
+            self._pose_sources = self._matrix_sources
+            self._pose_alpha = None if alpha is None else alpha.copy()
+        elif self._pose_matrices is None:
+            raise ValueError("Build thermal pose matrices before reusing them")
+        elif self._pose_matrices[0].shape[0] != n or not np.array_equal(alpha, self._pose_alpha):
+            raise ValueError("Rebuild thermal pose matrices after point count or diffusivity changes")
+
+        for attempt in range(2):
+            try:
+                states = self._simulate_heat_torch(
+                    previous,
+                    *self._pose_matrices,
+                    boundary,
+                    flux,
+                    alpha,
+                    rho,
+                    heat,
+                    eps,
+                    dt,
+                    int(num_substeps),
+                    dirichlet_indices=indices,
+                    dirichlet_values=targets,
+                )[1:]
+                # Preserve the exact supplied Kelvin targets in the archive.
+                states[:, indices] = targets
+                return states
+            except ConjugateGradientError:
+                if self.dtype == torch.float64 or attempt:
+                    raise
+                _log.warning("Transient thermal solve failed in float32; retrying this pose in float64")
+                self.dtype = torch.float64
+                self.cg_max_iter = max(self.cg_max_iter, 5000)
+                self._pose_matrices = tuple(
+                    scipy_to_torch_sparse(matrix, self.device, self.dtype) for matrix in self._pose_sources
+                )
 
     def perform_gt_heat_simulation(
         self,
