@@ -137,13 +137,16 @@ crosses the beam and carries warm surface regions beyond it. The bright floor
 patch is mainly heated by the spotlight; it is not solely a contact trail.
 
 .. grid:: 2
-    :gutter: 2
+    :gutter: 1
 
     .. grid-item::
 
         .. video:: ../../_static/thermal-transient/rolling-ball-rgb.mp4
             :loop:
             :autoplay:
+            :muted:
+            :width: 100%
+            :figwidth: 100%
             :nocontrols:
             :playsinline:
             :align: center
@@ -154,52 +157,29 @@ patch is mainly heated by the spotlight; it is not solely a contact trail.
         .. video:: ../../_static/thermal-transient/rolling-ball-temperature.mp4
             :loop:
             :autoplay:
+            :muted:
+            :width: 100%
+            :figwidth: 100%
             :nocontrols:
             :playsinline:
             :align: center
             :caption: Temperature — 60 fps
 
-The run simulates and renders all 180 frames at the scene's native 60 fps and
-640 × 512 resolution. Thermal integration runs at 120 Hz; both the Laplacian
-and Cycles lighting update at 60 Hz. The absorbed-light input is multiplied by
-300 to make heating visible over this short animation; the spotlight's RGB
-brightness remains unchanged. The ball reaches about 296.76 K. The temperature
-preview uses one fixed range, approximately 295–298.27 K, across the sequence.
-
-The embedded clips are 320 × 256 browser previews. They use the same H.264,
-CRF 23, animation tuning, YUV420p and fast-start encoding as the quick-start
-clips, retaining the original aspect ratio and all 60 frames per second.
-The thermal clip shows temperature, rather than the separate radiance output.
+All 180 frames are rendered at 640 × 512 and 60 fps. Heat integration runs at
+120 Hz; the Laplacian and lighting update every frame. The heat input is
+multiplied by 300 to make the short heating sequence visible, without changing
+the spotlight's RGB brightness.
 
 Reproduce the run
 ~~~~~~~~~~~~~~~~~
 
-The scene file is not bundled here yet. The commands below expect the prepared
-``scene_initial_295K.blend`` copy of ``test_ball_rolling_trail.blend``: its
-``Plane`` and ``Sphere`` objects are enabled finite FEM participants at 295 K,
-not fixed-temperature sources. The authored floor/ball diffusivities are
-97/0.17 mm²/s; both use density 1330 kg/m³, specific heat 880 J/(kg·K), and
-emissivity 0.9. Preserve its camera, 60 fps animation, spotlight and materials.
-Object-level settings override the global thermal defaults.
-
-These are the render and export commands used for the demonstration, with only
-machine-specific executable and output paths replaced by portable paths.
-Run from the repository root with Blender, VisionSim and FFmpeg on ``PATH``.
-The original run selected GPU 1 with ``CUDA_VISIBLE_DEVICES=1``; select an
-available GPU on your machine. OptiX requires a compatible NVIDIA GPU.
+Use the prepared rolling-ball scene; its download link will be added here.
+These commands keep the scene's resolution, frame range and frame rate.
+Lighting already defaults to baking every frame, so no extra flag is needed.
 
 .. literalinclude:: ../../../../examples/transient_heat.sh
    :language: bash
-   :start-after: # Run from the repository root with a prepared 60 fps rolling-ball scene.
-
-For example, the complete script can be run as::
-
-    bash examples/transient_heat.sh scene_initial_295K.blend renders/rolling-ball-transient
-
-The render writes RGB PNGs, temperature and radiance EXRs, and built-in thermal
-preview PNGs. ``ffmpeg.animate`` exports the native-resolution videos; the final
-FFmpeg commands encode the smaller clips embedded above. The 300× multiplier
-changes the heat input, not just the colour scale.
+   :start-after: # Commands for the rolling-ball demonstration.
 
 Update frequencies
 ~~~~~~~~~~~~~~~~~~
