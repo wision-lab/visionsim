@@ -43,6 +43,7 @@ def evaluated_meshes(objects: list, *, force: bool = False) -> dict[str, Any]:
                     obj.evaluated_get(depsgraph), preserve_all_data_layers=True, depsgraph=depsgraph
                 )
                 meshes[obj.name] = mesh
+                mesh["heatsim_authored_render_uv"] = next((uv.name for uv in mesh.uv_layers if uv.active_render), "")
                 # Nonplanar n-gons can fold within one projected UV chart. Give
                 # their triangles independent corners on the private thermal mesh.
                 if any(p.loop_total > 4 for p in mesh.polygons):
@@ -77,8 +78,21 @@ def refresh_evaluated_meshes(scene: Any, meshes: dict[str, Any]) -> None:
     """Refresh positions while preserving the thermal snapshots' UVs and attributes.
 
     Call outside ``use_meshes`` so evaluation sees the authored modifiers and
-    shape keys. Only stable topology and material-slot assignment are supported.
+    shape keys. Topology and authored shading attributes must remain stable.
     """
+    from visionsim.simulate.heatsim.cache import mesh_attribute_digest
+    from visionsim.simulate.heatsim.names import ATLAS_UV_LAYER_NAME, BAKE_UV_LAYER_NAME
+
+    def authored_uvs(mesh):
+        layers = []
+        for layer in mesh.uv_layers:
+            if layer.name in {ATLAS_UV_LAYER_NAME, BAKE_UV_LAYER_NAME}:
+                continue
+            coordinates = np.empty(len(layer.data) * 2, dtype=np.float32)
+            layer.data.foreach_get("uv", coordinates)
+            layers.append((layer.name, coordinates.tobytes()))
+        return layers
+
     current = evaluated_meshes([scene.objects[name] for name in meshes], force=True)
     try:
         for name, previous in meshes.items():
@@ -101,6 +115,19 @@ def refresh_evaluated_meshes(scene: Any, meshes: dict[str, Any]) -> None:
                 new_items.foreach_get(attr, new)
                 if not np.array_equal(old, new):
                     raise RuntimeError(f"{name!r}: transient thermal topology or material assignment changed")
+            if (
+                list(previous.materials) != list(fresh.materials)
+                or tuple(previous.texspace_location) != tuple(fresh.texspace_location)
+                or tuple(previous.texspace_size) != tuple(fresh.texspace_size)
+                or previous.color_attributes.render_color_index != fresh.color_attributes.render_color_index
+                or previous.get("heatsim_authored_render_uv") != fresh.get("heatsim_authored_render_uv")
+                or authored_uvs(previous) != authored_uvs(fresh)
+                or mesh_attribute_digest(previous, include_position=False)
+                != mesh_attribute_digest(fresh, include_position=False)
+            ):
+                raise RuntimeError(
+                    f"{name!r}: transient changes to evaluated material slots, UVs or mesh attributes are unsupported"
+                )
         # Validate all objects before changing any retained snapshot.
         for name, previous in meshes.items():
             coordinates = np.empty(len(previous.vertices) * 3, dtype=np.float64)

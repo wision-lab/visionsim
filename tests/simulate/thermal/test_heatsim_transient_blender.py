@@ -138,11 +138,14 @@ def test_transient_rpc_workers(render_domain, tmp_path):
 
 
 @pytest.mark.slow
-def test_transient_scene_fingerprint_blender(tmp_path):
+@pytest.mark.parametrize(
+    "helper_name", ["transient_cache_check.py", "transient_geometry_check.py", "transient_reuse_guard_check.py"]
+)
+def test_transient_scene_fingerprint_blender(tmp_path, helper_name):
     executable = os.environ.get("VSIM_BLENDER") or shutil.which("blender")
     if executable is None:
         pytest.skip("Blender is unavailable")
-    helper = Path(__file__).with_name("transient_cache_check.py")
+    helper = Path(__file__).with_name(helper_name)
     result = subprocess.run(
         [
             executable,
@@ -165,4 +168,4 @@ def test_transient_scene_fingerprint_blender(tmp_path):
     )
     (tmp_path / "blender.log").write_text(result.stdout + result.stderr)
     assert result.returncode == 0, result.stdout[-6000:] + result.stderr[-6000:]
-    assert "TRANSIENT_CACHE_VALIDATION" in result.stdout
+    assert any(marker in result.stdout for marker in ("TRANSIENT_CACHE_VALIDATION", "TRANSIENT_GEOMETRY_VALIDATION"))

@@ -209,8 +209,10 @@ history. The initial frame contains the initial temperatures.
 Rigid motion and stable-topology deformation are supported, including thermal
 atlas samples attached to deforming triangles. Mesh/sample correspondence must
 remain stable. Topology changes and changes in participating object membership
-raise errors. Fast motion and small contact regions require sufficiently fine
-timesteps and surface samples. Animated simulation materials should retain
+raise errors. Evaluated mesh snapshots must keep authored UVs, custom attributes,
+texture-coordinate bounds and material slots stable; unsupported changes raise
+an error. Animating values within an existing material is supported. Fast motion
+and small contact regions require sufficiently fine timesteps and surface samples. Animated simulation materials should retain
 their roles and diffusivity when matrices are reused.
 For Blender physics, bake the motion cache first so separate workers and
 out-of-order renders evaluate the same poses. Transient preparation does not
@@ -230,8 +232,11 @@ regardless of ``recompute``)::
 
 Both workers must have the same scene, animation and thermal configuration.
 Reuse checks timing, update frequencies, geometry, thermal values, animation
-and shading, but does not cover every Blender dependency (such as external
-physics caches or arbitrary mesh attributes). Set ``recompute=True`` after changes to these dependencies.
+and shading, including authored mesh attributes and texture settings. For
+physics caches, simulation nodes, drivers, custom frame callbacks and unsupported
+object types, automatic reuse is disabled: even ``recompute=False`` starts a
+fresh solve. Explicit worker attachment remains available and assumes equivalent
+loaded scenes and baked motion caches.
 ``blender.heatsim-solve`` also supports transient preparation; its log reports
 the trajectory directory. Use an explicit ``cache-root`` to isolate experiments
 from caches beside a shared input blend file. A saved prepared blend is a frame

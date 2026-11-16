@@ -96,6 +96,38 @@ def file_digest(path: Path) -> str:
     return digest.hexdigest()
 
 
+def mesh_attribute_digest(mesh: Any, *, include_position: bool = True) -> str:
+    """Hash authored mesh attributes without generated thermal or selection data."""
+    from visionsim.simulate.heatsim.names import ATLAS_UV_LAYER_NAME, BAKE_UV_LAYER_NAME
+
+    excluded = {"sim_temperature", "emissivity", ATLAS_UV_LAYER_NAME, BAKE_UV_LAYER_NAME}
+    if not include_position:
+        excluded.add("position")
+    digest = hashlib.sha256()
+    digest.update(
+        json.dumps((mesh.color_attributes.render_color_index, mesh.color_attributes.active_color_name)).encode()
+    )
+    for attr in sorted(mesh.attributes, key=lambda a: a.name):
+        if attr.name in excluded or attr.name.startswith((".select_", ".uv_select_")) or attr.name in mesh.uv_layers:
+            continue
+        digest.update(json.dumps((attr.name, attr.domain, attr.data_type, len(attr.data))).encode())
+        if not len(attr.data):
+            continue
+        for prop in attr.data[0].bl_rna.properties:
+            if prop.is_readonly or prop.identifier == "rna_type":
+                continue
+            if prop.type in {"BOOLEAN", "INT", "FLOAT"}:
+                size = prop.array_length if prop.is_array else 1
+                dtype = np.float64 if prop.type == "FLOAT" else np.int64
+                values = np.empty(len(attr.data) * size, dtype=dtype)
+                attr.data.foreach_get(prop.identifier, values)
+                digest.update(prop.identifier.encode())
+                digest.update(values.tobytes())
+            elif prop.type == "STRING":
+                digest.update(json.dumps([getattr(v, prop.identifier) for v in attr.data], default=str).encode())
+    return digest.hexdigest()
+
+
 def transient_scene_digest(scene: Any, initial: Any) -> str:
     """Fingerprint live thermal inputs before attaching another render worker.
 
@@ -146,7 +178,10 @@ def transient_scene_digest(scene: Any, initial: Any) -> str:
         return {
             "settings": properties(data),
             "drivers": [curve(c) for c in data.drivers],
-            "nla": [(properties(t), [properties(s) for s in t.strips]) for t in data.nla_tracks],
+            "nla": [
+                (properties(t), [(properties(s), [curve(c) for c in s.fcurves]) for s in t.strips])
+                for t in data.nla_tracks
+            ],
         }
 
     def curve(value):
@@ -194,6 +229,28 @@ def transient_scene_digest(scene: Any, initial: Any) -> str:
         for node in sorted(retained, key=lambda n: n.name):
             record = properties(node)
             record["inputs"] = [properties(socket) for socket in node.inputs]
+            record["outputs"] = [properties(socket) for socket in node.outputs]
+            if hasattr(node, "color_ramp"):
+                record["color_ramp"] = (
+                    properties(node.color_ramp),
+                    [properties(element) for element in node.color_ramp.elements],
+                )
+            if hasattr(node, "mapping"):
+                record["mapping"] = (
+                    properties(node.mapping),
+                    [(properties(c), [properties(p) for p in c.points]) for c in node.mapping.curves],
+                )
+            for setting_name in ("texture_mapping", "color_mapping"):
+                settings = getattr(node, setting_name, None)
+                if settings is not None:
+                    record[setting_name] = properties(settings)
+                    if hasattr(settings, "color_ramp"):
+                        record[setting_name]["color_ramp"] = (
+                            properties(settings.color_ramp),
+                            [properties(element) for element in settings.color_ramp.elements],
+                        )
+            if hasattr(node, "image_user"):
+                record["image_user"] = properties(node.image_user)
             record["animation"] = animation(node.id_data)
             if getattr(node, "node_tree", None) is not None:
                 record["group"] = tree(node.node_tree)
@@ -209,10 +266,14 @@ def transient_scene_digest(scene: Any, initial: Any) -> str:
                     raise ValueError("Transient attachment cannot fingerprint animated image inputs")
                 pixels = np.empty(len(image.pixels), dtype=np.float32)
                 image.pixels.foreach_get(pixels)
-                images[image.name_full] = hashlib.sha256(pixels.tobytes()).hexdigest()
+                images[image.name_full] = {
+                    "pixels": hashlib.sha256(pixels.tobytes()).hexdigest(),
+                    "settings": properties(image),
+                    "colorspace": properties(image.colorspace_settings),
+                }
                 if image.source == "FILE" and image.packed_file is None:
                     path = Path(bpy.path.abspath(image.filepath, library=image.library))
-                    images[image.name_full] += file_digest(path)
+                    images[image.name_full]["file"] = file_digest(path)
             nodes.append(record)
         trees[key] = {
             "nodes": nodes,
@@ -258,6 +319,13 @@ def transient_scene_digest(scene: Any, initial: Any) -> str:
                     for uv in mesh.uv_layers
                     if uses_uv and uv.name not in {ATLAS_UV_LAYER_NAME, BAKE_UV_LAYER_NAME}
                 ],
+                "attributes": mesh_attribute_digest(mesh),
+                "texspace": (mesh.use_auto_texspace, list(mesh.texspace_location), list(mesh.texspace_size)),
+                "render_uv": [
+                    uv.name
+                    for uv in mesh.uv_layers
+                    if uses_uv and uv.active_render and uv.name not in {ATLAS_UV_LAYER_NAME, BAKE_UV_LAYER_NAME}
+                ],
                 "animation": animation(mesh),
                 "shape_keys": None
                 if mesh.shape_keys is None
@@ -278,7 +346,36 @@ def transient_scene_digest(scene: Any, initial: Any) -> str:
         else:
             curves = list(action.fcurves)
         actions.append((properties(action), [curve(c) for c in curves]))
+
+    def collection_state(collection):
+        return {
+            "settings": properties(collection),
+            "objects": sorted(o.name_full for o in collection.objects),
+            "children": [collection_state(c) for c in collection.children],
+        }
+
+    def layer_state(layer):
+        return {"settings": properties(layer), "children": [layer_state(c) for c in layer.children]}
+
+    cycles_fields = (
+        "max_bounces",
+        "diffuse_bounces",
+        "glossy_bounces",
+        "transmission_bounces",
+        "volume_bounces",
+        "transparent_max_bounces",
+        "use_light_tree",
+        "light_sampling_threshold",
+        "caustics_reflective",
+        "caustics_refractive",
+        "sample_clamp_direct",
+        "sample_clamp_indirect",
+    )
     payload = {
+        "fingerprint_version": 2,
+        "collections": collection_state(scene.collection),
+        "bake_layer": layer_state(scene.view_layers[0].layer_collection),
+        "cycles": {key: getattr(scene.cycles, key) for key in cycles_fields if hasattr(scene.cycles, key)},
         "pipeline": BAKE_PIPELINE_VERSION,
         "scene": properties(scene),
         "objects": objects,

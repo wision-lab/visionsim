@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import tempfile
 from pathlib import Path
@@ -67,6 +68,71 @@ def _load_trajectory(root: Path, stamp: dict) -> dict:
     return session
 
 
+def _reuse_blocker(scene) -> str | None:
+    """Identify motion dependencies whose runtime state is not fingerprinted."""
+    import bpy
+
+    if any(obj.users > 0 and obj.name not in scene.objects for obj in bpy.data.objects):
+        return "object dependencies outside the active scene"
+    if scene.rigidbody_world is not None and scene.rigidbody_world.enabled:
+        return "rigid-body simulation/cache"
+    if any(
+        getattr(bpy.app.handlers, name)
+        for name in ("frame_change_pre", "frame_change_post", "depsgraph_update_pre", "depsgraph_update_post")
+    ):
+        return "frame/dependency-graph callbacks"
+
+    # Drivers may read arbitrary Python state or dependencies outside the scene.
+    for collection in (
+        bpy.data.objects,
+        bpy.data.meshes,
+        bpy.data.shape_keys,
+        bpy.data.materials,
+        bpy.data.node_groups,
+        bpy.data.worlds,
+        bpy.data.lights,
+        bpy.data.scenes,
+        bpy.data.cameras,
+    ):
+        for datablock in collection:
+            for value in (datablock, getattr(datablock, "node_tree", None)):
+                animation = getattr(value, "animation_data", None)
+                if animation is not None and animation.drivers:
+                    return "animation drivers with external dependencies"
+
+    visited = set()
+
+    def stateful_nodes(tree):
+        if tree is None or tree.as_pointer() in visited:
+            return False
+        visited.add(tree.as_pointer())
+        return any(
+            node.bl_idname in {"GeometryNodeSimulationInput", "GeometryNodeSimulationOutput", "GeometryNodeBake"}
+            or node.bl_idname.startswith("GeometryNodeImport")
+            or stateful_nodes(getattr(node, "node_tree", None))
+            for node in tree.nodes
+        )
+
+    for obj in scene.objects:
+        if obj.type not in {"MESH", "LIGHT", "EMPTY", "CAMERA"}:
+            return f"untracked {obj.type} geometry/pose on {obj.name!r}"
+        for modifier in obj.modifiers:
+            if modifier.type in {
+                "CLOTH",
+                "SOFT_BODY",
+                "FLUID",
+                "PARTICLE_SYSTEM",
+                "MESH_CACHE",
+                "MESH_SEQUENCE_CACHE",
+                "DYNAMIC_PAINT",
+                "OCEAN",
+            }:
+                return f"{modifier.type} simulation/external cache on {obj.name!r}"
+            if modifier.type == "NODES" and stateful_nodes(modifier.node_group):
+                return f"geometry-node simulation/bake/external import on {obj.name!r}"
+    return None
+
+
 def prepare(
     scene,
     config: ThermalConfig,
@@ -114,7 +180,10 @@ def prepare(
         stamp["scene_digest"] = cache.transient_scene_digest(scene, initial)
         if trajectory is not None:
             return plan, _load_trajectory(Path(trajectory), stamp)
-        if not config.recompute:
+        reuse_blocker = None if config.recompute else _reuse_blocker(scene)
+        if reuse_blocker is not None:
+            logging.getLogger(__name__).warning("Transient cache reuse disabled: %s", reuse_blocker)
+        if not config.recompute and reuse_blocker is None:
             candidates = []
             for manifest_path in base.glob("transient-*/manifest.json"):
                 try:
