@@ -238,6 +238,9 @@ def run(case, output):
         "preview": True,
     }
     service.exposed_configure_thermal(config)
+    preview_settings = service._outputs["previews/temperature"][0].format.view_settings
+    assert preview_settings.view_transform == "Standard"
+    assert preview_settings.gamma == 1.0 and preview_settings.exposure == 0.0
     assert scene.get("heatsim_bake_cache_root") == previous_cache_override
     assert list((output / "cache" / "bake_uv").glob("*.npz")), "UV bake cache ignored cache_root"
     state = service._thermal_transient

@@ -743,6 +743,11 @@ class BlenderService(rpyc.Service):
             # file_output_node(preview=True) forces "Raw"; override it (e.g. to
             # "Standard") when the compositor output must be display-encoded.
             node.format.view_settings.view_transform = preview_view_transform
+            if preview_view_transform == "Standard":
+                # Standard display encoding needs neutral grading; Raw preview
+                # defaults include gamma=0, which is invalid for OpenColorIO.
+                node.format.view_settings.gamma = 1.0
+                node.format.view_settings.exposure = 0.0
 
         if c is None:
             c = COLOR_MODE_CHANNELS.get(color_mode.upper())

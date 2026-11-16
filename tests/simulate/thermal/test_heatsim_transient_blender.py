@@ -45,6 +45,7 @@ def test_transient_blender(case, tmp_path):
     )
     (tmp_path / "blender.log").write_text(result.stdout + result.stderr)
     assert result.returncode == 0, result.stdout[-6000:] + result.stderr[-6000:]
+    assert "ExponentTransform validation failed" not in result.stdout + result.stderr
     report = json.loads((tmp_path / "report.json").read_text())
     assert report["floor_max_rise_K"] > 1e-5
     assert len(report["renders"]) >= 4
