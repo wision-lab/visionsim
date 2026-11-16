@@ -252,33 +252,98 @@ slot. Boolean options such as ``radiance`` and ``preview`` accept a ``no-``
 form to turn them off. See :class:`visionsim.simulate.config.ThermalConfig`
 for the configuration type.
 
+The **Applies to** column distinguishes **Both**, **Static only**, and
+**Transient only**. Settings marked for one mode do not control the other mode.
+In particular, transient timing comes from the scene fps, simulation frame
+range, and ``substeps-per-frame``; it ignores ``sim-time-s`` and ``timestep-s``.
+
+Mode and transient timing
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 27 13 15 45
+
+   * - Parameter
+     - Default
+     - Applies to
+     - What it changes
+   * - ``mode``
+     - ``STATIC``
+     - Both
+     - ``STATIC`` solves one pose; ``TRANSIENT`` follows animation and carries
+       temperatures forward.
+   * - ``simulation-start-frame``
+     - ``None``
+     - Transient only
+     - First simulation frame, containing the initial temperatures. ``None``
+       uses the scene's start frame after retiming.
+   * - ``simulation-end-frame``
+     - ``None``
+     - Transient only
+     - Last simulation frame, inclusive. ``None`` uses the scene's end frame.
+       Duration is (end − start) divided by the effective scene fps.
+   * - ``substeps-per-frame``
+     - ``1``
+     - Transient only
+     - Temperature updates per animation frame. The timestep is
+       1 / (effective scene fps × substeps). At 60 fps, ``2`` gives 120 Hz.
+   * - ``laplacian-update-every-steps``
+     - ``1``
+     - Transient only
+     - Rebuilds the Laplacian and mass matrices every N thermal steps, including
+       an initial build. Between updates, the previous connections are reused.
+       With two substeps per frame, ``2`` rebuilds once per animation frame.
+   * - ``irradiance-bake-mode``
+     - ``EVERY_N_FRAMES``
+     - Transient only
+     - ``ONCE`` holds the initial bake; ``EVERY_N_FRAMES`` rebakes at the frame
+       interval below; ``EVERY_STEP`` rebakes at every thermal substep.
+       All modes include an initial bake.
+   * - ``irradiance-bake-every-n-frames``
+     - ``1``
+     - Transient only
+     - Animation frames between lighting bakes when the bake mode is
+       ``EVERY_N_FRAMES``. Ignored by ``ONCE`` and ``EVERY_STEP``.
+
 Output and file settings
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
-   :widths: 29 12 59
+   :widths: 27 13 15 45
 
    * - Parameter
      - Default
+     - Applies to
      - What it changes
    * - ``radiance``
      - ``True``
+     - Both
      - Includes the thermal-camera EXR and its second Cycles render. Disable
        when temperature data alone is enough.
    * - ``preview``
      - ``True``
+     - Both
      - Writes the colourized temperature PNG. This does not change the solve.
+   * - ``cache-root``
+     - ``None``
+     - Both
+     - Directory for thermal results. ``None`` uses ``<scene>.blend.heatsim``;
+       transient runs create unique subdirectories within it.
    * - ``assignments``
      - ``None``
+     - Both
      - Path to JSON that assigns thermal presets and source roles by Blender
        material name. See `Assigning materials and heat sources`_.
    * - ``exr-codec``
      - ``ZIP``
+     - Both
      - Compression for temperature and radiance EXRs. ZIP preserves their
        floating-point values.
    * - ``bit-depth``
      - ``32``
+     - Both
      - Bits per channel in those EXRs. ``16`` reduces file size at the cost of
        precision; use ``32`` for quantitative temperature analysis.
 
@@ -290,29 +355,35 @@ the named material presets.
 
 .. list-table::
    :header-rows: 1
-   :widths: 32 12 56
+   :widths: 27 13 15 45
 
    * - Parameter
      - Default
+     - Applies to
      - What it changes
    * - ``initial-temperature-K``
      - ``295.0``
+     - Both
      - Starting surface temperature in Kelvin. Raising it warms the initial
        field, but does not change the fixed ambient reference.
    * - ``thermal-diffusivity-mm2-s``
      - ``0.17``
+     - Both
      - How quickly temperature differences spread spatially. Larger values
        smooth hot spots faster; smaller values keep heating more local.
    * - ``density-kg-m3``
      - ``1330.0``
+     - Both
      - Density. Together with specific heat, it sets thermal inertia: higher
        density generally slows temperature change for a given input.
    * - ``specific-heat-J-kgK``
      - ``880.0``
+     - Both
      - Energy needed to warm a unit mass by one Kelvin. Larger values generally
        reduce and slow the temperature rise.
    * - ``emissivity``
      - ``0.9``
+     - Both
      - Surface emissivity from 0 to 1. It controls radiative exchange in the
        solve and the mix of emitted versus reflected thermal light
        in the radiance image. Low-emissivity metal can appear closer to its
@@ -323,42 +394,51 @@ Heating and integration
 
 .. list-table::
    :header-rows: 1
-   :widths: 32 12 56
+   :widths: 27 13 15 45
 
    * - Parameter
      - Default
+     - Applies to
      - What it changes
    * - ``irradiance-scale``
      - ``1.0``
+     - Both
      - Multiplies absorbed input from the lighting bake. Increase it for a
        stronger temperature rise from scene lighting. Unlike
        ``radiance-scale``, it changes the solved temperature.
    * - ``sim-time-s``
      - ``1.0``
-     - Duration of the static heat solve in seconds. Longer times allow more
-       heat to accumulate, diffuse and exchange with the ambient reference.
+     - Static only
+     - Duration of the static heat solve in seconds. Ignored in transient
+       mode, which uses the simulation frame range and scene fps.
    * - ``timestep-s``
      - ``0.05``
-     - Integration step in seconds. Smaller steps resolve the transient more
-       finely but require more solve time.
+     - Static only
+     - Static integration step in seconds. Ignored in transient mode;
+       use ``substeps-per-frame`` instead.
    * - ``bake-samples``
      - ``1024``
+     - Both
      - Cycles samples for the irradiance bake. More samples reduce stochastic
        speckle in the heating input, at extra bake cost; they do not increase
        spatial resolution.
    * - ``irradiance-texture-size``
      - ``512``
+     - Both
      - Width and height of the square Cycles irradiance and albedo bakes.
        Increasing it can preserve finer lighting and texture variation, with
        roughly quadratic image-memory and bake-work growth.
    * - ``device``
      - ``cuda``
+     - Both
      - Compute device for the heat solve: ``cuda`` or ``cpu``. If CUDA is
        unavailable, the CUDA choice falls back to CPU.
    * - ``recompute``
      - ``False``
-     - Regenerates the Cycles bakes and heat solve instead of using a reusable
-       result from the scene's thermal cache.
+     - Static only
+     - Bypasses reusable static bake/solve results. Ignored in transient
+       mode, where preparation creates a fresh trajectory unless one is
+       explicitly attached through the Python API.
 
 Choosing surface samples
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -398,35 +478,42 @@ vertices of its private render mesh without writing onto the original mesh.
 
 .. list-table::
    :header-rows: 1
-   :widths: 32 12 56
+   :widths: 27 13 15 45
 
    * - Parameter
      - Default
+     - Applies to
      - What it changes
    * - ``render-domain``
      - ``AUTO``
+     - Both
      - Selects ``AUTO``, ``VERTEX`` or ``TEXEL`` thermal sampling. It controls
        solve points and how the field reaches the render, not image resolution.
    * - ``atlas-texel-density``
      - ``1500.0``
+     - Both
      - Target thermal samples per square metre for atlas surfaces. Raising it
        can resolve smaller hot spots, but increases point count, memory and
        solve cost. Tile dimensions and the overall budget can limit it.
    * - ``atlas-tile-min``
      - ``16``
+     - Both
      - Minimum side length, in texels, of one object's atlas tile. A larger
        minimum gives small objects more samples, at extra memory cost.
    * - ``atlas-tile-max``
      - ``512``
+     - Both
      - Maximum side length of one object's tile. A lower maximum limits the
        cost of large objects but reduces their effective resolution.
    * - ``atlas-texel-soft-max``
      - ``500000``
+     - Both
      - Soft budget for atlas texels plus retained vertices. If exceeded,
        VisionSim reduces effective atlas density and warns. It is a planning
        limit rather than an exact cap.
    * - ``radiance-scale``
      - ``1.0``
+     - Both
      - Multiplies gray-body emission in the thermal-radiance render. It changes
        image brightness, not the heat solve or temperature EXR.
 
