@@ -8,6 +8,25 @@ import pytest
 from visionsim.simulate.heatsim import atlas
 
 
+@pytest.mark.parametrize("mirrored", [False, True])
+def test_raster_samples_keep_material_locations_through_deformation(mirrored):
+    vertices = np.array([[0.0, 0.0, 0.0], [100.0, 0.0, 0.0], [0.0, 100.0, 0.0]])
+    faces = np.array([[0, 1, 2]])
+    uv = np.array([[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]])
+    if mirrored:
+        uv = uv[:, [0, 2, 1]]
+    samples = atlas.rasterize_tile(vertices, faces, uv, (16, 16))
+    weights = samples["barycentric"]
+    np.testing.assert_allclose(weights.sum(axis=1), 1.0)
+    np.testing.assert_allclose(weights @ vertices, samples["position_mm"])
+    deformed = vertices.copy()
+    deformed[1, 2] = 30.0
+    deformed[2, 2] = -20.0
+    rerasterized = atlas.rasterize_tile(deformed, faces, uv, (16, 16))
+    np.testing.assert_array_equal(samples["xy"], rerasterized["xy"])
+    np.testing.assert_allclose(weights @ deformed, rerasterized["position_mm"])
+
+
 def test_rasterization_rejects_uvs_shared_by_distant_surfaces():
     verts = np.array(
         [[0, 0, 0], [1000, 0, 0], [0, 1000, 0], [0, 0, 6000], [1000, 0, 6000], [0, 1000, 6000]], dtype=float

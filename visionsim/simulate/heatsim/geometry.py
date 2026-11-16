@@ -6,17 +6,21 @@ from contextlib import ExitStack, contextmanager
 from typing import Any
 
 import bpy  # type: ignore
+import numpy as np
 
 from visionsim.simulate.heatsim.material_slots import restore_material_slots, snapshot_material_slots
 
 
-def evaluated_meshes(objects: list) -> dict[str, Any]:
+def evaluated_meshes(objects: list, *, force: bool = False) -> dict[str, Any]:
     """Copy render-visible geometry and triangulate n-gons for thermal UV charts."""
     meshes = {}
     try:
         for obj in objects:
-            if not any(m.show_render or m.show_viewport for m in obj.modifiers) and not any(
-                p.loop_total > 4 for p in obj.data.polygons
+            if (
+                not force
+                and obj.data.shape_keys is None
+                and not any(m.show_render or m.show_viewport for m in obj.modifiers)
+                and not any(p.loop_total > 4 for p in obj.data.polygons)
             ):
                 continue
             settings = [
@@ -67,6 +71,44 @@ def evaluated_meshes(objects: list) -> dict[str, Any]:
         release_meshes(meshes)
         raise
     return meshes
+
+
+def refresh_evaluated_meshes(scene: Any, meshes: dict[str, Any]) -> None:
+    """Refresh positions while preserving the thermal snapshots' UVs and attributes.
+
+    Call outside ``use_meshes`` so evaluation sees the authored modifiers and
+    shape keys. Only stable topology and material-slot assignment are supported.
+    """
+    current = evaluated_meshes([scene.objects[name] for name in meshes], force=True)
+    try:
+        for name, previous in meshes.items():
+            fresh = current[name]
+            if (len(previous.vertices), len(previous.loops), len(previous.polygons)) != (
+                len(fresh.vertices),
+                len(fresh.loops),
+                len(fresh.polygons),
+            ):
+                raise RuntimeError(f"{name!r}: transient thermal mesh topology changed")
+            for collection, attr in (
+                ("loops", "vertex_index"),
+                ("polygons", "loop_total"),
+                ("polygons", "material_index"),
+            ):
+                old_items, new_items = getattr(previous, collection), getattr(fresh, collection)
+                old = np.empty(len(old_items), dtype=np.int32)
+                new = np.empty(len(new_items), dtype=np.int32)
+                old_items.foreach_get(attr, old)
+                new_items.foreach_get(attr, new)
+                if not np.array_equal(old, new):
+                    raise RuntimeError(f"{name!r}: transient thermal topology or material assignment changed")
+        # Validate all objects before changing any retained snapshot.
+        for name, previous in meshes.items():
+            coordinates = np.empty(len(previous.vertices) * 3, dtype=np.float64)
+            current[name].vertices.foreach_get("co", coordinates)
+            previous.vertices.foreach_set("co", coordinates)
+            previous.update()
+    finally:
+        release_meshes(current)
 
 
 def release_meshes(meshes: dict[str, Any]) -> None:

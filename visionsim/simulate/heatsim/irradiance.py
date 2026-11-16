@@ -177,6 +177,15 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
     if len(mesh.polygons) == 0 or len(mesh.vertices) == 0:
         return
 
+    # Animated atlas samples keep their initial UV addresses while geometry
+    # moves. Repacking here would sample the new bake at unrelated locations.
+    if mesh.get("heatsim_bake_uv_locked", False):
+        if BAKE_UV_LAYER_NAME not in mesh.uv_layers:
+            raise RuntimeError(f"{obj.name!r}: fixed thermal bake UV layer is missing")
+        mesh.uv_layers.active = mesh.uv_layers[BAKE_UV_LAYER_NAME]
+        mesh.uv_layers[BAKE_UV_LAYER_NAME].active_render = True
+        return
+
     # Repacking between the atlas rasterization, lighting bake and albedo bake
     # invalidates their shared UV addresses. Include scale/shear inherited from parents.
     transform = obj.matrix_world.to_3x3().to_4x4()
@@ -193,7 +202,10 @@ def prepare_object_bake_uv(obj: bpy.types.Object) -> None:
         signature.update(values.tobytes())
     layout_key = signature.hexdigest()
     blend_path = str(getattr(bpy.data, "filepath", ""))
-    uv_cache = Path(blend_path + ".heatsim") / "bake_uv" / f"{layout_key}.npz" if blend_path else None
+    cache_root = bpy.context.scene.get("heatsim_bake_cache_root")
+    if cache_root is None and blend_path:
+        cache_root = blend_path + ".heatsim"
+    uv_cache = Path(cache_root) / "bake_uv" / f"{layout_key}.npz" if cache_root else None
     if uv_cache is not None and (cached_uv := cache.read_bake_uv(uv_cache, layout_key, len(mesh.loops))) is not None:
         layer = mesh.uv_layers.get(BAKE_UV_LAYER_NAME)
         if layer is None:
