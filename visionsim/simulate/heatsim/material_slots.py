@@ -20,7 +20,14 @@ class MaterialSlotState:
 
 
 def snapshot_material_slots(obj: bpy.types.Object) -> MaterialSlotState:
-    """Capture object overrides even when the slot currently uses its DATA link."""
+    """Capture object overrides even when the slot currently uses its DATA link.
+
+    Args:
+        obj (bpy.types.Object): Object whose material slots to snapshot.
+
+    Returns:
+        MaterialSlotState holding the effective, mesh and object assignments.
+    """
     materials = [slot.material for slot in obj.material_slots]
     links = [slot.link for slot in obj.material_slots]
     object_materials = []
@@ -42,7 +49,13 @@ def snapshot_material_slots(obj: bpy.types.Object) -> MaterialSlotState:
 
 
 def set_material_override(obj: bpy.types.Object, index: int, material: bpy.types.Material) -> None:
-    """Use OBJECT links so a shared mesh's DATA materials remain untouched."""
+    """Use OBJECT links so a shared mesh's DATA materials remain untouched.
+
+    Args:
+        obj (bpy.types.Object): Object receiving the temporary override.
+        index (int): Material slot index to replace.
+        material (bpy.types.Material): Replacement material.
+    """
     while len(obj.material_slots) <= index:
         obj.data.materials.append(None)
     slot = obj.material_slots[index]
@@ -51,7 +64,13 @@ def set_material_override(obj: bpy.types.Object, index: int, material: bpy.types
 
 
 def restore_material_slots(obj: bpy.types.Object, state: MaterialSlotState) -> None:
-    """Restore in place; rebuilding existing slots resets polygon material indices."""
+    """Restore in place; rebuilding existing slots resets polygon material indices.
+
+    Args:
+        obj (bpy.types.Object): Object whose material slots to restore.
+        state (MaterialSlotState): Snapshot previously returned by
+            :func:`snapshot_material_slots`.
+    """
     if not state.data_materials:
         # Only an originally bare mesh may have its entire slot array removed.
         obj.data.materials.clear()
