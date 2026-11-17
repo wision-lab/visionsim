@@ -261,6 +261,11 @@ def _build_emissivity_source_chain(nodes: Any, links: Any, x0: float, y0: float)
 
 
 def _gray_body_material_name(radiance_scale: float, specular_fraction: float = 0.0, roughness: float = 0.5) -> str:
+    """Return the cache key for a gray-body material configuration.
+
+    Roughness is omitted when ``specular_fraction`` is zero because the glossy
+    lobe carries no energy; the stored property is meaningful only otherwise.
+    """
     name = f"HeatSim_ThermalShader_vs_{radiance_scale:.6g}"
     if specular_fraction == 0.0:
         return name
@@ -286,7 +291,8 @@ def _build_gray_body_material(radiance_scale: float, *, specular_fraction: float
         radiance_scale: Scalar multiplier after σ·T⁴ — tune this to adjust rendered
             radiance brightness relative to physical W/m² magnitudes.
         specular_fraction: Fraction of reflected energy in the glossy lobe, in [0, 1].
-        roughness: Dimensionless Cycles glossy roughness, in [0, 1].
+        roughness: Dimensionless Cycles glossy roughness, in [0, 1]. Ignored when
+            ``specular_fraction`` is zero.
 
     Returns:
         A ``bpy.types.Material`` configured for gray-body thermal rendering.
