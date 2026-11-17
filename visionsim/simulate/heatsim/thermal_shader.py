@@ -634,6 +634,8 @@ def enter_thermal_scene(scene: Any, *, radiance_scale: float, assignment: SceneA
 
         # Record shared mesh data once, before changing it. Geometry modifiers
         # such as bevels stay active; only normal-smoothing modifiers are disabled.
+        # This runs for every radiance frame, so flattening is O(polygons) per
+        # frame; meshes created after this point are not covered by the snapshot.
         for obj in scene.objects:
             if obj.type != "MESH":
                 continue
