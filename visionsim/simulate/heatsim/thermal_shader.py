@@ -694,7 +694,6 @@ def enter_thermal_scene(scene: Any, *, radiance_scale: float, assignment: SceneA
 
         # RGB scene clamps can truncate the larger radiometric values in this pass.
         # Save both clamp settings for restoration after rendering.
-        cy = getattr(scene, "cycles", None)
         if cy is not None:
             saved_bounces = {key: getattr(cy, key) for key in ("max_bounces", "diffuse_bounces", "glossy_bounces")}
             state[_KEY_BOUNCES] = saved_bounces
