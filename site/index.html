@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VisionSIM — a multi-modal simulator for robot perception</title>
+<meta name="description" content="One simulated scene, read by many sensor models, with pixel-perfect ground truth that never moves. Render, emulate, annotate, export — then train on it.">
+<meta name="author" content="WISION Lab">
+<meta name="theme-color" content="#0b0c0d">
+<meta name="color-scheme" content="dark">
+<link rel="canonical" href="https://wision-lab.github.io/visionsim/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css?v=20261124a">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="VisionSIM">
+<meta property="og:locale" content="en_US">
+<meta property="og:url" content="https://wision-lab.github.io/visionsim/">
+<meta property="og:title" content="VisionSIM — perception is complementary">
+<meta property="og:description" content="One world, many measurements. A simulated scene read by seven sensor models, with pixel-perfect ground truth that never moves.">
+<meta property="og:image" content="https://wision-lab.github.io/visionsim/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The same rendered room seen three ways: RGB, depth, and instance segmentation.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="VisionSIM — a multi-modal simulator for robot perception">
+<meta name="twitter:description" content="One world, many measurements. A simulated scene read by seven sensor models, with pixel-perfect ground truth that never moves.">
+<meta name="twitter:image" content="https://wision-lab.github.io/visionsim/og.png">
+<meta name="twitter:image:alt" content="The same rendered room seen three ways: RGB, depth, and instance segmentation.">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "ScholarlyArticle",
+      "headline": "VisionSIM: Beyond Idealized Sensors — A Multi-Modal Simulator for Robot Perception",
+      "url": "https://wisionlab.com/project/visionsim/",
+      "datePublished": "2026",
+      "author": [
+        { "@type": "Person", "name": "Sacha Jungerman" },
+        { "@type": "Person", "name": "Kaustubh Sadekar" },
+        { "@type": "Person", "name": "Avery Gump" },
+        { "@type": "Person", "name": "Sriram Narayanan" },
+        { "@type": "Person", "name": "Shantanu Gupta" },
+        { "@type": "Person", "name": "Bhuyashi Deka" },
+        { "@type": "Person", "name": "Srinivasa Narasimhan" },
+        { "@type": "Person", "name": "Atul Ingle" },
+        { "@type": "Person", "name": "Mohit Gupta" }
+      ],
+      "isPartOf": { "@type": "PublicationIssue", "name": "10th Annual Conference on Robot Learning" },
+      "sameAs": [
+        "https://arxiv.org/abs/2611.08368",
+        "https://github.com/WISION-Lab/visionsim",
+        "https://visionsim.readthedocs.io/en/latest/"
+      ]
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "name": "VisionSIM",
+      "description": "A modular and extensible framework for distributed simulation with pixel-perfect ground truth annotations and realistic sensor emulation.",
+      "url": "https://wision-lab.github.io/visionsim/",
+      "codeRepository": "https://github.com/WISION-Lab/visionsim",
+      "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+      "programmingLanguage": "Python"
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav" id="nav">
+  <a class="brand" href="#top" aria-label="VisionSIM, back to top">
+    <svg width="22" height="22" viewBox="0 0 26 26" aria-hidden="true" focusable="false">
+        <rect x="1.4" y="3.8" width="16.4" height="11.6" rx="2.5" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity=".42"/>
+        <rect x="4.8" y="7.2" width="16.4" height="11.6" rx="2.5" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity=".74"/>
+        <rect x="8.2" y="10.6" width="16.4" height="11.6" rx="2.5" fill="var(--accent)"/>
+      </svg>
+    <span>Vision<em>SIM</em></span>
+  </a>
+  <nav class="nav__links" aria-label="Sections">
+    <a href="#top">Sensors</a>
+    <a href="#layers">Annotations</a>
+    <a href="#dataset">Dataset</a>
+    <a href="#examples">Examples</a>
+    <a href="https://github.com/WISION-Lab/visionsim">GitHub</a>
+    <a class="nav__docs" href="https://visionsim.readthedocs.io/en/latest/">Docs</a>
+  </nav>
+</header>
+
+<main id="main">
+
+<section class="hero" id="top">
+  <div class="hero__stage">
+
+    <div class="hero__group">
+    <div class="hero__copy">
+      <h1>Perception is<br>complementary.</h1>
+      <p class="hero__lede">One simulated scene, read by many sensor models. Blur, photon
+        noise, event thresholds, phase wrapping and heat — applied to a world whose
+        annotations never move.</p>
+
+      <p class="readout" aria-live="polite">
+        <span class="readout__i" data-index>01</span>
+        <b data-name>Conventional RGB</b>
+        <span class="readout__spec" data-spec>40 ms exposure · motion blur</span>
+      </p>
+
+    </div>
+
+    <div class="hero__stack">
+      <div class="deck" role="img"
+           aria-label="One instant of a rendered room, read by many sensors in turn, resolving into a segmentation and an object detection.">
+        <div class="deck__stack">
+          <figure class="deck__layer" style="--i:0">
+            <video muted playsinline loop preload="none">
+              <source src="media/sensor-rgb.mp4?v=20261123u" type="video/mp4"></video>
+            <img class="deck__poster" src="media/posters/sensor-rgb.webp?v=20261123u" alt="" loading="lazy" decoding="async">
+          </figure>
+          <figure class="deck__layer" style="--i:1">
+            <video muted playsinline loop preload="none">
+              <source src="media/sensor-imu.mp4?v=20261123u" type="video/mp4"></video>
+            <img class="deck__poster" src="media/posters/sensor-imu.webp?v=20261123u" alt="" loading="lazy" decoding="async">
+          </figure>
+          <figure class="deck__layer" style="--i:2">
+            <video muted playsinline loop preload="none">
+              <source src="media/sensor-lidar.mp4?v=20261123u" type="video/mp4"></video>
+            <img class="deck__poster" src="media/posters/sensor-lidar.webp?v=20261123u" alt="" loading="lazy" decoding="async">
+          </figure>
+          <figure class="deck__layer" style="--i:3">
+            <video muted playsinline loop preload="none">
+              <source src="media/sensor-thermal.mp4?v=20261123u" type="video/mp4"></video>
+            <img class="deck__poster" src="media/posters/sensor-thermal.webp?v=20261123u" alt="" loading="lazy" decoding="async">
+          </figure>
+          <figure class="deck__layer" style="--i:4">
+            <video muted playsinline loop preload="none">
+              <source src="media/sensor-itof.mp4?v=20261123u" type="video/mp4"></video>
+            <img class="deck__poster" src="media/posters/sensor-itof.webp?v=20261123u" alt="" loading="lazy" decoding="async">
+          </figure>
+          <figure class="deck__layer" style="--i:5">
+            <video muted playsinline loop preload="none">
+              <source src="media/sensor-dvs.mp4?v=20261123u" type="video/mp4"></video>
+            <img class="deck__poster" src="media/posters/sensor-dvs.webp?v=20261123u" alt="" loading="lazy" decoding="async">
+          </figure>
+          <figure class="deck__layer" style="--i:6">
+            <video muted playsinline loop preload="none">
+              <source src="media/sensor-spc.mp4?v=20261123u" type="video/mp4"></video>
+            <img class="deck__poster" src="media/posters/sensor-spc.webp?v=20261123u" alt="" loading="lazy" decoding="async">
+          </figure>
+
+        </div>
+      </div>
+    </div>
+
+    <ol class="rail" aria-label="Readings">
+      <li><button type="button" data-goto="0" aria-current="true"><span class="rail__name">RGB</span></button></li>
+      <li><button type="button" data-goto="1"><span class="rail__name">IMU</span></button></li>
+      <li><button type="button" data-goto="2"><span class="rail__name">LiDAR</span></button></li>
+      <li><button type="button" data-goto="3"><span class="rail__name">Thermal</span></button></li>
+      <li><button type="button" data-goto="4"><span class="rail__name">iToF</span></button></li>
+      <li><button type="button" data-goto="5"><span class="rail__name">Events</span></button></li>
+      <li><button type="button" data-goto="6"><span class="rail__name">Single-photon</span></button></li>
+      <li><button type="button" data-goto="7"><span class="rail__name">Multi-sensor</span></button></li>
+    </ol>
+    </div>
+
+  </div>
+
+</section>
+
+<!-- ============================================================ failures -->
+<section class="sec walk" id="failures">
+  <div class="wrap walk__head">
+    <div class="sec__head">
+      <div><h2>Unified perception requires diverse sensing</h2></div>
+      <p>The same room and the same instant can be perceived differently depending on the
+        sensor. Which one is right?</p>
+    </div>
+
+      </div>
+
+  <div class="wrap walk__stage">
+
+      <article class="reading" data-beats="0.05:0:2800,3.8:1:3200">
+        <div class="reading__copy">
+          <h3>A single exposure is a compromise</h3>
+          <p>A conventional camera selects a single exposure for the entire frame, which is challenging in this room: the lamp is about four stops brighter than the unlit corners. As the lamp turns on, the camera must re-meter. If it exposes for the table, the lamp becomes overexposed; if it exposes for the lamp, the table appears noisy and underexposed.</p>
+        </div>
+        <div class="reading__media">
+          <figure class="plate">
+            <div class="plate__frame"><div class="clip" style="--lqip:url(data:image/webp;base64,UklGRnoAAABXRUJQVlA4IG4AAADwBACdASoUABQAPt1gp04opaMiKA1REBuJZQDLLBBesyJM6Ugy3JfCNldIA+kl4AAA/s3EhvK/rQLbzpiROg+LSBgbUMUg+SncIPcwxj+vaMxsIOAaXkIt+5cyYtJrreXhJPhS3JsQl0yzSoAAAA==)">
+                <video muted playsinline loop preload="none" aria-label="A conventional camera as the robot switches the lamp on">
+                  <source src="media/moment-rgb-switch.mp4?v=20261123u" type="video/mp4"></video>
+                <img class="clip__poster" src="media/moment-rgb-poster.webp?v=20261123u" alt="" loading="lazy" decoding="async">
+              </div>
+              <span class="plate__box" style="--bx:52.5%;--by:36.5%;--bw:30%;--bh:31%;--bc:var(--accent)" aria-hidden="true"></span>
+            </div>
+            <figcaption>conventional &middot; <b>0 EV</b> &middot; metered on the dark frame</figcaption>
+          </figure>
+          <div class="zooms">
+            <figure class="zoom" style="--zc:var(--accent)">
+              <img src="media/moment-rgb-dark-zoom.webp?v=20261123u" width="480" height="480" alt="The unlit table, grain through the shadows" loading="lazy" decoding="async">
+              <figcaption>before &middot; +3.2 EV &middot; noisy</figcaption>
+            </figure>
+            <figure class="zoom" style="--zc:var(--accent)">
+              <img src="media/moment-rgb-lit-zoom.webp?v=20261123u" width="480" height="480" alt="The lit table, lampshade washed out" loading="lazy" decoding="async">
+              <figcaption>after &middot; &minus;0.8 EV &middot; saturated</figcaption>
+            </figure>
+          </div>
+        </div>
+      </article>
+
+      <article class="reading" data-beats="0.30:0:2800,3.8:1:3200">
+        <div class="reading__copy">
+          <h3>One bit per pixel captures the highlights and shadows</h3>
+          <p>A single-photon camera detects the presence or absence of one or more photons per pixel, so each frame carries one bit per pixel and, on its own, looks like noise. Summing eight frames, however, lets the room emerge. With more summed frames and by inverting the camera's response function, both the unlit table and the illuminated lampshade become visible.</p>
+        </div>
+        <div class="reading__media">
+          <figure class="plate">
+            <div class="plate__frame"><div class="clip" style="--lqip:url(data:image/webp;base64,UklGRoAAAABXRUJQVlA4IHQAAACQBACdASoUABQAPt1orFEopaQiqAgBEBuJZQDA3AeT9PthvIHpV2WSIPaGzEAA/iV9RzMjHmLrTuJWUnY5ZX85Os8w59T5HHJbC0dG50lMgjUiWXzPPjQOWtxWR6qSQbS9Pie1rt534IUCmlTpl9RSBocAAA==)">
+                <video muted playsinline loop preload="none" aria-label="Single-photon camera resolving the room out of photon noise">
+                  <source src="media/moment-spad.mp4?v=20261123u" type="video/mp4"></video>
+                <img class="clip__poster" src="media/moment-spad-poster.webp?v=20261123u" alt="" loading="lazy" decoding="async">
+              </div>
+              <span class="plate__box" style="--bx:11.5%;--by:43%;--bw:12%;--bh:12%;--bc:var(--accent)" aria-hidden="true"></span>
+              <span class="plate__box" style="--bx:58.5%;--by:44.5%;--bw:10%;--bh:12%;--bc:var(--accent)" aria-hidden="true"></span>
+            </div>
+            <figcaption>single-photon &middot; <b>8 summed frames</b></figcaption>
+          </figure>
+          <div class="zooms">
+            <figure class="zoom" style="--zc:var(--accent)">
+              <img src="media/moment-spad-before-zoom.webp?v=20261123u" width="460" height="460" alt="Cushions recovered from the count" loading="lazy" decoding="async">
+              <figcaption>before &middot; pillow &middot; +1.9 EV</figcaption>
+            </figure>
+            <figure class="zoom" style="--zc:var(--accent)">
+              <img src="media/moment-spad-after-zoom.webp?v=20261123u" width="460" height="555" alt="The lampshade, held open" loading="lazy" decoding="async">
+              <figcaption>after &middot; lamp &middot; &minus;9.1 EV</figcaption>
+            </figure>
+          </div>
+        </div>
+      </article>
+
+      <article class="reading" data-loop="1" data-reveal="2.4" data-passes="2">
+        <div class="reading__copy">
+          <h3>When sparse updates saturate the bandwidth</h3>
+          <p>In contrast, an event camera transmits only changes: each pixel reports when the light falling on it varies beyond a certain threshold. A still room therefore produces almost no signal, while the sensor responds rapidly to motion and edges. When the lamp switches on, that change occurs everywhere at once, causing the entire array to flood in a single instant.</p>
+        </div>
+        <div class="reading__media">
+          <figure class="plate">
+            <div class="plate__frame"><div class="clip" style="--lqip:url(data:image/webp;base64,UklGRkYAAABXRUJQVlA4IDoAAACwAwCdASoUABQAPt1mqE+opaOiKAqpEBuJaQDLaBEdJUQe1BkiAAD+82nFTO4TJVnEUho49ET3QAAA)">
+                <video muted playsinline loop preload="none" aria-label="Event camera as the lamp switches on: the frame floods with polarity events">
+                  <source src="media/moment-events-flood.mp4?v=20261123u" type="video/mp4"></video>
+                <img class="clip__poster" src="media/moment-events-poster.webp?v=20261123u" alt="" loading="lazy" decoding="async">
+              </div>
+              <span class="plate__box" style="--bx:58%;--by:30%;--bw:30%;--bh:50%;--bc:var(--accent)" aria-hidden="true"></span>
+            </div>
+            <figcaption>events &middot; <b>through the ramp</b></figcaption>
+          </figure>
+          <div class="zooms">
+            <figure class="zoom" style="--zc:var(--accent)">
+              <img src="media/moment-events-zoom.webp?v=20261123u" width="420" height="700" alt="The lamp region saturated with events" loading="lazy" decoding="async">
+              <figcaption>at the switch</figcaption>
+            </figure>
+          </div>
+        </div>
+      </article>
+
+      <article class="reading" data-beats="3.9:0:3400">
+        <div class="reading__copy">
+          <h3>Seeing through darkness and through time</h3>
+          <p>A thermal camera captures long-wave infrared radiation instead of reflected visible light, so turning on a lamp does not instantly illuminate the scene. This also means the camera retains a kind of thermal memory: the floor remains about 0.2 K warmer where a foot landed, even seconds after the robot has moved on.</p>
+        </div>
+        <div class="reading__media">
+          <figure class="plate">
+            <div class="plate__frame"><div class="clip" style="--lqip:url(data:image/webp;base64,UklGRmgAAABXRUJQVlA4IFwAAAAwBACdASoUABQAPt1ep04opKMiMBgIARAbiWMAxNgRXPyGFjNUnWzkSAAA/u6X9aq5BSlDXf0vwNEL5g30GFqJJuaOyxvsx+aXwb5YpVs7aIOiJ2+XOB0P4t4AAA==)">
+                <video muted playsinline loop preload="none" aria-label="Thermal view with the lamp on: the robot walks across the room">
+                  <source src="media/moment-thermal.mp4?v=20261123u" type="video/mp4"></video>
+                <img class="clip__poster" src="media/moment-thermal-poster.webp?v=20261123u" alt="" loading="lazy" decoding="async">
+              </div>
+              <span class="plate__box" style="--bx:50%;--by:78%;--bw:40%;--bh:22%;--bc:var(--accent)" aria-hidden="true"></span>
+            </div>
+            <figcaption>thermal &middot; <b>lamp on</b> &middot; no light needed</figcaption>
+          </figure>
+          <div class="zooms">
+            <figure class="zoom" style="--zc:var(--accent)">
+              <img src="media/moment-thermal-zoom.webp?v=20261123u" width="460" height="253" alt="Two prints behind the feet" loading="lazy" decoding="async">
+              <figcaption>the prints, thermal radiance</figcaption>
+            </figure>
+          </div>
+        </div>
+      </article>
+  </div>
+
+  <div class="wrap walk__controls">
+    <button class="walk__toggle" type="button" aria-label="Pause the sequence" aria-pressed="false">
+      <svg class="walk__pause-icon" width="12" height="14" viewBox="0 0 12 14" aria-hidden="true" focusable="false"><rect x="1" y="1" width="3.2" height="12" fill="currentColor"/><rect x="7.8" y="1" width="3.2" height="12" fill="currentColor"/></svg>
+      <svg class="walk__play-icon" width="12" height="14" viewBox="0 0 12 14" aria-hidden="true" focusable="false"><path d="M1.6 1.2 11 7 1.6 12.8Z" fill="currentColor"/></svg>
+    </button>
+    <button class="walk__arrow" type="button" data-step="-1" aria-label="Previous sensor">
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" focusable="false"><path d="M11 3.5 5.5 9l5.5 5.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+    </button>
+    <div class="walk__meter" aria-hidden="true">
+      <span></span><span></span><span></span><span></span>
+    </div>
+    <button class="walk__arrow" type="button" data-step="1" aria-label="Next sensor">
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" focusable="false"><path d="M7 3.5 12.5 9 7 14.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+    </button>
+  </div>
+
+  <p class="walk__status" aria-live="polite"></p>
+</section>
+
+<section class="sec" id="layers">
+  <div class="wrap">
+    <div class="sec__head">
+      <div><h2>Every annotation, for every view.</h2></div>
+      <p>A single scene is rendered once with dense, pixel-perfect, temporally synchronised ground
+        truth, so any downstream task learns from exact labels.</p>
+    </div>
+
+    <div class="layers-grid">
+      <figure><div class="clip"><video muted playsinline loop preload="none"><source src="media/layer-rgb.mp4?v=20261123u" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-rgb.webp?v=20261123u" alt="" loading="lazy" decoding="async"></div><figcaption><span>Frames</span><em>colour + HDR</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none"><source src="media/layer-depth.mp4?v=20261123u" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-depth.webp?v=20261123u" alt="" loading="lazy" decoding="async"></div><figcaption><span>Depth</span><em>distance</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none"><source src="media/layer-normals.mp4?v=20261123u" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-normals.webp?v=20261123u" alt="" loading="lazy" decoding="async"></div><figcaption><span>Normals</span><em>direction</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none"><source src="media/layer-flow.mp4?v=20261123u" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-flow.webp?v=20261123u" alt="" loading="lazy" decoding="async"></div><figcaption><span>Flow</span><em>fwd + back</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none"><source src="media/layer-segments.mp4?v=20261123u" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-segments.webp?v=20261123u" alt="" loading="lazy" decoding="async"></div><figcaption><span>Segments</span><em>objects</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none"><source src="media/layer-materials.mp4?v=20261123u" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-materials.webp?v=20261123u" alt="" loading="lazy" decoding="async"></div><figcaption><span>Materials</span><em>material</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none"><source src="media/layer-points.mp4?v=20261123u" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-points.webp?v=20261123u" alt="" loading="lazy" decoding="async"></div><figcaption><span>Points</span><em>position</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none"><source src="media/layer-temperature.mp4?v=20261123u" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-temperature.webp?v=20261123u" alt="" loading="lazy" decoding="async"></div><figcaption><span>Temperature</span><em>kelvin</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none"><source src="media/layer-direct-diffuse.mp4?v=20261123u" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-direct-diffuse.webp?v=20261123u" alt="" loading="lazy" decoding="async"></div><figcaption><span>Direct</span><em>diffuse</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none"><source src="media/layer-direct-specular.mp4?v=20261123u" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-direct-specular.webp?v=20261123u" alt="" loading="lazy" decoding="async"></div><figcaption><span>Direct</span><em>specular</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none"><source src="media/layer-indirect-diffuse.mp4?v=20261123u" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-indirect-diffuse.webp?v=20261123u" alt="" loading="lazy" decoding="async"></div><figcaption><span>Indirect</span><em>diffuse</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none"><source src="media/layer-indirect-specular.mp4?v=20261123u" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-indirect-specular.webp?v=20261123u" alt="" loading="lazy" decoding="async"></div><figcaption><span>Indirect</span><em>specular</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none"><source src="media/layer-diffuse-color.mp4?v=20261123u" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-diffuse-color.webp?v=20261123u" alt="" loading="lazy" decoding="async"></div><figcaption><span>Albedo</span><em>base colour</em></figcaption></figure>
+      <figure><div class="clip"><video muted playsinline loop preload="none"><source src="media/layer-specular-color.mp4?v=20261123u" type="video/mp4"></video><img class="clip__poster" src="media/posters/layer-specular-color.webp?v=20261123u" alt="" loading="lazy" decoding="async"></div><figcaption><span>Specular</span><em>tint</em></figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="dataset">
+  <div class="wrap">
+    <div class="dataset">
+      <div class="clip"><video muted playsinline loop preload="none" aria-label="A grid of rendered scenes from the release">
+        <source src="media/dataset-square.mp4?v=20261123u" type="video/mp4"></video><img class="clip__poster" src="media/posters/dataset-square.webp?v=20261123u" alt="" loading="lazy" decoding="async"></div>
+      <div>
+        <h2>Batteries included.</h2>
+        <p class="dataset__lede">
+          It comes with a large-scale dataset rendered through this pipeline: <b>100M raw data
+          points</b> from eight sensors, across <b>100 indoor scenes</b>, with <b>480k synchronized
+          ground-truth views</b>.
+          <span class="dataset__soon">Coming soon. The <a href="https://visionsim.readthedocs.io/en/latest/tutorials/large-dataset.html" class="dataset__link">prerelease</a> is available in the meantime.</span></p>
+        <ul>
+          <li><a href="https://visionsim.readthedocs.io/en/latest/quick-start.html">Quick start <em>install · first render</em></a></li>
+          <li><a href="https://visionsim.readthedocs.io/en/latest/sections/datasets.html">Dataset layout <em>formats · conventions</em></a></li>
+          <li><a href="https://visionsim.readthedocs.io/en/latest/sections/emulation.html">Sensor emulation <em>physics · parameters</em></a></li>
+          <li><a href="https://visionsim.readthedocs.io/en/latest/sections/interpolation.html">Interpolation <em>speed · accuracy</em></a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="examples">
+  <div class="wrap">
+    <div class="sec__head">
+      <div><h2>And much more&hellip;</h2></div>
+    </div>
+
+    <div class="cards">
+      <a class="card" style="--order:0" href="https://visionsim.readthedocs.io/en/latest/tutorials/hdr.html">
+        <span class="card__media"><img src="media/examples/hdr.webp?v=20261123u" alt="" loading="lazy" decoding="async"></span>
+        <span class="card__body"><span class="card__name">HDR sequences</span><span class="card__note">light passes &middot; 20 stops</span></span>
+      </a>
+      <a class="card" style="--order:5" href="https://visionsim.readthedocs.io/en/latest/tutorials/nerf-splats.html">
+        <span class="card__media"><img src="media/examples/splats.webp?v=20261123u" alt="" loading="lazy" decoding="async"></span>
+        <span class="card__body"><span class="card__name">Gaussian splats</span><span class="card__note">training data for NeRF and 3DGS</span></span>
+      </a>
+      <a class="card" style="--order:1" href="https://visionsim.readthedocs.io/en/latest/tutorials/imu.html">
+        <span class="card__media"><video muted playsinline loop preload="none" poster="media/examples/imu.webp?v=20261123u"><source src="media/examples/imu.mp4?v=20261123u" type="video/mp4"></video><img class="card__poster" src="media/examples/imu.webp?v=20261123u" alt="" loading="lazy" decoding="async"></span>
+        <span class="card__body"><span class="card__name">IMU traces</span><span class="card__note">bias &middot; drift</span></span>
+      </a>
+      <a class="card" style="--order:3" href="https://visionsim.readthedocs.io/en/latest/tutorials/stereo.html">
+        <span class="card__media"><video muted playsinline loop preload="none" poster="media/examples/stereo.webp?v=20261123u"><source src="media/examples/stereo.mp4?v=20261123u" type="video/mp4"></video><img class="card__poster" src="media/examples/stereo.webp?v=20261123u" alt="" loading="lazy" decoding="async"></span>
+        <span class="card__body"><span class="card__name">Multi-rig setups</span><span class="card__note">any baseline &middot; exact extrinsics</span></span>
+      </a>
+      <a class="card" style="--order:4" href="https://visionsim.readthedocs.io/en/latest/tutorials/varying-focal-lengths.html">
+        <span class="card__media"><video muted playsinline loop preload="none" poster="media/examples/focal.webp?v=20261123u"><source src="media/examples/focal.mp4?v=20261123u" type="video/mp4"></video><img class="card__poster" src="media/examples/focal.webp?v=20261123u" alt="" loading="lazy" decoding="async"></span>
+        <span class="card__body"><span class="card__name">Variable focal lengths</span><span class="card__note">contrazoom &middot; one pass</span></span>
+      </a>
+      <a class="card" style="--order:2" href="https://visionsim.readthedocs.io/en/latest/tutorials/light-passes.html">
+        <span class="card__media"><img src="media/examples/passes.webp?v=20261123u" alt="" loading="lazy" decoding="async"></span>
+        <span class="card__body"><span class="card__name">Light passes</span><span class="card__note">diffuse &middot; specular &middot; colour</span></span>
+      </a>
+      <a class="card" style="--order:6" href="https://visionsim.readthedocs.io/en/latest/tutorials/playblast.html">
+        <span class="card__media"><video muted playsinline loop preload="none" poster="media/examples/playblast.webp?v=20261123u"><source src="media/examples/playblast.mp4?v=20261123u" type="video/mp4"></video><img class="card__poster" src="media/examples/playblast.webp?v=20261123u" alt="" loading="lazy" decoding="async"></span>
+        <span class="card__body"><span class="card__name">Playblast</span><span class="card__note">rough cuts &middot; iterate in seconds</span></span>
+      </a>
+      <a class="card" style="--order:7" href="https://visionsim.readthedocs.io/en/latest/tutorials/sensors.html">
+        <span class="card__media"><img src="media/examples/sensors.webp?v=20261123u" alt="" loading="lazy" decoding="async"></span>
+        <span class="card__body"><span class="card__name">Sensor models</span><span class="card__note">image formation models</span></span>
+      </a>
+    </div>
+
+    <p class="cards__more"><a href="https://visionsim.readthedocs.io/en/latest/">More tutorials in the
+      docs <span aria-hidden="true">&rarr;</span></a></p>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="foot__inner">
+    <div>
+      <a class="brand" href="#top">
+        <svg width="22" height="22" viewBox="0 0 26 26" aria-hidden="true" focusable="false">
+        <rect x="1.4" y="3.8" width="16.4" height="11.6" rx="2.5" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity=".42"/>
+        <rect x="4.8" y="7.2" width="16.4" height="11.6" rx="2.5" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity=".74"/>
+        <rect x="8.2" y="10.6" width="16.4" height="11.6" rx="2.5" fill="var(--accent)"/>
+      </svg>
+        <span>Vision<em>SIM</em></span>
+      </a>
+      <p class="foot__note">A modular simulator for distributed rendering with pixel-perfect
+        annotations and realistic sensor emulation. CoRL 2026.</p>
+      <p class="foot__licence"><a href="https://github.com/WISION-Lab/visionsim/blob/main/LICENSE.md">GNU GPL-3.0-or-later</a></p>
+    </div>
+    <div>
+      <h2>Docs</h2>
+      <ul>
+        <li><a href="https://visionsim.readthedocs.io/en/latest/quick-start.html">Quick start</a></li>
+        <li><a href="https://visionsim.readthedocs.io/en/latest/sections/simulation.html">Simulation</a></li>
+        <li><a href="https://visionsim.readthedocs.io/en/latest/sections/emulation.html">Emulation</a></li>
+        <li><a href="https://visionsim.readthedocs.io/en/latest/apidocs/visionsim.html">API</a></li>
+      </ul>
+    </div>
+    <div>
+      <h2>Project</h2>
+      <ul>
+        <li><a href="https://github.com/WISION-Lab/visionsim">GitHub</a></li>
+        <li><a href="https://wisionlab.com/project/visionsim/">Paper site</a></li>
+        <li><a href="https://arxiv.org/abs/2611.08368">arXiv</a></li>
+        <li><a href="https://github.com/WISION-Lab/visionsim/blob/main/CONTRIBUTING.md">Contributing</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot__legal">
+    <span><span class="nb">VisionSIM</span> · <span class="nb">UW–Madison</span> · <span class="nb">Portland State</span> · <span class="nb">Carnegie Mellon</span></span>
+    <span>Synthetic data, exact annotations</span>
+  </div>
+</footer>
+
+</main>
+<script src="main.js?v=20261124a"></script>
+</body>
+</html>

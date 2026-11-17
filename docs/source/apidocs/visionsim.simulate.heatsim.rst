@@ -36,6 +36,14 @@ visionsim.simulate.heatsim.cache module
    :show-inheritance:
    :undoc-members:
 
+visionsim.simulate.heatsim.geometry module
+------------------------------------------
+
+.. automodule:: visionsim.simulate.heatsim.geometry
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 visionsim.simulate.heatsim.irradiance module
 --------------------------------------------
 
@@ -48,6 +56,14 @@ visionsim.simulate.heatsim.laplacian module
 -------------------------------------------
 
 .. automodule:: visionsim.simulate.heatsim.laplacian
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+visionsim.simulate.heatsim.material\_slots module
+-------------------------------------------------
+
+.. automodule:: visionsim.simulate.heatsim.material_slots
    :members:
    :show-inheritance:
    :undoc-members:

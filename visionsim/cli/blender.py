@@ -194,9 +194,9 @@ def heatsim_solve(
     ``vsim blender.render-animation`` call with ``config.include_thermal = True``
     can skip the expensive solve step. Opens the blend-file in a single background
     Blender instance, runs the FEM solve via ``clients.heatsim_solve``, and
-    optionally saves the modified blend-file to disk. TRANSIENT mode prepares a
-    fresh frame history and logs its directory; reuse requires explicit attachment
-    through ``prepare_transient(..., trajectory=...)``.
+    optionally saves the modified blend-file to disk. TRANSIENT mode prepares or
+    reuses a matching completed frame history and logs its directory.
+    ``config.thermal.recompute`` forces a fresh solve in either mode.
 
     Args:
         blend_file: Path to blend file.
@@ -218,6 +218,7 @@ def heatsim_solve(
     if not (blend_file := blend_file.resolve()).exists():
         raise FileNotFoundError(f"Blender file {blend_file} not found.")
 
+    config = config.resolved()
     output_file = output_file.resolve() if output_file else None
 
     _log.info(f"Running thermal solve on {blend_file.stem}...")
@@ -499,9 +500,9 @@ def optimize_rate(
     probe_config.include_points = False
     probe_config.include_segmentations = False
     probe_config.include_thermal = False
+    # `resolved()` runs at the job boundary and would otherwise re-expand the caller's include_all.
     probe_config.include_all = False
     probe_config.previews = False
-    probe_config.__post_init__()
     probe_config.autoscale = False
     probe_config.jobs = 1
 

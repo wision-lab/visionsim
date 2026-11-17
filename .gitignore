@@ -92,9 +92,6 @@ ENV/
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
-/site
-
 # mypy
 .mypy_cache/
 
@@ -144,3 +141,10 @@ AGENTS.md
 # Local planning 
 docs/thermal_integration/
 docs/notes/
+
+# simulation render intermediates (frames, passes, emulator output)
+/renders
+/assets/robot
+
+# Blender save backups
+*.blend1

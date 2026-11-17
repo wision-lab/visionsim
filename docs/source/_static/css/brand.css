@@ -1,0 +1,44 @@
+/* VisionSIM brand for the docs, matching site/index.html: Hanken Grotesk for
+   text, Spline Sans Mono for code. Both colour palettes live in `conf.py`, in
+   `html_theme_options`, so Furo can switch them with its appearance toggle. */
+
+@font-face {
+    font-family: "Hanken";
+    src: url("../fonts/hanken-grotesk-latin-400-normal.woff2") format("woff2");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Hanken";
+    src: url("../fonts/hanken-grotesk-latin-500-normal.woff2") format("woff2");
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Hanken";
+    src: url("../fonts/hanken-grotesk-latin-700-normal.woff2") format("woff2");
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Spline";
+    src: url("../fonts/spline-sans-mono-latin-400-normal.woff2") format("woff2");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+body {
+    --font-stack: "Hanken", "Helvetica Neue", Arial, sans-serif;
+    --font-stack--monospace: "Spline", ui-monospace, "SFMono-Regular", monospace;
+}
+
+/* the landing page sets its headings in the 500 weight and tracks them tighter */
+h1,
+h2 {
+    letter-spacing: -0.02em;
+    font-weight: 500;
+}

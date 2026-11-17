@@ -123,6 +123,9 @@ def test_transient_rpc_workers(render_domain, tmp_path):
             use_motion_blur=False,
             allow_skips=False,
         )
+        config_file = tmp_path / "render.yaml"
+        config.to_file(config_file)
+        config = RenderConfig.from_file(config_file)
         render_job(clients, str(source), str(tmp_path / "renders"), config, frame_start=1, frame_end=3, frame_step=2)
         states = [json.loads(client.transient_state(3)) for client in clients]
         if render_domain == "TEXEL":
@@ -169,3 +172,79 @@ def test_transient_scene_fingerprint_blender(tmp_path, helper_name):
     (tmp_path / "blender.log").write_text(result.stdout + result.stderr)
     assert result.returncode == 0, result.stdout[-6000:] + result.stderr[-6000:]
     assert any(marker in result.stdout for marker in ("TRANSIENT_CACHE_VALIDATION", "TRANSIENT_GEOMETRY_VALIDATION"))
+
+
+@pytest.mark.slow
+def test_static_render_from_config_file(tmp_path):
+    import hashlib
+
+    import Imath
+    import numpy as np
+    import OpenEXR
+
+    from visionsim.simulate.blender import BlenderClient
+    from visionsim.simulate.config import RenderConfig, ThermalConfig
+    from visionsim.simulate.job import frame_job
+
+    executable = os.environ.get("VSIM_BLENDER") or shutil.which("blender")
+    if executable is None:
+        pytest.skip("Blender is unavailable")
+    helper = Path(__file__).with_name("transient_blender_check.py")
+    repo = helper.resolve().parents[3]
+    source = tmp_path / "static.blend"
+    config = RenderConfig(
+        include_thermal=True,
+        previews=False,
+        height=48,
+        width=64,
+        device_type="cpu",
+        max_samples=2,
+        use_denoising=False,
+        use_motion_blur=False,
+        allow_skips=False,
+        thermal=ThermalConfig(
+            mode="STATIC",
+            device="cpu",
+            render_domain="VERTEX",
+            sim_time_s=0.1,
+            timestep_s=0.05,
+            irradiance_scale=0,
+            bake_samples=1,
+            irradiance_texture_size=32,
+            cache_root=tmp_path / "cache",
+            radiance=True,
+        ),
+    )
+    config_file = tmp_path / "static.yaml"
+    config.to_file(config_file)
+    config = RenderConfig.from_file(config_file)
+    root = tmp_path / "renders"
+    with BlenderClient.spawn(
+        executable=executable,
+        timeout=60,
+        factory_startup=True,
+        service=f"{helper}:ValidationService",
+        log=tmp_path / "logs",
+        env={"PYTHONPATH": str(repo), "OMP_NUM_THREADS": "2", "MKL_NUM_THREADS": "2", "OPENBLAS_NUM_THREADS": "2"},
+    ) as client:
+        client.make_fixture(str(source))
+        digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        frame_job(client, str(source), str(root), config, frame_number=1)
+        assert hashlib.sha256(source.read_bytes()).hexdigest() == digest
+    for modality in ("temperature", "thermal_radiance"):
+        files = list((root / modality).rglob("*.exr"))
+        assert len(files) == 1
+        exr = OpenEXR.InputFile(str(files[0]))
+        try:
+            header = exr.header()
+            window = header["dataWindow"]
+            assert (window.max.x - window.min.x + 1, window.max.y - window.min.y + 1) == (64, 48)
+            channel = "V" if "V" in header["channels"] else next(iter(header["channels"]))
+            values = np.frombuffer(exr.channel(channel, Imath.PixelType(Imath.PixelType.FLOAT)), np.float32)
+            assert np.isfinite(values).all()
+            assert values.max() > 0
+            if modality == "temperature":
+                assert 350 < values.max() < 361
+        finally:
+            exr.close()
+    assert not list((root / "previews").rglob("*.png")), "Global previews=False was ignored"

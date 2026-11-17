@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 26 26" width="32" height="32" role="img" aria-label="VisionSIM">
+  <g fill="none" stroke="#c02d0c" stroke-width="2.6">
+    <rect x="1.9" y="4.3" width="16.4" height="11.6" rx="2.5" opacity=".42"/>
+    <rect x="5.3" y="7.7" width="16.4" height="11.6" rx="2.5" opacity=".74"/>
+  </g>
+  <rect x="8.7" y="11.1" width="16.4" height="11.6" rx="2.5" fill="#c02d0c"/>
+</svg>
