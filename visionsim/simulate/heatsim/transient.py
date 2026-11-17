@@ -70,7 +70,7 @@ def _load_trajectory(root: Path, stamp: dict) -> dict:
 
 def _reuse_blocker(scene) -> str | None:
     """Identify motion dependencies whose runtime state is not fingerprinted."""
-    import bpy
+    import bpy  # type: ignore[import-not-found]
 
     if any(obj.users > 0 and obj.name not in scene.objects for obj in bpy.data.objects):
         return "object dependencies outside the active scene"

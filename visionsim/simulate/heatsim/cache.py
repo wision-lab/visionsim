@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 CACHE_SCHEMA_VERSION = 2
 # Bump when bake/solver semantics change, even if the archive layout is unchanged.
@@ -119,7 +120,7 @@ def mesh_attribute_digest(mesh: Any, *, include_position: bool = True) -> str:
             if prop.type in {"BOOLEAN", "INT", "FLOAT"}:
                 size = prop.array_length if prop.is_array else 1
                 dtype = np.float64 if prop.type == "FLOAT" else np.int64
-                values = np.empty(len(attr.data) * size, dtype=dtype)
+                values: npt.NDArray[np.float64] | npt.NDArray[np.int64] = np.empty(len(attr.data) * size, dtype=dtype)
                 attr.data.foreach_get(prop.identifier, values)
                 digest.update(prop.identifier.encode())
                 digest.update(values.tobytes())
@@ -135,7 +136,7 @@ def transient_scene_digest(scene: Any, initial: Any) -> str:
     Ignore generated thermal UVs/AOV branches, which are outputs of preparation,
     while retaining authored geometry, shading, motion, and external image data.
     """
-    import bpy
+    import bpy  # type: ignore[import-not-found]
 
     from visionsim.simulate.heatsim.names import ATLAS_UV_LAYER_NAME, BAKE_UV_LAYER_NAME
 
@@ -198,7 +199,7 @@ def transient_scene_digest(scene: Any, initial: Any) -> str:
 
     images = {}
     trees = {}
-    tree_keys = {}
+    tree_keys: dict[int, str] = {}
     uv_trees = set()
 
     def tree(value, key=None):

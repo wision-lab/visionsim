@@ -1011,14 +1011,21 @@ class BlenderService(rpyc.Service):
         """
 
         def _compositor_not_used() -> bool:
-            # Check if any group output nodes are directly connected to the "Image" render layer.
-            nodes = collections.deque(n for n in self.tree.nodes if not isinstance(n, bpy.types.NodeGroupOutput))
+            # Blender 5 uses Group Output; earlier versions use Composite.
+            # Inspect the actual output, not unrelated Viewer/File Output links.
+            nodes = collections.deque(
+                n
+                for n in self.tree.nodes
+                if n.type in {"GROUP_OUTPUT", "COMPOSITE"} and getattr(n, "is_active_output", True)
+            )
 
             # Either there's no group output or it's not connected to anything.
             if not nodes:
-                raise RuntimeError("Cannot save compositor outputs, a `Group Output` node was not found.")
+                raise RuntimeError(
+                    "Cannot save compositor outputs, no active `Composite` or `Group Output` node was found."
+                )
             elif all(not i.links for node in nodes for i in node.inputs):
-                raise RuntimeError("Cannot save compositor outputs, nothing is connected to the `Group Output` node.")
+                raise RuntimeError("Cannot save compositor outputs, nothing is connected to the compositor output node.")
 
             while nodes:
                 node = nodes.pop()

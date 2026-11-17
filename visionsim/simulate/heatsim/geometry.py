@@ -7,6 +7,7 @@ from typing import Any
 
 import bpy  # type: ignore
 import numpy as np
+import numpy.typing as npt
 
 from visionsim.simulate.heatsim.material_slots import restore_material_slots, snapshot_material_slots
 
@@ -109,8 +110,8 @@ def refresh_evaluated_meshes(scene: Any, meshes: dict[str, Any]) -> None:
                 ("polygons", "material_index"),
             ):
                 old_items, new_items = getattr(previous, collection), getattr(fresh, collection)
-                old = np.empty(len(old_items), dtype=np.int32)
-                new = np.empty(len(new_items), dtype=np.int32)
+                old: npt.NDArray[np.int32] = np.empty(len(old_items), dtype=np.int32)
+                new: npt.NDArray[np.int32] = np.empty(len(new_items), dtype=np.int32)
                 old_items.foreach_get(attr, old)
                 new_items.foreach_get(attr, new)
                 if not np.array_equal(old, new):
@@ -130,7 +131,7 @@ def refresh_evaluated_meshes(scene: Any, meshes: dict[str, Any]) -> None:
                 )
         # Validate all objects before changing any retained snapshot.
         for name, previous in meshes.items():
-            coordinates = np.empty(len(previous.vertices) * 3, dtype=np.float64)
+            coordinates: npt.NDArray[np.float64] = np.empty(len(previous.vertices) * 3, dtype=np.float64)
             current[name].vertices.foreach_get("co", coordinates)
             previous.vertices.foreach_set("co", coordinates)
             previous.update()
