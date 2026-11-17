@@ -2065,7 +2065,9 @@ class BlenderService(rpyc.Service):
             )
 
         if radiance:
-            if assignments is not None:
+            # prepare_thermal already resolved the sidecar for the solve and atlas.
+            # Only callers that skip prepare_thermal still need it here.
+            if assignments is not None and self._thermal_assignment is None:
                 from visionsim.simulate.heatsim.materials import load_assignments
 
                 self._thermal_assignment = load_assignments(Path(str(assignments)))
