@@ -316,15 +316,6 @@ def is_bake_image(image, base_name: str, name_suffix: str) -> bool:
     )
 
 
-def resolve_bake_image(base_name: str, name_suffix: str, preferred_name: str | None = None):
-    """Read an owned image by its recorded alias or logical key, without editing it."""
-    for name in (preferred_name, f"{base_name}_{name_suffix}"):
-        image = bpy.data.images.get(name) if name else None
-        if is_bake_image(image, base_name, name_suffix):
-            return image
-    return next((image for image in bpy.data.images if is_bake_image(image, base_name, name_suffix)), None)
-
-
 def _ensure_bake_image(base_name: str, name_suffix: str, size: int):
     """Reuse only owned scratch buffers; shader inputs and authored images stay intact."""
     size = max(16, int(size))
