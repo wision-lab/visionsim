@@ -5,10 +5,11 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import scipy.sparse as sp
+import torch
 
 from visionsim.simulate.heatsim import laplacian
 from visionsim.simulate.heatsim.physics import AMBIENT_TEMPERATURE_K, STEFAN_BOLTZMANN_MM
-from visionsim.simulate.heatsim.solver import HeatSimFEM, scipy_to_torch_sparse
+from visionsim.simulate.heatsim.solver import HeatSimFEM, pcg_solve, scipy_to_torch_sparse
 
 # Minimal surrogates for HeatSimFEM's two positional param objects: gen_params
 # (.device, .RHO, .C, .K, .NUM_FRAME_DELTA) and sim_params (.sim_radiation,
@@ -162,3 +163,20 @@ def test_ambient_without_heating_is_preserved_exactly():
         10,
     )
     assert np.all(result == AMBIENT_TEMPERATURE_K)
+
+
+def test_pcg_solve_preconditioned_residual_bounds_small_mass_rows():
+    """A dominant large-mass row must not hide error in a coupled small-mass row."""
+    diagonal = np.array([1e-4, 1.0, 1e4, 1e8], dtype=np.float64)
+    matrix = np.diag(diagonal)
+    for index in range(3):
+        matrix[index, index + 1] = matrix[index + 1, index] = -1.0
+    rhs = np.array([1e-6, 1.0, 1e4, 1e8], dtype=np.float64)
+    expected = np.linalg.solve(matrix, rhs)
+
+    operator = torch.tensor(matrix, dtype=torch.float32)
+    b = torch.tensor(rhs[:, None], dtype=torch.float32)
+    inverse_diagonal = 1.0 / torch.tensor(diagonal, dtype=torch.float32)[:, None]
+    result = pcg_solve(lambda value: operator @ value, b, inverse_diagonal, tol=1e-6, rtol=1e-6, max_iter=1000)
+
+    np.testing.assert_allclose(result.numpy().ravel(), expected, atol=1e-2, rtol=1e-3)
