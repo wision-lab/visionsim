@@ -174,8 +174,17 @@ the spotlight's RGB brightness.
 Reproduce the run
 ~~~~~~~~~~~~~~~~~
 
-Use the prepared rolling-ball scene; its download link will be added here.
-These commands keep the scene's resolution, frame range and frame rate.
+Download `rollingball.blend <https://drive.google.com/file/d/1yRMWA0y1BsKwhXbzU8b4x4HBlctxeCw_/view>`_
+from the `shared assets <https://drive.google.com/drive/folders/16HvbXAYI2vELb9RlBtSvKA9uqhWSAdJg>`_
+and place it at ``assets/blender/rollingball.blend`` in the repository.
+To regenerate this page's videos, run from the repository root::
+
+    uv run --all-groups inv figures.sections.blender.thermal --force
+
+The task uses ``cache/rolling-ball/`` for render outputs and the existing figure
+encoder for the documentation videos. Add ``--dry-run`` to inspect its steps.
+
+The equivalent simulation commands below keep the scene's resolution, frame range and frame rate.
 Lighting already defaults to baking every frame, so no extra flag is needed.
 
 .. literalinclude:: ../../../../examples/transient_heat.sh

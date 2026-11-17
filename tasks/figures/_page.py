@@ -580,7 +580,9 @@ def run_nodes(nodes: tuple[Node, ...], force: bool, dry_run: bool, executable: s
     return 1 if failed else 0
 
 
-def encode_video(pattern: str, step: int, out: Path, size: int = 320, fps: int = 25, crf: int = 23) -> None:
+def encode_video(
+    pattern: str, step: int, out: Path, size: int | tuple[int, int] = 320, fps: int = 25, crf: int = 23
+) -> None:
     """Encode frames matching ``pattern`` (relative to ``cache/``) into ``out``.
 
     Rendered frames are sharded into numbered subfolders, hence the glob, and ``step``
@@ -595,14 +597,15 @@ def encode_video(pattern: str, step: int, out: Path, size: int = 320, fps: int =
         pattern: Glob, relative to ``cache/``, matching the source frames.
         step: Keep every ``step``-th frame.
         out: Destination path for the video.
-        size: Output edge length in pixels.
+        size: Output edge length in pixels, or a (width, height) pair.
         fps: Playback rate of the video.
         crf: Quality, lower being better. The default is transparent at preview
             resolutions; previews whose pixels are noise, like a photon or event
             camera's, cost several megabytes a clip at that setting and are the ones
             worth spending quality on.
     """
-    filters = f"select='not(mod(n\\,{step}))',setpts=N/({fps}*TB),scale={size}:{size}:flags=lanczos"
+    width, height = (size, size) if isinstance(size, int) else size
+    filters = f"select='not(mod(n\\,{step}))',setpts=N/({fps}*TB),scale={width}:{height}:flags=lanczos"
     cmd = (
         f"ffmpeg -y -loglevel error -pattern_type glob -i '{pattern}'"
         f' -vf "{filters}" -r {fps} -fps_mode cfr'
@@ -748,7 +751,7 @@ def video_recipe(
     pattern: str,
     step: int,
     name: str,
-    size: int = 320,
+    size: int | tuple[int, int] = 320,
     fps: int = 25,
     crf: int = 23,
 ) -> Callable[[str | None, bool], None]:
@@ -759,8 +762,8 @@ def video_recipe(
         step: Keep every ``step``-th frame.
         name: Output file path relative to ``docs/source/_static``, without the
             ``.mp4`` suffix.
-        size: Output edge length in pixels; pages whose render is not the default
-            320px square pass their own.
+        size: Output edge length in pixels, or a (width, height) pair for
+            nonsquare previews.
         fps: Playback rate of the video, for scenes rendered at a rate other than 25.
         crf: Quality, for previews whose pixels are noise rather than a picture.
 

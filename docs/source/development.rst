@@ -130,6 +130,7 @@ Sphinx does not run any figure recipe. Every documentation page that has generat
     inv --list                     # figures.quick-start, figures.sections.interpolation, ...
     inv figures.quick-start
     inv figures.sections.interpolation
+    inv figures.sections.blender.thermal
     inv figures.sections.sensors.itof
     inv figures.tutorials.playblast
 
@@ -139,7 +140,9 @@ The compositor and IMU pages draw Tree Clipper exports of node trees, whose node
 
 A page is one dependency graph. Its module lists only the figures the page owns, and each figure names the intermediates it needs through ``requires``. Shared intermediates, such as the rendered and interpolated datasets several quick-start figures read, live in ``_page.INTERMEDIATES`` and are provisioned at most once per invocation. Each node is attempted once. A node whose requirement failed is skipped with one line naming that requirement, so a failed render is reported once at its root instead of failing again for every dependent. Cycles and unknown requirement names are rejected when the task loads, so ``inv --list`` fails instead of a run half-way through.
 
-Figures and intermediates that render need the scene blends in ``cache/`` (``lego.blend`` for the interpolation figures, ``ultramodern.blend`` for the quick start), obtained manually or with `gdown <https://github.com/wkentaro/gdown>`_ using the ``--fuzzy --folder`` command in ``examples/README.md``; without them the blender command fails and the node is reported as skipped.
+Most figures and intermediates that render need the scene blends in ``cache/`` (``lego.blend`` for the interpolation figures, ``ultramodern.blend`` for the quick start), obtained manually or with `gdown <https://github.com/wkentaro/gdown>`_ using the ``--fuzzy --folder`` command in ``examples/README.md``; without them the blender command fails and the node is reported as skipped.
+
+The rolling-ball task instead uses ``assets/blender/rollingball.blend``; see the download link in :doc:`sections/blender/thermal`.
 
 Some tasks use ``ffmpeg`` to encode preview videos, which is not a Python dependency. Install it with your system package manager, or a build from https://ffmpeg.org/download.html.
 
