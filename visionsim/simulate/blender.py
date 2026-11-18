@@ -1003,14 +1003,13 @@ class BlenderService(rpyc.Service):
 
         def _compositor_not_used() -> bool:
             # Check if any group output nodes are directly connected to the "Image" render layer.
-            nodes = collections.deque(n for n in self.tree.nodes if not isinstance(n, bpy.types.NodeGroupOutput))
-
-            # Either there's no group output or it's not connected to anything.
-            if not nodes:
+            group_outputs = [n for n in self.tree.nodes if isinstance(n, bpy.types.NodeGroupOutput)]
+            if not group_outputs:
                 raise RuntimeError("Cannot save compositor outputs, a `Group Output` node was not found.")
-            elif all(not i.links for node in nodes for i in node.inputs):
+            if all(not i.links for node in group_outputs for i in node.inputs):
                 raise RuntimeError("Cannot save compositor outputs, nothing is connected to the `Group Output` node.")
 
+            nodes = collections.deque(n for n in self.tree.nodes if not isinstance(n, bpy.types.NodeGroupOutput))
             while nodes:
                 node = nodes.pop()
 
