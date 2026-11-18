@@ -1002,14 +1002,16 @@ class BlenderService(rpyc.Service):
         """
 
         def _compositor_not_used() -> bool:
-            # Check if any group output nodes are directly connected to the "Image" render layer.
-            group_outputs = [n for n in self.tree.nodes if isinstance(n, bpy.types.NodeGroupOutput)]
-            if not group_outputs:
-                raise RuntimeError("Cannot save compositor outputs, a `Group Output` node was not found.")
-            if all(not i.links for node in group_outputs for i in node.inputs):
-                raise RuntimeError("Cannot save compositor outputs, nothing is connected to the `Group Output` node.")
+            if bpy.app.version >= (5, 0, 0):
+                # Stable 5.0+ API: the active group output node.
+                outputs = [n for n in self.tree.nodes if getattr(n, "is_active_output", False)]
+            else:
+                # Legacy compositor output, removed in 5.0.
+                outputs = [n for n in self.tree.nodes if n.bl_idname == "CompositorNodeComposite"]
+            if not outputs or all(not i.links for node in outputs for i in node.inputs):
+                return True
 
-            nodes = collections.deque(n for n in self.tree.nodes if not isinstance(n, bpy.types.NodeGroupOutput))
+            nodes = collections.deque(outputs)
             while nodes:
                 node = nodes.pop()
 
@@ -1017,7 +1019,7 @@ class BlenderService(rpyc.Service):
                     for link in sock.links:
                         if isinstance(link.from_node, bpy.types.NodeReroute):
                             nodes.appendleft(link.from_node)
-                        elif (
+                        elif isinstance(link.from_node, bpy.types.NodeGroupInput) or (
                             isinstance(link.from_node, bpy.types.CompositorNodeRLayers)
                             and link.from_socket.name == "Image"
                         ):
