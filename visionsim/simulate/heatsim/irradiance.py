@@ -313,7 +313,16 @@ BAKE_IMAGE_OWNER = "visionsim.bake.v1"
 
 
 def is_bake_image(image, base_name: str, name_suffix: str) -> bool:
-    """Recognize a local, explicitly owned output rather than trusting its name."""
+    """Recognize a local, explicitly owned output rather than trusting its name.
+
+    Args:
+        image: Blender image datablock to inspect, or ``None``.
+        base_name (str): Logical bake name recorded on the image.
+        name_suffix (str): Logical bake pass recorded on the image.
+
+    Returns:
+        Whether the image is a local, float, owned bake output for this pass.
+    """
     return bool(
         image is not None
         and image.library is None
@@ -326,15 +335,6 @@ def is_bake_image(image, base_name: str, name_suffix: str) -> bool:
         and image.get(BAKE_IMAGE_OWNER_KEY) == BAKE_IMAGE_OWNER
         and image.get(BAKE_IMAGE_KEY) == f"{base_name}:{name_suffix}"
     )
-
-
-def resolve_bake_image(base_name: str, name_suffix: str, preferred_name: str | None = None):
-    """Read an owned image by its recorded alias or logical key, without editing it."""
-    for name in (preferred_name, f"{base_name}_{name_suffix}"):
-        image = bpy.data.images.get(name) if name else None
-        if is_bake_image(image, base_name, name_suffix):
-            return image
-    return next((image for image in bpy.data.images if is_bake_image(image, base_name, name_suffix)), None)
 
 
 def _ensure_bake_image(base_name: str, name_suffix: str, size: int):

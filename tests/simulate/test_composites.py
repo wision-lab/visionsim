@@ -9,7 +9,13 @@ from visionsim.simulate import blender
 
 
 class RenderLayers:
+    bl_idname = "CompositorNodeRLayers"
     type = "R_LAYERS"
+    inputs = ()
+
+
+class GroupInput:
+    bl_idname = "NodeGroupInput"
     inputs = ()
 
 
@@ -24,9 +30,14 @@ def socket_from(source):
     return SimpleNamespace(links=[SimpleNamespace(from_node=source, from_socket=SimpleNamespace(name="Image"))])
 
 
-def service_with(monkeypatch, nodes):
+def service_with(monkeypatch, nodes, version=(5, 3, 0)):
     monkeypatch.setattr(
-        blender, "bpy", SimpleNamespace(types=SimpleNamespace(NodeReroute=Reroute, CompositorNodeRLayers=RenderLayers))
+        blender,
+        "bpy",
+        SimpleNamespace(
+            app=SimpleNamespace(version=version),
+            types=SimpleNamespace(NodeReroute=Reroute, CompositorNodeRLayers=RenderLayers, NodeGroupInput=GroupInput),
+        ),
     )
     return SimpleNamespace(
         _initialized=True,
@@ -37,13 +48,18 @@ def service_with(monkeypatch, nodes):
     )
 
 
-@pytest.mark.parametrize("output_type", ["COMPOSITE", "GROUP_OUTPUT"])
+@pytest.mark.parametrize("version", [(4, 5, 0), (5, 0, 0), (5, 3, 0)])
+@pytest.mark.parametrize("source_type", [RenderLayers, GroupInput])
 @pytest.mark.parametrize("reroute", [False, True])
-def test_composites_accept_connected_output_without_other_nodes(monkeypatch, output_type, reroute):
-    source = RenderLayers()
+def test_composites_accept_connected_output_without_other_nodes(monkeypatch, version, source_type, reroute):
+    source = source_type()
     upstream = Reroute(source) if reroute else source
-    output = SimpleNamespace(type=output_type, inputs=[socket_from(upstream)], is_active_output=True)
-    service = service_with(monkeypatch, [source, output])
+    output = SimpleNamespace(
+        bl_idname="CompositorNodeComposite" if version < (5, 0, 0) else "NodeGroupOutput",
+        inputs=[socket_from(upstream)],
+        is_active_output=True,
+    )
+    service = service_with(monkeypatch, [source, output], version)
 
     blender.BlenderService.exposed_include_composites(service)
 
@@ -58,16 +74,17 @@ def test_composites_do_not_mistake_other_output_links_for_active_composite(monke
     viewer = SimpleNamespace(type="VIEWER", inputs=[socket_from(source)])
     service = service_with(monkeypatch, [source, active, inactive, viewer])
 
-    with pytest.raises(RuntimeError, match="nothing is connected"):
-        blender.BlenderService.exposed_include_composites(service)
-    service.register_output_type.assert_not_called()
+    blender.BlenderService.exposed_include_composites(service)
+    service.log.warning.assert_called_once()
+    service.register_output_type.assert_called_once()
 
 
-def test_composites_require_actual_output_node(monkeypatch):
+def test_composites_warn_when_output_is_absent(monkeypatch):
     service = service_with(monkeypatch, [RenderLayers()])
 
-    with pytest.raises(RuntimeError, match="no active"):
-        blender.BlenderService.exposed_include_composites(service)
+    blender.BlenderService.exposed_include_composites(service)
+    service.log.warning.assert_called_once()
+    service.register_output_type.assert_called_once()
 
 
 def test_composites_recognize_custom_processing(monkeypatch):

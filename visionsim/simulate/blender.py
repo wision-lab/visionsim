@@ -1011,22 +1011,16 @@ class BlenderService(rpyc.Service):
         """
 
         def _compositor_not_used() -> bool:
-            # Blender 5 uses Group Output; earlier versions use Composite.
-            # Inspect the actual output, not unrelated Viewer/File Output links.
-            nodes = collections.deque(
-                n
-                for n in self.tree.nodes
-                if n.type in {"GROUP_OUTPUT", "COMPOSITE"} and getattr(n, "is_active_output", True)
-            )
+            if bpy.app.version >= (5, 0, 0):
+                # Stable 5.0+ API: the active group output node.
+                outputs = [n for n in self.tree.nodes if getattr(n, "is_active_output", False)]
+            else:
+                # Legacy compositor output, removed in 5.0.
+                outputs = [n for n in self.tree.nodes if n.bl_idname == "CompositorNodeComposite"]
+            if not outputs or all(not i.links for node in outputs for i in node.inputs):
+                return True
 
-            # Either there's no group output or it's not connected to anything.
-            if not nodes:
-                raise RuntimeError(
-                    "Cannot save compositor outputs, no active `Composite` or `Group Output` node was found."
-                )
-            elif all(not i.links for node in nodes for i in node.inputs):
-                raise RuntimeError("Cannot save compositor outputs, nothing is connected to the compositor output node.")
-
+            nodes = collections.deque(outputs)
             while nodes:
                 node = nodes.pop()
 
@@ -1034,7 +1028,7 @@ class BlenderService(rpyc.Service):
                     for link in sock.links:
                         if isinstance(link.from_node, bpy.types.NodeReroute):
                             nodes.appendleft(link.from_node)
-                        elif (
+                        elif isinstance(link.from_node, bpy.types.NodeGroupInput) or (
                             isinstance(link.from_node, bpy.types.CompositorNodeRLayers)
                             and link.from_socket.name == "Image"
                         ):
@@ -2121,7 +2115,9 @@ class BlenderService(rpyc.Service):
             )
 
         if radiance:
-            if assignments is not None:
+            # prepare_thermal already resolved the sidecar for the solve and atlas.
+            # Only callers that skip prepare_thermal still need it here.
+            if assignments is not None and self._thermal_assignment is None:
                 from visionsim.simulate.heatsim.materials import load_assignments
 
                 self._thermal_assignment = load_assignments(Path(str(assignments)))

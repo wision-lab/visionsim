@@ -54,12 +54,22 @@ def pcg_solve(mv, b, Minv, x0=None, tol=1e-6, max_iter=200, rtol=0.0):
     else:
         x = x0.clone()
 
-    threshold = max(float(tol), float(rtol) * float(torch.linalg.vector_norm(b)))
+    # Use a preconditioned relative residual so large-mass rows do not hide errors
+    # in small-mass rows; retain the absolute tolerance as an alternative.
+    residual_threshold = float(tol)
+    preconditioned_threshold = float(rtol) * float(torch.linalg.vector_norm(Minv * b))
     r = b - mv(x)
-    if torch.linalg.vector_norm(r) <= threshold:
+    z = Minv * r
+
+    def converged() -> bool:
+        return bool(
+            torch.linalg.vector_norm(r) <= residual_threshold
+            or (preconditioned_threshold > 0.0 and torch.linalg.vector_norm(z) <= preconditioned_threshold)
+        )
+
+    if converged():
         return x
 
-    z = Minv * r
     p = z.clone()
     rz_old = torch.dot(r.flatten(), z.flatten())
 
@@ -72,19 +82,19 @@ def pcg_solve(mv, b, Minv, x0=None, tol=1e-6, max_iter=200, rtol=0.0):
 
         x = x + alpha * p
         r = r - alpha * Ap
+        z = Minv * r
 
-        if torch.linalg.vector_norm(r) <= threshold:
+        if converged():
             # Recursive residuals can drift on stiff systems. Verify against A
             # before accepting; otherwise restart from the measured residual.
             r = b - mv(x)
-            if torch.linalg.vector_norm(r) <= threshold:
-                return x
             z = Minv * r
+            if converged():
+                return x
             p = z.clone()
             rz_old = torch.dot(r.flatten(), z.flatten())
             continue
 
-        z = Minv * r
         rz_new = torch.dot(r.flatten(), z.flatten())
         beta = rz_new / rz_old
         p = z + beta * p

@@ -261,6 +261,11 @@ def _build_emissivity_source_chain(nodes: Any, links: Any, x0: float, y0: float)
 
 
 def _gray_body_material_name(radiance_scale: float, specular_fraction: float = 0.0, roughness: float = 0.5) -> str:
+    """Return the cache key for a gray-body material configuration.
+
+    Roughness is omitted when ``specular_fraction`` is zero because the glossy
+    lobe carries no energy; the stored property is meaningful only otherwise.
+    """
     name = f"HeatSim_ThermalShader_vs_{radiance_scale:.6g}"
     if specular_fraction == 0.0:
         return name
@@ -286,7 +291,8 @@ def _build_gray_body_material(radiance_scale: float, *, specular_fraction: float
         radiance_scale: Scalar multiplier after σ·T⁴ — tune this to adjust rendered
             radiance brightness relative to physical W/m² magnitudes.
         specular_fraction: Fraction of reflected energy in the glossy lobe, in [0, 1].
-        roughness: Dimensionless Cycles glossy roughness, in [0, 1].
+        roughness: Dimensionless Cycles glossy roughness, in [0, 1]. Ignored when
+            ``specular_fraction`` is zero.
 
     Returns:
         A ``bpy.types.Material`` configured for gray-body thermal rendering.
@@ -628,6 +634,8 @@ def enter_thermal_scene(scene: Any, *, radiance_scale: float, assignment: SceneA
 
         # Record shared mesh data once, before changing it. Geometry modifiers
         # such as bevels stay active; only normal-smoothing modifiers are disabled.
+        # This runs for every radiance frame, so flattening is O(polygons) per
+        # frame; meshes created after this point are not covered by the snapshot.
         for obj in scene.objects:
             if obj.type != "MESH":
                 continue
@@ -686,7 +694,6 @@ def enter_thermal_scene(scene: Any, *, radiance_scale: float, assignment: SceneA
 
         # RGB scene clamps can truncate the larger radiometric values in this pass.
         # Save both clamp settings for restoration after rendering.
-        cy = getattr(scene, "cycles", None)
         if cy is not None:
             saved_bounces = {key: getattr(cy, key) for key in ("max_bounces", "diffuse_bounces", "glossy_bounces")}
             state[_KEY_BOUNCES] = saved_bounces

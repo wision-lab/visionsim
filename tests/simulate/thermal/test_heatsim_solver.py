@@ -306,3 +306,47 @@ def test_zero_pose_steps_initialize_cache_without_advancing(monkeypatch):
     assert advanced.shape == (1, 2)
     assert advanced[0, 1] > initial[1]
     assert len(builds) == 1
+
+
+def test_pcg_solve_preconditioned_residual_bounds_small_mass_rows():
+    """A dominant large-mass row must not hide error in a coupled small-mass row."""
+    diagonal = np.array([1e-4, 1.0, 1e4, 1e8], dtype=np.float64)
+    matrix = np.diag(diagonal)
+    for index in range(3):
+        matrix[index, index + 1] = matrix[index + 1, index] = -1.0
+    rhs = np.array([1e-6, 1.0, 1e4, 1e8], dtype=np.float64)
+    expected = np.linalg.solve(matrix, rhs)
+
+    operator = torch.tensor(matrix, dtype=torch.float32)
+    b = torch.tensor(rhs[:, None], dtype=torch.float32)
+    inverse_diagonal = 1.0 / torch.tensor(diagonal, dtype=torch.float32)[:, None]
+    result = pcg_solve(lambda value: operator @ value, b, inverse_diagonal, tol=1e-6, rtol=1e-6, max_iter=1000)
+
+    np.testing.assert_allclose(result.numpy().ravel(), expected, atol=1e-2, rtol=1e-3)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_pcg_preconditioned_residual_on_positive_definite_mass_system(dtype):
+    """Small-mass rows remain accurate in a system satisfying CG's SPD contract."""
+    diagonal = np.array([1e-4, 1.0, 1e4, 1e8])
+    matrix = np.diag(diagonal)
+    for index in range(3):
+        coupling = -0.1 * np.sqrt(diagonal[index] * diagonal[index + 1])
+        matrix[index, index + 1] = matrix[index + 1, index] = coupling
+    np.linalg.cholesky(matrix)
+    rhs = np.array([1e-6, 1.0, 1e4, 1e8])
+    expected = np.linalg.solve(matrix, rhs)
+    operator = torch.tensor(matrix, dtype=dtype)
+    b = torch.tensor(rhs[:, None], dtype=dtype)
+    inverse_diagonal = 1.0 / torch.tensor(diagonal[:, None], dtype=dtype)
+    try:
+        result = pcg_solve(lambda value: operator @ value, b, inverse_diagonal, rtol=1e-6, max_iter=1000)
+    except ConjugateGradientError:
+        # Reject a result float32 cannot verify; the pose solver retries in float64.
+        assert dtype == torch.float32
+        return
+    np.testing.assert_allclose(result.numpy().ravel(), expected, atol=1e-2, rtol=1e-3)
+    residual = b - operator @ result
+    assert torch.linalg.vector_norm(residual) <= 1e-6 or torch.linalg.vector_norm(
+        inverse_diagonal * residual
+    ) <= 1e-6 * torch.linalg.vector_norm(inverse_diagonal * b)
