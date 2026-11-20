@@ -560,7 +560,8 @@ class HeatsimTestService(BlenderService):
             material.use_nodes = True
             obj.data.materials.append(material)
 
-        bpy.ops.mesh.primitive_grid_add(x_subdivisions=257, y_subdivisions=257, size=2)
+        # Lower resolution than the reference scene keeps the slow 3.6 CI job bounded.
+        bpy.ops.mesh.primitive_grid_add(x_subdivisions=129, y_subdivisions=129, size=2)
         floor = bpy.context.object
         floor.name = "Plane"
         floor.scale = (6.239227, 6.239227, 6.239227)
@@ -578,7 +579,7 @@ class HeatsimTestService(BlenderService):
             cube.rotation_euler.y = angle
             cube.keyframe_insert(data_path="rotation_euler", frame=frame)
 
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=64, ring_count=32, radius=1.0, location=(-5.623373, 0.0, 0.751877))
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=32, ring_count=16, radius=1.0, location=(-5.623373, 0.0, 0.751877))
         sphere = bpy.context.object
         sphere.name = "Sphere"
         sphere.scale = (0.740357, 0.740357, 0.740357)

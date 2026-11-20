@@ -46,14 +46,17 @@ def read_frame(session: dict, frame: int) -> dict:
     return history
 
 
-def _load_trajectory(root: Path, stamp: dict) -> dict:
+def _load_trajectory(root: Path, stamp: dict, *, allow_missing_digest: bool = False) -> dict:
     manifest = json.loads((root / "manifest.json").read_text())
-    if (
-        not isinstance(manifest, dict)
-        or manifest.get("version") != 1
-        or any(manifest.get(k) != v for k, v in stamp.items())
-    ):
+    if not isinstance(manifest, dict) or manifest.get("version") != 1:
         raise ValueError("Transient trajectory does not match this scene and configuration")
+    for key, value in stamp.items():
+        # A recompute=True producer skips fingerprinting; an explicit attachment may
+        # still verify whatever it can, but cannot compare an absent fingerprint.
+        if allow_missing_digest and key == "scene_digest" and "scene_digest" not in manifest:
+            continue
+        if manifest.get(key) != value:
+            raise ValueError("Transient trajectory does not match this scene and configuration")
     preview = manifest.get("preview_range")
     if (
         not isinstance(preview, list)
@@ -197,18 +200,17 @@ def prepare(
         stamp["counts"] = counts
         stamp["atlas_digest"] = plan.digest
         fingerprint_error = None
-        if not config.recompute or trajectory is not None:
-            try:
-                stamp["scene_digest"] = cache.transient_scene_digest(scene, initial)
-            except (OSError, ValueError, RuntimeError) as exc:
-                fingerprint_error = exc
-                logging.getLogger(__name__).warning(
-                    "Transient scene fingerprint unavailable; %s: %s",
-                    "trajectory verification skipped" if trajectory is not None else "automatic reuse disabled",
-                    exc,
-                )
+        try:
+            stamp["scene_digest"] = cache.transient_scene_digest(scene, initial)
+        except (OSError, ValueError, RuntimeError) as exc:
+            fingerprint_error = exc
+            logging.getLogger(__name__).warning(
+                "Transient scene fingerprint unavailable; %s: %s",
+                "trajectory verification skipped" if trajectory is not None else "automatic reuse disabled",
+                exc,
+            )
         if trajectory is not None:
-            return plan, _load_trajectory(Path(trajectory), stamp)
+            return plan, _load_trajectory(Path(trajectory), stamp, allow_missing_digest=True)
         reuse_blocker = None if config.recompute else _reuse_blocker(scene)
         if fingerprint_error is not None:
             reuse_blocker = f"scene fingerprint unavailable: {fingerprint_error}"

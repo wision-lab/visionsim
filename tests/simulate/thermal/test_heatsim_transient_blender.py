@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -13,40 +12,36 @@ import pytest
 
 @pytest.mark.slow
 @pytest.mark.parametrize("case", ["vertex", "finite", "texel", "deform", "lighting"])
-def test_transient_blender(case, tmp_path):
-    # Do not use the suite's executable fixture here: it installs the checkout
-    # editable into Blender's shared Python. The helper controls sys.path itself.
-    executable = os.environ.get("VSIM_BLENDER") or shutil.which("blender")
-    if executable is None:
-        pytest.skip("Blender is unavailable")
+def test_transient_blender(case, executable, tmp_path):
+    from tests.simulate.thermal.heatsim_test_service import call_service
+    from visionsim.simulate.blender import BlenderClient
+
     helper = Path(__file__).with_name("transient_blender_check.py")
-    result = subprocess.run(
-        [
-            executable,
-            "--background",
-            "--factory-startup",
-            "--threads",
-            "2",
-            "--python-exit-code",
-            "1",
-            "--python",
-            str(helper),
-            "--",
-            case,
-            str(tmp_path),
-        ],
-        env={**os.environ, "OMP_NUM_THREADS": "2", "MKL_NUM_THREADS": "2", "OPENBLAS_NUM_THREADS": "2"},
-        capture_output=True,
-        text=True,
-        timeout=600,
-        check=False,
-    )
-    (tmp_path / "blender.log").write_text(result.stdout + result.stderr)
-    assert result.returncode == 0, result.stdout[-6000:] + result.stderr[-6000:]
-    assert "ExponentTransform validation failed" not in result.stdout + result.stderr
-    report = json.loads((tmp_path / "report.json").read_text())
+    with BlenderClient.spawn(executable=executable, timeout=300, service=f"{helper}:TransientCaseService") as client:
+        report = call_service(client, "run", case, str(tmp_path))
+
     assert report["floor_max_rise_K"] > 1e-5
     assert len(report["renders"]) >= 4
+
+    import Imath
+    import numpy as np
+    import OpenEXR
+
+    for modality in ("temperature", "thermal_radiance"):
+        files = sorted((tmp_path / "renders" / modality).rglob("*.exr"))
+        assert len(files) == 2, files
+        rendered = []
+        for filename in files:
+            image = OpenEXR.InputFile(str(filename))
+            try:
+                channel = next(iter(image.header()["channels"]))
+                pixels = np.frombuffer(image.channel(channel, Imath.PixelType(Imath.PixelType.FLOAT)), dtype=np.float32)
+            finally:
+                image.close()
+            assert np.isfinite(pixels).all(), filename
+            assert np.any(pixels > (294 if modality == "temperature" else 0)), filename
+            rendered.append(pixels)
+        assert not np.array_equal(*rendered), f"Rendered {modality} image did not change over time"
 
 
 @pytest.mark.slow
@@ -140,36 +135,24 @@ def test_transient_rpc_workers(render_domain, tmp_path):
 
 @pytest.mark.slow
 @pytest.mark.parametrize(
-    "helper_name", ["transient_cache_check.py", "transient_geometry_check.py", "transient_reuse_guard_check.py"]
+    ("helper_name", "service_name"),
+    [
+        ("transient_cache_check.py", "TransientCacheCheckService"),
+        ("transient_geometry_check.py", "TransientGeometryCheckService"),
+        ("transient_reuse_guard_check.py", "TransientReuseGuardCheckService"),
+    ],
 )
-def test_transient_scene_fingerprint_blender(tmp_path, helper_name):
-    executable = os.environ.get("VSIM_BLENDER") or shutil.which("blender")
-    if executable is None:
-        pytest.skip("Blender is unavailable")
+def test_transient_scene_fingerprint_blender(helper_name, service_name, executable, tmp_path):
+    from tests.simulate.thermal.heatsim_test_service import call_service
+    from visionsim.simulate.blender import BlenderClient
+
     helper = Path(__file__).with_name(helper_name)
-    result = subprocess.run(
-        [
-            executable,
-            "--background",
-            "--factory-startup",
-            "--threads",
-            "2",
-            "--python-exit-code",
-            "1",
-            "--python",
-            str(helper),
-            "--",
-            str(tmp_path),
-        ],
-        env={**os.environ, "OMP_NUM_THREADS": "2", "MKL_NUM_THREADS": "2", "OPENBLAS_NUM_THREADS": "2"},
-        capture_output=True,
-        text=True,
-        timeout=600,
-        check=False,
-    )
-    (tmp_path / "blender.log").write_text(result.stdout + result.stderr)
-    assert result.returncode == 0, result.stdout[-6000:] + result.stderr[-6000:]
-    assert any(marker in result.stdout for marker in ("TRANSIENT_CACHE_VALIDATION", "TRANSIENT_GEOMETRY_VALIDATION"))
+    with BlenderClient.spawn(executable=executable, timeout=300, service=f"{helper}:{service_name}") as client:
+        if service_name == "TransientGeometryCheckService":
+            result = call_service(client, "run")
+        else:
+            result = call_service(client, "run", str(tmp_path))
+    assert result["ok"] is True
 
 
 @pytest.mark.slow
