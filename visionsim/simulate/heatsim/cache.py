@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import tempfile
 import zipfile
 from pathlib import Path
@@ -71,6 +72,7 @@ def cache_key(blend_path: Path, solver_cfg: dict, source_digest: str = "") -> st
     Args:
         blend_path: Path to the source blend file.
         solver_cfg: Solver-relevant config values that affect the result.
+        source_digest: Optional digest of the source scene.
 
     Returns:
         A short hex digest used as the cache subdirectory name.
@@ -87,6 +89,37 @@ def cache_key(blend_path: Path, solver_cfg: dict, source_digest: str = "") -> st
         sort_keys=True,
     )
     return hashlib.sha1(payload.encode()).hexdigest()[:16]
+
+
+def thermal_solve_signature(
+    *,
+    defaults: dict,
+    solver_cfg: dict,
+    assignment: Any | None = None,
+    atlas_plan: Any | None = None,
+    extra: dict | None = None,
+) -> dict:
+    """Normalize the inputs that determine a thermal solve for cache comparison.
+
+    Callers pass only solve-relevant values. Render outputs and cache locations
+    stay out of the signature.
+    """
+    signature = {
+        "defaults": dict(defaults),
+        "solver": dict(solver_cfg),
+        "assignments": None if assignment is None else assignment.digest,
+    }
+    if atlas_plan is not None:
+        signature["atlas"] = {
+            "density": atlas_plan.density,
+            "tile_min": atlas_plan.tile_min,
+            "tile_max": atlas_plan.tile_max,
+            "soft_max": atlas_plan.soft_max,
+            "layout_digest": atlas_plan.digest,
+        }
+    if extra:
+        signature.update(extra)
+    return json.loads(json.dumps(signature, default=str))
 
 
 def file_digest(path: Path) -> str:
@@ -264,7 +297,10 @@ def transient_scene_digest(scene: Any, initial: Any) -> str:
             image = getattr(node, "image", None)
             if image is not None and image.name_full not in images:
                 if image.source not in {"FILE", "GENERATED"}:
-                    raise ValueError("Transient attachment cannot fingerprint animated image inputs")
+                    raise ValueError(
+                        f"Transient reuse cannot fingerprint image source {image.source!r}; "
+                        "use FILE or GENERATED images to enable automatic reuse"
+                    )
                 pixels = np.empty(len(image.pixels), dtype=np.float32)
                 image.pixels.foreach_get(pixels)
                 images[image.name_full] = {
@@ -517,3 +553,28 @@ def read_temperatures(
         # OSError; count it as a cache miss like the other corruption cases.
         reject(str(exc))
         return None
+
+
+def prune_transient_trajectories(cache_root: Path, *, keep: int = 0) -> list[Path]:
+    """Remove completed ``transient-*`` trajectories, keeping the newest ``keep``.
+
+    Only directories with a ``manifest.json`` are removed; an in-progress run has
+    no manifest. This is explicit maintenance, not automatic eviction.
+    """
+    if keep < 0:
+        raise ValueError("keep must be nonnegative")
+    root = Path(cache_root)
+    if not root.is_dir():
+        return []
+    completed = []
+    for path in root.iterdir():
+        if not path.is_dir() or not path.name.startswith("transient-") or not (path / "manifest.json").is_file():
+            continue
+        try:
+            completed.append((path.stat().st_mtime_ns, path))
+        except OSError:
+            continue
+    removed = [path for _, path in sorted(completed, reverse=True)[keep:]]
+    for path in removed:
+        shutil.rmtree(path)
+    return removed

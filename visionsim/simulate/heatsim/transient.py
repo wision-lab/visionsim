@@ -155,12 +155,16 @@ def prepare(
     fps = float(scene.render.fps) / float(scene.render.fps_base)
     if end < start or not math.isfinite(fps) or fps <= 0:
         raise ValueError("Invalid transient frame range or frame rate")
-    cfg = json.loads(json.dumps(vars(config), default=str))
-    cfg.pop("recompute", None)
-    stamp = {"config": cfg, "identity": identity, "frame_start": start, "frame_end": end, "fps": fps}
     original_frame, original_subframe = scene.frame_current, scene.frame_subframe
     base = Path(str(config.cache_root)) if config.cache_root is not None else Path(identity["cache_root"])
     previous_bake_root = scene.get("heatsim_bake_cache_root")
+    plan_cfg = {
+        "render_domain": config.render_domain,
+        "atlas_texel_density": config.atlas_texel_density,
+        "atlas_tile_min": config.atlas_tile_min,
+        "atlas_tile_max": config.atlas_tile_max,
+        "atlas_texel_soft_max": config.atlas_texel_soft_max,
+    }
     plan = None
     try:
         scene["heatsim_bake_cache_root"] = str(base)
@@ -168,19 +172,46 @@ def prepare(
         objects = adapter.gather_meshes(scene)
         if not objects:
             raise ValueError("Transient simulation requires participating meshes")
-        plan = adapter.build_atlas_plan(scene, objects, cfg)
+        plan = adapter.build_atlas_plan(scene, objects, plan_cfg)
         with adapter.use_atlas_geometry(scene, plan):
             initial = adapter._combine(objects, {}, defaults, solver_cfg, assignment, plan)
             topology = {o.name: (len(o.data.vertices), adapter._mesh_triangles(o.data)[0].copy()) for o in objects}
         if initial is None:
             raise ValueError("Transient simulation has no thermal samples")
+        cfg = cache.thermal_solve_signature(
+            defaults=defaults,
+            solver_cfg={key: solver_cfg[key] for key in ("device", "bake_samples", "irradiance_texture_size")},
+            assignment=assignment,
+            atlas_plan=plan,
+            extra={
+                "mode": config.mode,
+                "render_domain": config.render_domain,
+                "substeps_per_frame": config.substeps_per_frame,
+                "laplacian_update_every_steps": config.laplacian_update_every_steps,
+                "irradiance_bake_mode": config.irradiance_bake_mode,
+                "irradiance_bake_every_n_frames": config.irradiance_bake_every_n_frames,
+            },
+        )
+        stamp = {"config": cfg, "identity": identity, "frame_start": start, "frame_end": end, "fps": fps}
         counts = {name: n for name, _, n, _ in initial.layout}
         stamp["counts"] = counts
         stamp["atlas_digest"] = plan.digest
-        stamp["scene_digest"] = cache.transient_scene_digest(scene, initial)
+        fingerprint_error = None
+        if not config.recompute or trajectory is not None:
+            try:
+                stamp["scene_digest"] = cache.transient_scene_digest(scene, initial)
+            except (OSError, ValueError, RuntimeError) as exc:
+                fingerprint_error = exc
+                logging.getLogger(__name__).warning(
+                    "Transient scene fingerprint unavailable; %s: %s",
+                    "trajectory verification skipped" if trajectory is not None else "automatic reuse disabled",
+                    exc,
+                )
         if trajectory is not None:
             return plan, _load_trajectory(Path(trajectory), stamp)
         reuse_blocker = None if config.recompute else _reuse_blocker(scene)
+        if fingerprint_error is not None:
+            reuse_blocker = f"scene fingerprint unavailable: {fingerprint_error}"
         if reuse_blocker is not None:
             logging.getLogger(__name__).warning("Transient cache reuse disabled: %s", reuse_blocker)
         if not config.recompute and reuse_blocker is None:

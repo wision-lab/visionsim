@@ -61,3 +61,25 @@ def test_set_resolution_rejects_tuple_with_width():
 def test_set_resolution_rejects_non_positive_values(kwargs):
     with pytest.raises(ValueError, match="positive"):
         BlenderService.exposed_set_resolution(make_service(), **kwargs)
+
+
+def test_skipped_render_does_not_apply_transient_frame(monkeypatch):
+    """A frame whose outputs already exist must not refresh transient playback state."""
+    applied = []
+    monkeypatch.setattr("visionsim.simulate.blender.bpy", SimpleNamespace(app=SimpleNamespace(version=(5, 0, 0))))
+    service = SimpleNamespace(
+        _initialized=True,
+        _thermal_transient={"root": "unused"},
+        _apply_transient_frame=lambda: applied.append(1),
+        scene=SimpleNamespace(frame_current=1),
+        _outputs={},
+        _warned_no_outputs=True,
+        root_path="unused",
+        _save_metadata=lambda **kwargs: None,
+        exposed_camera_extrinsics=lambda: SimpleNamespace(tolist=list),
+        exposed_camera_info=lambda: None,
+    )
+
+    BlenderService.exposed_render_current_frame(service, allow_skips=True)
+
+    assert applied == []

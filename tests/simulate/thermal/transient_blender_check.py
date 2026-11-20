@@ -152,10 +152,8 @@ class ValidationService(BlenderService):
 def run(case, output):
     torch.set_num_threads(2)
     output.mkdir(parents=True, exist_ok=True)
-    asset = Path("/data/sriram/blender_files/test_ball_rolling.blend")
-    source = asset if case == "asset" else output / "fixture.blend"
-    if case != "asset":
-        generated_scene(case, source)
+    source = output / "fixture.blend"
+    generated_scene(case, source)
     before = hashlib.sha256(source.read_bytes()).hexdigest()
     service = BlenderService()
     service.exposed_initialize(str(source), str(output / "renders"))
@@ -169,23 +167,8 @@ def run(case, output):
     scene.render.resolution_percentage = 100
     scene.render.threads_mode = "FIXED"
     scene.render.threads = 2
-    end = 60 if case == "asset" else 9
-    floor_name = "Plane" if case == "asset" else "Floor"
-    if case == "asset":
-        scene.frame_set(1)
-        for obj in scene.objects:
-            if obj.type == "MESH":
-                obj.heat_simulation_enabled = True
-                props = obj.heat_sim_material
-                props.initial_temperature_K = 295.0
-                props.thermal_diffusivity_mm2_s = 200.0
-                props.emissivity = 0.9
-                props.thermal_role = "FEM_PARTICIPANT"
-        for name in ("Cube", "Sphere"):
-            props = scene.objects[name].heat_sim_material
-            props.initial_temperature_K = 360.0
-            props.dirichlet_temperature_K = 360.0
-            props.thermal_role = "DIRICHLET_SOURCE"
+    end = 9
+    floor_name = "Floor"
     flux_snapshots = []
     bake_uv_snapshots = {}
     original_uv = irradiance.prepare_object_bake_uv
@@ -273,8 +256,7 @@ def run(case, output):
     rise = floor_history[-1] - floor_history[0]
     assert rise.max() > 1e-5, float(rise.max())
     if case != "lighting":
-        hot_names = ("Sphere",) if case == "asset" else ("HotBall",)
-        for name in hot_names:
+        for name in ("HotBall",):
             if case == "finite":
                 assert np.allclose(hot_history[0], 360)
                 assert np.mean(hot_history[-1]) < 359.99, "Finite moving hot body did not cool"

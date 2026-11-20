@@ -12,15 +12,13 @@ import pytest
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("case", ["vertex", "finite", "texel", "deform", "lighting", "asset"])
+@pytest.mark.parametrize("case", ["vertex", "finite", "texel", "deform", "lighting"])
 def test_transient_blender(case, tmp_path):
     # Do not use the suite's executable fixture here: it installs the checkout
     # editable into Blender's shared Python. The helper controls sys.path itself.
     executable = os.environ.get("VSIM_BLENDER") or shutil.which("blender")
     if executable is None:
         pytest.skip("Blender is unavailable")
-    if case == "asset" and not Path("/data/sriram/blender_files/test_ball_rolling.blend").is_file():
-        pytest.skip("Optional rolling-ball asset is unavailable")
     helper = Path(__file__).with_name("transient_blender_check.py")
     result = subprocess.run(
         [
@@ -172,6 +170,30 @@ def test_transient_scene_fingerprint_blender(tmp_path, helper_name):
     (tmp_path / "blender.log").write_text(result.stdout + result.stderr)
     assert result.returncode == 0, result.stdout[-6000:] + result.stderr[-6000:]
     assert any(marker in result.stdout for marker in ("TRANSIENT_CACHE_VALIDATION", "TRANSIENT_GEOMETRY_VALIDATION"))
+
+
+@pytest.mark.slow
+def test_transient_prepares_with_unfingerprintable_image(executable, tmp_path):
+    from tests.simulate.thermal.heatsim_test_service import SERVICE_PATH, call_service
+    from visionsim.simulate.blender import BlenderClient
+
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        result = call_service(client, "prepare_tiled_transient", str(tmp_path))
+    assert result["has_digest"] is False
+
+
+@pytest.mark.slow
+def test_rolling_ball_transient(executable, tmp_path):
+    from tests.simulate.thermal.heatsim_test_service import SERVICE_PATH, call_service
+    from visionsim.simulate.blender import BlenderClient
+
+    with BlenderClient.spawn(executable=executable, timeout=300, service=SERVICE_PATH) as client:
+        report = call_service(client, "transient_rolling_ball", str(tmp_path))
+
+    assert report["stats"]["bakes"] == 1
+    assert report["floor_max_rise_K"] > 1e-5
+    assert report["temperature_renders"] == 2
+    assert report["thermal_radiance_renders"] == 2
 
 
 @pytest.mark.slow

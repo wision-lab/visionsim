@@ -20,7 +20,7 @@ from rich.traceback import install
 
 import visionsim
 
-from . import blender, dataset, emulate, ffmpeg, interpolate, transforms
+from . import blender, dataset, emulate, ffmpeg, interpolate, thermal, transforms
 from ._config_file import bind_config_file
 
 logging.basicConfig(
@@ -35,7 +35,7 @@ install(suppress=[tyro])
 
 
 # Exposed for tests
-_cli_modules = [blender, dataset, emulate, ffmpeg, interpolate, transforms]
+_cli_modules = [blender, dataset, emulate, ffmpeg, interpolate, thermal, transforms]
 
 
 @overload

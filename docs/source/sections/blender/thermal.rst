@@ -233,6 +233,12 @@ runs have ``manifest.json``. This manifest records timing and update counts.
 Render workers share the frame states and maintain separate atlas playback files.
 With ``recompute=False``, a matching complete trajectory is reused; otherwise
 the simulation starts from the beginning. ``recompute=True`` forces a fresh run.
+Completed trajectories are not evicted automatically. Remove them with
+``visionsim thermal.prune-cache <cache-root>``; pass ``--keep N`` to
+retain the newest runs. Run it when no render job is using that cache root.
+TEXEL playback writes per-frame atlas images under the trajectory's playback
+directory; pruning removes those files with the trajectory, while ``--keep``
+retains them.
 The Python service API can explicitly attach a completed run (read-only,
 regardless of ``recompute``)::
 
@@ -246,6 +252,14 @@ physics caches, simulation nodes, drivers, custom frame callbacks and unsupporte
 object types, automatic reuse is disabled: even ``recompute=False`` starts a
 fresh solve. Explicit worker attachment remains available and assumes equivalent
 loaded scenes and baked motion caches.
+
+Automatic reuse requires fingerprintable image sources: ``FILE`` and
+``GENERATED``. Tiled/UDIM, movie and sequence images are solved normally, but
+automatic reuse is disabled for them because their time-varying inputs cannot
+be fingerprinted. Explicit trajectory attachment remains available and assumes
+equivalent loaded scenes. Use ``recompute=True`` to skip the fingerprint attempt
+entirely.
+
 ``blender.heatsim-solve`` also supports transient preparation; its log reports
 the trajectory directory. Use an explicit ``cache-root`` to isolate experiments
 from caches beside a shared input blend file. A saved prepared blend is a frame

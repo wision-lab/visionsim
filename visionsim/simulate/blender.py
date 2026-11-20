@@ -2745,8 +2745,6 @@ class BlenderService(rpyc.Service):
                 Applies to every selected output; the render is skipped only when all of them exist. Defaults to True.
             dry_run (bool, optional): if true, nothing will be rendered at all. Defaults to False.
         """
-        if self._thermal_transient is not None and not dry_run:
-            self._apply_transient_frame()
         folder_index = f"{self.scene.frame_current // ITEMS_PER_SUBFOLDER:04}"
         frame_index = f"{self.scene.frame_current % ITEMS_PER_SUBFOLDER:0{INDEX_PADDING}}"
         paths = {}
@@ -2778,6 +2776,8 @@ class BlenderService(rpyc.Service):
         if not dry_run:  # noqa: SIM102
             # Render frame(s), skip the render iff all files exist and `allow_skips`
             if not allow_skips or any(not Path(self.root_path / p).exists() for p in paths.values()):
+                if self._thermal_transient is not None:
+                    self._apply_transient_frame()
                 # Mute thermal_radiance and snapshot the other nodes' mute states: the main
                 # render must not write an RGB-material radiance file, and the finally below
                 # restores every state across both passes. The "composites" entry holds an

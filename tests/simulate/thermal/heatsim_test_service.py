@@ -475,6 +475,192 @@ class HeatsimTestService(BlenderService):
             "enabled": bool(obj.heat_simulation_enabled),
         }
 
+    def exposed_prepare_tiled_transient(self, root_path: str) -> dict:
+        """Prepare a transient trajectory with a tiled image that disables automatic reuse.
+
+        Returns:
+            dict: trajectory path and whether the manifest carries a scene fingerprint.
+        """
+        import json
+
+        from visionsim.simulate.config import ThermalConfig
+
+        self._register()
+        self._clear()
+        scene = bpy.context.scene
+        scene.frame_start = scene.frame_end = 1
+        bpy.ops.mesh.primitive_plane_add(size=0.1)
+        plane = bpy.context.active_object
+        plane.name = "TiledPlane"
+        plane.heat_simulation_enabled = True
+
+        material = bpy.data.materials.new("Tiled material")
+        material.use_nodes = True
+        texture = material.node_tree.nodes.new("ShaderNodeTexImage")
+        image = bpy.data.images.new("UDIM", 4, 4, alpha=False)
+        image.source = "TILED"
+        texture.image = image
+        material.node_tree.links.new(
+            texture.outputs["Color"], material.node_tree.nodes["Principled BSDF"].inputs["Base Color"]
+        )
+        plane.data.materials.append(material)
+
+        world = scene.world or bpy.data.worlds.new("World")
+        scene.world = world
+        world.use_nodes = True
+        world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0
+
+        root = Path(root_path)
+        root.mkdir(parents=True, exist_ok=True)
+        blend = root / "scene.blend"
+        bpy.ops.wm.save_as_mainfile(filepath=str(blend))
+        self.exposed_initialize(str(blend), str(root / "renders"))
+
+        config = ThermalConfig(
+            mode="TRANSIENT",
+            device="cpu",
+            render_domain="VERTEX",
+            simulation_start_frame=1,
+            simulation_end_frame=1,
+            irradiance_scale=0,
+            bake_samples=1,
+            irradiance_texture_size=32,
+            cache_root=root / "cache",
+        )
+        trajectory = self.exposed_prepare_transient(vars(config), render_outputs=False)
+        manifest = json.loads((Path(trajectory) / "manifest.json").read_text())
+        return {"trajectory": trajectory, "has_digest": "scene_digest" in manifest}
+
+    def exposed_transient_rolling_ball(self, root_path: str) -> dict:
+        """Build the rolling-ball scene and exercise transient preparation and rendering.
+
+        Returns:
+            dict: floor rise, trajectory stats, and rendered EXR counts.
+        """
+        from math import pi
+
+        from visionsim.simulate.config import ThermalConfig
+        from visionsim.simulate.heatsim import cache
+
+        self._register()
+        self._clear()
+        scene = bpy.context.scene
+        scene.frame_start, scene.frame_end = 1, 180
+        scene.render.fps = 60
+        scene.render.resolution_x, scene.render.resolution_y = 96, 64
+        scene.render.resolution_percentage = 100
+        scene.world = scene.world or bpy.data.worlds.new("World")
+        scene.world.use_nodes = True
+        scene.world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0
+
+        def surface(obj, diffusivity):
+            obj.heat_simulation_enabled = True
+            obj.heat_sim_material.thermal_diffusivity_mm2_s = diffusivity
+            material = bpy.data.materials.new(obj.name + " RGB")
+            material.use_nodes = True
+            obj.data.materials.append(material)
+
+        bpy.ops.mesh.primitive_grid_add(x_subdivisions=257, y_subdivisions=257, size=2)
+        floor = bpy.context.object
+        floor.name = "Plane"
+        floor.scale = (6.239227, 6.239227, 6.239227)
+        surface(floor, 97.0)
+
+        bpy.ops.mesh.primitive_cube_add(size=2, location=(-4.394490, 0.0, 0.637175))
+        cube = bpy.context.object
+        cube.name = "Cube"
+        cube.scale = (0.755525, 0.755525, 0.755525)
+        surface(cube, 97.0)
+        for frame, x in ((1, -4.394490), (120, 2.816100), (180, 5.497600)):
+            cube.location.x = x
+            cube.keyframe_insert(data_path="location", frame=frame)
+        for frame, angle in ((1, 0.0), (60, pi), (120, 2 * pi), (180, 3 * pi)):
+            cube.rotation_euler.y = angle
+            cube.keyframe_insert(data_path="rotation_euler", frame=frame)
+
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=64, ring_count=32, radius=1.0, location=(-5.623373, 0.0, 0.751877))
+        sphere = bpy.context.object
+        sphere.name = "Sphere"
+        sphere.scale = (0.740357, 0.740357, 0.740357)
+        surface(sphere, 0.17)
+        for frame, x in ((1, -5.623373), (60, -2.052600), (120, 1.026400), (180, 4.148100)):
+            sphere.location.x = x
+            sphere.keyframe_insert(data_path="location", frame=frame)
+        for frame, angle in ((1, 0.0), (60, pi), (120, 2 * pi), (180, 3 * pi)):
+            sphere.rotation_euler.y = angle
+            sphere.keyframe_insert(data_path="rotation_euler", frame=frame)
+
+        bpy.ops.object.light_add(type="POINT", location=(4.076245, 1.005454, 5.903862))
+        bpy.context.object.name = "Light"
+        bpy.context.object.data.energy = 1000.0
+        bpy.ops.object.light_add(type="SPOT", location=(1.032876, 0.0, 3.054207))
+        spot = bpy.context.object
+        spot.name = "Spot"
+        spot.rotation_euler = (-0.007608, 0.004840, -0.462284)
+        spot.data.energy = 1000.0
+        spot.data.spot_size = 0.948135
+        spot.data.spot_blend = 0.15
+
+        bpy.ops.object.camera_add(location=(7.268605, -5.337647, 4.416655))
+        camera = bpy.context.object
+        camera.name = "Camera"
+        camera.rotation_euler = (1.130327, 6.520441e-06, 0.895202)
+        camera.data.lens = 50.0
+        scene.camera = camera
+
+        root = Path(root_path)
+        root.mkdir(parents=True, exist_ok=True)
+        blend = root / "rolling_ball.blend"
+        bpy.ops.wm.save_as_mainfile(filepath=str(blend))
+        self.exposed_initialize(str(blend), str(root / "renders"))
+        scene = self.scene
+        scene.render.engine = "CYCLES"
+        scene.cycles.device = "CPU"
+        scene.cycles.samples = 4
+        scene.cycles.use_denoising = False
+
+        config = ThermalConfig(
+            mode="TRANSIENT",
+            device="cpu",
+            render_domain="VERTEX",
+            simulation_start_frame=1,
+            simulation_end_frame=60,
+            substeps_per_frame=2,
+            laplacian_update_every_steps=2,
+            irradiance_bake_mode="ONCE",
+            irradiance_scale=1.0,
+            bake_samples=8,
+            irradiance_texture_size=64,
+            cache_root=root / "cache",
+            radiance=True,
+            preview=False,
+        )
+        BlenderService.exposed_configure_thermal(self, vars(config))
+        state = self._thermal_transient
+        if state is None:
+            raise RuntimeError("Transient rolling-ball preparation produced no trajectory")
+
+        trajectory_root = Path(state["root"])
+        histories = [
+            cache.read_temperatures(trajectory_root, f"frame-{frame}", state["manifest"]["counts"])
+            for frame in range(1, 61)
+        ]
+        if any(history is None for history in histories):
+            raise RuntimeError("Transient rolling-ball history is incomplete")
+        floor_history = np.stack([history["Plane"][0] for history in histories])
+        rise = floor_history[-1] - floor_history[0]
+
+        for frame in (60, 1):
+            self.exposed_render_frame(frame, allow_skips=False)
+
+        return {
+            "stats": state["manifest"]["stats"],
+            "floor_max_rise_K": float(rise.max()),
+            "floor_mean_rise_K": float(rise.mean()),
+            "temperature_renders": len(list((root / "renders" / "temperature").rglob("*.exr"))),
+            "thermal_radiance_renders": len(list((root / "renders" / "thermal_radiance").rglob("*.exr"))),
+        }
+
     def exposed_add_subsurf(self, levels: int = 2) -> dict:
         """Add a Subsurf modifier to the active object (changes its evaluated vertex count).
 
