@@ -38,7 +38,7 @@ Each call to :func:`emulate_rgb_from_sequence <visionsim.emulate.rgb.emulate_rgb
 
 .. note::
 
-    Frames are read as sRGB and divided by 255 to get the linear intensity the model expects. Pass normalized float images in the same range, not the raw 8-bit arrays.
+    PNG frames are sRGB. The example divides them by 255 and linearizes them with ``srgb_to_linearrgb``, because the model expects linear intensity; pass linear float images, not the raw 8-bit arrays.
 
 |
 

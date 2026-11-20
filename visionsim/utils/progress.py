@@ -148,24 +148,23 @@ class PoolProgress(Progress):
             raise RuntimeError("Cannot wait on tasks outside of context manager.")
 
         while self.inflight_tasks:
-            while not self.progress_queue.empty():
-                task_update = self.progress_queue.get()
-                task_id = task_update.get("task_id")
-                self._update_task(task_update)
+            task_update = self.progress_queue.get()
+            task_id = task_update.get("task_id")
+            self._update_task(task_update)
 
-                if self.task_finished(task_id):
-                    if self.auto_visible:
-                        self.update(task_id, visible=False)
-                    if task_id in self.inflight_tasks:
-                        self.completed_tasks.add(task_id)
-                        self.inflight_tasks.remove(task_id)
+            if self.task_finished(task_id):
+                if self.auto_visible:
+                    self.update(task_id, visible=False)
+                if task_id in self.inflight_tasks:
+                    self.completed_tasks.add(task_id)
+                    self.inflight_tasks.remove(task_id)
 
-                task_progress = sum(self.task_percentage(t) / 100 for t in self.inflight_tasks)
-                self.update(
-                    self.overall_taskid,
-                    completed=len(self.completed_tasks) + task_progress,
-                    total=len(self.completed_tasks) + len(self.inflight_tasks),
-                )
+            task_progress = sum(self.task_percentage(t) / 100 for t in self.inflight_tasks)
+            self.update(
+                self.overall_taskid,
+                completed=len(self.completed_tasks) + task_progress,
+                total=len(self.completed_tasks) + len(self.inflight_tasks),
+            )
         self.update(
             self.overall_taskid,
             completed=len(self.completed_tasks),

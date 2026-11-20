@@ -221,7 +221,7 @@ def merge(
             not np.allclose(a["transform_matrix"], b["transform_matrix"]) for a, b in mitertools.pairwise(transforms)
         ):
             raise ValueError("Frames in datasets do not share a common pose.")
-        if any(t.get("offset") or t.get("bitpack_dim") for t in transforms):
+        if any(t.get("offset") is not None or t.get("bitpack_dim") is not None for t in transforms):
             raise ValueError("Cannot merge datasets that use additional per-frame attributes.")
         return functools.reduce(lambda a, b: a | b, transforms)
 
@@ -285,7 +285,7 @@ def to_pointcloud(
     # Filter out large depths, this is a render bug in CYCLES
     # See: https://blender.stackexchange.com/questions/325007
     DEPTH_CUTOFF = 10000000000
-    np.random.seed(76986489)
+    rng = np.random.default_rng(76986489)
 
     ds_colors = Dataset.from_path(colors)
     num_frames = len(ds_colors)
@@ -301,7 +301,7 @@ def to_pointcloud(
         for m in [ds_colors, ds_points, ds_depths]
         if m is not None
     ]
-    if any(c1 != c2 for c1, c2 in zip(*canonical_cameras)):
+    if any(frozenset(cams) != frozenset(canonical_cameras[0]) for cams in canonical_cameras[1:]):
         raise ValueError("Cannot generate point cloud from datasets with different cameras.")
 
     if output.suffix != ".ply":
@@ -328,7 +328,7 @@ def to_pointcloud(
                 continue
 
             h, w = points_data.shape[:2]
-            mask = np.random.rand(h, w) < p
+            mask = rng.random((h, w)) < p
             points_sampled = points_data[mask]
             colors_sampled = colors_data[mask]
 

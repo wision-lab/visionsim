@@ -10,7 +10,7 @@ NODES = (
         files=(static("playblast/playblast-preview.mp4"),),
         is_figure=True,
         requires=("playblast",),
-        recipe=video_recipe("playblast/playblast/*.png", 5, "playblast/playblast-preview"),
+        recipe=video_recipe("playblast/playblast/*/*.png", 5, "playblast/playblast-preview"),
     ),
     Node(
         name="playblast-full-preview",

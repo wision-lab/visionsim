@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from visionsim.cli import dataset
 from visionsim.dataset.models import Metadata
@@ -31,6 +32,29 @@ def test_dataset_merge(cube_dataset):
     )
     Metadata.load(ds_path)
     ds_path.unlink()
+
+
+def test_dataset_merge_rejects_zero_offset(tmp_path):
+    metadata = Metadata.from_frames(
+        [
+            {
+                "file_path": "frames.npy",
+                "offset": 0,
+                "transform_matrix": np.eye(4).tolist(),
+                "fl_x": 1.0,
+                "fl_y": 1.0,
+                "cx": 0.5,
+                "cy": 0.5,
+                "w": 1,
+                "h": 1,
+            }
+        ]
+    )
+    input_file = tmp_path / "frames.json"
+    metadata.save(input_file)
+
+    with pytest.raises(ValueError, match="per-frame attributes"):
+        dataset.merge(input_files=[input_file], output_file=tmp_path / "merged.json")
 
 
 def _read_ply_points(path):

@@ -13,7 +13,7 @@ Many types of ground truth annotations can be generated, some during the main re
 - **Diffuse Passes:** Light reflected off surfaces in a non-directional way. For CYCLES, this includes Direct, Indirect, and Color passes. For EEVEE, this includes Light and Color passes. These are saved as 3-channel EXR files.
 - **Specular Passes:** Light reflected off surfaces in a directional/shiny way. For CYCLES, this refers to Glossy Direct, Indirect, and Color passes. For EEVEE, this includes Specular Light and Color passes. These are saved as 3-channel EXR files.
 - **Point Maps:** World-space positions (X, Y, Z) for each pixel. These are saved as 3-channel floating point EXR files.
-- **Camera Intrinsics & Extrinsics:** Camera intrinsic parameters such as focal lengths, camera model, distortion coefficients, principal point, and camera positions (extrinsics) are automatically recorded for every rendered frame and saved in a ``transforms.db`` file.
+- **Camera Intrinsics & Extrinsics:** Camera intrinsic parameters such as focal lengths, principal point, image size and framerate, plus camera positions (extrinsics), are automatically recorded for every rendered frame and saved in a ``transforms.db`` file.
 
 .. admonition:: Note
 

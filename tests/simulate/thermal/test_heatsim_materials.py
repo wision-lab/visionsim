@@ -15,7 +15,7 @@ from visionsim.simulate.heatsim import materials
 
 
 def test_library_is_well_formed():
-    assert len(materials.PRESETS) == 29
+    assert len(materials.PRESETS) == 30
     for key, preset in materials.PRESETS.items():
         assert preset.key == key
         assert preset.alpha_mm2_s > 0.0, key
@@ -49,6 +49,38 @@ def test_presets_are_immutable():
     # global library. Assert the specific error rather than bare Exception.
     with pytest.raises(dataclasses.FrozenInstanceError):
         materials.PRESETS["wood"].alpha_mm2_s = 999.0  # type: ignore[misc]
+
+
+def test_reflection_controls_follow_finish_and_keep_existing_emissivities(tmp_path):
+    sa = materials.load_assignments(
+        _write(
+            tmp_path,
+            {
+                "pane": {"preset": "glass"},
+                "polished": {"preset": "aluminium_polished"},
+                "brushed": {"preset": "stainless_steel", "specular_fraction_ir": 0.9, "roughness_ir": 0.3},
+                "paint": {"preset": "metal_painted"},
+                "tile": {"preset": "tile_glazed"},
+                "fallback": {"roughness_ir": 0.7},
+            },
+        )
+    )
+    assert sa.reflection_for("pane") == (0.95, 0.05)
+    assert sa.reflection_for("polished") == (0.98, 0.08)
+    assert sa.reflection_for("brushed") == (0.9, 0.3)
+    assert sa.reflection_for("paint")[0] == 0.0
+    assert sa.reflection_for("tile") == (0.8, 0.2)
+    assert materials.PRESETS["tile_glazed"].emissivity_ir == 0.92
+    assert sa.reflection_for("fallback") == (0.0, 0.7)
+    assert sa.reflection_for("missing") == (0.0, 0.5)
+    assert materials.PRESETS["glass"].emissivity_ir == 0.84
+
+
+@pytest.mark.parametrize("field", ["specular_fraction_ir", "roughness_ir"])
+@pytest.mark.parametrize("value", [-0.01, 1.01, float("nan"), float("inf"), True, "0.5"])
+def test_invalid_reflection_controls_are_rejected(tmp_path, field, value):
+    with pytest.raises(ValueError, match=field):
+        materials.load_assignments(_write(tmp_path, {"surface": {"preset": "glass", field: value}}))
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +324,45 @@ class _Obj:
         self.name = name
         self.data = mesh
         self.material_slots = [type("S", (), {"material": type("M", (), {"name": n})()})() for n in slot_names]
+
+
+def test_object_specific_material_applies_to_heating_and_reflection_without_changing_shared_users(tmp_path):
+    sa = materials.load_assignments(
+        _write(
+            tmp_path,
+            {
+                "Shared": {"preset": "rubber"},
+                "TV::Shared": {"preset": "glass", "roughness_ir": 0.15},
+            },
+        )
+    )
+    for name, preset, reflection in (("TV", "glass", (0.95, 0.15)), ("Chair", "rubber", (0.0, 0.5))):
+        obj = _Obj(name, _Mesh(3, [_Poly([0, 1, 2], 0, 1.0)]), ["Shared"])
+        entry = sa.entry_for("Shared", object_name=name)
+        assert entry is not None and entry.preset == materials.PRESETS[preset]
+        assert sa.reflection_for("Shared", object_name=name) == reflection
+        for resolved in (
+            materials.resolve_vertex_materials(obj, sa, _FALLBACK),
+            materials.resolve_face_materials(obj, sa, _FALLBACK, np.array([0])),
+        ):
+            assert resolved is not None
+            assert np.allclose(resolved["eps"], materials.PRESETS[preset].emissivity_ir)
+            assert np.allclose(resolved["alpha"], materials.PRESETS[preset].alpha_mm2_s)
+    assert sa.reflection_for("Shared") == (0.0, 0.5)
+
+
+@pytest.mark.parametrize("object_name,valid", [("TV", True), ("Typo", False)])
+def test_assignment_checker_validates_object_scoped_materials(object_name, valid):
+    from scripts.thermal_assign import check_assignments
+
+    inventory = {"materials": [{"name": "Shared", "objects": ["TV", "Chair"]}]}
+    sidecar = {
+        "schema_version": 1,
+        "materials": {"Shared": {"preset": "rubber"}, f"{object_name}::Shared": {"preset": "glass"}},
+    }
+    errors, warnings = check_assignments(inventory, sidecar)
+    assert not warnings
+    assert (not errors) == valid
 
 
 def _stool():

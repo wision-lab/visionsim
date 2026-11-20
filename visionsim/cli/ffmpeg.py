@@ -44,7 +44,7 @@ def animate(
     from visionsim.cli import _run
     from visionsim.dataset import Dataset
 
-    if _run("ffmpeg -version", hide=True).returncode != 0:
+    if _run("ffmpeg -version", hide=True, check=False).returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
 
     if not force and outfile.exists():
@@ -152,7 +152,7 @@ def combine(
     if outfile.is_file() and not force:
         raise RuntimeError("Output file already exists, either specify different output path or `--force` to override.")
 
-    if _run("ffmpeg -version", hide=True).returncode != 0:
+    if _run("ffmpeg -version", hide=True, check=False).returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
 
     matrix = ast.literal_eval(matrix) if isinstance(matrix, str) else matrix
@@ -330,7 +330,7 @@ def count_frames(input_file: Path, /) -> int:
     from visionsim.cli import _log, _run
 
     # See: https://stackoverflow.com/questions/2017843
-    if _run("ffprobe -version", hide=True).returncode != 0:
+    if _run("ffprobe -version", hide=True, check=False).returncode != 0:
         raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = (
@@ -354,7 +354,7 @@ def duration(input_file: Path, /) -> float:
     from visionsim.cli import _log, _run
 
     # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
-    if _run("ffprobe -version", hide=True).returncode != 0:
+    if _run("ffprobe -version", hide=True, check=False).returncode != 0:
         raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = (
@@ -378,7 +378,7 @@ def dimensions(input_file: Path) -> tuple[int, int]:
     from visionsim.cli import _log, _run
 
     # See: http://trac.ffmpeg.org/wiki/FFprobeTips#Duration
-    if _run("ffprobe -version", hide=True).returncode != 0:
+    if _run("ffprobe -version", hide=True, check=False).returncode != 0:
         raise RuntimeError("No ffprobe installation found on path!")
 
     cmd = f"ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 {input_file}"
@@ -397,7 +397,7 @@ def extract(input_file: Path, output_dir: Path, pattern: str = "frames_%06d.png"
     """
     from visionsim.cli import _run
 
-    if _run("ffmpeg -version", hide=True).returncode != 0:
+    if _run("ffmpeg -version", hide=True, check=False).returncode != 0:
         raise RuntimeError("No ffmpeg installation found on path!")
     if not input_file.is_file():
         raise FileNotFoundError(f"File {input_file} not found.")

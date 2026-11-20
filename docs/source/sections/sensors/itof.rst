@@ -128,6 +128,7 @@ To emulate an iToF sensor from a dataset of depth and albedo frames, use the CLI
 
     visionsim emulate.itof \
         --input-dir=path/to/frames \
+        --depth-dir=path/to/depths \
         --output-dir=output/itof \
         --scheme=convSin --n-captures=4 --freq=120e6
 
@@ -135,6 +136,7 @@ Multi-frequency coding needs the per-tap vectors, and the Hilbert schemes expose
 
     visionsim emulate.itof \
         --input-dir=path/to/frames \
+        --depth-dir=path/to/depths \
         --output-dir=output/itof \
         --scheme=multFreqSin --n-captures=5 \
         --freq-vec 1 1 1 2 2 --shifts-vec 0 2.094 4.189 0 1.571

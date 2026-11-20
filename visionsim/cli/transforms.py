@@ -281,8 +281,7 @@ def colorize_segmentations(
     indices = np.arange(num_objects)
 
     if shuffle:
-        np.random.seed(seed=seed)
-        np.random.shuffle(indices)
+        np.random.default_rng(seed).shuffle(indices)
 
     convert = np.vectorize(colorsys.hsv_to_rgb)
     r, g, b = convert(np.arange(num_objects) / num_objects, np.ones(num_objects), np.ones(num_objects))
@@ -293,6 +292,11 @@ def colorize_segmentations(
 
         if idx.shape[-1] != 1 and idx.ndim == 3:
             idx = idx[..., 0]
+
+        if idx.size and (idx.min() < 0 or idx.max() > num_objects):
+            raise ValueError(
+                f"Segmentation labels in {in_file} must be in [0, {num_objects}], got [{idx.min()}, {idx.max()}]."
+            )
 
         img = np.stack([r[idx], g[idx], b[idx]], axis=-1)
         img = (img * 255).astype(np.uint8)

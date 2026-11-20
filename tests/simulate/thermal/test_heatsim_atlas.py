@@ -7,6 +7,17 @@ import pytest
 
 from visionsim.simulate.heatsim import atlas
 
+
+def test_rasterization_rejects_uvs_shared_by_distant_surfaces():
+    verts = np.array(
+        [[0, 0, 0], [1000, 0, 0], [0, 1000, 0], [0, 0, 6000], [1000, 0, 6000], [0, 1000, 6000]], dtype=float
+    )
+    faces = np.array([[0, 1, 2], [3, 4, 5]])
+    uv = np.array([[[0, 0], [1, 0], [0, 1]]] * 2, dtype=float)
+    with pytest.raises(ValueError, match="Thermal UV overlap"):
+        atlas.rasterize_tile(verts, faces, uv, (16, 16), reject_overlaps=True)
+
+
 # ---------------------------------------------------------------------------
 # surface_area_m2
 # ---------------------------------------------------------------------------

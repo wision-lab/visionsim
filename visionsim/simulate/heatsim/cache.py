@@ -12,7 +12,56 @@ from typing import Any
 import numpy as np
 
 CACHE_SCHEMA_VERSION = 2
+# Bump when bake/solver semantics change, even if the archive layout is unchanged.
+# Revision 15 counts distinct surface positions for AUTO sample selection.
+BAKE_PIPELINE_VERSION = 15
 _log = logging.getLogger("rich")
+
+
+def read_bake_uv(path: Path, signature: str, loop_count: int) -> np.ndarray | None:
+    """Read one validated layout for this geometry; reject damaged cache entries."""
+    if not path.exists():
+        return None
+    try:
+        with np.load(path, allow_pickle=False) as data:
+            uv = data["uv"]
+            if (
+                str(data["signature"].item()) != signature
+                or uv.shape != (loop_count, 2)
+                or uv.dtype != np.float32
+                or not np.isfinite(uv).all()
+                or np.any(uv < -1e-6)
+                or np.any(uv > 1 + 1e-6)
+            ):
+                raise ValueError("signature or UV coordinates do not match")
+            return uv.reshape(-1)
+    except (OSError, ValueError, KeyError, TypeError, EOFError, zipfile.BadZipFile) as exc:
+        raise ValueError(f"Invalid thermal UV cache {path}: {exc}") from exc
+
+
+def publish_bake_uv(path: Path, signature: str, uv: np.ndarray) -> np.ndarray:
+    """Publish a complete layout once; every competing writer uses the winner.
+
+    Blender unwrapping can vary slightly between processes. Replacing an existing
+    layout would change the sample addresses after another worker had solved them.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=path.parent, suffix=".npz", delete=False) as temp:
+        temp_path = Path(temp.name)
+    try:
+        coordinates = np.asarray(uv, dtype=np.float32).reshape(-1, 2)
+        np.savez(temp_path, signature=np.asarray(signature), uv=coordinates)
+        read_bake_uv(temp_path, signature, len(coordinates))
+        try:
+            os.link(temp_path, path)
+        except FileExistsError:
+            pass
+        result = read_bake_uv(path, signature, len(coordinates))
+        if result is None:
+            raise RuntimeError(f"Thermal UV cache disappeared during publication: {path}")
+        return result
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 def cache_key(blend_path: Path, solver_cfg: dict, source_digest: str = "") -> str:
@@ -27,7 +76,13 @@ def cache_key(blend_path: Path, solver_cfg: dict, source_digest: str = "") -> st
     """
     blend_path = Path(blend_path)
     payload = json.dumps(
-        {"schema": CACHE_SCHEMA_VERSION, "p": str(blend_path), "source": source_digest, "c": solver_cfg},
+        {
+            "schema": CACHE_SCHEMA_VERSION,
+            "pipeline": BAKE_PIPELINE_VERSION,
+            "p": str(blend_path),
+            "source": source_digest,
+            "c": solver_cfg,
+        },
         sort_keys=True,
     )
     return hashlib.sha1(payload.encode()).hexdigest()[:16]
@@ -81,6 +136,8 @@ def write_temperatures(cache_root: Path, key: str, per_object: dict[str, np.ndar
     Args:
         cache_root: Root directory for thermal caches.
         key: Cache key from :func:`cache_key`.
+        expected_counts (dict[str, int] | None, optional): Expected sample count per object; a mismatch
+            invalidates the cache. Defaults to None.
         per_object: Mapping of object name to a ``(timesteps, vertices)`` array.
         meta: JSON-serializable metadata stored alongside the arrays.
 
@@ -93,6 +150,7 @@ def write_temperatures(cache_root: Path, key: str, per_object: dict[str, np.ndar
     meta = {
         **meta,
         "schema": CACHE_SCHEMA_VERSION,
+        "pipeline": BAKE_PIPELINE_VERSION,
         "objects": sorted(per_object),
         "timesteps": next(iter(per_object.values())).shape[0] if per_object else 0,
     }
@@ -118,6 +176,8 @@ def read_temperatures(
     Args:
         cache_root: Root directory for thermal caches.
         key: Cache key from :func:`cache_key`.
+        expected_counts (dict[str, int] | None, optional): Expected sample count per object; a mismatch
+            invalidates the cache. Defaults to None.
 
     Returns:
         Mapping of object name to its history array, or ``None`` if absent.
@@ -134,6 +194,9 @@ def read_temperatures(
             meta = json.loads(data["__meta__"].tobytes())
             if meta["schema"] != CACHE_SCHEMA_VERSION:
                 reject("schema mismatch")
+                return None
+            if meta.get("pipeline") != BAKE_PIPELINE_VERSION:
+                reject("bake pipeline revision mismatch")
                 return None
             result = {k: data[k] for k in data.files if k != "__meta__"}
             if set(result) != set(meta["objects"]):

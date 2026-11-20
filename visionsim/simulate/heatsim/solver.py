@@ -39,7 +39,7 @@ def sparse_diag(A):
 
 
 @torch.no_grad()
-def pcg_solve(mv, b, Minv, x0=None, tol=1e-6, max_iter=200):
+def pcg_solve(mv, b, Minv, x0=None, tol=1e-6, max_iter=200, rtol=0.0):
     """
     Jacobi (diagonal) preconditioned Conjugate Gradient for SPD systems A x = b,
     where mv(x) computes A @ x and Minv is the (N,1) inverse-diagonal preconditioner.
@@ -50,11 +50,22 @@ def pcg_solve(mv, b, Minv, x0=None, tol=1e-6, max_iter=200):
     else:
         x = x0.clone()
 
+    # Also bound the preconditioned residual: a global residual norm is dominated by
+    # large-mass rows and can accept a badly wrong small-mass row.
+    residual_threshold = float(tol)
+    preconditioned_threshold = float(rtol) * float(torch.linalg.vector_norm(Minv * b))
     r = b - mv(x)
-    if torch.dot(r.flatten(), r.flatten()).sqrt() < tol:
+    z = Minv * r
+
+    def converged() -> bool:
+        return bool(
+            torch.linalg.vector_norm(r) <= residual_threshold
+            or (preconditioned_threshold > 0.0 and torch.linalg.vector_norm(z) <= preconditioned_threshold)
+        )
+
+    if converged():
         return x
 
-    z = Minv * r
     p = z.clone()
     rz_old = torch.dot(r.flatten(), z.flatten())
 
@@ -67,11 +78,11 @@ def pcg_solve(mv, b, Minv, x0=None, tol=1e-6, max_iter=200):
 
         x = x + alpha * p
         r = r - alpha * Ap
+        z = Minv * r
 
-        if torch.dot(r.flatten(), r.flatten()).sqrt() < tol:
+        if converged():
             return x
 
-        z = Minv * r
         rz_new = torch.dot(r.flatten(), z.flatten())
         beta = rz_new / rz_old
         p = z + beta * p
@@ -147,9 +158,11 @@ class HeatSimFEM:
         """
         reg_value = 1e-8 if self.sim_params.add_tikhonov_reg else 0.0
 
-        # Initial condition
-        u_prev = torch.from_numpy(u0_np.reshape(-1).astype(np.float32)).to(self.device)
-        u_prev = u_prev.unsqueeze(1)  # (N,1)
+        # Keep the ambient offset out of sparse products. Full Kelvin values
+        # bury small heating increments in float32 cancellation on dense meshes.
+        ambient = AMBIENT_TEMPERATURE_K
+        theta_prev = torch.from_numpy((u0_np.reshape(-1) - ambient).astype(np.float32)).to(self.device)
+        theta_prev = theta_prev.unsqueeze(1)  # (N,1)
 
         # ------------------------------------------------------------------
         # Build constants + (optionally) time-varying lighting source terms
@@ -246,7 +259,7 @@ class HeatSimFEM:
             return out
 
         # Run simulation
-        u0_cpu = u_prev.detach().cpu().numpy().astype(np.float64).reshape(-1)
+        u0_cpu = theta_prev.detach().cpu().numpy().astype(np.float64).reshape(-1) + ambient
         us = []
         if not store_only_final:
             us.append(u0_cpu)
@@ -259,9 +272,6 @@ class HeatSimFEM:
         converged = False
         max_dT = float("inf")
         nonmonotonic_warned = False
-
-        # Constant RHS across the time loop (no time-varying lighting).
-        B_step = B_rad_conv_const + B_light_base
 
         # ------------------------------------------------------------------
         # Jacobi (diagonal) preconditioner for the constant operator A.
@@ -285,30 +295,40 @@ class HeatSimFEM:
         Minv = (1.0 / torch.clamp(diagA, min=1e-12)).unsqueeze(1)
 
         for step in range(num_steps):
-            # b = M @ u_prev + B_step
-            b = torch.sparse.mm(M_t, u_prev) + B_step
-
-            # Use previous solution as initial guess for faster convergence.
-            u_next = pcg_solve(mv, b, Minv, x0=u_prev, tol=1e-5, max_iter=200)
-            if not bool(torch.isfinite(u_next).all()):
+            # A dtheta = Q - K theta - R theta. Cancel M theta
+            # analytically and use L 1 = 0, instead of subtracting two large
+            # absolute-temperature right-hand sides. Radiation/convection are
+            # linearized around the same ambient, so their constant terms cancel.
+            diffusion = torch.sparse.mm(L_t, theta_prev)
+            diffusion = diffusion * (float(self.gen_params.K) if alpha_np is None else 1.0)
+            rhs = B_light_base + dt * diffusion
+            if vec_rad_A is not None:
+                rhs = rhs - torch.sparse.mm(M_boundary_t, vec_rad_A.unsqueeze(1) * theta_prev)
+            if vec_conv_A is not None:
+                rhs = rhs - torch.sparse.mm(M_boundary_t, vec_conv_A.unsqueeze(1) * theta_prev)
+            if reg_value > 0.0:
+                rhs = rhs - reg_value * (theta_prev + ambient)
+            increment = pcg_solve(mv, rhs, Minv, tol=1e-6, rtol=1e-6, max_iter=1000)
+            theta_next = theta_prev + increment
+            if not bool(torch.isfinite(theta_next).all()):
                 raise RuntimeError(f"Thermal solve produced non-finite temperatures at step {step + 1}")
 
-            max_dT = float((u_next - u_prev).abs().max().item())
+            max_dT = float(increment.abs().max().item())
             # Discrete approximation to ||dT/dt||_inf in K/s. dt-invariant.
             rate_K_per_s = max_dT / dt if dt > 0.0 else float("inf")
             if step < 3 or (step + 1) % PRINT_EVERY == 0:
                 _log.debug(
                     "FEM step %d: u range [%.4f, %.4f] max_dT=%.6f K  rate=%.6f K/s",
                     step,
-                    u_next.min().item(),
-                    u_next.max().item(),
+                    theta_next.min().item() + ambient,
+                    theta_next.max().item() + ambient,
                     max_dT,
                     rate_K_per_s,
                 )
 
             if not store_only_final:
-                us.append(u_next.detach().cpu().numpy().astype(np.float64).reshape(-1))
-            u_prev = u_next
+                us.append(theta_next.detach().cpu().numpy().astype(np.float64).reshape(-1) + ambient)
+            theta_prev = theta_next
 
             if steady_state and step >= WARMUP_STEPS:
                 recent_changes.append(rate_K_per_s)
@@ -358,7 +378,7 @@ class HeatSimFEM:
             )
 
         if store_only_final:
-            final_cpu = u_prev.detach().cpu().numpy().astype(np.float64).reshape(-1)
+            final_cpu = theta_prev.detach().cpu().numpy().astype(np.float64).reshape(-1) + ambient
             return np.stack([final_cpu], axis=0)  # (1, N)
         return np.stack(us, axis=0)  # (num_steps_taken+1, N)
 

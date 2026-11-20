@@ -1,0 +1,554 @@
+/* Colour comes only from the renders; the mark is the sole accent. */
+
+@font-face { font-family: "Hanken"; src: url("fonts/hanken-grotesk-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap }
+@font-face { font-family: "Hanken"; src: url("fonts/hanken-grotesk-latin-500-normal.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap }
+@font-face { font-family: "Hanken"; src: url("fonts/hanken-grotesk-latin-700-normal.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap }
+@font-face { font-family: "Spline"; src: url("fonts/spline-sans-mono-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap }
+:root {
+  --bg:      #0b0c0d;
+  --bg-2:    #101214;
+  --ink:     #f3f3f0;
+  --ink-2:   #a6a9a7;
+  --ink-3:   #767b79;
+  --line:    rgba(243,243,240,.13);
+  --line-2:  rgba(243,243,240,.24);
+  --frame:   #000;
+  --accent:  #c02d0c;   /* the mark only — nothing else on the page borrows it */
+
+  --f-text:  "Hanken", "Helvetica Neue", Arial, sans-serif;
+  --f-mono:  "Spline", ui-monospace, "SFMono-Regular", monospace;
+
+  --pad:     clamp(1.15rem, 3.4vw, 3rem);
+  --wrap:    1280px;
+  --ease:    cubic-bezier(.16,1,.3,1);
+}
+
+* { box-sizing: border-box }
+html { -webkit-text-size-adjust: 100% }
+html, body { margin: 0; padding: 0 }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--f-text); font-size: 16px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--ink); color: var(--bg) }
+a { color: inherit }
+img, video { display: block; max-width: 100% }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px }
+
+.skip {
+  position: fixed; left: 12px; top: -60px; z-index: 100;
+  background: var(--ink); color: var(--bg); padding: .7rem 1rem; text-decoration: none;
+  font-size: .85rem; transition: top .2s var(--ease);
+}
+.skip:focus { top: 12px }
+
+.nav {
+  position: fixed; inset: 0 0 auto 0; z-index: 60;
+  display: flex; align-items: center; gap: 1.6rem;
+  height: 62px; padding: 0 var(--pad);
+  background: linear-gradient(to bottom, rgba(11,12,13,.92), rgba(11,12,13,.55) 62%, rgba(11,12,13,0));
+  transition: background .3s var(--ease), border-color .3s var(--ease);
+  border-bottom: 1px solid var(--line);
+}
+.nav.is-stuck { background: rgba(11,12,13,.94) }
+.brand { display: flex; align-items: center; gap: .6rem; text-decoration: none; font-weight: 700; letter-spacing: -.014em; font-size: 1.22rem }
+.brand em { font-style: normal; color: var(--ink-2); font-weight: 400 }
+.brand svg { display: block; width: 27px; height: 27px }
+.nav__links { margin-left: auto; display: flex; align-items: center; gap: 1.6rem; font-size: .86rem; color: var(--ink-2) }
+.nav__links a { text-decoration: none; padding: .2rem 0; border-bottom: 1px solid transparent }
+.nav__links a:hover { color: var(--ink); border-bottom-color: var(--line-2) }
+.nav__links a.nav__docs { color: var(--ink); border: 1px solid var(--line-2); border-radius: 2px; padding: .42rem .8rem }
+.nav__links a.nav__docs:hover { background: var(--ink); color: var(--bg); border-color: var(--ink) }
+
+.hero { position: relative; height: 620vh }
+
+.hero__stage {
+  position: sticky; top: 0; height: 100vh; height: 100svh;
+  /* the copy and the stack are one centred group with a fixed, tight gap; the
+     sensor list is a margin element, so the spare width lands outside the pair
+     instead of in the middle of the composition. sticky is already a positioned
+     ancestor, so the list anchors here. */
+  display: flex; align-items: center; justify-content: center;
+  width: 100%;
+  padding: 0 clamp(2rem, 4.2vw, 4.5rem);
+}
+
+.hero__copy h1 {
+  margin: 0; font-size: clamp(2.1rem, 3.9vw, 3.6rem); line-height: 1.04;
+  letter-spacing: -.033em; font-weight: 500; max-width: 20ch; text-wrap: balance;
+}
+.hero__lede { margin: clamp(.9rem, 2vh, 1.4rem) 0 0; color: var(--ink-2); font-size: clamp(.98rem, 1.1vw, 1.08rem); max-width: 46ch }
+
+.readout {
+  display: block; margin: clamp(1.3rem, 3.4vh, 2.2rem) 0 0;
+  font-family: var(--f-mono); font-size: .7rem; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--ink-3); line-height: 1.5;
+  /* this line rewrites itself seven times as you scroll. Reserve its box so a
+     longer sensor name can neither widen the copy nor move the headline. */
+  contain: inline-size;
+  min-height: 4.15rem;
+}
+.readout b {
+  display: block; color: var(--ink); font-weight: 500; font-size: 1.02rem;
+  letter-spacing: -.006em; text-transform: none; font-family: var(--f-text);
+  margin: .28rem 0 .22rem;
+}
+.readout__spec { display: block }
+
+.deck {
+  --n: 7; --du: 60; --persp: 2200; --turn: -20deg; --tilt: 12deg;
+  /* the walk is a state machine: scroll picks a stop, JS writes these, and the
+     transitions below play the move */
+  --up: 0;      /* the stack tilts open after the first stop */
+  --e: var(--up);
+  --s: var(--up);
+  position: relative;
+  /* the fan is wider than its box, so the box is capped by the viewport height
+     and the group decides the rest */
+  width: var(--card); min-width: 180px; aspect-ratio: 1 / 1;
+  perspective: 2200px; perspective-origin: 50% 40%;
+}
+.deck__stack {
+  transition: transform .65s var(--ease);
+  position: absolute; inset: 0;
+  transform-style: preserve-3d;
+  transform: rotateX(calc(var(--s) * var(--tilt)))
+             rotateY(calc(var(--s) * var(--turn)))
+             translateZ(calc(var(--e) * -50px));
+}
+.deck__layer {
+  position: absolute; inset: 0; margin: 0;
+  transform-style: preserve-3d;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #000;
+}
+.deck__layer {
+  --pr: 0;   /* JS sets 0 or 1 per stop; the transition does the fade */
+  /* depth is written per plate by JS: the pile recedes behind the reading
+     that is on screen, so the front plate never drifts as the walk advances */
+  /* the pile keeps its last five readings legible; older ones recede into it */
+  opacity: calc(var(--pr) * var(--dim, 1));
+  /* every plate keeps its size: the scale cancels the perspective shrink that
+     its own depth would otherwise cause */
+  transform: translateZ(calc(var(--zu) * 1px)) scale(calc(1 - var(--zu) / var(--persp)));
+  /* the walk is a state machine: JS sets the target, the browser does the move */
+  transition: opacity .5s var(--ease), transform .65s var(--ease);
+  box-shadow: 0 0 0 1px rgba(243,243,240, calc(var(--e) * .18)),
+              0 30px 60px -30px rgba(0,0,0, calc(.45 + var(--e) * .35));
+}
+.deck__layer video {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; border-radius: inherit;
+}
+/* the poster is a layer under the clip, not the video's own attribute: an
+   attribute is dropped the moment play() is called, which is the black flash */
+.deck__poster {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; border-radius: inherit; pointer-events: none;
+  transition: opacity .16s linear;
+}
+.deck__layer.is-live .deck__poster { opacity: 0 }
+
+.hero__group {
+  /* the block is as wide as its content; the reading sets the size, and the gap
+     is derived from it so the fan never runs into the copy */
+  --card: min(66vh, 28vw);
+  display: flex; align-items: center; justify-content: center;
+  gap: calc(var(--card) * .22 + 2.2rem);
+  width: max-content; max-width: min(94vw, 150vh); margin: 0 auto;
+}
+.hero__stack { flex: 0 0 auto; display: flex; justify-content: center }
+.hero__copy { flex: 0 1 auto; min-width: 0; max-width: 36rem }
+.rail { flex: 0 0 auto; align-self: center }
+
+/* rail — the sensor list at the page edge */
+.rail {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: .1rem;
+}
+.rail li { list-style: none; display: block }
+.rail button {
+  display: flex; align-items: center; gap: .6rem; background: none; border: 0; padding: .3rem 0;
+  font: inherit; font-family: var(--f-mono); font-size: .68rem; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ink-3); cursor: pointer;
+  transition: color .2s var(--ease);
+}
+.rail button::before {
+  content: ""; width: 34px; height: 1px; background: currentColor; opacity: .55;
+  transform: scaleX(.53); transform-origin: left center;
+  transition: transform .3s var(--ease), opacity .3s var(--ease);
+}
+.rail button:hover { color: var(--ink-2) }
+.rail button[aria-current="true"] { color: var(--ink) }
+.rail button[aria-current="true"]::before { transform: none; opacity: 1 }
+.rail .rail__name { opacity: 0; transition: opacity .25s var(--ease) }
+.rail button:hover .rail__name,
+.rail button[aria-current="true"] .rail__name { opacity: 1 }
+
+.sec { padding: clamp(4rem, 9vh, 7rem) var(--pad); border-top: 1px solid var(--line) }
+.wrap { max-width: var(--wrap); margin: 0 auto }
+.sec__head {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(2rem, 6vw, 6rem); align-items: end;
+}
+h2 {
+  margin: 0; font-size: clamp(1.5rem, 2.5vw, 2.25rem); line-height: 1.14;
+  letter-spacing: -.024em; font-weight: 500; max-width: 24ch;
+}
+.sec__head p { margin: 0 0 .15em; color: var(--ink-2) }
+.layers-grid {
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0;
+  background: var(--bg); border-top: 1px solid var(--line); border-left: 1px solid var(--line);
+  margin-top: clamp(2rem, 5vh, 3.4rem);
+}
+.layers-grid figure {
+  margin: 0; background: var(--bg); position: relative;
+  border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+.clip { position: relative; overflow: hidden; background: var(--frame) }
+/* absolutely placed: a percentage height against an aspect-ratio box
+   collapses to zero in some WebKit builds */
+.clip > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover }
+/* the poster is a plain image underneath, so a clip that is not decoding
+   shows the frame instead of a black square. */
+
+.clip__poster {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; pointer-events: none;
+  transition: opacity .16s linear;
+}
+.clip.is-live .clip__poster { opacity: 0 }
+.layers-grid .clip { aspect-ratio: 1; background: #0e0f10 }
+.layers-grid figcaption { display: block; padding: .6rem .7rem .85rem; font-size: .8rem; color: var(--ink-2) }
+.layers-grid figcaption em { display: block; margin-top: .15rem; font-style: normal; font-family: var(--f-mono); font-size: .6rem; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3) }
+
+/* dataset */
+.dataset { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: clamp(1.6rem, 5vw, 4.5rem); align-items: center; margin-top: clamp(2rem, 5vh, 3.4rem) }
+.dataset .clip { aspect-ratio: 1; border: 1px solid var(--line); background: #000 }
+.dataset__lede { color: var(--ink-2); margin: 1rem 0 0 }
+.dataset__soon { display: block; margin-top: .55rem }
+
+
+.dataset__link { color: var(--ink); border-bottom: 1px solid var(--line-2); text-decoration: none }
+.dataset ul { list-style: none; margin: 1.4rem 0 0; padding: 0; display: grid; gap: .1rem }
+.dataset li a {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+  padding: .8rem 0; border-bottom: 1px solid var(--line); text-decoration: none; font-size: .95rem;
+}
+.dataset li a em { font-style: normal; font-family: var(--f-mono); font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3) }
+.dataset li a:hover { color: var(--ink); border-bottom-color: var(--line-2) }
+/* a university name is one unit: breaks happen at the separators only */
+.nb { white-space: nowrap }
+
+.foot__note { margin: .9rem 0 0; max-width: 34ch }
+.foot__licence { margin: .55rem 0 0 }
+
+
+/* examples: a hairline grid of linked cards */
+.cards {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(1rem, 2vw, 1.6rem);
+  margin-top: clamp(.9rem, 2vh, 1.4rem);
+}
+.card {
+  display: block; text-decoration: none; color: inherit;
+  /* the four clips alternate columns, so they read as a zigzag through the grid */
+  order: var(--order, 0);
+  border: 1px solid var(--line); border-radius: 2px; overflow: hidden;
+  transition: border-color .25s var(--ease), background .25s var(--ease);
+}
+.card:hover { background: rgba(243,243,240,.035); border-color: var(--line-2) }
+.card__media {
+  display: block; position: relative; aspect-ratio: 16 / 10;
+  overflow: hidden; background: var(--frame);
+}
+.card__media img, .card__media video {
+  display: block; width: 100%; height: 100%; object-fit: cover;
+  transition: transform .5s var(--ease), opacity .3s var(--ease);
+}
+/* same rule as .clip: the frame rides over the video and only steps aside once
+   frames are actually arriving, so the first paint is never a black square */
+.card__media .card__poster {
+  position: absolute; inset: 0;
+  transition: transform .5s var(--ease), opacity .16s linear;
+}
+.card:hover .card__media video,
+.card:hover .card__media img:not(.card__poster) { transform: scale(1.03); opacity: .9 }
+.card__media.is-live .card__poster { opacity: 0 }
+.card__body { display: block; padding: .85rem .95rem 1.05rem }
+.card__name { display: block; font-size: .95rem; color: var(--ink) }
+.card__note {
+  display: block; margin-top: .2rem; font-family: var(--f-mono); font-size: .56rem;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);
+}
+/* the grid ends on a way out, not on a dead edge */
+.cards__more { margin: clamp(1.2rem, 3vh, 1.8rem) 0 0; font-size: .9rem }
+.cards__more a {
+  color: var(--ink-2); text-decoration: none; border-bottom: 1px solid var(--line-2);
+  padding-bottom: .1rem; transition: color .2s var(--ease), border-color .2s var(--ease);
+}
+.cards__more a:hover { color: var(--ink); border-bottom-color: var(--ink-2) }
+
+@media (max-width: 1180px) { .cards { grid-template-columns: repeat(3, minmax(0, 1fr)) } }
+@media (max-width: 820px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
+/* two columns all the way down: a single column made the section twice as
+   tall as it needed to be */
+@media (max-width: 520px) {
+  .cards { gap: .7rem }
+  .card__body { padding: .6rem .65rem .75rem }
+  .card__name { font-size: .85rem }
+  .card__note { font-size: .5rem; letter-spacing: .04em }
+}
+
+/* footer */
+.foot { padding: clamp(3rem, 7vh, 5rem) var(--pad) 2.4rem; border-top: 1px solid var(--line) }
+/* the link columns sit right of centre: further out than the brand's own
+   width, but not pinned to the edge, which left a void down the middle */
+.foot__inner {
+  max-width: var(--wrap); margin: 0 auto; display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
+  gap: clamp(2rem, 5vw, 4.5rem);
+}
+/* extra air between the two link columns, without moving Docs off its mark */
+.foot__inner > div:nth-child(3) { padding-left: clamp(1rem, 3vw, 2.6rem) }
+.foot h2 { font-size: 1.05rem; letter-spacing: -.01em; margin-bottom: .6rem }
+.foot p, .foot a { color: var(--ink-2); font-size: .88rem }
+.foot ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem }
+.foot a { text-decoration: none; border-bottom: 1px solid transparent }
+.foot a:hover { color: var(--ink); border-bottom-color: var(--line-2) }
+.foot__legal {
+  max-width: var(--wrap); margin: 2.6rem auto 0; padding-top: 1.2rem; border-top: 1px solid var(--line);
+  display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  font-family: var(--f-mono); font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------ readings --
+   copy beside the plate, crops in a column next to it */
+.readings { max-width: 1240px; margin: clamp(2rem, 5vh, 3.4rem) auto 0; border-top: 1px solid var(--line) }
+.reading {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(1.4rem, 4vw, 3rem); align-items: start;
+  padding: clamp(2rem, 5vh, 3.2rem) 0; border-bottom: 1px solid var(--line);
+}
+.reading:nth-of-type(even) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) }
+.reading:nth-of-type(even) .reading__copy { order: 2 }
+.reading:nth-of-type(even) .reading__media { order: 1 }
+
+.reading__copy h3 {
+  text-wrap: balance;
+  margin: 0 0 .8rem; font-size: clamp(1.15rem, 1.5vw, 1.4rem);
+  font-weight: 500; letter-spacing: -.015em; line-height: 1.25;
+}
+.reading__copy p { text-wrap: pretty; margin: 0; color: var(--ink-2); font-size: 1rem; line-height: 1.62; max-width: 66ch }
+
+.reading__media { display: flex; gap: .8rem; align-items: flex-start }
+.plate { position: relative; flex: 1 1 auto; margin: 0; min-width: 0 }
+.plate img, .plate .clip { display: block; width: 100%; aspect-ratio: 1; background: #060707 }
+.plate img { object-fit: cover }
+.plate .clip img { height: 100% }
+.plate .clip video { object-fit: cover }
+.plate__frame { position: relative; display: block }
+.plate__box {
+  position: absolute; left: var(--bx); top: var(--by); width: var(--bw); height: var(--bh);
+  border: 1.5px solid var(--bc); pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.55);
+}
+.plate figcaption, .zoom figcaption {
+  margin-top: .5rem; font-family: var(--f-mono); font-size: .58rem; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--ink-3); overflow-wrap: anywhere;
+}
+.plate figcaption b, .zoom figcaption b { color: var(--ink-2); font-weight: 500 }
+.zooms { display: flex; flex-direction: column; gap: .8rem; flex: 0 0 26%; min-width: 0 }
+
+/* ---- the readings walk ------------------------------------------------
+   A player, not a scroll scrub: one reading is on at a time, its clip runs on
+   its own clock, and the sequence advances on a timer. Arrows step through
+   the four by hand; the meter under the stage fills one segment per reading.
+   Without JS, or with motion reduced, every reading is simply shown. */
+/* the plate keeps its own height. If the row stretched it to the crops, the
+   crops would be measured against a plate they just inflated. */
+.reading__media { align-items: flex-start }
+.zooms { align-self: flex-start }
+.zoom { flex: 0 0 auto }
+/* the player measures the preview frame and what the captions cost, then
+   writes --crop-max: the tallest a crop may be and still leave the stack
+   inside the frame it annotates */
+/* both caps are written by the player as a matched pair, so whichever one
+   binds the image keeps its aspect: capping height alone stretched the crops
+   whenever the column was narrower than the height allowed */
+.zoom img { max-height: var(--crop-max, 190px); max-width: min(100%, var(--crop-max-w, 100%)); width: auto; height: auto }
+
+.walk__head { margin-bottom: clamp(1.6rem, 4.5vh, 2.8rem) }
+/* the heading earns the width; the note beside it is happy to wrap. Desktop
+   only, or the one-column phone layout would be split in two. */
+@media (min-width: 901px) {
+  /* annotations: the note sits under its heading, same as the readings head */
+  #layers .sec__head { grid-template-columns: minmax(0, 1fr); gap: .85rem; align-items: start }
+  /* one line each: the caps were breaking both of them for no reason */
+  #layers .sec__head h2 { max-width: none }
+  #layers .sec__head p { max-width: none; margin: 0; font-size: .95rem }
+
+  /* the note sits under the heading rather than beside it */
+  .walk .sec__head { grid-template-columns: minmax(0, 1fr); gap: .85rem; align-items: start }
+  .walk .sec__head h2 { max-width: 46ch }
+  .walk .sec__head p { max-width: none; margin: 0 }
+}
+
+/* a phone cannot stack copy, plate and crops and still show them together,
+   so the media goes side by side and the plate takes the width */
+@media (max-width: 900px) {
+  /* the whole reading, its controls and the closing line are meant to share
+     one screen on a phone, so the vertical rhythm tightens here */
+  .walk { padding-top: 1rem }
+  .walk__head { margin-bottom: .6rem }
+  .walk .sec__head p { font-size: .95rem; line-height: 1.5 }
+  .walk.is-armed .walk__controls { margin-top: .6rem }
+  .walk .reading__copy p { font-size: .95rem; line-height: 1.55 }
+
+  /* a flick on a phone skips the whole section, so it gets a place to land */
+  html { scroll-snap-type: y proximity }
+  /* snapping stops the section at the top of the viewport, so leave room for
+     the fixed nav or the heading lands under it */
+  .walk { scroll-snap-align: start; scroll-margin-top: 62px }
+
+  .walk .reading__media { flex-direction: row; align-items: stretch; gap: .5rem }
+  /* the plate gives up a little width so the whole reading clears a 360x800
+     screen with room to spare; the crops follow, since they are capped by it */
+  .walk .plate { flex: 0 0 52%; min-width: 0 }
+  .walk .zooms { flex: 1 1 0; min-width: 0; flex-direction: column; gap: .5rem; max-width: none }
+  /* the plate caption runs under both columns instead of wrapping inside a
+     168px box; the crops finish above this line, so nothing collides */
+  .walk .plate figcaption { width: max-content; max-width: calc(100% + 8rem); white-space: nowrap }
+  .walk .zoom figcaption { font-size: .5rem }
+}
+.walk__stage { display: grid }
+.walk .reading { grid-area: 1 / 1; margin: 0; border-bottom: 0; padding-block: 0 }
+
+.walk.is-armed .reading { opacity: 0; pointer-events: none; transition: opacity .45s var(--ease) }
+.walk.is-armed .reading.is-on { opacity: 1; pointer-events: auto }
+
+/* the crops arrive when the playhead has stopped on the frame they came from */
+.walk.is-armed .zoom { opacity: 0; transform: translateY(7px); transition: opacity .4s var(--ease), transform .4s var(--ease) }
+.walk.is-armed .reading.is-held .zoom { opacity: 1; transform: none }
+/* first beat shows the dark crop alone; the bright one joins it on the second */
+.walk.is-armed .reading[data-beat="0"] .zoom:nth-child(2) { opacity: 0 }
+
+.walk.is-armed .plate__box { opacity: 0; transition: opacity .35s var(--ease) }
+.walk.is-armed .reading.is-held .plate__box { opacity: 1 }
+.walk.is-armed .reading[data-beat="0"] .plate__box + .plate__box { opacity: 0 }
+
+.walk__controls { display: none }
+.walk.is-armed .walk__controls { display: flex; align-items: center; gap: .7rem; margin-top: clamp(1.2rem, 3.4vh, 2rem) }
+.walk__toggle {
+  display: grid; place-items: center; width: 2.1rem; height: 2.1rem; padding: 0; margin-right: .4rem;
+  background: none; color: var(--ink); border: 1px solid var(--line-2); border-radius: 50%; cursor: pointer;
+  transition: border-color .2s var(--ease);
+}
+.walk__toggle:hover { border-color: var(--ink-2) }
+.walk__toggle .walk__play-icon { display: none }
+.walk__toggle[aria-pressed="true"] .walk__play-icon { display: block }
+.walk__toggle[aria-pressed="true"] .walk__pause-icon { display: none }
+.walk__arrow {
+  display: grid; place-items: center; width: 2.1rem; height: 2.1rem; padding: 0;
+  background: none; color: var(--ink-2); border: 1px solid var(--line-2); border-radius: 50%;
+  cursor: pointer; transition: color .2s var(--ease), border-color .2s var(--ease);
+}
+.walk__arrow:hover { color: var(--ink); border-color: var(--ink-2) }
+.walk__status {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+.walk__arrow:disabled { opacity: .35; cursor: default }
+.walk__meter { position: relative; display: flex; flex: 1 1 auto; gap: .4rem }
+.walk__meter span { position: relative; flex: 1 1 0; height: 2px; overflow: hidden; background: rgba(243,243,240,.3) }
+/* --p is written by the player, 0 to 1 of that reading's own run time */
+.walk__meter span::after {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--p, 0) * 100%);
+  background: var(--ink); transition: width .1s linear;
+}
+.walk__meter span.is-past::after { width: 100% }
+
+
+
+
+.zoom { margin: 0 }
+/* the box takes the crop's own aspect, so nothing is letterboxed */
+.zoom img {
+  display: block; width: 100%; height: auto;
+  border: 1.5px solid var(--zc);
+}
+
+@media (max-width: 1180px) {
+  .rail { display: none }
+}
+
+@media (max-width: 900px) {
+  /* one column: the copy, then the stack beneath it. The walk still runs. */
+  .hero { height: 450vh }
+  .hero__stage {
+    align-items: center;
+    padding: max(68px, 8vh) clamp(1rem, 5vw, 2rem) clamp(1.2rem, 4vh, 2rem);
+  }
+  .hero__group {
+    /* the fan is ~1.36x its card, so the card is capped by the phone's width */
+    --card: min(64vw, 36vh);
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    width: 100%; max-width: 100%;
+    /* the pile leans above its own box, so the gap has to clear that overhang */
+    gap: calc(var(--card) * .2 + 1rem);
+  }
+  .hero__copy { max-width: none; width: 100% }
+  .hero__copy h1 { font-size: clamp(2.1rem, 8.6vw, 3rem); max-width: 20ch }
+  .hero__lede { display: none }
+  .readout { margin-top: clamp(.7rem, 2vh, 1.1rem); min-height: 0; font-size: .74rem }
+  .readout b { font-size: 1.14rem }
+  .hero__stack { width: 100%; justify-content: center }
+  /* a tighter pile keeps the fan inside a phone's width; the offset centres it */
+  .deck { --du: 46; transform: translateX(-7%) }
+  .layers-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) }
+  /* readings stack once the media column drops under ~460px */
+  /* the copy comes out of the picture and sits above it */
+  .reading, .reading:nth-of-type(even) { grid-template-columns: 1fr; gap: 1rem }
+  .reading:nth-of-type(even) .reading__copy, .reading:nth-of-type(even) .reading__media { order: 0 }
+  /* stretch, so every plate sits on the same left and right edge */
+  .reading__media { flex-direction: column; align-items: stretch; gap: .8rem }
+  .plate { width: 100% }
+  /* crops sit side by side at half width, never full-bleed squares */
+  .zooms { flex: 0 0 auto; width: 100%; max-width: 34rem; flex-direction: row; align-items: flex-start; gap: .6rem }
+  .zoom { flex: 1 1 0; min-width: 0 }
+  .zoom:only-child { flex: 0 0 calc(50% - .3rem) }
+  .zoom img { flex: none; height: auto }
+}
+
+@media (max-width: 760px) {
+  .nav__links a:not(.nav__docs) { display: none }
+  .nav__links { display: flex; gap: 0 }
+  .sec__head { grid-template-columns: 1fr; gap: 0 }
+  .sec__head p { margin-top: .9rem }
+  .layers-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) }
+  .dataset { grid-template-columns: 1fr }
+
+  /* the two link columns are narrow enough to share a row; only the brand
+     needs the full width */
+  .foot__inner { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem 1.2rem }
+  .foot__inner > div:first-child { grid-column: 1 / -1 }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* no pin, no scrub: the stack simply sits there, open */
+  .hero { height: auto }
+  .hero__stage {
+    position: static; height: auto; display: block;
+    padding: clamp(5rem, 12vh, 7rem) var(--pad) 2rem;
+  }
+  .rail { display: none }
+  .deck__layer, .deck__stack { transition: none }
+}
+
+/* the 20px stand-in behind a clip: it has to outrank the per-section clip
+   backgrounds above, so it lives at the end of the file */
+.clip[style*="--lqip"] { background-image: var(--lqip); background-size: cover; background-position: center }

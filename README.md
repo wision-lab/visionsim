@@ -2,7 +2,20 @@
 
 A modular and extensible framework that realistically emulates many different sensor types, alongside rich pixel-perfect ground truth annotations across low-, mid-, and high-level scene characteristics, as well as intrinsic and extrinsic camera properties.
 
-*Warning:* This project is under heavy development and it's API still might change before the next release. 
+## Installation
+
+VisionSIM requires Python 3.10 or newer, Blender 3.6 or newer on your `PATH`, and FFmpeg for
+previews:
+
+```bash
+pip install visionsim
+visionsim post-install
+```
+
+## Documentation
+
+Tutorials, the CLI reference and the API documentation are at
+<https://visionsim.readthedocs.io/>.
 
 ## Citation
 

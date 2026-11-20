@@ -18,8 +18,54 @@ render:
 
 from __future__ import annotations
 
+import sys
+
 from tests.simulate.thermal.heatsim_test_service import SERVICE_PATH, call_service
 from visionsim.simulate.blender import BlenderClient
+
+
+def test_empty_atlas_uses_safe_private_render_vertices(executable):
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        result = call_service(client, "empty_private_atlas")
+
+    assert result["uses_vertices"]
+    assert result["field_matches_render_mesh"]
+    assert result["forced_texel_rejects_empty"]
+    assert result["source_preserved"]
+
+
+def test_ngons_keep_geometry_uvs_and_materials_aligned(executable):
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        result = call_service(client, "ngon_geometry")
+
+    assert result["triangles"] == 5
+    assert abs(result["area_m2"] - 3.5) < 1e-6
+    assert result["uv_error"] < 1e-6
+    assert result["material_counts"] == [4, 1]
+    assert result["ngon_samples"] > 50
+
+
+def test_evaluated_faces_have_unique_thermal_uvs_and_restore_source(executable):
+    with BlenderClient.spawn(executable=executable, timeout=60, service=SERVICE_PATH) as client:
+        result = call_service(client, "evaluated_thermal_uvs")
+
+    assert result["baseline_overlap"], "fixture did not reproduce modifier-generated UV overlap"
+    assert result["points"] > 100
+    assert result["same_geometry"]
+    assert result["copied"]
+    assert result["source_uv_preserved"]
+    assert result["material_preserved"]
+    assert result["restored"]
+
+
+def test_native_render_and_save_use_the_evaluated_thermal_mesh(executable, tmp_path):
+    with BlenderClient.spawn(executable=executable, timeout=120, service=SERVICE_PATH, log=sys.stdout) as client:
+        result = call_service(client, "render_evaluated_thermal_mesh", str(tmp_path))
+
+    assert result["restored"]
+    assert result["finite_outputs"]
+    assert result["saved_final_mesh"]
+    assert result["saved_modifiers_disabled"]
 
 
 def test_irradiance_bake_is_indexed_against_the_evaluated_mesh(executable):

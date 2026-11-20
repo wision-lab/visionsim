@@ -1,0 +1,65 @@
+name: Release
+
+# A v* tag is the release signal; publishing waits for approval on the `pypi` environment.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.14"
+
+      - name: Build distribution
+        run: |
+          rm -rf dist
+          uv build
+
+      - name: Check metadata
+        run: uvx twine check --strict dist/*
+
+      - name: Check version, tag and changelog agree
+        env:
+          TAG: ${{ github.ref_name }}
+        run: uv run --no-project --with packaging python .github/workflows/check_release.py --tag "$TAG"
+
+      - name: Install the wheel and run it
+        run: |
+          uv venv .release-venv
+          uv pip install --python .release-venv/bin/python --torch-backend=cpu dist/*.whl
+          .release-venv/bin/visionsim --help > /dev/null
+          .release-venv/bin/python -c "import importlib.metadata as m; print('installed', m.version('visionsim'))"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: pypi
+      url: https://pypi.org/p/visionsim
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

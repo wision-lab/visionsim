@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -187,10 +188,23 @@ def global_temperature_range(history: dict[str, Any], default_K: float) -> tuple
     return tmin, tmax
 
 
+def _mesh_triangles(mesh: Any) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """One triangulation for geometry, corner UVs and source material slots."""
+    mesh.calc_loop_triangles()
+    count = len(mesh.loop_triangles)
+    vertices: np.ndarray = np.empty((count, 3), dtype=np.int32)
+    loops: np.ndarray = np.empty((count, 3), dtype=np.int32)
+    polygons: np.ndarray = np.empty(count, dtype=np.int32)
+    mesh.loop_triangles.foreach_get("vertices", vertices.reshape(-1))
+    mesh.loop_triangles.foreach_get("loops", loops.reshape(-1))
+    mesh.loop_triangles.foreach_get("polygon_index", polygons)
+    return vertices, loops, polygons
+
+
 def _extract_geometry(obj: Any) -> tuple | None:
     """``(verts_mm (N,3) float64, faces (M,3) int32, n_verts)`` for the evaluated
     mesh, or ``None`` if it has no geometry. Verts are world-space x 1000 (mm)
-    and quads are triangulated. Cycles vertex bakes use these evaluated indices.
+    and every polygon is triangulated. Cycles vertex bakes use these evaluated indices.
     """
     depsgraph = bpy.context.evaluated_depsgraph_get()
     mesh = obj.evaluated_get(depsgraph).data
@@ -205,38 +219,13 @@ def _extract_geometry(obj: Any) -> tuple | None:
     verts = (verts @ mw[:3, :3].T) + mw[:3, 3]
     verts = verts * _M_TO_MM  # world metres -> mm
 
-    poly_count = len(mesh.polygons)
-    loop_starts: np.ndarray = np.zeros(poly_count, dtype=np.int32)
-    loop_totals: np.ndarray = np.zeros(poly_count, dtype=np.int32)
-    mesh.polygons.foreach_get("loop_start", loop_starts)
-    mesh.polygons.foreach_get("loop_total", loop_totals)
-    loop_vidx: np.ndarray = np.zeros(len(mesh.loops), dtype=np.int32)
-    mesh.loops.foreach_get("vertex_index", loop_vidx)
-
-    face_arrays = []
-    tri_starts = loop_starts[loop_totals == 3]
-    if tri_starts.size:
-        face_arrays.append(
-            np.column_stack([loop_vidx[tri_starts], loop_vidx[tri_starts + 1], loop_vidx[tri_starts + 2]])
-        )
-    quad_starts = loop_starts[loop_totals == 4]
-    if quad_starts.size:
-        v0 = loop_vidx[quad_starts]
-        v1 = loop_vidx[quad_starts + 1]
-        v2 = loop_vidx[quad_starts + 2]
-        v3 = loop_vidx[quad_starts + 3]
-        face_arrays.append(np.column_stack([v0, v1, v2]))
-        face_arrays.append(np.column_stack([v0, v2, v3]))
-    if not face_arrays:
-        return None
-
-    faces = np.vstack(face_arrays).astype(np.int32)
+    faces, _, _ = _mesh_triangles(mesh)
     return verts, faces, n_verts
 
 
-def _vertex_writeback_matches(obj: Any, evaluated_mm: np.ndarray) -> bool:
+def _vertex_writeback_matches(obj: Any, evaluated_mm: np.ndarray, base_mesh: Any = None) -> bool:
     """Require base vertex indices to match the evaluated solve points."""
-    vertices = obj.data.vertices
+    vertices = (obj.data if base_mesh is None else base_mesh).vertices
     if len(vertices) != len(evaluated_mm):
         return False
     if not hasattr(vertices, "foreach_get"):
@@ -269,6 +258,9 @@ class AtlasPlan:
     here; every other sim object (excluded by :func:`atlas.select_for_atlas`, or rejected
     after a UV/vertex-count failure) is simply absent and keeps the per-vertex path in
     ``_combine``.
+
+    ``meshes`` retains private modifier results. Install them with
+    :func:`use_atlas_geometry` during baking, field writeback and rendering.
     """
 
     layout: atlas.AtlasLayout
@@ -278,6 +270,16 @@ class AtlasPlan:
     tile_max: int = 512
     soft_max: int = 500_000
     digest: str = ""
+    meshes: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+def use_atlas_geometry(scene: Any, plan: AtlasPlan | None):
+    """Use the same evaluated surfaces that own the plan's bake and atlas UVs."""
+    if plan is None or not plan.meshes:
+        return nullcontext()
+    from visionsim.simulate.heatsim.geometry import use_meshes
+
+    return use_meshes(scene, plan.meshes)
 
 
 def _atlas_digest(
@@ -310,7 +312,13 @@ def _atlas_digest(
         "tiles": sorted((name, list(spec.size), list(spec.offset)) for name, spec in layout.tiles.items()),
         "texel_counts": sorted((name, int(obj_texels["xy"].shape[0])) for name, obj_texels in texels.items()),
     }
-    return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
+    digest = hashlib.sha1(json.dumps(payload, sort_keys=True).encode())
+    # Equal sample counts do not imply equal UV addresses or physical surfaces.
+    for name, samples in sorted(texels.items()):
+        for attribute, values in sorted(samples.items()):
+            digest.update(f"{name}/{attribute}".encode())
+            digest.update(np.ascontiguousarray(values).tobytes())
+    return digest.hexdigest()[:16]
 
 
 def _prepare_bake_uv(obj: Any) -> None:
@@ -321,18 +329,7 @@ def _prepare_bake_uv(obj: Any) -> None:
 
 
 def _face_uv_and_slots_from_mesh(mesh: Any, uv_layer_name: str) -> tuple | None:
-    """``(loop_uv (M,3,2) float64 in [0,1], face_material_index (M,) int32)`` for an
-    arbitrary Blender mesh datablock, triangulated identically to
-    :func:`_extract_geometry` (all triangle-polygons first, then each quad's two
-    triangles in ``(v0,v1,v2)`` / ``(v0,v2,v3)`` order) so a texel's ``face`` index
-    from ``atlas.rasterize_tile`` lines up with the same triangle in both this
-    function's output and :func:`_extract_geometry`'s ``faces`` (when both are read
-    from the SAME mesh - base or evaluated). Reads UVs from the named UV layer on
-    ``mesh.loops``. Returns ``None`` if the mesh has no polygons or lacks that UV layer.
-
-    Shared core for :func:`_extract_evaluated_face_uv_and_slots`, which reads the
-    :func:`_extract_evaluated_face_uv_and_slots` (evaluated mesh).
-    """
+    """Read UV corners and material indices in the same triangle order as geometry."""
     if mesh is None:
         return None
     uv_layers = getattr(mesh, "uv_layers", None)
@@ -343,68 +340,23 @@ def _face_uv_and_slots_from_mesh(mesh: Any, uv_layer_name: str) -> tuple | None:
     if poly_count == 0:
         return None
 
-    loop_starts: np.ndarray = np.zeros(poly_count, dtype=np.int32)
-    loop_totals: np.ndarray = np.zeros(poly_count, dtype=np.int32)
-    mesh.polygons.foreach_get("loop_start", loop_starts)
-    mesh.polygons.foreach_get("loop_total", loop_totals)
-    mat_index: np.ndarray = np.zeros(poly_count, dtype=np.int32)
+    _, loops, polygons = _mesh_triangles(mesh)
+    mat_index: np.ndarray = np.empty(poly_count, dtype=np.int32)
     mesh.polygons.foreach_get("material_index", mat_index)
-
-    uv_flat: np.ndarray = np.zeros(len(mesh.loops) * 2, dtype=np.float64)
+    uv_flat: np.ndarray = np.empty(len(mesh.loops) * 2, dtype=np.float64)
     uv_layer.data.foreach_get("uv", uv_flat)
-    loop_uv_all = uv_flat.reshape(-1, 2)
-
-    uv_parts = []
-    slot_parts = []
-    tri_mask = loop_totals == 3
-    tri_starts = loop_starts[tri_mask]
-    if tri_starts.size:
-        uv_parts.append(
-            np.stack([loop_uv_all[tri_starts], loop_uv_all[tri_starts + 1], loop_uv_all[tri_starts + 2]], axis=1)
-        )
-        slot_parts.append(mat_index[tri_mask])
-    quad_mask = loop_totals == 4
-    quad_starts = loop_starts[quad_mask]
-    if quad_starts.size:
-        u0 = loop_uv_all[quad_starts]
-        u1 = loop_uv_all[quad_starts + 1]
-        u2 = loop_uv_all[quad_starts + 2]
-        u3 = loop_uv_all[quad_starts + 3]
-        uv_parts.append(np.stack([u0, u1, u2], axis=1))
-        uv_parts.append(np.stack([u0, u2, u3], axis=1))
-        slot_parts.append(mat_index[quad_mask])
-        slot_parts.append(mat_index[quad_mask])
-    if not uv_parts:
-        return None
-
-    loop_uv = np.vstack(uv_parts).astype(np.float64)
-    face_material_index = np.concatenate(slot_parts).astype(np.int32)
-    return loop_uv, face_material_index
+    return uv_flat.reshape(-1, 2)[loops], mat_index[polygons]
 
 
 def _extract_evaluated_face_uv_and_slots(obj: Any, uv_layer_name: str) -> tuple | None:
-    """:func:`_face_uv_and_slots_from_mesh` for ``obj``'s EVALUATED mesh (post-modifier).
-
-    Used to read back a UV layer (e.g. ``ATLAS_UV_LAYER_NAME``) that was written to the
-    base mesh and has since propagated through the modifier stack - Bevel interpolates
-    named UV layers onto new geometry, EdgeSplit duplicates them, and most Geometry
-    Nodes setups preserve them, so this is how atlas participants with topology-changing
-    modifiers get UVs that correspond 1:1 with :func:`_extract_geometry`'s evaluated
-    ``faces`` for the SAME object. Returns ``None`` if the evaluated mesh has no polygons
-    or the modifier stack dropped the named layer (some Geometry Nodes setups do).
-    """
+    """Read the evaluated mesh using the geometry extractor's triangle order."""
     depsgraph = bpy.context.evaluated_depsgraph_get()
     mesh = obj.evaluated_get(depsgraph).data
     return _face_uv_and_slots_from_mesh(mesh, uv_layer_name)
 
 
 def _write_atlas_uv_layer(obj: Any, tile: atlas.TileSpec, atlas_size: tuple, src_layer_name: str) -> None:
-    """Remap ``src_layer_name``'s per-loop UVs into ``tile``'s placement inside the
-    shared atlas image and store the result as a fresh ``ATLAS_UV_LAYER_NAME`` UV layer
-    on ``obj``'s base mesh. The modifier stack propagates this layer to the
-    evaluated mesh used for rasterization and rendering. The caller verifies that
-    propagation succeeded.
-    """
+    """Store bake UVs remapped into this object's tile in the shared atlas."""
     mesh = getattr(obj, "data", None)
     if mesh is None:
         return
@@ -444,6 +396,24 @@ def _write_atlas_uv_layer(obj: Any, tile: atlas.TileSpec, atlas_size: tuple, src
 
 
 def build_atlas_plan(scene: Any, sim_objects: list, cfg: dict) -> AtlasPlan:
+    """Unwrap final geometry so generated faces cannot reuse another surface's UVs."""
+    if bpy is None:
+        return _build_atlas_plan(scene, sim_objects, cfg)
+    from visionsim.simulate.heatsim.geometry import evaluated_meshes, release_meshes, use_meshes
+
+    meshes = evaluated_meshes(sim_objects)
+    source_meshes = {obj.name: obj.data for obj in sim_objects}
+    try:
+        with use_meshes(scene, meshes):
+            plan = _build_atlas_plan(scene, sim_objects, cfg, source_meshes=source_meshes)
+        plan.meshes = meshes
+        return plan
+    except Exception:
+        release_meshes(meshes)
+        raise
+
+
+def _build_atlas_plan(scene: Any, sim_objects: list, cfg: dict, *, source_meshes: dict | None = None) -> AtlasPlan:
     """Select and rasterize thermal solve points on evaluated mesh surfaces."""
     mode = str(cfg.get("render_domain", "AUTO")).upper()
     if mode not in {"AUTO", "TEXEL"}:
@@ -456,6 +426,7 @@ def build_atlas_plan(scene: Any, sim_objects: list, cfg: dict) -> AtlasPlan:
     geoms: dict[str, tuple] = {}
     areas: dict[str, float] = {}
     retained_vertex_count = 0
+    writeback_safe = {}
     for obj in sim_objects:
         geom = _extract_geometry(obj)
         if geom is None:
@@ -463,7 +434,9 @@ def build_atlas_plan(scene: Any, sim_objects: list, cfg: dict) -> AtlasPlan:
         verts, faces, n = geom
         geoms[obj.name] = (obj, verts, faces, n)
         area_m2 = atlas.surface_area_m2(verts, faces)
-        writeback_possible = _vertex_writeback_matches(obj, verts)
+        source_mesh = source_meshes.get(obj.name) if source_meshes is not None else None
+        writeback_possible = _vertex_writeback_matches(obj, verts, source_mesh)
+        writeback_safe[obj.name] = writeback_possible
         if area_m2 <= 0:
             if mode == "TEXEL" or not writeback_possible:
                 raise ValueError(f"{obj.name!r} has no nondegenerate surface for thermal atlas sampling")
@@ -475,11 +448,14 @@ def build_atlas_plan(scene: Any, sim_objects: list, cfg: dict) -> AtlasPlan:
             * np.linalg.norm(np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0]), axis=1)
             / 1e6
         )
+        # Split normals/UV seams and loose vertices are not additional surface samples.
+        surface_samples = len(np.unique(verts[np.unique(faces[triangle_areas > 0])], axis=0))
+        geoms[obj.name] = (obj, verts, faces, surface_samples)
         coarse_face = bool(np.max(triangle_areas) * density > 4.0)
         use_atlas = (
             mode == "TEXEL"
             or coarse_face
-            or atlas.select_for_atlas(n, area_m2, density, writeback_possible=writeback_possible)
+            or atlas.select_for_atlas(surface_samples, area_m2, density, writeback_possible=writeback_possible)
         )
         _log.info(
             "thermal: %s uses %s samples (area %.3g m², %d evaluated vertices, "
@@ -508,19 +484,27 @@ def build_atlas_plan(scene: Any, sim_objects: list, cfg: dict) -> AtlasPlan:
 
     texels: dict[str, dict[str, np.ndarray]] = {}
     for name in areas:
-        obj, verts, faces, _n = geoms[name]
+        obj, verts, faces, surface_samples = geoms[name]
         tile = layout.tiles.get(name)
         if tile is None:
             raise RuntimeError(f"No thermal atlas tile was allocated for {name!r}")
 
-        # Write the atlas UV layer onto the BASE mesh first (so Bevel/EdgeSplit/GN
-        # modifiers propagate it) and force a depsgraph update, then read triangles'
-        # UVs + material indices back from the EVALUATED mesh - the same mesh
-        # `verts`/`faces` above came from - so face indices line up 1:1 regardless of
-        # whether the base and evaluated vertex counts agree.
-        _prepare_bake_uv(obj)
-        _write_atlas_uv_layer(obj, tile, layout.atlas_size, BAKE_UV_LAYER_NAME)
-        uv_result = _extract_evaluated_face_uv_and_slots(obj, ATLAS_UV_LAYER_NAME)
+        # Modified objects use a private evaluated mesh with modifiers suspended.
+        # Unwrap those final faces, then read geometry and UVs in one triangle order.
+        # Atlas UVs are read by name; making the bake UV render-active is only
+        # temporary. Preserve the authored RGB UVs before any layer is created,
+        # including failures during unwrap, atlas write or evaluated-mesh read.
+        if bpy is not None:
+            from visionsim.simulate.heatsim.uv_utils import restore_uv_states, snapshot_uv_states
+
+            uv_snapshot = snapshot_uv_states([obj])
+        try:
+            _prepare_bake_uv(obj)
+            _write_atlas_uv_layer(obj, tile, layout.atlas_size, BAKE_UV_LAYER_NAME)
+            uv_result = _extract_evaluated_face_uv_and_slots(obj, ATLAS_UV_LAYER_NAME)
+        finally:
+            if bpy is not None:
+                restore_uv_states(uv_snapshot)
         if uv_result is None:
             raise RuntimeError(f"{name!r}: evaluated mesh has no usable {ATLAS_UV_LAYER_NAME} layer")
         atlas_loop_uv, face_material_index = uv_result
@@ -538,7 +522,30 @@ def build_atlas_plan(scene: Any, sim_objects: list, cfg: dict) -> AtlasPlan:
         loop_uv[..., 0] = (atlas_loop_uv[..., 0] * aw - tx) / tw
         loop_uv[..., 1] = (atlas_loop_uv[..., 1] * ah - ty) / th
 
-        raster = atlas.rasterize_tile(verts, faces, loop_uv, tile.size)
+        try:
+            raster = atlas.rasterize_tile(verts, faces, loop_uv, tile.size, reject_overlaps=True)
+        except ValueError as exc:
+            raise ValueError(f"{name!r}: {exc}") from exc
+
+        # UV packing can discard most of a dense object's available resolution.
+        # A large triangle alone must not replace thousands of safe mesh samples
+        # with a handful of covered atlas texels (e.g. upholstery with many charts).
+        fallback_safe = writeback_safe[name]
+        if not len(raster["xy"]) and source_meshes is not None and obj.data is not source_meshes[name]:
+            # A private render mesh can hold its own vertex field even when the
+            # original, pre-modifier mesh cannot. Keep tiny surfaces in the solve.
+            fallback_safe = _vertex_writeback_matches(obj, verts)
+        if mode == "AUTO" and len(raster["xy"]) < surface_samples and fallback_safe:
+            _log.info(
+                "thermal: %s retains %d VERTEX samples (%d distinct surface positions); "
+                "its atlas would provide only %d covered texels",
+                name,
+                len(verts),
+                surface_samples,
+                len(raster["xy"]),
+            )
+            continue
+
         if raster["xy"].shape[0] == 0:
             raise RuntimeError(f"{name!r}: thermal atlas rasterized no solve points")
 
@@ -706,9 +713,8 @@ def write_atlas(
     out_path = out_dir / "atlas_temperature.exr"
 
     write_image_name = "HeatSim_Temperature_Atlas_Write"
-    existing = bpy.data.images.get(write_image_name)
-    if existing is not None:
-        bpy.data.images.remove(existing)
+    # This temporary belongs to this call only. Blender gives it a unique name
+    # if an authored image already uses the preferred scratch spelling.
     image = bpy.data.images.new(write_image_name, width=width, height=height, alpha=True, float_buffer=True)
     # Temperatures are data, not color: bpy.data.images.new()'s default colorspace tag
     # (here, effectively a non-identity "Linear Rec.709" role under this OCIO config --
@@ -716,11 +722,11 @@ def write_atlas(
     # the raw Kelvin values as scene-linear color and re-encode them, corrupting the
     # written EXR's absolute values (295.0 K -> ~11.23 in the file). Tag Non-Color so
     # save()/load() are the identity transform and the file holds the literal float value.
-    image.colorspace_settings.name = "Non-Color"
-    image.pixels.foreach_set(rgba.ravel())
-    image.filepath_raw = str(out_path)
-    image.file_format = "OPEN_EXR"
     try:
+        image.colorspace_settings.name = "Non-Color"
+        image.pixels.foreach_set(rgba.ravel())
+        image.filepath_raw = str(out_path)
+        image.file_format = "OPEN_EXR"
         image.save()
     finally:
         bpy.data.images.remove(image)
@@ -741,8 +747,8 @@ def _sample_bilinear(pixels: np.ndarray, width: int, height: int, uv: np.ndarray
     clamp/floor/lerp math and Rec.709 luma weights) but for many points at once."""
     u = np.clip(uv[:, 0], 0.0, 1.0)
     v = np.clip(uv[:, 1], 0.0, 1.0)
-    x = u * (width - 1)
-    y = v * (height - 1)
+    x = np.clip(u * width - 0.5, 0.0, width - 1)
+    y = np.clip(v * height - 0.5, 0.0, height - 1)
     x0 = np.floor(x).astype(np.int64)
     y0 = np.floor(y).astype(np.int64)
     x1 = np.minimum(x0 + 1, width - 1)

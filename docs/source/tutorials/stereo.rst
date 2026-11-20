@@ -12,7 +12,7 @@ The ``camera_offset`` moves the camera in its **local coordinate frame**. For mo
 
 - **X** : left (negative) / right (positive)
 - **Y** : down (negative) / up (positive)
-- **Z** : backward (negative) / forward (positive)
+- **Z** : backward (positive) / forward (negative), since the camera looks down -Z
 
 For a typical stereo pair, a human interpupillary distance (IPD) of around **6.5 cm**
 is standard. Each eye is offset by half the IPD along the local X axis:
@@ -56,11 +56,11 @@ The ``--config.camera-offset`` flag applies the offset to every rendered frame a
 .. code-block:: bash
 
     # Render left eye view
-    visionsim blender.render-animation scene.blend ./left_eye \\
+    visionsim blender.render-animation scene.blend ./left_eye \
         --config.camera-offset -0.0325 0 0
 
     # Render right eye view
-    visionsim blender.render-animation scene.blend ./right_eye \\
+    visionsim blender.render-animation scene.blend ./right_eye \
         --config.camera-offset 0.0325 0 0
 
 .. note::
@@ -92,10 +92,10 @@ half-width ``arcd`` anaglyph:
 .. code-block:: bash
 
     # Stack the two eyes side by side, then fold them into one anaglyph video
-    ffmpeg -framerate 50 -i left_eye/frames/0000/%03d.png \\
-           -framerate 50 -i right_eye/frames/0000/%03d.png \\
-           -filter_complex \\
-    "[0:v][1:v]hstack=inputs=2[stacked];[stacked]stereo3d=in=sbsl:out=arcd[out]" \\
+    ffmpeg -framerate 50 -i left_eye/frames/0000/%03d.png \
+           -framerate 50 -i right_eye/frames/0000/%03d.png \
+           -filter_complex \
+    "[0:v][1:v]hstack=inputs=2[stacked];[stacked]stereo3d=in=sbsl:out=arcd[out]" \
            -map "[out]" -c:v libx264 -crf 23 -pix_fmt yuv420p anaglyph.mp4
 
 The input framerate should match the scene's own, so the video runs at the speed the
@@ -130,7 +130,7 @@ run ``blender.render-animation`` once per camera position with the appropriate o
 Combining Stereo Views
 ----------------------
 
-After rendering both eyes, you can use the :class:`Dataset <visionsim.dataset.Dataset>` API to inspect or merge the output directories:
+After rendering both eyes, you can use the :class:`Dataset <visionsim.dataset.dataset.Dataset>` API to inspect or merge the output directories:
 
 .. code-block:: python
 

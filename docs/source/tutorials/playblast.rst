@@ -48,7 +48,7 @@ The CLI mirrors :doc:`render-animation <../quick-start>`, with the same position
 
     visionsim blender.render-playblast scene.blend output/
 
-By default the preview is encoded to ``output/playblast/playblast.mp4``. Pass ``--no-video`` to instead get a PNG sequence (``output/playblast/0001.png``, ...) along with a ``transforms.db`` metadata database.
+By default the preview is encoded to ``output/playblast/playblast.mp4``. Pass ``--no-video`` to instead get a PNG sequence in the same sharded layout as rendered frames: ``output/playblast/0000/001.png``, ``0000/002.png``, ..., with a ``transforms.db`` metadata database beside the shard folders.
 
 You can also drive it from Python through :meth:`render_playblast <visionsim.simulate.blender.BlenderService.exposed_render_playblast>`:
 

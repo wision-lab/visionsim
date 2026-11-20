@@ -71,6 +71,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Reuse layers across runs; each Blender leg has a different context, so it gets its own scope.
+          cache-from: type=gha,scope=blender-${{ matrix.blender-version }}
+          cache-to: type=gha,scope=blender-${{ matrix.blender-version }}
 
       - name: Generate artifact attestation
         uses: actions/attest@v4
@@ -92,4 +95,4 @@ jobs:
           package-type: 'container'
           min-versions-to-keep: 20
           delete-only-untagged-versions: 'false'
-          ignore-versions: '^(latest|blender-([0-9\.]+|latest)|blender-.*-v\d.*)$'
+          ignore-versions: '^(latest|cuda.*|blender-([0-9\.]+|latest)|blender-.*-v\d.*)$'

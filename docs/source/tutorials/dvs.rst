@@ -128,7 +128,7 @@ Each pixel is given its own threshold, drawn from a normal distribution centred 
 Python API
 ----------
 
-:class:`EventEmulator <visionsim.emulate.dvs.EventEmulator>` drives the same model from Python, one frame at a time:
+:class:`EventEmulator <visionsim.emulate.dvs.v2e.emulator.EventEmulator>` drives the same model from Python, one frame at a time:
 
 .. code-block:: python
 
@@ -140,12 +140,13 @@ Python API
 
     from visionsim.emulate.dvs import EventEmulator
 
-    frames = natsorted(Path("quickstart/ultramodern-gt/frames").glob("*.png"))
+    # Interpolated frames are sharded into 0000/, 0001/, ...
+    frames = natsorted(Path("quickstart/ultramodern-interp").glob("**/*.png"))
     emulator = EventEmulator(seed=0)
     emulator.use_preset("noisy")            # or "clean" for an ideal sensor
 
     events = []
-    fps = 50.0
+    fps = 1600.0
 
     for i, path in enumerate(frames):
         # The model expects grayscale intensities, manually convert RGB to luma
@@ -157,11 +158,13 @@ Python API
 
 Calling ``generate_events`` with one ``[H, W]`` intensity frame and its timestamp in seconds returns an ``[N, 4]`` array of ``[timestamp, x, y, polarity]``, or ``None`` when the frame produced no events. The very first call initialises the pixel state and always returns ``None``, because there is no previous sample to compare against. Timestamps have to increase monotonically between calls.
 
-The ``use_preset`` helper fills in a named set of parameters, ``"clean"`` for a sensor with no noise or mismatch and ``"noisy"`` for realistic levels, overwriting whatever the constructor set. Parameters can also be assigned directly, for instance ``emulator.pos_thres = 0.15``. The per-pixel threshold mismatch is sampled from the nominal thresholds and ``sigma_thres`` on the first frame, so apply any preset or override before feeding the emulator its first frame. Calling :meth:`~visionsim.emulate.dvs.EventEmulator.reset` clears the frame buffers and counters so the next frame starts a new stream.
+The ``use_preset`` helper fills in a named set of parameters, ``"clean"`` for a sensor with no noise or mismatch and ``"noisy"`` for realistic levels, overwriting whatever the constructor set. Parameters can also be assigned directly, for instance ``emulator.pos_thres = 0.15``. The per-pixel threshold mismatch is sampled from the nominal thresholds and ``sigma_thres`` on the first frame, so apply any preset or override before feeding the emulator its first frame. Calling :meth:`~visionsim.emulate.dvs.v2e.emulator.EventEmulator.reset` clears the frame buffers and counters so the next frame starts a new stream.
 
 .. note::
 
-    The emulator takes grayscale input. The CLI converts colour frames to luma with the weights above, and log-encoded HDR float data is passed through as-is with ``hdr=True``.
+    The emulator takes grayscale input. The CLI converts colour frames to luma with the weights above and
+    always treats frames as linear; with the Python API, pass ``hdr=True`` to ``EventEmulator`` for
+    log-encoded HDR float frames so the linear-log conversion is skipped.
 
 |
 

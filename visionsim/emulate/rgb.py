@@ -19,9 +19,8 @@ def emulate_rgb_from_sequence(
     """Emulates a conventional RGB camera from a sequence of intensity frames.
 
     Note:
-        Motion-blur is approximated by averaging consecutive ground truth frames,
-        this can be done more efficiently if optical flow is available.
-        See `emulate_rgb_from_flow` for more.
+        Motion-blur is approximated by averaging consecutive ground truth frames;
+        optical flow could make this cheaper, but is not used here.
 
     Args:
         sequence (npt.ArrayLike): Input sequence of linear-intensity frames, can be a collection of frames,
@@ -54,10 +53,5 @@ def emulate_rgb_from_sequence(
 
     # Convert to sRGB color space for viewing and quantize to 8-bits
     patch = linearrgb_to_srgb(patch)
-    patch = np.round(patch * 2**8) / 2**8
+    patch = np.round(patch * (2**8 - 1)) / (2**8 - 1)
     return patch
-
-
-def emulate_rgb_from_flow():
-    """Not (Yet) Implemented"""
-    raise NotImplementedError

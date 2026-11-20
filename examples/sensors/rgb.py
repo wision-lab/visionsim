@@ -6,9 +6,10 @@ from mpl_toolkits.axes_grid1 import ImageGrid
 from natsort import natsorted
 
 from visionsim.emulate.rgb import emulate_rgb_from_sequence
+from visionsim.utils.color import srgb_to_linearrgb
 
-# Read all images, normalized to [0, 1] range
-imgs = [iio.imread(p).astype(float) / 255 for p in natsorted(Path("lego-interp/").glob("*.png"))]
+# Read all images as linear intensity in the [0, 1] range
+imgs = [srgb_to_linearrgb(iio.imread(p).astype(float) / 255) for p in natsorted(Path("lego-interp/").glob("*.png"))]
 
 # Emulate RGB camera by varying exposure, with no noise
 blur = [emulate_rgb_from_sequence(imgs[:n], readout_std=0, fwc=n) for n in (10, 40, 160, 640)]

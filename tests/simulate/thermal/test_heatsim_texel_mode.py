@@ -19,6 +19,13 @@ _DEFAULTS = {
 _SOLVER_CFG = {"domain": "POINTS"}
 
 
+def test_bake_sampling_at_texel_centers_returns_the_exact_pixel_values():
+    pixels = np.repeat(np.arange(12, dtype=float).reshape(3, 4, 1), 3, axis=2)
+    centers = np.array([((x + 0.5) / 4, (y + 0.5) / 3) for y in range(3) for x in range(4)])
+
+    assert adapter._sample_bilinear(pixels, 4, 3, centers) == pytest.approx(np.arange(12))
+
+
 # ---------------------------------------------------------------------------
 # Fake-bpy fixtures (mirrors test_heatsim_assignments_integration.py)
 # ---------------------------------------------------------------------------
@@ -386,17 +393,90 @@ def test_build_atlas_plan_vertex_count_mismatch_no_longer_demotes(monkeypatch):
 
 def test_build_atlas_plan_excludes_dense_objects(monkeypatch):
     """An object whose native vertex density already exceeds the target keeps the vertex path."""
-    dense = _AtlasObj("dense", n_verts=50_000)
-    dense_geom = (
-        np.random.default_rng(0).uniform(0, 10, size=(50_000, 3)),
-        np.array([[0, 1, 2]], dtype=np.int32),
-        50_000,
-    )
+    side = 224
+    x, y = np.meshgrid(np.linspace(0, 10, side), np.linspace(0, 10, side))
+    verts = np.column_stack((x.ravel(), y.ravel(), np.zeros(side * side)))
+    a = np.arange(side * side).reshape(side, side)[:-1, :-1].ravel()
+    faces = np.concatenate((np.column_stack((a, a + 1, a + side)), np.column_stack((a + 1, a + side + 1, a + side))))
+    dense = _AtlasObj("dense", n_verts=len(verts))
+    dense_geom = (verts, faces, len(verts))
 
     monkeypatch.setattr(adapter, "_extract_geometry", lambda o: dense_geom)
 
     plan = adapter.build_atlas_plan(scene=None, sim_objects=[dense], cfg=_ATLAS_CFG)
     assert plan.texels == {}
+
+
+@pytest.mark.parametrize("extra_vertices", ["duplicates", "loose"])
+@pytest.mark.parametrize("density", [5.0, 50.0])
+def test_auto_counts_distinct_surface_positions_when_selecting_and_retaining_atlas(monkeypatch, extra_vertices, density):
+    """UV/normal splits and unused points must not displace a better-covered thermal atlas."""
+    verts, faces, _ = _big_plane_geom(side_mm=1000)
+    extras = verts[[0, 1, 2]] if extra_vertices == "duplicates" else np.arange(300).reshape(-1, 3) + 2000
+    verts = np.concatenate((verts, extras))
+    if extra_vertices == "duplicates":
+        faces[0] = [4, 5, 6]  # First triangle uses split vertices along the shared surface.
+    obj = _AtlasObj("split_mesh", len(verts))
+    monkeypatch.setattr(adapter, "_extract_geometry", lambda _obj: (verts, faces, len(verts)))
+    monkeypatch.setattr(adapter, "_prepare_bake_uv", lambda _obj: None)
+    captured = {}
+
+    def write(_obj, tile, atlas_size, _layer):
+        captured.update(tile=tile, size=atlas_size)
+
+    def read(_obj, _layer):
+        uv = verts[faces, :2] / 1000 * 0.125
+        tile = captured["tile"]
+        return (uv * tile.size + tile.offset) / captured["size"], np.zeros(len(faces), dtype=np.int32)
+
+    monkeypatch.setattr(adapter, "_write_atlas_uv_layer", write)
+    monkeypatch.setattr(adapter, "_extract_evaluated_face_uv_and_slots", read)
+    plan = adapter.build_atlas_plan(None, [obj], _ATLAS_CFG | {"atlas_texel_density": density})
+
+    assert 4 <= len(plan.texels[obj.name]["xy"]) < len(verts)
+
+
+@pytest.mark.parametrize(
+    ("mode", "safe_vertices", "uses_atlas"),
+    [("AUTO", True, False), ("AUTO", False, True), ("TEXEL", True, True)],
+)
+@pytest.mark.parametrize("uv_fraction", [0.0, 0.1])
+def test_sparse_uv_charts_do_not_replace_safe_dense_vertices(monkeypatch, mode, safe_vertices, uses_atlas, uv_fraction):
+    """A densely sampled surface must not lose its detail to mostly empty UV tiles."""
+    side = 20
+    x, y = np.meshgrid(np.linspace(0, 10_000, side), np.linspace(0, 10_000, side))
+    verts = np.column_stack((x.ravel(), y.ravel(), np.zeros(side * side)))
+    faces = []
+    for row in range(side - 1):
+        for col in range(side - 1):
+            a = row * side + col
+            faces.extend(((a, a + 1, a + side + 1), (a, a + side + 1, a + side)))
+    faces = np.asarray(faces, dtype=np.int32)
+    obj = _AtlasObj("upholstery", len(verts) if safe_vertices else len(verts) - 1)
+    monkeypatch.setattr(adapter, "_extract_geometry", lambda _obj: (verts, faces, len(verts)))
+    monkeypatch.setattr(adapter, "_prepare_bake_uv", lambda _obj: None)
+    captured = {}
+
+    def write(_obj, tile, atlas_size, _layer):
+        captured.update(tile=tile, size=atlas_size)
+
+    def read(_obj, _layer):
+        # Include fully collapsed charts as well as a sparse occupied region.
+        uv = verts[faces, :2] / 10_000 * uv_fraction
+        tile = captured["tile"]
+        atlas_uv = (uv * tile.size + tile.offset) / captured["size"]
+        return atlas_uv, np.zeros(len(faces), dtype=np.int32)
+
+    monkeypatch.setattr(adapter, "_write_atlas_uv_layer", write)
+    monkeypatch.setattr(adapter, "_extract_evaluated_face_uv_and_slots", read)
+    if uv_fraction == 0 and uses_atlas:
+        with pytest.raises(RuntimeError, match="thermal atlas rasterized no solve points"):
+            adapter.build_atlas_plan(None, [obj], _ATLAS_CFG | {"render_domain": mode})
+        return
+    plan = adapter.build_atlas_plan(None, [obj], _ATLAS_CFG | {"render_domain": mode})
+    assert ("upholstery" in plan.texels) is uses_atlas
+    if uses_atlas:
+        assert 0 < len(plan.texels["upholstery"]["xy"]) < len(verts)
 
 
 def _build_two_object_plan(monkeypatch, *, drop_second: bool):
@@ -451,6 +531,14 @@ def test_atlas_digest_stable_across_identical_builds(monkeypatch):
     plan2 = _build_two_object_plan(monkeypatch, drop_second=False)
 
     assert plan1.digest == plan2.digest
+
+
+@pytest.mark.parametrize("attribute", ["xy", "uv", "position_mm", "normal", "face_material_index"])
+def test_atlas_digest_changes_with_mapping_even_when_counts_match(monkeypatch, attribute):
+    plan = _build_two_object_plan(monkeypatch, drop_second=False)
+    plan.texels["obj_a"][attribute].flat[0] += 1
+    changed = adapter._atlas_digest(plan.layout, plan.tile_min, plan.tile_max, plan.soft_max, plan.texels)
+    assert changed != plan.digest
 
 
 # ---------------------------------------------------------------------------
