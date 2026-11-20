@@ -20,6 +20,16 @@ def _plan(atlas_size, tiles, texels, digest="testdigest"):
     return adapter.AtlasPlan(layout=_tile_layout(atlas_size, tiles), texels=texels, digest=digest)
 
 
+def test_scatter_selects_requested_temperature_state():
+    tile = atlas.TileSpec(obj_name="surface", size=(4, 4), offset=(0, 0))
+    plan = _plan((4, 4), {"surface": tile}, {"surface": {"xy": np.array([[1, 1]])}})
+    history = {"surface": np.array([[295.0], [315.0], [305.0]])}
+    for timestep, expected in [(0, 295.0), (1, 315.0), (-1, 305.0)]:
+        temperatures, coverage = adapter._scatter_atlas_arrays(history, plan, timestep)
+        assert coverage[1, 1]
+        assert temperatures[1, 1] == expected
+
+
 # write_atlas: needs bpy (image creation/save), run inside Blender.
 
 

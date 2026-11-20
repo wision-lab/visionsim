@@ -158,6 +158,18 @@ class PointsConfig:
 
 @dataclass
 class ThermalConfig:
+    mode: Literal["STATIC", "TRANSIENT"] = "STATIC"
+    """TRANSIENT follows scene animation and preserves temperatures between frames."""
+    substeps_per_frame: int = 1
+    """Thermal steps per animation frame (TRANSIENT only)."""
+    laplacian_update_every_steps: int = 1
+    """Rebuild moving heat-transfer connections every N thermal steps."""
+    irradiance_bake_mode: Literal["ONCE", "EVERY_N_FRAMES", "EVERY_STEP"] = "EVERY_N_FRAMES"
+    irradiance_bake_every_n_frames: int = 1
+    simulation_start_frame: int | None = None
+    simulation_end_frame: int | None = None
+    cache_root: Path | None = None
+    """Optional thermal cache destination; transient runs use unique subdirectories."""
     # --- outputs ---
     radiance: bool = True
     """If true, also render the gray-body thermal-camera radiance image (second render pass)"""
@@ -219,6 +231,24 @@ class ThermalConfig:
     """Bit depth for temperature/radiance EXRs"""
 
     def __post_init__(self) -> None:
+        if self.mode not in {"STATIC", "TRANSIENT"}:
+            raise ValueError("thermal.mode must be STATIC or TRANSIENT")
+        if self.irradiance_bake_mode not in {"ONCE", "EVERY_N_FRAMES", "EVERY_STEP"}:
+            raise ValueError("Invalid thermal.irradiance_bake_mode")
+        for name in ("substeps_per_frame", "laplacian_update_every_steps", "irradiance_bake_every_n_frames"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"thermal.{name} must be a positive integer")
+        for name in ("simulation_start_frame", "simulation_end_frame"):
+            value = getattr(self, name)
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
+                raise ValueError(f"thermal.{name} must be a nonnegative integer")
+        if (
+            self.simulation_start_frame is not None
+            and self.simulation_end_frame is not None
+            and self.simulation_end_frame < self.simulation_start_frame
+        ):
+            raise ValueError("Thermal simulation end precedes start")
         positive = (
             "thermal_diffusivity_mm2_s",
             "density_kg_m3",

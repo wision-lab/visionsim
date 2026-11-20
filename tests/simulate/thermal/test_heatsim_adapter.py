@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
+import scipy.sparse as sp
+import torch
 
 from tests.simulate.thermal.heatsim_test_service import SERVICE_PATH, call_service
 from visionsim.simulate.blender import BlenderClient
 from visionsim.simulate.heatsim import adapter
+from visionsim.simulate.heatsim.solver import ConjugateGradientError, HeatSimFEM, scipy_to_torch_sparse
 
 # Distinctive globals so a leaked PropertyGroup default can never masquerade as a
 # global fallback (the PropertyGroup ships emissivity=0.9, density=1330.0).
@@ -17,6 +21,54 @@ _GLOBAL_DEFAULTS = {
     "specific_heat_J_kgK": 777.0,
     "emissivity": 0.5,
 }
+
+
+def _solver_inputs():
+    return SimpleNamespace(
+        verts=np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+        boundary_mask=np.ones(2, dtype=bool),
+        t0=np.full(2, 295.0),
+        irradiance=np.array([0.001, 0.002]),
+        alpha=np.ones(2),
+        density=np.full(2, 1e-6),
+        c=np.full(2, 1000.0),
+        eps=np.zeros(2),
+    )
+
+
+def test_solver_restarts_stiff_system_in_double_precision(monkeypatch):
+    dtypes = []
+
+    def matrices(self, *args, **kwargs):
+        dtypes.append(self.dtype)
+        laplacian = scipy_to_torch_sparse(sp.csr_matrix([[-1e5, 1e5], [1e5, -1e5]]), "cpu", self.dtype)
+        mass = scipy_to_torch_sparse(sp.eye(2), "cpu", self.dtype)
+        return laplacian, mass, mass
+
+    monkeypatch.setattr(HeatSimFEM, "_build_matrices", matrices)
+    combined = _solver_inputs()
+    history = adapter._run_solver(combined, {"sim_time_s": 2, "timestep_s": 1}, _GLOBAL_DEFAULTS)
+    expected = [np.zeros(2)]
+    matrix = np.array([[100001.0, -100000.0], [-100000.0, 100001.0]])
+    for _ in range(2):
+        expected.append(np.linalg.solve(matrix, expected[-1] + np.array([1.0, 2.0])))
+    assert dtypes == [torch.float32, torch.float64]
+    np.testing.assert_allclose(history, np.asarray(expected) + 295.0, atol=1e-8, rtol=0)
+    np.testing.assert_array_equal(combined.t0, np.full(2, 295.0))
+
+
+@pytest.mark.parametrize("error, attempts", [(RuntimeError, 1), (ConjugateGradientError, 2)])
+def test_solver_retry_is_bounded_and_only_for_cg_failure(monkeypatch, error, attempts):
+    calls = []
+
+    def fail(self, **kwargs):
+        calls.append(self.dtype)
+        raise error("solver failure")
+
+    monkeypatch.setattr(HeatSimFEM, "perform_gt_heat_simulation", fail)
+    with pytest.raises(error, match="solver failure"):
+        adapter._run_solver(_solver_inputs(), {}, _GLOBAL_DEFAULTS)
+    assert len(calls) == attempts
 
 
 class _FakeMat:
