@@ -14,7 +14,7 @@ import yaml
 
 from visionsim.cli import main
 from visionsim.cli._config_file import bind_config_file
-from visionsim.simulate.config import FlowsConfig, RenderConfig
+from visionsim.simulate.config import FlowsConfig, RenderConfig, ThermalConfig
 from visionsim.utils.config_file import ConfigIO
 
 
@@ -326,3 +326,32 @@ def test_resolved_gates_previews():
 
     assert resolved.depths.preview is False
     assert config.depths.preview is True
+
+
+@pytest.mark.parametrize("suffix", ["yaml", "json"])
+def test_transient_settings_survive_config_roundtrip_and_resolution(tmp_path, suffix):
+    config = RenderConfig(
+        include_thermal=True,
+        previews=False,
+        thermal=ThermalConfig(
+            mode="TRANSIENT",
+            simulation_start_frame=3,
+            simulation_end_frame=9,
+            substeps_per_frame=2,
+            laplacian_update_every_steps=2,
+            irradiance_bake_mode="EVERY_N_FRAMES",
+            irradiance_bake_every_n_frames=3,
+            cache_root=tmp_path / "cache",
+            recompute=True,
+        ),
+    )
+    path = tmp_path / f"transient.{suffix}"
+    config.to_file(path)
+    loaded = RenderConfig.from_file(path)
+    assert loaded == config
+    resolved = loaded.resolved()
+    assert resolved.thermal.mode == "TRANSIENT"
+    assert resolved.thermal.substeps_per_frame == 2
+    assert resolved.thermal.cache_root == tmp_path / "cache"
+    assert resolved.thermal.preview is False
+    assert loaded.thermal.preview is True

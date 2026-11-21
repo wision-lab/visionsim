@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from contextlib import nullcontext
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -207,7 +207,8 @@ def _extract_geometry(obj: Any) -> tuple | None:
     and every polygon is triangulated. Cycles vertex bakes use these evaluated indices.
     """
     depsgraph = bpy.context.evaluated_depsgraph_get()
-    mesh = obj.evaluated_get(depsgraph).data
+    evaluated = obj.evaluated_get(depsgraph)
+    mesh = evaluated.data
     n_verts = len(mesh.vertices)
     if n_verts == 0 or len(mesh.polygons) == 0:
         return None
@@ -215,7 +216,7 @@ def _extract_geometry(obj: Any) -> tuple | None:
     flat: np.ndarray = np.zeros(n_verts * 3, dtype=np.float64)
     mesh.vertices.foreach_get("co", flat)
     verts: np.ndarray = flat.reshape(n_verts, 3)
-    mw = np.array(obj.matrix_world, dtype=np.float64)
+    mw = np.array(evaluated.matrix_world, dtype=np.float64)
     verts = (verts @ mw[:3, :3].T) + mw[:3, 3]
     verts = verts * _M_TO_MM  # world metres -> mm
 
@@ -250,7 +251,8 @@ class AtlasPlan:
     the solve cache key).
 
     ``texels`` maps object name -> ``{"position_mm" (K,3), "normal" (K,3), "uv" (K,2),
-    "xy" (K,2) int64, "face" (K,) int64, "face_material_index" (M,) int32}``. ``"xy"`` is
+    "xy" (K,2) int64, "face" (K,) int64, "face_material_index" (M,) int32,
+    "triangles" (M,3) int32, "barycentric" (K,3) float64}``. ``"xy"`` is
     the tile-LOCAL integer texel coordinate (before the tile's ``AtlasLayout`` offset is
     added) - :func:`write_atlas` uses it together with ``layout.tiles[name].offset``
     to scatter this object's solved texel temperatures into the shared atlas image. Only
@@ -273,13 +275,51 @@ class AtlasPlan:
     meshes: dict[str, Any] = field(default_factory=dict, repr=False)
 
 
+@contextmanager
 def use_atlas_geometry(scene: Any, plan: AtlasPlan | None):
     """Use the same evaluated surfaces that own the plan's bake and atlas UVs."""
-    if plan is None or not plan.meshes:
-        return nullcontext()
-    from visionsim.simulate.heatsim.geometry import use_meshes
+    if plan is None:
+        yield
+        return
+    with ExitStack() as stack:
+        if plan.meshes:
+            from visionsim.simulate.heatsim.geometry import use_meshes
 
-    return use_meshes(scene, plan.meshes)
+            stack.enter_context(use_meshes(scene, plan.meshes))
+        # Geometry changes may invalidate the unwrap's geometry hash, but the
+        # atlas temperatures and flux samples still address the initial layout.
+        for name in plan.texels:
+            mesh = scene.objects[name].data
+            key = "heatsim_bake_uv_locked"
+            if key in mesh:
+                stack.callback(mesh.__setitem__, key, mesh[key])
+            else:
+                stack.callback(mesh.pop, key, None)
+            mesh[key] = True
+        yield
+
+
+def refresh_atlas_geometry(scene: Any, plan: AtlasPlan) -> None:
+    """Move stable thermal samples to the current evaluated pose.
+
+    Call before entering ``use_atlas_geometry``. The initial UV layout and
+    sample indices stay fixed; only their world positions and normals change.
+    """
+    from visionsim.simulate.heatsim.geometry import refresh_evaluated_meshes
+
+    refresh_evaluated_meshes(scene, plan.meshes)
+    with use_atlas_geometry(scene, plan):
+        for name, samples in plan.texels.items():
+            geom = _extract_geometry(scene.objects[name])
+            if geom is None or not np.array_equal(geom[1], samples["triangles"]):
+                raise RuntimeError(f"{name!r}: transient thermal atlas topology changed")
+            triangles = geom[0][geom[1][samples["face"]]]
+            samples["position_mm"] = np.einsum("nk,nkd->nd", samples["barycentric"], triangles)
+            normals = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
+            lengths = np.linalg.norm(normals, axis=1, keepdims=True)
+            if np.any(lengths <= 1e-20):
+                raise RuntimeError(f"{name!r}: transient thermal sample triangle became degenerate")
+            samples["normal"] = normals / lengths
 
 
 def _atlas_digest(
@@ -416,7 +456,7 @@ def build_atlas_plan(scene: Any, sim_objects: list, cfg: dict) -> AtlasPlan:
 def _build_atlas_plan(scene: Any, sim_objects: list, cfg: dict, *, source_meshes: dict | None = None) -> AtlasPlan:
     """Select and rasterize thermal solve points on evaluated mesh surfaces."""
     mode = str(cfg.get("render_domain", "AUTO")).upper()
-    if mode not in {"AUTO", "TEXEL"}:
+    if mode not in {"AUTO", "VERTEX", "TEXEL"}:
         raise ValueError(f"Unsupported atlas representation {mode!r}")
     density = float(cfg.get("atlas_texel_density", 1500.0))  # keep in sync with ThermalConfig.atlas_texel_density
     tile_min = int(cfg.get("atlas_tile_min", 16))
@@ -434,7 +474,7 @@ def _build_atlas_plan(scene: Any, sim_objects: list, cfg: dict, *, source_meshes
         verts, faces, n = geom
         geoms[obj.name] = (obj, verts, faces, n)
         area_m2 = atlas.surface_area_m2(verts, faces)
-        source_mesh = source_meshes.get(obj.name) if source_meshes is not None else None
+        source_mesh = source_meshes.get(obj.name) if source_meshes is not None and mode != "VERTEX" else None
         writeback_possible = _vertex_writeback_matches(obj, verts, source_mesh)
         writeback_safe[obj.name] = writeback_possible
         if area_m2 <= 0:
@@ -452,7 +492,7 @@ def _build_atlas_plan(scene: Any, sim_objects: list, cfg: dict, *, source_meshes
         surface_samples = len(np.unique(verts[np.unique(faces[triangle_areas > 0])], axis=0))
         geoms[obj.name] = (obj, verts, faces, surface_samples)
         coarse_face = bool(np.max(triangle_areas) * density > 4.0)
-        use_atlas = (
+        use_atlas = mode != "VERTEX" and (
             mode == "TEXEL"
             or coarse_face
             or atlas.select_for_atlas(surface_samples, area_m2, density, writeback_possible=writeback_possible)
@@ -560,6 +600,8 @@ def _build_atlas_plan(scene: Any, sim_objects: list, cfg: dict, *, source_meshes
             "xy": raster["xy"],
             "face": raster["face"],
             "face_material_index": face_material_index,
+            "triangles": faces.copy(),
+            "barycentric": raster["barycentric"],
         }
 
     digest = _atlas_digest(layout, tile_min, tile_max, soft_max, texels)
@@ -581,7 +623,7 @@ _ATLAS_PACKING_PADDING = 17
 assert 2 * _ATLAS_DILATE_ITERATIONS <= _ATLAS_PACKING_PADDING, "dilation would bridge tile padding"
 
 
-def _scatter_atlas_arrays(history: dict, atlas_plan: AtlasPlan) -> tuple[np.ndarray, np.ndarray]:
+def _scatter_atlas_arrays(history: dict, atlas_plan: AtlasPlan, timestep: int = -1) -> tuple[np.ndarray, np.ndarray]:
     """Pure-numpy core of :func:`write_atlas`: scatter + dilate, no ``bpy``.
 
     Returns ``(temperature, alpha)``, both ``(H, W)`` float64/bool-as-float64 arrays sized
@@ -613,7 +655,7 @@ def _scatter_atlas_arrays(history: dict, atlas_plan: AtlasPlan) -> tuple[np.ndar
             )
             continue
 
-        final = arr[-1]
+        final = arr[timestep]
         tx, ty = tile.offset
         px = xy[:, 0] + tx
         py = xy[:, 1] + ty
@@ -638,10 +680,11 @@ def write_atlas(
     cache_root: Path,
     defaults: dict | None = None,
     assignment: Any | None = None,
+    timestep: int = -1,
 ) -> Path:
-    """Write the final-timestep texel temperatures to a 32-bit float EXR atlas image.
+    """Write the selected timestep's texel temperatures to a 32-bit float EXR atlas image.
 
-    Scatters every atlas-participating object's LAST solved timestep into the shared atlas
+    Scatters every atlas-participating object's selected timestep into the shared atlas
     array at its tile's texels (:func:`_scatter_atlas_arrays`), push-out dilates across the
     invalid margin so render-time bilinear filtering never samples an untouched texel, and
     saves an RGBA float EXR to ``<cache_root>/atlas_<hash>/atlas_temperature.exr``:
@@ -669,14 +712,14 @@ def write_atlas(
     result_hash = hashlib.sha256((atlas_plan.digest or "noatlas").encode())
     for name in sorted(atlas_plan.texels):
         result_hash.update(name.encode())
-        result_hash.update(np.asarray(history[name][-1], dtype="<f8").tobytes())
+        result_hash.update(np.asarray(history[name][timestep], dtype="<f8").tobytes())
     width, height = atlas_plan.layout.atlas_size
     width, height = max(int(width), 1), max(int(height), 1)
     if atlas_plan.layout.atlas_size == (0, 0) or not atlas_plan.texels:
         temp_dilated: np.ndarray = np.zeros((height, width), dtype=np.float64)
         alpha: np.ndarray = np.zeros((height, width), dtype=np.float64)
     else:
-        temp_dilated, alpha = _scatter_atlas_arrays(history, atlas_plan)
+        temp_dilated, alpha = _scatter_atlas_arrays(history, atlas_plan, timestep)
 
     emissivity_history: dict[str, np.ndarray] = {}
     for name, tex in atlas_plan.texels.items():
@@ -1120,7 +1163,9 @@ def _run_solver(combined: SimpleNamespace, solver_cfg: dict, defaults: dict) -> 
     ``NUM_FRAME_DELTA = timestep_s * 60`` so ``dt = NUM_FRAME_DELTA / 60 == timestep_s``;
     ``record_time == sim_time`` records every step => history shape ``(sim_steps+1, N)``.
     """
-    from visionsim.simulate.heatsim.solver import HeatSimFEM
+    import torch
+
+    from visionsim.simulate.heatsim.solver import ConjugateGradientError, HeatSimFEM
 
     sim_time_s = float(solver_cfg.get("sim_time_s", 1.0))
     timestep_s = float(solver_cfg.get("timestep_s", 0.05))
@@ -1141,20 +1186,26 @@ def _run_solver(combined: SimpleNamespace, solver_cfg: dict, defaults: dict) -> 
         record_time=sim_time_s,  # record_attimestep == 0 => record all steps
     )
 
-    fem = HeatSimFEM(gen_params, sim_params)
-
-    history = fem.perform_gt_heat_simulation(
-        verts_np=combined.verts.copy(),
-        faces_np=None,
-        boundary_faces_np=None,
-        boundary_verts_mask_override=combined.boundary_mask,
-        u0=combined.t0,
-        irradiance_map=combined.irradiance,
-        thermal_diffusivity_map=combined.alpha,
-        density_map=combined.density,
-        specific_heat_map=combined.c,
-        emissivity_map=combined.eps,
-    )
+    for dtype, max_iter in ((torch.float32, 1000), (torch.float64, 5000)):
+        fem = HeatSimFEM(gen_params, sim_params, dtype=dtype, cg_max_iter=max_iter)
+        try:
+            history = fem.perform_gt_heat_simulation(
+                verts_np=combined.verts.copy(),
+                faces_np=None,
+                boundary_faces_np=None,
+                boundary_verts_mask_override=combined.boundary_mask,
+                u0=combined.t0,
+                irradiance_map=combined.irradiance,
+                thermal_diffusivity_map=combined.alpha,
+                density_map=combined.density,
+                specific_heat_map=combined.c,
+                emissivity_map=combined.eps,
+            )
+            break
+        except ConjugateGradientError:
+            if dtype == torch.float64:
+                raise
+            _log.warning("Thermal CG failed; restarting the full solve in float64 with unchanged tolerances")
     return np.asarray(history, dtype=np.float64)
 
 

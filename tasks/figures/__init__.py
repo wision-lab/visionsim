@@ -15,7 +15,7 @@ from invoke import Collection
 from . import quick_start, sections, tutorials
 from ._page import all_task, arrange_node_trees
 from .sections import interpolation
-from .sections.blender import groundtruths
+from .sections.blender import groundtruths, thermal
 from .sections.sensors import imu, itof, rgb
 from .tutorials import dvs, hdr, light_passes, passive_spc, playblast, stereo, varying_focal_lengths
 from .tutorials import itof as tutorial_itof
@@ -27,6 +27,7 @@ ns.add_task(
             quick_start,
             interpolation,
             groundtruths,
+            thermal,
             imu,
             itof,
             rgb,

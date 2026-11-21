@@ -255,6 +255,8 @@ class BlenderService(rpyc.Service):
     _persistent_data_before_thermal: bool | None
     _thermal_atlas_plan: Any | None
     _thermal_temp_range: tuple[float, float] | None
+    _thermal_transient: dict | None
+    _thermal_cache_root: Path | None
 
     def __init__(self) -> None:
         """Initialize render service.
@@ -796,6 +798,10 @@ class BlenderService(rpyc.Service):
     ) -> tuple[dict, Any, Path]:
         """Build the requested sampling plan and solve a fixed scene snapshot."""
 
+    @staticmethod
+    def _thermal_atlas_reader_is_managed(material: Any, node: Any) -> bool:
+        """Allow replacement only for thermal readers, never ordinary RGB paths."""
+
     def _thermal_load_pack_atlas_image(self, atlas_path: Path) -> None:
         """Load the EXR :func:`adapter.write_atlas` wrote and (re)register it as the
         ``HeatSim_Temperature_Atlas`` Blender image, packed so the shader (built right
@@ -831,6 +837,14 @@ class BlenderService(rpyc.Service):
         exr_codec: EXR_CODECS = "ZIP",
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
+        mode: Literal["STATIC", "TRANSIENT"] = "STATIC",
+        substeps_per_frame: int = 1,
+        laplacian_update_every_steps: int = 1,
+        irradiance_bake_mode: Literal["ONCE", "EVERY_N_FRAMES", "EVERY_STEP"] = "EVERY_N_FRAMES",
+        irradiance_bake_every_n_frames: int = 1,
+        simulation_start_frame: int | None = None,
+        simulation_end_frame: int | None = None,
+        cache_root: str | None = None,
     ) -> None:
         """Solve a fixed thermal field, write attributes or atlas, and set up the AOV."""
 
@@ -860,12 +874,17 @@ class BlenderService(rpyc.Service):
         exr_codec: EXR_CODECS = "ZIP",
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
+        mode: Literal["STATIC", "TRANSIENT"] = "STATIC",
+        substeps_per_frame: int = 1,
+        laplacian_update_every_steps: int = 1,
+        irradiance_bake_mode: Literal["ONCE", "EVERY_N_FRAMES", "EVERY_STEP"] = "EVERY_N_FRAMES",
+        irradiance_bake_every_n_frames: int = 1,
+        simulation_start_frame: int | None = None,
+        simulation_end_frame: int | None = None,
+        cache_root: str | None = None,
     ) -> None:
-        """Solve and cache a fixed thermal field without adding render outputs.
-
-        Render-output parameters (``radiance``, ``preview``, ``radiance_scale``, ``exr_codec``,
-        ``bit_depth``) are accepted so ``ThermalConfig`` can be splatted in directly, and ignored.
-        """
+        """Solve and cache a fixed thermal field without render outputs, ignoring the render-output
+        parameters it accepts for symmetry with :class:`ThermalConfig`."""
 
     @require_initialized_service
     def exposed_include_thermal(
@@ -893,6 +912,14 @@ class BlenderService(rpyc.Service):
         exr_codec: EXR_CODECS = "ZIP",
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
+        mode: Literal["STATIC", "TRANSIENT"] = "STATIC",
+        substeps_per_frame: int = 1,
+        laplacian_update_every_steps: int = 1,
+        irradiance_bake_mode: Literal["ONCE", "EVERY_N_FRAMES", "EVERY_STEP"] = "EVERY_N_FRAMES",
+        irradiance_bake_every_n_frames: int = 1,
+        simulation_start_frame: int | None = None,
+        simulation_end_frame: int | None = None,
+        cache_root: str | None = None,
     ) -> None:
         """Add the temperature AOV and optional preview and radiance outputs."""
 
@@ -905,6 +932,15 @@ class BlenderService(rpyc.Service):
     @require_initialized_service
     def exposed_heatsim_solve_config(self, config: dict[str, Any]) -> None:
         """Validate one serialized ThermalConfig and solve without render outputs."""
+
+    @require_initialized_service
+    def exposed_prepare_transient(
+        self, config: dict[str, Any], trajectory: str | None = None, render_outputs: bool = True
+    ) -> str:
+        """Precompute animated heat once, or attach a completed trajectory for another render worker."""
+
+    def _apply_transient_frame(self) -> None:
+        """Playback only: rendering the same frame twice never advances heat."""
 
     @require_initialized_service
     def exposed_load_addons(self, *addons: str) -> None:
@@ -1784,6 +1820,14 @@ class BlenderClient:
         exr_codec: EXR_CODECS = "ZIP",
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
+        mode: Literal["STATIC", "TRANSIENT"] = "STATIC",
+        substeps_per_frame: int = 1,
+        laplacian_update_every_steps: int = 1,
+        irradiance_bake_mode: Literal["ONCE", "EVERY_N_FRAMES", "EVERY_STEP"] = "EVERY_N_FRAMES",
+        irradiance_bake_every_n_frames: int = 1,
+        simulation_start_frame: int | None = None,
+        simulation_end_frame: int | None = None,
+        cache_root: str | None = None,
     ) -> None:
         """Solve a fixed thermal field, write attributes or atlas, and set up the AOV."""
 
@@ -1813,12 +1857,17 @@ class BlenderClient:
         exr_codec: EXR_CODECS = "ZIP",
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
+        mode: Literal["STATIC", "TRANSIENT"] = "STATIC",
+        substeps_per_frame: int = 1,
+        laplacian_update_every_steps: int = 1,
+        irradiance_bake_mode: Literal["ONCE", "EVERY_N_FRAMES", "EVERY_STEP"] = "EVERY_N_FRAMES",
+        irradiance_bake_every_n_frames: int = 1,
+        simulation_start_frame: int | None = None,
+        simulation_end_frame: int | None = None,
+        cache_root: str | None = None,
     ) -> None:
-        """Solve and cache a fixed thermal field without adding render outputs.
-
-        Render-output parameters (``radiance``, ``preview``, ``radiance_scale``, ``exr_codec``,
-        ``bit_depth``) are accepted so ``ThermalConfig`` can be splatted in directly, and ignored.
-        """
+        """Solve and cache a fixed thermal field without render outputs, ignoring the render-output
+        parameters it accepts for symmetry with :class:`ThermalConfig`."""
 
     @type_check_only
     def include_thermal(
@@ -1846,6 +1895,14 @@ class BlenderClient:
         exr_codec: EXR_CODECS = "ZIP",
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
+        mode: Literal["STATIC", "TRANSIENT"] = "STATIC",
+        substeps_per_frame: int = 1,
+        laplacian_update_every_steps: int = 1,
+        irradiance_bake_mode: Literal["ONCE", "EVERY_N_FRAMES", "EVERY_STEP"] = "EVERY_N_FRAMES",
+        irradiance_bake_every_n_frames: int = 1,
+        simulation_start_frame: int | None = None,
+        simulation_end_frame: int | None = None,
+        cache_root: str | None = None,
     ) -> None:
         """Add the temperature AOV and optional preview and radiance outputs."""
 
@@ -1856,6 +1913,12 @@ class BlenderClient:
     @type_check_only
     def heatsim_solve_config(self, config: dict[str, Any]) -> None:
         """Validate one serialized ThermalConfig and solve without render outputs."""
+
+    @type_check_only
+    def prepare_transient(
+        self, config: dict[str, Any], trajectory: str | None = None, render_outputs: bool = True
+    ) -> str:
+        """Precompute animated heat once, or attach a completed trajectory for another render worker."""
 
     @type_check_only
     def load_addons(self, *addons: str) -> None:
@@ -2794,6 +2857,14 @@ class BlenderClients(tuple):
         exr_codec: EXR_CODECS = "ZIP",
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
+        mode: Literal["STATIC", "TRANSIENT"] = "STATIC",
+        substeps_per_frame: int = 1,
+        laplacian_update_every_steps: int = 1,
+        irradiance_bake_mode: Literal["ONCE", "EVERY_N_FRAMES", "EVERY_STEP"] = "EVERY_N_FRAMES",
+        irradiance_bake_every_n_frames: int = 1,
+        simulation_start_frame: int | None = None,
+        simulation_end_frame: int | None = None,
+        cache_root: str | None = None,
     ) -> None:
         """Solve a fixed thermal field, write attributes or atlas, and set up the AOV."""
 
@@ -2823,12 +2894,17 @@ class BlenderClients(tuple):
         exr_codec: EXR_CODECS = "ZIP",
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
+        mode: Literal["STATIC", "TRANSIENT"] = "STATIC",
+        substeps_per_frame: int = 1,
+        laplacian_update_every_steps: int = 1,
+        irradiance_bake_mode: Literal["ONCE", "EVERY_N_FRAMES", "EVERY_STEP"] = "EVERY_N_FRAMES",
+        irradiance_bake_every_n_frames: int = 1,
+        simulation_start_frame: int | None = None,
+        simulation_end_frame: int | None = None,
+        cache_root: str | None = None,
     ) -> None:
-        """Solve and cache a fixed thermal field without adding render outputs.
-
-        Render-output parameters (``radiance``, ``preview``, ``radiance_scale``, ``exr_codec``,
-        ``bit_depth``) are accepted so ``ThermalConfig`` can be splatted in directly, and ignored.
-        """
+        """Solve and cache a fixed thermal field without render outputs, ignoring the render-output
+        parameters it accepts for symmetry with :class:`ThermalConfig`."""
 
     @type_check_only
     def include_thermal(
@@ -2856,6 +2932,14 @@ class BlenderClients(tuple):
         exr_codec: EXR_CODECS = "ZIP",
         bit_depth: Literal[16, 32] = 32,
         assignments: str | None = None,
+        mode: Literal["STATIC", "TRANSIENT"] = "STATIC",
+        substeps_per_frame: int = 1,
+        laplacian_update_every_steps: int = 1,
+        irradiance_bake_mode: Literal["ONCE", "EVERY_N_FRAMES", "EVERY_STEP"] = "EVERY_N_FRAMES",
+        irradiance_bake_every_n_frames: int = 1,
+        simulation_start_frame: int | None = None,
+        simulation_end_frame: int | None = None,
+        cache_root: str | None = None,
     ) -> None:
         """Add the temperature AOV and optional preview and radiance outputs."""
 
@@ -2866,6 +2950,12 @@ class BlenderClients(tuple):
     @type_check_only
     def heatsim_solve_config(self, config: dict[str, Any]) -> None:
         """Validate one serialized ThermalConfig and solve without render outputs."""
+
+    @type_check_only
+    def prepare_transient(
+        self, config: dict[str, Any], trajectory: str | None = None, render_outputs: bool = True
+    ) -> tuple[str,]:
+        """Precompute animated heat once, or attach a completed trajectory for another render worker."""
 
     @type_check_only
     def load_addons(self, *addons: str) -> None:

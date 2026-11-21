@@ -6,8 +6,8 @@ result as temperature and thermal-camera images. Enable it alongside the usual
 RGB and other outputs with ``--config.include-thermal``. VisionSim bakes the
 scene's lighting with Cycles, integrates a temperature field for the requested
 simulation time, and renders that final field from each requested camera pose.
-A render animation therefore shows the same solved thermal state from different
-views; it does not advance the heat simulation between frames.
+By default, a render animation shows the same solved thermal state from different
+views. Enable ``--config.thermal.mode TRANSIENT`` to evolve heat as objects move.
 
 The scene's world, lights, emissive surfaces, materials and geometry affect the
 Cycles lighting bake. The heat solve uses surface sample points and a robust
@@ -111,13 +111,163 @@ also couple nearby, physically separate surfaces. It does not model air
 convection. Material presets are practical starting values, not measurements
 of a particular asset.
 
-The scene starts at ``initial-temperature-K`` except at pinned sources. The
+The scene starts at ``initial-temperature-K`` except at pinned sources. In static mode, the
 solver advances in ``timestep-s`` increments for ``sim-time-s`` and renders the
 last temperature field. Both the heat calculation and thermal-render world use
 a fixed 295 K ambient reference, separate from the configurable initial
 temperature. Geometry is converted to millimetres internally; specify
 diffusivity in mm²/s, density in kg/m³, specific heat in J/(kg·K), and
 temperature in K.
+
+Heat simulation with moving geometry
+------------------------------------
+
+Transient mode follows the animation and carries temperatures forward. The
+combined point-cloud Laplacian is rebuilt at a configurable interval, so moving
+objects exchange heat with changing nearby surface samples. Contact is
+approximated through these proximity connections: nearby surfaces can exchange
+heat even when they are not physically touching.
+
+Rolling ball under a spotlight
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In this example, a ball rolls through a 1000 W spotlight. The ball and floor
+start at 295 K and their temperatures evolve freely. The ball heats as it
+crosses the beam and carries warm surface regions beyond it. The bright floor
+patch is mainly heated by the spotlight; it is not solely a contact trail.
+
+.. grid:: 2
+    :gutter: 1
+
+    .. grid-item::
+
+        .. video:: ../../_static/thermal-transient/rolling-ball-rgb-20fps.mp4
+            :loop:
+            :autoplay:
+            :muted:
+            :width: 100%
+            :figwidth: 100%
+            :nocontrols:
+            :playsinline:
+            :align: center
+            :caption: RGB — 20 fps (3× slower)
+
+    .. grid-item::
+
+        .. video:: ../../_static/thermal-transient/rolling-ball-temperature-20fps.mp4
+            :loop:
+            :autoplay:
+            :muted:
+            :width: 100%
+            :figwidth: 100%
+            :nocontrols:
+            :playsinline:
+            :align: center
+            :caption: Temperature — 20 fps (3× slower)
+
+The clips play all 180 frames at 20 fps, three times slower than the simulation.
+Rendering remains at 640 × 512 and 60 fps. Heat integration runs at
+120 Hz; the Laplacian and lighting update every frame. The heat input is
+multiplied by 300 to make the short heating sequence visible, without changing
+the spotlight's RGB brightness.
+
+Reproduce the run
+~~~~~~~~~~~~~~~~~
+
+Download `rollingball.blend <https://drive.google.com/file/d/1yRMWA0y1BsKwhXbzU8b4x4HBlctxeCw_/view>`_
+from the `shared assets <https://drive.google.com/drive/folders/16HvbXAYI2vELb9RlBtSvKA9uqhWSAdJg>`_
+and place it at ``assets/blender/rollingball.blend`` in the repository.
+To regenerate this page's videos, run from the repository root::
+
+    uv run --all-groups inv figures.sections.blender.thermal --force
+
+The task uses ``cache/rolling-ball/`` for render outputs and the existing figure
+encoder for the documentation videos. Add ``--dry-run`` to inspect its steps.
+
+The equivalent simulation commands below keep the scene's resolution, frame range and frame rate.
+Lighting already defaults to baking every frame, so no extra flag is needed.
+
+.. literalinclude:: ../../../../examples/transient_heat.sh
+   :language: bash
+   :start-after: # Commands for the rolling-ball demonstration.
+
+Update frequencies
+~~~~~~~~~~~~~~~~~~
+
+There are three independent rates:
+
+* ``substeps-per-frame`` controls temperature integration. At 60 fps, two steps
+  per frame give a timestep of 1/120 second. Geometry is evaluated at each
+  substep, including subframes.
+* ``laplacian-update-every-steps`` controls rebuilding the Laplacian and mass
+  matrices. The default 1 rebuilds every thermal step. Larger intervals reuse
+  the previous connections and mass and can retain a contact after objects move
+  apart, until the next update.
+* ``irradiance-bake-mode`` chooses ``ONCE``, ``EVERY_N_FRAMES`` (default), or
+  ``EVERY_STEP``. ``irradiance-bake-every-n-frames`` defaults to 1. Every run
+  includes an initial bake. Between bakes, the previous absorbed flux is held.
+  Each bake includes stationary receivers, since other objects can change
+  their shadows. Reflections are evaluated by Cycles during each render.
+
+Transient duration uses the simulation frame range and the scene's effective
+fps, after keyframe retiming. It defaults to the scene's full range. The static
+``sim-time-s`` and ``timestep-s`` settings do not control this mode. Selecting
+only a subset of frames for rendering does not skip the preceding thermal
+history. The initial frame contains the initial temperatures.
+
+Rigid motion and stable-topology deformation are supported, including thermal
+atlas samples attached to deforming triangles. Mesh/sample correspondence must
+remain stable. Topology changes and changes in participating object membership
+raise errors. Evaluated mesh snapshots must keep authored UVs, custom attributes,
+texture-coordinate bounds and material slots stable; unsupported changes raise
+an error. Animating values within an existing material is supported. Fast motion
+and small contact regions require sufficiently fine timesteps and surface samples. Animated simulation materials should retain
+their roles and diffusivity when matrices are reused.
+For Blender physics, bake the motion cache first so separate workers and
+out-of-order renders evaluate the same poses. Transient preparation does not
+bake Blender's physics caches.
+
+The simulation runs chronologically once before distributed rendering. Frame
+states are stored under a unique ``transient-*`` cache directory; only completed
+runs have ``manifest.json``. This manifest records timing and update counts.
+Render workers share the frame states and maintain separate atlas playback files.
+With ``recompute=False``, a matching complete trajectory is reused; otherwise
+the simulation starts from the beginning. ``recompute=True`` forces a fresh run.
+Completed trajectories are not evicted automatically. Remove them with
+``visionsim thermal.prune-cache <cache-root>``; pass ``--keep N`` to
+retain the newest runs. Run it when no render job is using that cache root.
+TEXEL playback writes per-frame atlas images under the trajectory's playback
+directory; pruning removes those files with the trajectory, while ``--keep``
+retains them.
+The Python service API can explicitly attach a completed run (read-only,
+regardless of ``recompute``)::
+
+    trajectory = producer.prepare_transient(thermal_config_dict)
+    consumer.prepare_transient(thermal_config_dict, trajectory=trajectory)
+
+Both workers must have the same scene, animation and thermal configuration.
+Reuse checks timing, update frequencies, geometry, thermal values, animation
+and shading, including authored mesh attributes and texture settings. For
+physics caches, simulation nodes, drivers, custom frame callbacks and unsupported
+object types, automatic reuse is disabled: even ``recompute=False`` starts a
+fresh solve. Explicit worker attachment remains available and assumes equivalent
+loaded scenes and baked motion caches.
+
+Automatic reuse requires fingerprintable image sources: ``FILE`` and
+``GENERATED``. Tiled/UDIM, movie and sequence images are solved normally, but
+automatic reuse is disabled for them because their time-varying inputs cannot
+be fingerprinted. Explicit trajectory attachment remains available and assumes
+equivalent loaded scenes. Use ``recompute=True`` to skip the fingerprint attempt
+entirely.
+
+``blender.heatsim-solve`` also supports transient preparation; its log reports
+the trajectory directory. Use an explicit ``cache-root`` to isolate experiments
+from caches beside a shared input blend file. A saved prepared blend is a frame
+snapshot; continuing playback requires the trajectory and preparation API.
+Use a new render output directory when attaching a trajectory for another job:
+service initialization currently replaces existing ``transforms.db`` metadata.
+Reusing an output directory can therefore retain images while losing metadata
+for earlier frames.
 
 Thermal parameters
 ------------------
@@ -130,33 +280,98 @@ slot. Boolean options such as ``radiance`` and ``preview`` accept a ``no-``
 form to turn them off. See :class:`visionsim.simulate.config.ThermalConfig`
 for the configuration type.
 
+The **Applies to** column distinguishes **Both**, **Static only**, and
+**Transient only**. Settings marked for one mode do not control the other mode.
+In particular, transient timing comes from the scene fps, simulation frame
+range, and ``substeps-per-frame``; it ignores ``sim-time-s`` and ``timestep-s``.
+
+Mode and transient timing
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 27 13 15 45
+
+   * - Parameter
+     - Default
+     - Applies to
+     - What it changes
+   * - ``mode``
+     - ``STATIC``
+     - Both
+     - ``STATIC`` solves one pose; ``TRANSIENT`` follows animation and carries
+       temperatures forward.
+   * - ``simulation-start-frame``
+     - ``None``
+     - Transient only
+     - First simulation frame, containing the initial temperatures. ``None``
+       uses the scene's start frame after retiming.
+   * - ``simulation-end-frame``
+     - ``None``
+     - Transient only
+     - Last simulation frame, inclusive. ``None`` uses the scene's end frame.
+       Duration is (end − start) divided by the effective scene fps.
+   * - ``substeps-per-frame``
+     - ``1``
+     - Transient only
+     - Temperature updates per animation frame. The timestep is
+       1 / (effective scene fps × substeps). At 60 fps, ``2`` gives 120 Hz.
+   * - ``laplacian-update-every-steps``
+     - ``1``
+     - Transient only
+     - Rebuilds the Laplacian and mass matrices every N thermal steps, including
+       an initial build. Between updates, the previous connections are reused.
+       With two substeps per frame, ``2`` rebuilds once per animation frame.
+   * - ``irradiance-bake-mode``
+     - ``EVERY_N_FRAMES``
+     - Transient only
+     - ``ONCE`` holds the initial bake; ``EVERY_N_FRAMES`` rebakes at the frame
+       interval below; ``EVERY_STEP`` rebakes at every thermal substep.
+       All modes include an initial bake.
+   * - ``irradiance-bake-every-n-frames``
+     - ``1``
+     - Transient only
+     - Animation frames between lighting bakes when the bake mode is
+       ``EVERY_N_FRAMES``. Ignored by ``ONCE`` and ``EVERY_STEP``.
+
 Output and file settings
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
-   :widths: 29 12 59
+   :widths: 27 13 15 45
 
    * - Parameter
      - Default
+     - Applies to
      - What it changes
    * - ``radiance``
      - ``True``
+     - Both
      - Includes the thermal-camera EXR and its second Cycles render. Disable
        when temperature data alone is enough.
    * - ``preview``
      - ``True``
+     - Both
      - Writes the colourized temperature PNG. This does not change the solve.
+   * - ``cache-root``
+     - ``None``
+     - Both
+     - Directory for thermal results. ``None`` uses ``<scene>.blend.heatsim``;
+       transient runs create unique subdirectories within it.
    * - ``assignments``
      - ``None``
+     - Both
      - Path to JSON that assigns thermal presets and source roles by Blender
        material name. See `Assigning materials and heat sources`_.
    * - ``exr-codec``
      - ``ZIP``
+     - Both
      - Compression for temperature and radiance EXRs. ZIP preserves their
        floating-point values.
    * - ``bit-depth``
      - ``32``
+     - Both
      - Bits per channel in those EXRs. ``16`` reduces file size at the cost of
        precision; use ``32`` for quantitative temperature analysis.
 
@@ -168,29 +383,35 @@ the named material presets.
 
 .. list-table::
    :header-rows: 1
-   :widths: 32 12 56
+   :widths: 27 13 15 45
 
    * - Parameter
      - Default
+     - Applies to
      - What it changes
    * - ``initial-temperature-K``
      - ``295.0``
+     - Both
      - Starting surface temperature in Kelvin. Raising it warms the initial
        field, but does not change the fixed ambient reference.
    * - ``thermal-diffusivity-mm2-s``
      - ``0.17``
+     - Both
      - How quickly temperature differences spread spatially. Larger values
        smooth hot spots faster; smaller values keep heating more local.
    * - ``density-kg-m3``
      - ``1330.0``
+     - Both
      - Density. Together with specific heat, it sets thermal inertia: higher
        density generally slows temperature change for a given input.
    * - ``specific-heat-J-kgK``
      - ``880.0``
+     - Both
      - Energy needed to warm a unit mass by one Kelvin. Larger values generally
        reduce and slow the temperature rise.
    * - ``emissivity``
      - ``0.9``
+     - Both
      - Surface emissivity from 0 to 1. It controls radiative exchange in the
        solve and the mix of emitted versus reflected thermal light
        in the radiance image. Low-emissivity metal can appear closer to its
@@ -201,42 +422,50 @@ Heating and integration
 
 .. list-table::
    :header-rows: 1
-   :widths: 32 12 56
+   :widths: 27 13 15 45
 
    * - Parameter
      - Default
+     - Applies to
      - What it changes
    * - ``irradiance-scale``
      - ``1.0``
+     - Both
      - Multiplies absorbed input from the lighting bake. Increase it for a
        stronger temperature rise from scene lighting. Unlike
        ``radiance-scale``, it changes the solved temperature.
    * - ``sim-time-s``
      - ``1.0``
-     - Duration of the static heat solve in seconds. Longer times allow more
-       heat to accumulate, diffuse and exchange with the ambient reference.
+     - Static only
+     - Duration of the static heat solve in seconds. Ignored in transient
+       mode, which uses the simulation frame range and scene fps.
    * - ``timestep-s``
      - ``0.05``
-     - Integration step in seconds. Smaller steps resolve the transient more
-       finely but require more solve time.
+     - Static only
+     - Static integration step in seconds. Ignored in transient mode;
+       use ``substeps-per-frame`` instead.
    * - ``bake-samples``
      - ``1024``
+     - Both
      - Cycles samples for the irradiance bake. More samples reduce stochastic
        speckle in the heating input, at extra bake cost; they do not increase
        spatial resolution.
    * - ``irradiance-texture-size``
      - ``512``
+     - Both
      - Width and height of the square Cycles irradiance and albedo bakes.
        Increasing it can preserve finer lighting and texture variation, with
        roughly quadratic image-memory and bake-work growth.
    * - ``device``
      - ``cuda``
+     - Both
      - Compute device for the heat solve: ``cuda`` or ``cpu``. If CUDA is
        unavailable, the CUDA choice falls back to CPU.
    * - ``recompute``
      - ``False``
-     - Regenerates the Cycles bakes and heat solve instead of using a reusable
-       result from the scene's thermal cache.
+     - Both
+     - Forces a fresh bake/solve. When false, reuses matching cached results;
+       transient reuse requires a complete trajectory.
 
 Choosing surface samples
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -276,35 +505,42 @@ vertices of its private render mesh without writing onto the original mesh.
 
 .. list-table::
    :header-rows: 1
-   :widths: 32 12 56
+   :widths: 27 13 15 45
 
    * - Parameter
      - Default
+     - Applies to
      - What it changes
    * - ``render-domain``
      - ``AUTO``
+     - Both
      - Selects ``AUTO``, ``VERTEX`` or ``TEXEL`` thermal sampling. It controls
        solve points and how the field reaches the render, not image resolution.
    * - ``atlas-texel-density``
      - ``1500.0``
+     - Both
      - Target thermal samples per square metre for atlas surfaces. Raising it
        can resolve smaller hot spots, but increases point count, memory and
        solve cost. Tile dimensions and the overall budget can limit it.
    * - ``atlas-tile-min``
      - ``16``
+     - Both
      - Minimum side length, in texels, of one object's atlas tile. A larger
        minimum gives small objects more samples, at extra memory cost.
    * - ``atlas-tile-max``
      - ``512``
+     - Both
      - Maximum side length of one object's tile. A lower maximum limits the
        cost of large objects but reduces their effective resolution.
    * - ``atlas-texel-soft-max``
      - ``500000``
+     - Both
      - Soft budget for atlas texels plus retained vertices. If exceeded,
        VisionSim reduces effective atlas density and warns. It is a planning
        limit rather than an exact cap.
    * - ``radiance-scale``
      - ``1.0``
+     - Both
      - Multiplies gray-body emission in the thermal-radiance render. It changes
        image brightness, not the heat solve or temperature EXR.
 

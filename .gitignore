@@ -148,3 +148,6 @@ docs/notes/
 
 # Blender save backups
 *.blend1
+
+# Downloaded Blender documentation scenes
+/assets/blender/

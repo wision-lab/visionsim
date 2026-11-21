@@ -104,7 +104,12 @@ def _prepare_render_job(
     if config.include_points:
         client.include_points(**asdict(config.points))
     if config.include_thermal:
-        client.configure_thermal(asdict(config.thermal))
+        if config.thermal.mode == "TRANSIENT" and isinstance(client, BlenderClients) and len(client) > 1:
+            trajectory = client[0].prepare_transient(asdict(config.thermal))
+            for worker in client[1:]:
+                worker.prepare_transient(asdict(config.thermal), trajectory=trajectory)
+        else:
+            client.configure_thermal(asdict(config.thermal))
 
     if output_blend_file is not None:
         client.save_file(output_blend_file)

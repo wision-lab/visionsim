@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
-from visionsim.simulate.config import RenderConfig
+import pytest
+
+from visionsim.simulate.config import RenderConfig, ThermalConfig
 from visionsim.simulate.job import render_job
 
 
@@ -72,3 +76,26 @@ def test_render_job_logs_resolved_config(caplog):
 
     assert "Resolved configuration" in caplog.text
     assert "include_depths: true" in caplog.text
+
+
+@pytest.mark.parametrize("mode", ["STATIC", "TRANSIENT"])
+def test_precompute_and_render_resolve_identical_thermal_settings(tmp_path, monkeypatch, mode):
+    from visionsim.cli.blender import heatsim_solve
+
+    source = tmp_path / "scene.blend"
+    source.touch()
+    clients = MagicMock()
+    context = MagicMock()
+    context.__enter__.return_value = clients
+    monkeypatch.setattr("visionsim.simulate.blender.BlenderClients.spawn", lambda **kwargs: context)
+    monkeypatch.setattr("visionsim.cli._run", lambda *args, **kwargs: SimpleNamespace(returncode=0))
+    config = RenderConfig(include_thermal=True, previews=False, thermal=ThermalConfig(mode=mode))
+    heatsim_solve(source, config)
+    precomputed = clients.heatsim_solve_config.call_args.args[0]
+
+    render_client = _RecordingClient()
+    render_job(render_client, str(source), str(tmp_path / "renders"), config, dry_run=True)
+    rendered = next(args[0] for name, args, _ in render_client.calls if name == "configure_thermal")
+    assert precomputed == rendered
+    assert precomputed["preview"] is False
+    assert config.thermal.preview is True

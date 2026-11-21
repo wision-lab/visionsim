@@ -213,7 +213,8 @@ def rasterize_tile(
 
     Returns arrays for covered texels only: ``xy`` (K,2) int tile-local texel indices,
     ``position_mm`` (K,3) barycentric-interpolated 3D positions, ``normal`` (K,3) unit face
-    normals, ``face`` (K,) int source-triangle index into `faces`.
+    normals, ``face`` (K,) int source-triangle index into `faces`, and
+    ``barycentric`` (K,3) weights in the original triangle's vertex order.
     """
     width, height = tile_size
     covered: np.ndarray = np.zeros((height, width), dtype=bool)
@@ -224,6 +225,7 @@ def rasterize_tile(
     pos_parts: list[np.ndarray] = []
     normal_parts: list[np.ndarray] = []
     face_parts: list[np.ndarray] = []
+    barycentric_parts: list[np.ndarray] = []
 
     n_faces = faces.shape[0]
     for fi in range(n_faces):
@@ -301,6 +303,10 @@ def rasterize_tile(
         pos_parts.append(positions)
         normal_parts.append(np.tile(normal, (len(gxs), 1)))
         face_parts.append(np.full(len(gxs), fi, dtype=np.int64))
+        weights = np.column_stack((wa, wb, wc))
+        if idx != (i0, i1, i2):
+            weights = weights[:, [0, 2, 1]]
+        barycentric_parts.append(weights[keep])
 
     if not xy_parts:
         return {
@@ -308,12 +314,14 @@ def rasterize_tile(
             "position_mm": np.zeros((0, 3), dtype=np.float64),
             "normal": np.zeros((0, 3), dtype=np.float64),
             "face": np.zeros((0,), dtype=np.int64),
+            "barycentric": np.zeros((0, 3), dtype=np.float64),
         }
     return {
         "xy": np.concatenate(xy_parts, axis=0),
         "position_mm": np.concatenate(pos_parts, axis=0),
         "normal": np.concatenate(normal_parts, axis=0),
         "face": np.concatenate(face_parts, axis=0),
+        "barycentric": np.concatenate(barycentric_parts, axis=0),
     }
 
 
