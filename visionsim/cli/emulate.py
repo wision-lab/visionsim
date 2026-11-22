@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -433,6 +433,171 @@ def imu(
                     d["t"], *d["acc_reading"], *d["gyro_reading"], *d["acc_bias"], *d["gyro_bias"]
                 )
             )
+
+
+def aspc(
+    input_dir: Path,
+    output_dir: Path,
+    config_file: Path | None = None,
+    min_depth: float | None = None,
+    max_depth: float | None = None,
+    n_bins: int | None = None,
+    bin_width: float | None = None,
+    pixel_fov_list: Path | None = None,
+    vignette: bool | None = None,
+    n_pulses: int | None = None,
+    dead_time: float | None = None,
+    free_running: bool | None = None,
+    fast_sim: bool | None = None,
+    active_enabled: bool | None = None,
+    active_wavelength: float | None = None,
+    active_pulse_repetition: float | None = None,
+    active_pulse_width: float | None = None,
+    active_avg_watts: float | None = None,
+    active_pulse_shape: Literal["gaussian", "square"] | Path | None = None,
+    ambient_enabled: bool | None = None,
+    ambient_temperature: float | None = None,
+    ambient_light_conditions: (
+        Literal[
+            "BRIGHTEST_SUNLIGHT",
+            "BRIGHT_SUNLIGHT",
+            "AVERAGE_SUNLIGHT",
+            "BRIGHT_SHADE",
+            "OVERCAST",
+            "SUNSET",
+            "SUNRISE",
+            "STORM_OVERCAST",
+            "OVERCAST_SUNSET",
+            "OVERCAST_SUNRISE",
+            "FULL_MOON",
+            "QUARTER_MOON",
+            "STARLIGHT_WITH_AIRGLOW",
+            "STARLIGHT_WITHOUT_AIRGLOW",
+        ]
+        | None
+    ) = None,
+    ambient_lambda_pass: float | None = None,
+    ambient_delta_lambda: float | None = None,
+    ambient_intensity: float | None = None,
+    sensor_size: tuple | None = None,
+    sensor_pixel_pitch: float | None = None,
+    sensor_f_number: float | None = None,
+    sensor_fov: tuple | None = None,
+    force: bool | None = None,
+    pattern: str | None = None,
+    device: str = "cpu",
+) -> None:
+    """Simulate Single-Photon (SP) LiDAR data from rendered frames and depth maps.
+
+    Args:
+        input_dir: directory containing the input rendered frames and depth maps.
+        output_dir: directory in which to save the simulated SP LiDAR data.
+        config_file: path to an optional YAML configuration file for the simulation parameters.
+        min_depth: minimum resolvable depth for the histogram. Given in meters.
+        max_depth: maximum resolvable depth for the histogram. Given in meters.
+        n_bins: total number of temporal bins in the histogram.
+        bin_width: spatial width of each individual histogram bin. Given in meters.
+        pixel_fov_list: path to specific field of view configurations for individual pixels or macro-pixels.
+        vignette: vignetting effect applied to the sensor's optical system.
+        n_pulses: number of laser pulses integrated per measurement/histogram.
+        dead_time: recovery time required by the SPAD after detecting a photon before it can detect another. Given in nanoseconds.
+        free_running: if true, indicates the SPAD operates in a free-running mode rather than a gated mode.
+        fast_sim: if true, enables a computationally faster, approximate simulation mode.
+        active_enabled: if true, toggles the active pulsed laser source on.
+        active_wavelength: center wavelength of the emitted laser pulse. Given in nanometers.
+        active_pulse_repetition: repetition rate of the laser pulses. Given in megahertz.
+        active_pulse_width: temporal duration (often FWHM) of a single laser pulse. Given in nanoseconds.
+        active_avg_watts: average power output of the pulsed laser. Given in watts.
+        active_pulse_shape: the temporal profile of the laser pulse (e.g., "gaussian", "square") or path to a custom shape.
+        ambient_enabled: if true, toggles the ambient light source (e.g., the sun) on.
+        ambient_temperature: blackbody color temperature of the ambient light source. Given in kelvin.
+        ambient_light_conditions: descriptor for the environment's lighting (e.g., "BRIGHT_SUNLIGHT", "OVERCAST").
+        ambient_lambda_pass: center wavelength of the receiver's optical bandpass filter. Given in nanometers.
+        ambient_delta_lambda: bandwidth of the receiver's optical bandpass filter. Given in nanometers.
+        ambient_intensity: irradiance of the ambient light source. Given in watts / meter**2.
+        sensor_size: pixel dimensions of the SPAD array (e.g., [height, width]).
+        sensor_pixel_pitch: physical distance between the centers of adjacent pixels. Given in micrometer.
+        sensor_f_number: the F-number (focal ratio) determining the optical aperture of the sensor.
+        sensor_fov: the angular field of view of the camera sensor. Given in degree.
+        force: if true, overwrite output file(s) or directory if present.
+        pattern: glob pattern to filter which files to process in the input directory.
+        device: cpu or cuda for processing
+    """
+    user_args = locals().copy()
+
+    from visionsim.dataset import Dataset
+    from visionsim.emulate.aspc import ASPCEmulator
+    from visionsim.emulate.aspc.utils import prepare_config, preproc_frames, ureg
+
+    prepared_config = prepare_config(user_args, config_file)
+
+    # 4. Output directory setup
+    if input_dir.resolve() == output_dir.resolve():
+        raise RuntimeError("Input and output directory cannot be the same!")
+
+    if output_dir.exists():
+        if not force:
+            raise FileExistsError(f"Output directory '{output_dir}' already exists. Use force=True to overwrite.")
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+    (output_dir / "frames").mkdir(parents=True, exist_ok=True)
+
+    # 5. Load Dataset
+    if pattern:
+        frames = Dataset.from_pattern(root=input_dir / "frames", pattern="*.png")
+        depths = Dataset.from_pattern(root=input_dir / "depths", pattern="*.exr")
+    else:
+        depths = Dataset.from_path(input_dir / "depths")
+        ambient = Dataset.from_path(input_dir / "frames")
+        albedo = Dataset.from_path(input_dir / "diffuse" / "color")
+
+    emulator = ASPCEmulator(config=prepared_config)
+
+    total_frames = len(depths)
+
+    # 7. Frame processing loop
+    import torch
+
+    from visionsim.utils.progress import ElapsedProgress
+
+    def _prepare_frame_quantity(frame, default_unit):
+        """Converts PyTorch Tensors or arrays to 2D NumPy arrays with Pint units."""
+        # 1. Convert PyTorch tensor or generic sequence to NumPy
+
+        if hasattr(frame, "detach"):
+            frame = frame.detach().cpu().numpy()
+
+        # 2. Ensure (H, W) 2D format
+        if frame.ndim != 2:
+            raise ValueError(f"Expected frame shape (H, W) 2D array, got shape {frame.shape}")
+        # Conver to torch tensor
+        frame = torch.from_numpy(frame.copy()).to(device="cpu", dtype=torch.float64)
+
+        # 3. Attach Pint units if not already attached
+        if not hasattr(frame, "units"):
+            frame = ureg.Quantity(frame, default_unit)
+
+        return frame
+
+    with ElapsedProgress() as progress:
+        task = progress.add_task("[cyan]Generating ASPC histograms...", total=total_frames)
+
+        for frame_idx, (depth_frame, albedo_frame, ambient_frame) in enumerate(zip(depths, albedo, ambient)):
+            depth_qty, albedo_qty, ambient_qty = preproc_frames(
+                depth_frame=depth_frame,
+                albedo_frame=albedo_frame,
+                ambient_frame=ambient_frame,
+                config=prepared_config,
+                device=device,
+            )
+
+            # Pass depth, albedo, and ambient quantities to the emulator
+            histogram_data = emulator.process_frame(depth_qty, albedo_qty, ambient_qty)
+
+            output_file = output_dir / "frames" / f"histogram_{frame_idx:04d}.npy"
+            np.save(output_file, histogram_data)
+
+            progress.advance(task, 1)
 
 
 def itof(

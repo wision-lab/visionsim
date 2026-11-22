@@ -1,1 +1,5 @@
-from .v2e.emulator import EventEmulator  # noqa: F401
+from .v2e.emulator import EventEmulator
+
+__all__ = [
+    "EventEmulator",
+]
