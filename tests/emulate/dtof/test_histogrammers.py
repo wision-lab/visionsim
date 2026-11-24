@@ -21,9 +21,6 @@ from visionsim.emulate.dtof.histogrammers import (
     timestamps_to_histogram,
 )
 
-# Used only by the commented-out stage 3 tests below:
-# from visionsim.emulate.dtof.histogrammers import batch_distorted_transient_async, batch_distorted_transient_sync
-
 # Statistical tests use fixed seeds (deterministic); thresholds come from the statistics, not hand tuning.
 Z_MAX = 4.0  # bound on |z| for count tests
 P_MIN = 1e-3  # floor on chi-square p-values
@@ -185,69 +182,3 @@ def test_dead_time_convention_exact_spacing(dead_time):
         torch.full((N_TBINS,), 0.4), 300, dead_time_bins=dead_time, generator=make_generator(4)
     )
     assert (dim[:, 0] * N_TBINS + dim[:, 1]).diff().min() >= dead_time
-
-
-# ──────── Stage 3: forward models and MC agreement ────────
-
-# def test_sync_forward_impulse_detection_probability():
-#     phi = torch.zeros(1, N_TBINS)
-#     phi[0, 5] = 0.7
-#     out = batch_distorted_transient_sync(phi)
-#     assert out[0, 5].item() == pytest.approx(1 - math.exp(-0.7), abs=1e-6)
-#     assert out[0, :5].sum() == 0 and out[0, 6:].sum() == 0
-#
-#
-# def test_sync_forward_flat_geometric_detection():
-#     c = 0.05
-#     phi = torch.full((1, N_TBINS), c)
-#     out = batch_distorted_transient_sync(phi)
-#     expected = (1 - math.exp(-c)) * np.exp(-c * np.arange(N_TBINS))
-#     torch.testing.assert_close(out[0].double(), torch.from_numpy(expected), rtol=1e-4, atol=1e-8)
-#
-#
-# def test_sync_forward_sums_to_single_hit_probability():
-#     phi = torch.rand(4, N_TBINS, generator=make_generator(9)) * 0.3
-#     sums = batch_distorted_transient_sync(phi).sum(dim=-1)
-#     expected = 1 - torch.exp(-phi.sum(dim=-1))
-#     torch.testing.assert_close(sums, expected, rtol=1e-4, atol=1e-6)
-#
-#
-# def test_async_forward_zero_dead_time_is_undistorted():
-#     phi = torch.rand(3, N_TBINS, generator=make_generator(10))
-#     assert torch.equal(batch_distorted_transient_async(phi, 0), phi)
-#
-#
-# def test_async_forward_total_rate_matches_nonparalyzable_formula():
-#     phi = torch.full((1, N_TBINS), 0.2)  # 12.8 photons per cycle
-#     dt = 16
-#     out = batch_distorted_transient_async(phi, dt)
-#     expected_rate = 12.8 / (1 + 12.8 * dt / N_TBINS)
-#     assert out.sum().item() == pytest.approx(expected_rate, rel=1e-3)
-#
-#
-# def test_async_forward_dead_time_suppresses_rate():
-#     phi = torch.full((1, N_TBINS), 0.5)
-#     clean = batch_distorted_transient_async(phi, 0).sum()
-#     dead = batch_distorted_transient_async(phi, N_TBINS // 2).sum()
-#     assert dead < 0.5 * clean
-#
-#
-# def test_mc_sync_matches_coates_forward():
-#     phi = torch.full((N_TBINS,), 0.02)
-#     phi[30] += 0.4
-#     n_pulses = 4000
-#     ewh = simulate_ewh(phi, n_pulses=n_pulses, free_running=False, generator=make_generator(11))
-#     forward = n_pulses * batch_distorted_transient_sync(phi[None])[0]
-#     assert ewh.sum() == pytest.approx(forward.sum().item(), rel=0.1)
-#     torch.testing.assert_close(ewh / ewh.sum(), forward / forward.sum(), rtol=0.0, atol=0.01)
-#
-#
-# def test_mc_free_running_matches_async_forward():
-#     phi = torch.full((N_TBINS,), 0.05)
-#     phi[20] += 0.5
-#     dt = 12
-#     n_pulses = 3000
-#     ewh = simulate_ewh(phi, n_pulses=n_pulses, dead_time_bins=dt, generator=make_generator(12))
-#     forward = n_pulses * batch_distorted_transient_async(phi[None], dt)[0]
-#     assert ewh.sum() == pytest.approx(forward.sum().item(), rel=0.15)
-#     torch.testing.assert_close(ewh / ewh.sum(), forward / forward.sum(), rtol=0.0, atol=0.02)

@@ -12,11 +12,7 @@ import scipy.constants
 import torch
 from torch import Tensor
 
-from visionsim.emulate.dtof.histogrammers import (
-    batch_distorted_transient_async,
-    batch_distorted_transient_sync,
-    simulate_ewh,
-)
+from visionsim.emulate.dtof.histogrammers import simulate_ewh
 
 DtoFModel = Literal["mc", "forward"]
 
@@ -387,6 +383,9 @@ def emulate_dtof(
     """
     if model not in ("mc", "forward"):
         raise ValueError(f"model must be one of 'mc' or 'forward', got {model!r}")
+    if model == "forward":
+        # TODO: forward models land with the single-pixel forward models and tests.
+        raise NotImplementedError("model='forward' is not available yet; use model='mc'")
     if n_pulses <= 0:
         raise ValueError(f"n_pulses must be > 0, got {n_pulses}")
     if int(dead_time_bins) != dead_time_bins or dead_time_bins < 0:
@@ -413,29 +412,17 @@ def emulate_dtof(
     )
     shape = np.shape(depths)
 
-    if model == "mc":
-        ewh = torch.stack(
-            [
-                simulate_ewh(
-                    row,
-                    n_pulses=n_pulses,
-                    n_bins=n_bins,
-                    dead_time_bins=dead_time_bins,
-                    free_running=free_running,
-                    generator=generator,
-                )
-                for row in transients
-            ]
-        )
-    else:
-        distorted = (
-            batch_distorted_transient_async(transients, dead_time_bins)
-            if free_running
-            else batch_distorted_transient_sync(transients)
-        )
-        # Expected counts per bin over all cycles.
-        ewh = n_pulses * distorted
-        if n_bins != n_tbins:
-            ewh = ewh.reshape(-1, n_bins, n_tbins // n_bins).sum(dim=-1)
-
+    ewh = torch.stack(
+        [
+            simulate_ewh(
+                row,
+                n_pulses=n_pulses,
+                n_bins=n_bins,
+                dead_time_bins=dead_time_bins,
+                free_running=free_running,
+                generator=generator,
+            )
+            for row in transients
+        ]
+    )
     return ewh.reshape(*shape, n_bins).numpy()
