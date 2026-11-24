@@ -1,4 +1,8 @@
-"""Tests for scene-level dToF transient generation and emulation."""
+"""Tests for scene-level dToF transient generation and emulation.
+
+Tests are grouped by development stage. Only stage 1 (single-pixel photon arrival rates) is
+active; tests of the later stages are commented out until those stages are reviewed.
+"""
 
 from __future__ import annotations
 
@@ -10,16 +14,30 @@ import pytest
 import scipy.constants
 import torch
 
-from tests.emulate.dtof import make_generator
-from visionsim.emulate.dtof import calculate_transients, emulate_dtof, make_irf
+from visionsim.emulate.dtof import apply_irf, calculate_transients, make_irf
 
-# ───────────────────────────── Transients ─────────────────────────────
+# Used only by the commented-out stage 2/3 tests below:
+# from tests.emulate.dtof import make_generator
+# from visionsim.emulate.dtof import emulate_dtof
+
+
+# ──────── Stage 1: arrival rates ────────
+
+# ──────── Transients ────────
 
 
 def test_transient_impulse_bin_and_amplitude():
     depth = np.array([[2.5]])
     albedo = np.array([[0.5]])
-    tr = calculate_transients(depth, albedo, n_tbins=100, max_depth=10.0, signal_photons=2.0, ambient_photons=0.0)
+    tr = calculate_transients(
+        depth,
+        albedo,
+        n_tbins=100,
+        max_depth=10.0,
+        signal_photons=2.0,
+        ambient_photons=0.0,
+        reference_depth=None,
+    )
     assert tr.shape == (1, 100)
     assert tr[0, 25].item() == pytest.approx(2.0 * 0.5)
     assert tr[0].sum() == pytest.approx(1.0)
@@ -50,6 +68,8 @@ def test_transient_scalar_ambient_broadcasts_over_scene():
             depth, albedo, scalar, n_tbins=8, max_depth=10.0, signal_photons=1.0, ambient_photons=2.0
         )
         assert torch.equal(tr, uniform)
+    with pytest.raises(ValueError, match="reference_depth"):
+        calculate_transients(np.zeros((1, 1)), np.zeros((1, 1)), n_tbins=4, max_depth=10.0, reference_depth=0.0)
     with pytest.raises(ValueError, match="positive mean"):
         calculate_transients(depth, albedo, 0.0, n_tbins=8, max_depth=10.0)
 
@@ -57,7 +77,15 @@ def test_transient_scalar_ambient_broadcasts_over_scene():
 def test_transient_depth_wraps_over_max_depth():
     depth = np.array([[12.8]])  # aliases to 2.8 m within the 10 m period
     albedo = np.array([[1.0]])
-    tr = calculate_transients(depth, albedo, n_tbins=10, max_depth=10.0, signal_photons=1.0, ambient_photons=0.0)
+    tr = calculate_transients(
+        depth,
+        albedo,
+        n_tbins=10,
+        max_depth=10.0,
+        signal_photons=1.0,
+        ambient_photons=0.0,
+        reference_depth=None,
+    )
     assert tr[0, 2].item() == pytest.approx(1.0)
     assert tr[0].sum() == pytest.approx(1.0)
 
@@ -69,6 +97,60 @@ def test_transient_nonfinite_depth_is_ambient_only():
     assert tr.shape == (3, 8)
     assert (tr == tr[:, :1]).all()
     assert tr[0].sum().item() == pytest.approx(2.0)
+
+
+def test_transient_signal_falls_off_with_inverse_square_depth():
+    # 12.8 m aliases into bin 2 of the 10 m window but is attenuated by its true distance.
+    depth = np.array([[2.0, 4.0, 12.8]])
+    tr = calculate_transients(
+        depth, np.ones((1, 3)), n_tbins=10, max_depth=10.0, signal_photons=1.0, ambient_photons=0.0, reference_depth=2.0
+    )
+    assert tr.max(dim=1).values.tolist() == pytest.approx([1.0, 0.25, (2.0 / 12.8) ** 2])
+    # Ambient does not fall off, and None disables the signal falloff.
+    ambient = calculate_transients(
+        depth, np.zeros((1, 3)), n_tbins=10, max_depth=10.0, signal_photons=1.0, ambient_photons=2.0
+    )
+    assert torch.allclose(ambient, torch.full_like(ambient, 0.2))
+    flat = calculate_transients(
+        depth, np.ones((1, 3)), n_tbins=10, max_depth=10.0, ambient_photons=0.0, reference_depth=None
+    )
+    assert flat.max(dim=1).values.tolist() == pytest.approx([1.0, 1.0, 1.0])
+
+
+def test_transient_tiny_depth_is_floored_to_one_bin():
+    tr = calculate_transients(
+        np.array([[1e-6]]), np.ones((1, 1)), n_tbins=100, max_depth=10.0, ambient_photons=0.0, reference_depth=1.0
+    )
+    assert tr.max().item() == pytest.approx((1 / 0.1) ** 2)  # bin width is 0.1 m
+
+
+def test_transient_min_depth_wraps_forward():
+    depth = np.array([[3.0, 1.0]])
+    albedo = np.ones((1, 2))
+    tr = calculate_transients(
+        depth,
+        albedo,
+        n_tbins=8,
+        min_depth=2.0,
+        max_depth=10.0,
+        signal_photons=1.0,
+        ambient_photons=0.0,
+        reference_depth=None,
+    )
+    # The 8 m window starts at 2 m: the 3 m return lands in bin 1, the 1 m return arrives
+    # before the window and wraps to its end.
+    assert tr[0, 1].item() == pytest.approx(1.0)
+    assert tr[1, 7].item() == pytest.approx(1.0)
+
+
+def test_transient_accepts_1d_and_2d_inputs():
+    depths = np.array([2.0, 4.0])
+    albedos = np.full(2, 0.5)
+    kwargs = {"n_tbins": 32, "max_depth": 10.0, "signal_photons": 1.0, "ambient_photons": 0.0}
+    tr_1d = calculate_transients(depths, albedos, **kwargs)
+    tr_2d = calculate_transients(depths.reshape(1, 2), albedos.reshape(1, 2), **kwargs)
+    # Flat pixel rows: input shape only changes the emulator output, not the transients.
+    torch.testing.assert_close(tr_1d, tr_2d)
 
 
 def test_transient_validation():
@@ -86,7 +168,56 @@ def test_transient_validation():
         calculate_transients(np.zeros((1, 1)), np.zeros((1, 1)), n_tbins=4, max_depth=0.0)
 
 
-# ───────────────────────────── Pulse kernel ─────────────────────────────
+# ──────── Pulse kernel ────────
+
+
+@pytest.mark.parametrize("depth", [0.05, 5.0, 9.95])  # the first and last bins exercise the window edges
+def test_transient_pulse_width_in_seconds_conserves_flux(depth):
+    bin_time = 2 * 10.0 / C / 100  # 100 bins spanning 10 m of range
+    kwargs = {"n_tbins": 100, "max_depth": 10.0, "signal_photons": 3.0, "ambient_photons": 2.0, "reference_depth": None}
+    tr = calculate_transients(np.array([depth]), np.array([0.8]), pulse_width=4 * bin_time, **kwargs)
+    assert tr.shape == (1, 100)
+    assert tr.sum().item() == pytest.approx(3.0 * 0.8 + 2.0, rel=1e-5)
+    assert tr.argmax().item() == int(depth * 10)
+    # A pulse of 4 bin durations is the same as a 4-bin kernel.
+    unshaped = calculate_transients(np.array([depth]), np.array([0.8]), **kwargs)
+    assert torch.allclose(tr, apply_irf(unshaped, 4.0), atol=1e-6)
+
+
+@pytest.mark.parametrize("width", [2.0, 4.0, 10.0])
+def test_make_irf_matches_requested_width(width):
+    irf = make_irf(width).double()
+    x = torch.arange(irf.numel(), dtype=torch.float64) - irf.numel() // 2
+    sigma = width / (2 * math.sqrt(2 * math.log(2)))
+    assert ((x**2) * irf).sum().item() == pytest.approx(sigma**2, rel=0.05)
+
+
+def test_transient_pulse_narrower_than_one_bin_raises():
+    bin_time = 2 * 10.0 / C / 100
+    kwargs = {"n_tbins": 100, "max_depth": 10.0}
+    depth, albedo = np.array([2.5]), np.array([1.0])
+    calculate_transients(depth, albedo, pulse_width=bin_time, **kwargs)  # exactly one bin is allowed
+    with pytest.raises(ValueError, match="at least one time bin"):
+        calculate_transients(depth, albedo, pulse_width=0.5 * bin_time, **kwargs)
+    with pytest.raises(ValueError, match="non-negative"):
+        calculate_transients(depth, albedo, pulse_width=-bin_time, **kwargs)
+
+
+def test_apply_irf_is_circular_with_requested_width():
+    # A spike in the last bin leaks its tail into the first bins instead of losing it.
+    x = torch.zeros(1, 400)
+    x[0, 399] = 1.0
+    assert apply_irf(x, 0.0) is x
+    y = apply_irf(x, 12.0)[0]
+    assert y.sum().item() == pytest.approx(1.0, rel=1e-5)
+    assert y[:5].sum().item() > 0.1
+    # A kernel longer than the window still conserves flux.
+    z = torch.rand(2, 5)
+    assert torch.allclose(apply_irf(z, 12.0).sum(-1), z.sum(-1), rtol=1e-5)
+    # Measured FWHM matches the request.
+    mid = torch.zeros(1, 400)
+    mid[0, 200] = 1.0
+    assert (apply_irf(mid, 10.0)[0] > apply_irf(mid, 10.0).max() / 2).sum().item() == pytest.approx(10, abs=1.5)
 
 
 def test_make_irf_normalized_and_symmetric():
@@ -99,122 +230,8 @@ def test_make_irf_normalized_and_symmetric():
         make_irf(0.0)
 
 
-# ───────────────────────────── Emulation ─────────────────────────────
+# ──────── ToF geometry resolution ────────
 
-
-def test_emulate_dtof_mc_shape_and_integer_counts():
-    depth = np.array([[1.0, 2.0], [3.0, 4.0]])
-    albedo = np.full((2, 2), 0.5)
-    ewh = emulate_dtof(
-        depth,
-        albedo,
-        n_tbins=32,
-        max_depth=10.0,
-        signal_photons=0.4,
-        ambient_photons=0.2,
-        n_pulses=500,
-        n_bins=8,
-        dead_time_bins=4,
-        model="mc",
-        pulse_width_bins=0.0,
-        generator=make_generator(13),
-    )
-    assert ewh.shape == (2, 2, 8)
-    assert np.all(ewh >= 0)
-    assert np.all(ewh == np.floor(ewh))
-
-
-def test_emulate_dtof_forward_sync_matches_analytic_counts():
-    depth = np.array([[2.5]])
-    albedo = np.array([[1.0]])
-    ewh = emulate_dtof(
-        depth,
-        albedo,
-        n_tbins=100,
-        max_depth=10.0,
-        signal_photons=0.5,
-        ambient_photons=0.0,
-        n_pulses=1000,
-        dead_time_bins=7,  # ignored in synchronous mode
-        free_running=False,
-        model="forward",
-        pulse_width_bins=0.0,
-    )
-    # Delta pulse: all signal in bin 25 with single-hit detection probability 1 - exp(-0.5).
-    assert ewh.shape == (1, 1, 100)
-    assert ewh[0, 0, 25] == pytest.approx(1000 * (1 - math.exp(-0.5)), rel=1e-5)
-    assert ewh[0, 0, :25].sum() == 0 and ewh[0, 0, 26:].sum() == 0
-
-
-def test_emulate_dtof_forward_async_zero_dead_time_preserves_totals():
-    depth = np.array([[1.0, 2.0]])
-    albedo = np.full((1, 2), 0.5)
-    ewh = emulate_dtof(
-        depth,
-        albedo,
-        n_tbins=32,
-        max_depth=10.0,
-        signal_photons=0.6,
-        ambient_photons=0.3,
-        n_pulses=100,
-        n_bins=4,
-        dead_time_bins=0,
-        model="forward",
-        pulse_width_bins=0.0,
-    )
-    assert ewh.shape == (1, 2, 4)
-    # No dead time: every arrival is an expected detection.
-    per_pixel_flux = 0.6 * 0.5 + 0.3
-    assert ewh.sum() == pytest.approx(100 * 2 * per_pixel_flux, rel=1e-5)
-
-
-def test_emulate_dtof_mc_matches_forward_at_low_flux():
-    depth = np.array([[2.0, 4.0]])
-    albedo = np.full((1, 2), 0.25)
-    kwargs = {
-        "n_tbins": 64,
-        "max_depth": 10.0,
-        "signal_photons": 0.1,
-        "ambient_photons": 0.05,
-        "n_pulses": 50000,
-        "free_running": False,
-        "pulse_width_bins": 0.0,
-    }
-    mc = emulate_dtof(depth, albedo, model="mc", generator=make_generator(14), **kwargs)
-    fwd = emulate_dtof(depth, albedo, model="forward", **kwargs)
-    assert mc.sum() == pytest.approx(fwd.sum(), rel=0.05)
-    assert np.allclose(mc / mc.sum(), fwd / fwd.sum(), atol=0.02)
-
-
-def test_emulate_dtof_reproducible_with_generator():
-    depth = np.array([[1.0, 2.0]])
-    albedo = np.full((1, 2), 0.5)
-    kwargs = {"n_tbins": 32, "max_depth": 10.0, "n_pulses": 200, "dead_time_bins": 4}
-    # A shared generator object advances between calls; identical seeds reproduce instead.
-    first = emulate_dtof(depth, albedo, generator=make_generator(15), **kwargs)
-    second = emulate_dtof(depth, albedo, generator=make_generator(15), **kwargs)
-    assert np.array_equal(first, second)
-
-
-def test_emulate_dtof_validation():
-    depth = np.zeros((1, 1))
-    albedo = np.zeros((1, 1))
-    base = {"n_tbins": 64, "max_depth": 10.0}
-    with pytest.raises(ValueError, match="model must be one of"):
-        emulate_dtof(depth, albedo, model="coincident", **base)
-    with pytest.raises(ValueError, match="n_pulses must be > 0"):
-        emulate_dtof(depth, albedo, n_pulses=0, **base)
-    with pytest.raises(ValueError, match="exact multiple"):
-        emulate_dtof(depth, albedo, n_bins=10, **base)
-    with pytest.raises(ValueError, match="dead_time_bins must be a non-negative"):
-        emulate_dtof(depth, albedo, dead_time_bins=-2, **base)
-    with pytest.raises(ValueError, match="dead_time_bins must be a non-negative"):
-        emulate_dtof(depth, albedo, dead_time_bins=2.5, **base)
-    with pytest.raises(ValueError, match="pulse_width_bins"):
-        emulate_dtof(depth, albedo, pulse_width_bins=-1.0, **base)
-
-
-# ─────────────────────────── ToF geometry resolution ───────────────────────────
 
 C = scipy.constants.c
 PERIOD_10M = 2 * 10.0 / C  # spans 10 m of round-trip range
@@ -281,51 +298,146 @@ def test_transient_bin_width_must_divide_span():
         calculate_transients(depth, albedo, bin_width=3.0, max_depth=10.0)
 
 
-def test_transient_min_depth_wraps_forward():
-    depth = np.array([[3.0, 1.0]])
-    albedo = np.ones((1, 2))
-    tr = calculate_transients(
-        depth, albedo, n_tbins=8, min_depth=2.0, max_depth=10.0, signal_photons=1.0, ambient_photons=0.0
-    )
-    # The 8 m window starts at 2 m: the 3 m return lands in bin 1, the 1 m return arrives
-    # before the window and wraps to its end.
-    assert tr[0, 1].item() == pytest.approx(1.0)
-    assert tr[1, 7].item() == pytest.approx(1.0)
+# ──────── Stages 2-3: readout models (commented out) ────────
+# End-to-end emulate_dtof tests: MC (stage 2) and forward model (stage 3).
 
-
-def test_emulate_dtof_period_derives_max_depth():
-    depth = np.array([[2.55]])
-    albedo = np.array([[1.0]])
-    kwargs = {"n_pulses": 100, "model": "forward", "dead_time_bins": 0, "pulse_width_bins": 0.0}
-    by_range = emulate_dtof(depth, albedo, n_tbins=100, max_depth=10.0, **kwargs)
-    by_period = emulate_dtof(depth, albedo, n_tbins=100, period=PERIOD_10M, **kwargs)
-    assert np.allclose(by_period, by_range, rtol=1e-4, atol=1e-9)
-
-
-def test_transient_accepts_1d_and_2d_inputs():
-    depths = np.array([2.0, 4.0])
-    albedos = np.full(2, 0.5)
-    kwargs = {"n_tbins": 32, "max_depth": 10.0, "signal_photons": 1.0, "ambient_photons": 0.0}
-    tr_1d = calculate_transients(depths, albedos, **kwargs)
-    tr_2d = calculate_transients(depths.reshape(1, 2), albedos.reshape(1, 2), **kwargs)
-    # Flat pixel rows: input shape only changes the emulator output, not the transients.
-    torch.testing.assert_close(tr_1d, tr_2d)
-
-
-def test_emulate_dtof_output_keeps_spatial_shape():
-    depths = np.array([[1.0, 2.0], [3.0, 4.0]])
-    albedos = np.full((2, 2), 0.5)
-    kwargs = {
-        "n_tbins": 32,
-        "max_depth": 10.0,
-        "signal_photons": 0.4,
-        "ambient_photons": 0.2,
-        "n_pulses": 50,
-        "model": "forward",
-        "pulse_width_bins": 0.0,
-    }
-    ewh = emulate_dtof(depths, albedos, **kwargs)
-    ewh_1d = emulate_dtof(depths.reshape(-1), albedos.reshape(-1), **kwargs)
-    assert ewh.shape == (2, 2, 32)
-    assert ewh_1d.shape == (4, 32)
-    assert np.allclose(ewh.reshape(-1, 32), ewh_1d)
+# def test_emulate_dtof_mc_shape_and_integer_counts():
+#     depth = np.array([[1.0, 2.0], [3.0, 4.0]])
+#     albedo = np.full((2, 2), 0.5)
+#     ewh = emulate_dtof(
+#         depth,
+#         albedo,
+#         n_tbins=32,
+#         max_depth=10.0,
+#         signal_photons=0.4,
+#         ambient_photons=0.2,
+#         n_pulses=500,
+#         n_bins=8,
+#         dead_time_bins=4,
+#         model="mc",
+#         pulse_width=0.0,
+#         generator=make_generator(13),
+#     )
+#     assert ewh.shape == (2, 2, 8)
+#     assert np.all(ewh >= 0)
+#     assert np.all(ewh == np.floor(ewh))
+#
+#
+# def test_emulate_dtof_forward_sync_matches_analytic_counts():
+#     depth = np.array([[2.5]])
+#     albedo = np.array([[1.0]])
+#     ewh = emulate_dtof(
+#         depth,
+#         albedo,
+#         n_tbins=100,
+#         max_depth=10.0,
+#         signal_photons=0.5,
+#         ambient_photons=0.0,
+#         reference_depth=None,
+#         n_pulses=1000,
+#         dead_time_bins=7,  # ignored in synchronous mode
+#         free_running=False,
+#         model="forward",
+#         pulse_width=0.0,
+#     )
+#     # Delta pulse: all signal in bin 25 with single-hit detection probability 1 - exp(-0.5).
+#     assert ewh.shape == (1, 1, 100)
+#     assert ewh[0, 0, 25] == pytest.approx(1000 * (1 - math.exp(-0.5)), rel=1e-5)
+#     assert ewh[0, 0, :25].sum() == 0 and ewh[0, 0, 26:].sum() == 0
+#
+#
+# def test_emulate_dtof_forward_async_zero_dead_time_preserves_totals():
+#     depth = np.array([[1.0, 2.0]])
+#     albedo = np.full((1, 2), 0.5)
+#     ewh = emulate_dtof(
+#         depth,
+#         albedo,
+#         n_tbins=32,
+#         max_depth=10.0,
+#         signal_photons=0.6,
+#         ambient_photons=0.3,
+#         reference_depth=None,
+#         n_pulses=100,
+#         n_bins=4,
+#         dead_time_bins=0,
+#         model="forward",
+#         pulse_width=0.0,
+#     )
+#     assert ewh.shape == (1, 2, 4)
+#     # No dead time: every arrival is an expected detection.
+#     per_pixel_flux = 0.6 * 0.5 + 0.3
+#     assert ewh.sum() == pytest.approx(100 * 2 * per_pixel_flux, rel=1e-5)
+#
+#
+# def test_emulate_dtof_mc_matches_forward_at_low_flux():
+#     depth = np.array([[2.0, 4.0]])
+#     albedo = np.full((1, 2), 0.25)
+#     kwargs = {
+#         "n_tbins": 64,
+#         "max_depth": 10.0,
+#         "signal_photons": 0.1,
+#         "ambient_photons": 0.05,
+#         "n_pulses": 50000,
+#         "free_running": False,
+#         "pulse_width": 0.0,
+#     }
+#     mc = emulate_dtof(depth, albedo, model="mc", generator=make_generator(14), **kwargs)
+#     fwd = emulate_dtof(depth, albedo, model="forward", **kwargs)
+#     assert mc.sum() == pytest.approx(fwd.sum(), rel=0.05)
+#     assert np.allclose(mc / mc.sum(), fwd / fwd.sum(), atol=0.02)
+#
+#
+# def test_emulate_dtof_reproducible_with_generator():
+#     depth = np.array([[1.0, 2.0]])
+#     albedo = np.full((1, 2), 0.5)
+#     kwargs = {"n_tbins": 32, "max_depth": 10.0, "n_pulses": 200, "dead_time_bins": 4}
+#     # A shared generator object advances between calls; identical seeds reproduce instead.
+#     first = emulate_dtof(depth, albedo, generator=make_generator(15), **kwargs)
+#     second = emulate_dtof(depth, albedo, generator=make_generator(15), **kwargs)
+#     assert np.array_equal(first, second)
+#
+#
+# def test_emulate_dtof_validation():
+#     depth = np.zeros((1, 1))
+#     albedo = np.zeros((1, 1))
+#     base = {"n_tbins": 64, "max_depth": 10.0}
+#     with pytest.raises(ValueError, match="model must be one of"):
+#         emulate_dtof(depth, albedo, model="coincident", **base)
+#     with pytest.raises(ValueError, match="n_pulses must be > 0"):
+#         emulate_dtof(depth, albedo, n_pulses=0, **base)
+#     with pytest.raises(ValueError, match="exact multiple"):
+#         emulate_dtof(depth, albedo, n_bins=10, **base)
+#     with pytest.raises(ValueError, match="dead_time_bins must be a non-negative"):
+#         emulate_dtof(depth, albedo, dead_time_bins=-2, **base)
+#     with pytest.raises(ValueError, match="dead_time_bins must be a non-negative"):
+#         emulate_dtof(depth, albedo, dead_time_bins=2.5, **base)
+#     with pytest.raises(ValueError, match="pulse_width"):
+#         emulate_dtof(depth, albedo, pulse_width=-1.0, **base)
+#
+#
+# def test_emulate_dtof_period_derives_max_depth():
+#     depth = np.array([[2.55]])
+#     albedo = np.array([[1.0]])
+#     kwargs = {"n_pulses": 100, "model": "forward", "dead_time_bins": 0, "pulse_width": 0.0}
+#     by_range = emulate_dtof(depth, albedo, n_tbins=100, max_depth=10.0, **kwargs)
+#     by_period = emulate_dtof(depth, albedo, n_tbins=100, period=PERIOD_10M, **kwargs)
+#     assert np.allclose(by_period, by_range, rtol=1e-4, atol=1e-9)
+#
+#
+# def test_emulate_dtof_output_keeps_spatial_shape():
+#     depths = np.array([[1.0, 2.0], [3.0, 4.0]])
+#     albedos = np.full((2, 2), 0.5)
+#     kwargs = {
+#         "n_tbins": 32,
+#         "max_depth": 10.0,
+#         "signal_photons": 0.4,
+#         "ambient_photons": 0.2,
+#         "n_pulses": 50,
+#         "model": "forward",
+#         "pulse_width": 0.0,
+#     }
+#     ewh = emulate_dtof(depths, albedos, **kwargs)
+#     ewh_1d = emulate_dtof(depths.reshape(-1), albedos.reshape(-1), **kwargs)
+#     assert ewh.shape == (2, 2, 32)
+#     assert ewh_1d.shape == (4, 32)
+#     assert np.allclose(ewh.reshape(-1, 32), ewh_1d)

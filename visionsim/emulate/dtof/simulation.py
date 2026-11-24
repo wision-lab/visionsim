@@ -10,7 +10,6 @@ import numpy as np
 import numpy.typing as npt
 import scipy.constants
 import torch
-import torch.nn.functional as F
 from torch import Tensor
 
 from visionsim.emulate.dtof.histogrammers import (
@@ -26,6 +25,9 @@ logger = logging.getLogger(__name__)
 
 def make_irf(pulse_width_bins: float = 1.0) -> Tensor:
     """Build a normalized Gaussian laser pulse (instrument response function) kernel.
+
+    The Gaussian is sampled at bin centers, so it is accurate for pulses of at least about
+    one bin; narrower pulses collapse towards a single tap.
 
     Args:
         pulse_width_bins (float, optional): Pulse full width at half maximum, in time bins.
@@ -46,6 +48,32 @@ def make_irf(pulse_width_bins: float = 1.0) -> Tensor:
     x = torch.arange(-half, half + 1, dtype=torch.float32)
     irf = torch.exp(-0.5 * (x / sigma) ** 2)
     return irf / irf.sum()
+
+
+def apply_irf(transients: Tensor, pulse_width_bins: float) -> Tensor:
+    """Convolve transients with a Gaussian laser pulse along the last (time) axis.
+
+    The transient is periodic in the laser period (late returns alias to early bins), so the
+    convolution is circular: pulse energy spilling past one end of the window re-enters at
+    the other, and the total flux of every transient is conserved.
+
+    Args:
+        transients (torch.Tensor): Photon rates of shape ``(..., n_tbins)``.
+        pulse_width_bins (float): Pulse full width at half maximum, in time bins. Zero skips
+            pulse shaping.
+
+    Returns:
+        Shaped transients, same shape as ``transients``.
+
+    Raises:
+        ValueError: If ``pulse_width_bins`` is negative (raised by :func:`make_irf`).
+    """
+    if pulse_width_bins == 0:
+        return transients
+    irf = make_irf(pulse_width_bins).to(transients.dtype)
+    half = irf.numel() // 2
+    # Sum of shifted copies handles kernels longer than the window, unlike circular padding.
+    return sum(w * torch.roll(transients, shifts=k - half, dims=-1) for k, w in enumerate(irf))
 
 
 def _resolve_tof_geometry(
@@ -149,8 +177,10 @@ def calculate_transients(
     period: float | None = None,
     signal_photons: float = 1.0,
     ambient_photons: float = 4.0,
+    reference_depth: float | None = 1.0,
+    pulse_width: float = 0.0,
 ) -> Tensor:
-    """Compute per-pixel ground-truth transients from a depth map and reflectance.
+    """Compute per-pixel photon arrival rates from a depth map and reflectance.
 
     Signal and ambient flux are defined at scene level through a calibration setup
     assumption: ``signal_photons`` is the mean signal photons returned per laser cycle by
@@ -158,6 +188,14 @@ def calculate_transients(
     cycle, spatially weighted by ``ambient`` (e.g. the mean of a linear RGB render's
     channels) when provided, else uniform. Laser power conversion and ambient light
     source physics are intentionally left out.
+
+    The signal falls off with the inverse square of the true surface depth,
+    ``signal_photons * albedo * (reference_depth / depth) ** 2``, so ``signal_photons`` is the return
+    of a unit-albedo surface at ``reference_depth``. The falloff uses the depth before range wrapping
+    and is floored at one bin width to stay finite near zero. Ambient does not fall off.
+
+    The signal impulse is then shaped by a Gaussian laser pulse of the given FWHM (see
+    :func:`make_irf`), which conserves flux: the total rate per pixel is the signal mass plus ``ambient_photons``.
 
     Non-finite or non-positive depths model no surface and contribute ambient only;
     depths outside ``[min_depth, max_depth)`` alias (range wrapping).
@@ -182,13 +220,19 @@ def calculate_transients(
             Defaults to 1.0.
         ambient_photons (float, optional): Scene-average ambient photons per cycle.
             Defaults to 4.0.
+        reference_depth (float, optional): Depth in metres at which ``signal_photons`` is defined;
+            signal scales as ``(reference_depth / depth) ** 2``. None disables the falloff.
+            Defaults to 1.0.
+        pulse_width (float, optional): Laser pulse full width at half maximum, in seconds
+            (``1e-9`` is 1 ns); zero skips pulse shaping, otherwise it must span at least one
+            time bin (``period / n_tbins``). Defaults to 0.0.
 
     Returns:
         Per-pixel mean photon rate per bin of shape ``(n_pixels, n_tbins)``, one row per flattened pixel.
 
     Raises:
         ValueError: If ``depths`` is not at least 1-D, ``albedos`` or ``ambient`` does not
-            match its shape, ``ambient`` has non-positive mean, the photon rates are negative,
+            match its shape, ``pulse_width`` is negative or shorter than one time bin, ``ambient`` has non-positive mean, the photon rates are negative,
             or the geometry is under-specified or contradictory.
     """
     depths = torch.as_tensor(depths, dtype=torch.float32)
@@ -204,9 +248,23 @@ def calculate_transients(
             f"signal_photons and ambient_photons must be non-negative, got {signal_photons!r} and {ambient_photons!r}"
         )
 
-    n_tbins, _bin_width, min_depth, max_depth, _period = _resolve_tof_geometry(
+    if reference_depth is not None and reference_depth <= 0:
+        raise ValueError(f"reference_depth must be > 0 or None, got {reference_depth!r}")
+
+    if pulse_width < 0:
+        raise ValueError(f"pulse_width must be non-negative, got {pulse_width!r}")
+
+    n_tbins, bin_width, min_depth, max_depth, period = _resolve_tof_geometry(
         n_tbins=n_tbins, bin_width=bin_width, min_depth=min_depth, max_depth=max_depth, period=period
     )
+
+    # One bin lasts period / n_tbins; narrower pulses are not resolved by the sampled kernel.
+    bin_time = period / n_tbins
+    if 0 < pulse_width < bin_time * (1 - 1e-9):
+        raise ValueError(
+            f"pulse_width must be 0 (no shaping) or at least one time bin ({bin_time!r} s for this geometry), "
+            f"got {pulse_width!r}"
+        )
 
     if ambient is None:
         weights = torch.ones_like(depths)
@@ -234,14 +292,19 @@ def calculate_transients(
     transient_idx = (torch.remainder(depths - min_depth, span) * (n_tbins / span)).floor().to(torch.int64)
     transient_idx = transient_idx.clamp(max=n_tbins - 1)
 
-    # Signal: one rate bin at the depth bin; scene-level calibration absorbs per-pixel geometry (no 1/d**2 falloff).
+    # Signal: one rate bin at the depth bin, with inverse-square falloff relative to reference_depth.
     transients = torch.zeros(depths.shape[0], n_tbins, dtype=torch.float32)
     rows = torch.nonzero(valid).squeeze(-1)
-    transients[rows, transient_idx[valid]] = signal_photons * albedos[valid]
+    signal = signal_photons * albedos[valid]
+    if reference_depth is not None:
+        # True depth, not the wrapped one: an aliased return is still as faint as its real distance.
+        signal = signal * (reference_depth / depths[valid].clamp(min=bin_width)) ** 2
+    transients[rows, transient_idx[valid]] = signal
 
     # Ambient: ambient_photons per cycle spread flat across the period.
     transients += (ambient_photons * weights / n_tbins).unsqueeze(1)
-    return transients
+    # Convert the pulse FWHM from seconds to bins: one bin lasts period / n_tbins.
+    return apply_irf(transients, pulse_width * n_tbins / period)
 
 
 def emulate_dtof(
@@ -256,12 +319,13 @@ def emulate_dtof(
     period: float | None = None,
     signal_photons: float = 1.0,
     ambient_photons: float = 4.0,
+    reference_depth: float | None = 1.0,
     n_pulses: int = 1000,
     n_bins: int | None = None,
     dead_time_bins: int = 10,
     free_running: bool = True,
     model: DtoFModel = "mc",
-    pulse_width_bins: float = 1.0,
+    pulse_width: float = 0.0,
     generator: torch.Generator | None = None,
 ) -> npt.NDArray[np.floating]:
     """Emulate dToF equi-width histogram (EWH) measurements for one frame.
@@ -296,6 +360,8 @@ def emulate_dtof(
         signal_photons (float, optional): Scene-level signal photons per cycle at unit albedo.
             Defaults to 1.0.
         ambient_photons (float, optional): Scene-average ambient photons per cycle. Defaults to 4.0.
+        reference_depth (float, optional): Depth in metres at which ``signal_photons`` is defined;
+            signal falls off as the inverse square of depth. None disables it. Defaults to 1.0.
         n_pulses (int, optional): Number of laser cycles per frame. Defaults to 1000.
         n_bins (int, optional): Number of EWH bins; must divide ``n_tbins``. Defaults to none
             (use ``n_tbins``).
@@ -305,8 +371,8 @@ def emulate_dtof(
             operation. Defaults to True.
         model (DtoFModel, optional): Readout model, per-cycle Monte-Carlo (``"mc"``) or
             single-pass analytical (``"forward"``). Defaults to ``"mc"``.
-        pulse_width_bins (float, optional): Laser pulse FWHM in time bins; non-positive skips
-            pulse shaping. Defaults to 1.0.
+        pulse_width (float, optional): Laser pulse full width at half maximum, in seconds
+            (``1e-9`` is 1 ns); zero skips pulse shaping. Defaults to 0.0.
         generator (torch.Generator, optional): Seeded CPU generator for ``"mc"``. Defaults to
             none (fresh entropy).
 
@@ -326,9 +392,6 @@ def emulate_dtof(
     if int(dead_time_bins) != dead_time_bins or dead_time_bins < 0:
         raise ValueError(f"dead_time_bins must be a non-negative integer, got {dead_time_bins!r}")
     dead_time_bins = int(dead_time_bins)
-    if pulse_width_bins < 0:
-        raise ValueError(f"pulse_width_bins must be non-negative, got {pulse_width_bins!r}")
-
     n_tbins, _bin_width, min_depth, max_depth, _period = _resolve_tof_geometry(
         n_tbins=n_tbins, bin_width=bin_width, min_depth=min_depth, max_depth=max_depth, period=period
     )
@@ -345,13 +408,10 @@ def emulate_dtof(
         max_depth=max_depth,
         signal_photons=signal_photons,
         ambient_photons=ambient_photons,
+        reference_depth=reference_depth,
+        pulse_width=pulse_width,
     )
     shape = np.shape(depths)
-
-    if pulse_width_bins > 0:
-        # Convolve (flip: impulse response) every pixel's transient with the laser pulse.
-        irf = make_irf(pulse_width_bins)
-        transients = F.conv1d(transients.unsqueeze(1), irf.flip(-1).view(1, 1, -1), padding="same").squeeze(1)
 
     if model == "mc":
         ewh = torch.stack(

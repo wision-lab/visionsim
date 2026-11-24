@@ -9,6 +9,7 @@ from .histogrammers import (  # noqa: F401
 )
 from .simulation import (  # noqa: F401
     DtoFModel,
+    apply_irf,
     calculate_transients,
     emulate_dtof,
     make_irf,
