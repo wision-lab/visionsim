@@ -12,7 +12,7 @@ import scipy.constants
 import torch
 from torch import Tensor
 
-from visionsim.emulate.dtof.histogrammers import simulate_ewh
+from visionsim.emulate.dtof.histogrammers import forward_free_running, forward_sync, simulate_ewh
 
 DtoFModel = Literal["mc", "forward"]
 
@@ -383,9 +383,6 @@ def emulate_dtof(
     """
     if model not in ("mc", "forward"):
         raise ValueError(f"model must be one of 'mc' or 'forward', got {model!r}")
-    if model == "forward":
-        # TODO: forward models land with the single-pixel forward models and tests.
-        raise NotImplementedError("model='forward' is not available yet; use model='mc'")
     if n_pulses <= 0:
         raise ValueError(f"n_pulses must be > 0, got {n_pulses}")
     if int(dead_time_bins) != dead_time_bins or dead_time_bins < 0:
@@ -412,17 +409,26 @@ def emulate_dtof(
     )
     shape = np.shape(depths)
 
-    ewh = torch.stack(
-        [
-            simulate_ewh(
-                row,
-                n_pulses=n_pulses,
-                n_bins=n_bins,
-                dead_time_bins=dead_time_bins,
-                free_running=free_running,
-                generator=generator,
-            )
-            for row in transients
-        ]
-    )
+    # Pixels are independent, so the scene is a plain loop over the single-pixel models.
+    if model == "mc":
+        ewh = torch.stack(
+            [
+                simulate_ewh(
+                    row,
+                    n_pulses=n_pulses,
+                    n_bins=n_bins,
+                    dead_time_bins=dead_time_bins,
+                    free_running=free_running,
+                    generator=generator,
+                )
+                for row in transients
+            ]
+        )
+    else:
+        # Expected counts per bin over all cycles, rebinned to the EWH resolution.
+        distorted = torch.stack(
+            [forward_free_running(row, dead_time_bins) if free_running else forward_sync(row) for row in transients]
+        )
+        ewh = (n_pulses * distorted).reshape(-1, n_bins, n_tbins // n_bins).sum(dim=-1).to(torch.float32)
+
     return ewh.reshape(*shape, n_bins).numpy()

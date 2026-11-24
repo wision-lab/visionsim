@@ -1,7 +1,6 @@
 """Tests for scene-level dToF transient generation and emulation.
 
-Tests are grouped by development stage. Only stage 1 (single-pixel photon arrival rates) is
-active; tests of the later stages are commented out until those stages are reviewed.
+Tests cover single-pixel photon arrival rates (transients) and the scene-level readout.
 """
 
 from __future__ import annotations
@@ -14,12 +13,16 @@ import pytest
 import scipy.constants
 import torch
 
-from visionsim.emulate.dtof import apply_irf, calculate_transients, make_irf
-
-# Used only by the commented-out stage 2/3 tests below:
-# from tests.emulate.dtof import make_generator
-# from visionsim.emulate.dtof import emulate_dtof
-
+from tests.emulate.dtof import make_generator
+from visionsim.emulate.dtof import (
+    apply_irf,
+    calculate_transients,
+    emulate_dtof,
+    forward_free_running,
+    forward_sync,
+    make_irf,
+    simulate_ewh,
+)
 
 # ──────── Stage 1: arrival rates ────────
 
@@ -298,146 +301,129 @@ def test_transient_bin_width_must_divide_span():
         calculate_transients(depth, albedo, bin_width=3.0, max_depth=10.0)
 
 
-# ──────── Stages 2-3: readout models (commented out) ────────
-# End-to-end emulate_dtof tests: MC (stage 2) and forward model (stage 3).
+# ──────── Scene-level readout: emulate_dtof ────────
+# A scene is a loop over independent pixels, so these use tiny scenes and check the wiring:
+# transients, per-pixel readout, rebinning, reshaping, seeding. The per-pixel physics is verified
+# in test_histogrammers.py.
 
-# def test_emulate_dtof_mc_shape_and_integer_counts():
-#     depth = np.array([[1.0, 2.0], [3.0, 4.0]])
-#     albedo = np.full((2, 2), 0.5)
-#     ewh = emulate_dtof(
-#         depth,
-#         albedo,
-#         n_tbins=32,
-#         max_depth=10.0,
-#         signal_photons=0.4,
-#         ambient_photons=0.2,
-#         n_pulses=500,
-#         n_bins=8,
-#         dead_time_bins=4,
-#         model="mc",
-#         pulse_width=0.0,
-#         generator=make_generator(13),
-#     )
-#     assert ewh.shape == (2, 2, 8)
-#     assert np.all(ewh >= 0)
-#     assert np.all(ewh == np.floor(ewh))
-#
-#
-# def test_emulate_dtof_forward_sync_matches_analytic_counts():
-#     depth = np.array([[2.5]])
-#     albedo = np.array([[1.0]])
-#     ewh = emulate_dtof(
-#         depth,
-#         albedo,
-#         n_tbins=100,
-#         max_depth=10.0,
-#         signal_photons=0.5,
-#         ambient_photons=0.0,
-#         reference_depth=None,
-#         n_pulses=1000,
-#         dead_time_bins=7,  # ignored in synchronous mode
-#         free_running=False,
-#         model="forward",
-#         pulse_width=0.0,
-#     )
-#     # Delta pulse: all signal in bin 25 with single-hit detection probability 1 - exp(-0.5).
-#     assert ewh.shape == (1, 1, 100)
-#     assert ewh[0, 0, 25] == pytest.approx(1000 * (1 - math.exp(-0.5)), rel=1e-5)
-#     assert ewh[0, 0, :25].sum() == 0 and ewh[0, 0, 26:].sum() == 0
-#
-#
-# def test_emulate_dtof_forward_async_zero_dead_time_preserves_totals():
-#     depth = np.array([[1.0, 2.0]])
-#     albedo = np.full((1, 2), 0.5)
-#     ewh = emulate_dtof(
-#         depth,
-#         albedo,
-#         n_tbins=32,
-#         max_depth=10.0,
-#         signal_photons=0.6,
-#         ambient_photons=0.3,
-#         reference_depth=None,
-#         n_pulses=100,
-#         n_bins=4,
-#         dead_time_bins=0,
-#         model="forward",
-#         pulse_width=0.0,
-#     )
-#     assert ewh.shape == (1, 2, 4)
-#     # No dead time: every arrival is an expected detection.
-#     per_pixel_flux = 0.6 * 0.5 + 0.3
-#     assert ewh.sum() == pytest.approx(100 * 2 * per_pixel_flux, rel=1e-5)
-#
-#
-# def test_emulate_dtof_mc_matches_forward_at_low_flux():
-#     depth = np.array([[2.0, 4.0]])
-#     albedo = np.full((1, 2), 0.25)
-#     kwargs = {
-#         "n_tbins": 64,
-#         "max_depth": 10.0,
-#         "signal_photons": 0.1,
-#         "ambient_photons": 0.05,
-#         "n_pulses": 50000,
-#         "free_running": False,
-#         "pulse_width": 0.0,
-#     }
-#     mc = emulate_dtof(depth, albedo, model="mc", generator=make_generator(14), **kwargs)
-#     fwd = emulate_dtof(depth, albedo, model="forward", **kwargs)
-#     assert mc.sum() == pytest.approx(fwd.sum(), rel=0.05)
-#     assert np.allclose(mc / mc.sum(), fwd / fwd.sum(), atol=0.02)
-#
-#
-# def test_emulate_dtof_reproducible_with_generator():
-#     depth = np.array([[1.0, 2.0]])
-#     albedo = np.full((1, 2), 0.5)
-#     kwargs = {"n_tbins": 32, "max_depth": 10.0, "n_pulses": 200, "dead_time_bins": 4}
-#     # A shared generator object advances between calls; identical seeds reproduce instead.
-#     first = emulate_dtof(depth, albedo, generator=make_generator(15), **kwargs)
-#     second = emulate_dtof(depth, albedo, generator=make_generator(15), **kwargs)
-#     assert np.array_equal(first, second)
-#
-#
-# def test_emulate_dtof_validation():
-#     depth = np.zeros((1, 1))
-#     albedo = np.zeros((1, 1))
-#     base = {"n_tbins": 64, "max_depth": 10.0}
-#     with pytest.raises(ValueError, match="model must be one of"):
-#         emulate_dtof(depth, albedo, model="coincident", **base)
-#     with pytest.raises(ValueError, match="n_pulses must be > 0"):
-#         emulate_dtof(depth, albedo, n_pulses=0, **base)
-#     with pytest.raises(ValueError, match="exact multiple"):
-#         emulate_dtof(depth, albedo, n_bins=10, **base)
-#     with pytest.raises(ValueError, match="dead_time_bins must be a non-negative"):
-#         emulate_dtof(depth, albedo, dead_time_bins=-2, **base)
-#     with pytest.raises(ValueError, match="dead_time_bins must be a non-negative"):
-#         emulate_dtof(depth, albedo, dead_time_bins=2.5, **base)
-#     with pytest.raises(ValueError, match="pulse_width"):
-#         emulate_dtof(depth, albedo, pulse_width=-1.0, **base)
-#
-#
-# def test_emulate_dtof_period_derives_max_depth():
-#     depth = np.array([[2.55]])
-#     albedo = np.array([[1.0]])
-#     kwargs = {"n_pulses": 100, "model": "forward", "dead_time_bins": 0, "pulse_width": 0.0}
-#     by_range = emulate_dtof(depth, albedo, n_tbins=100, max_depth=10.0, **kwargs)
-#     by_period = emulate_dtof(depth, albedo, n_tbins=100, period=PERIOD_10M, **kwargs)
-#     assert np.allclose(by_period, by_range, rtol=1e-4, atol=1e-9)
-#
-#
-# def test_emulate_dtof_output_keeps_spatial_shape():
-#     depths = np.array([[1.0, 2.0], [3.0, 4.0]])
-#     albedos = np.full((2, 2), 0.5)
-#     kwargs = {
-#         "n_tbins": 32,
-#         "max_depth": 10.0,
-#         "signal_photons": 0.4,
-#         "ambient_photons": 0.2,
-#         "n_pulses": 50,
-#         "model": "forward",
-#         "pulse_width": 0.0,
-#     }
-#     ewh = emulate_dtof(depths, albedos, **kwargs)
-#     ewh_1d = emulate_dtof(depths.reshape(-1), albedos.reshape(-1), **kwargs)
-#     assert ewh.shape == (2, 2, 32)
-#     assert ewh_1d.shape == (4, 32)
-#     assert np.allclose(ewh.reshape(-1, 32), ewh_1d)
+MODELS = ["mc", "forward"]
+SCENE = {"n_tbins": 32, "max_depth": 10.0, "signal_photons": 0.4, "ambient_photons": 0.2, "pulse_width": 0.0}
+
+
+def _single_pixel_reference(depth, albedo, model, *, n_pulses, n_bins, dead_time_bins, free_running, generator=None):
+    """The scene-level result of a 1-pixel scene, built directly from the single-pixel kernels."""
+    transient = calculate_transients(
+        depth, albedo, None, **{k: v for k, v in SCENE.items() if k != "n_tbins"}, n_tbins=32
+    )[0]
+    if model == "mc":
+        return simulate_ewh(
+            transient, n_pulses=n_pulses, n_bins=n_bins, dead_time_bins=dead_time_bins,
+            free_running=free_running, generator=generator,
+        ).numpy()  # fmt: skip
+    forward = forward_free_running(transient, dead_time_bins) if free_running else forward_sync(transient)
+    return (n_pulses * forward).reshape(n_bins, -1).sum(dim=-1).float().numpy()
+
+
+@pytest.mark.parametrize("model", MODELS)
+@pytest.mark.parametrize("free_running", [True, False], ids=["free-running", "sync"])
+def test_emulate_dtof_single_pixel_matches_kernels(model, free_running):
+    depth, albedo = np.array([[2.5]]), np.array([[0.7]])
+    kwargs = {"n_pulses": 400, "n_bins": 8, "dead_time_bins": 4, "free_running": free_running}
+    out = emulate_dtof(depth, albedo, model=model, generator=make_generator(20), **SCENE, **kwargs)
+    ref = _single_pixel_reference(depth, albedo, model, generator=make_generator(20), **kwargs)
+    assert out.shape == (1, 1, 8)
+    np.testing.assert_array_equal(out[0, 0], ref)
+
+
+def test_emulate_dtof_mc_shape_and_integer_counts():
+    depth = np.array([[1.0, 2.0], [3.0, 4.0]])
+    ewh = emulate_dtof(
+        depth, np.full((2, 2), 0.5), n_pulses=500, n_bins=8, dead_time_bins=4, model="mc", generator=make_generator(13), **SCENE
+    )  # fmt: skip
+    assert ewh.shape == (2, 2, 8)
+    assert np.all(ewh >= 0)
+    assert np.all(ewh == np.floor(ewh))
+
+
+def test_emulate_dtof_reproducible_with_generator():
+    depth, albedo = np.array([[1.0, 2.0]]), np.full((1, 2), 0.5)
+    kwargs = {"n_pulses": 200, "dead_time_bins": 4, **SCENE}
+    # A shared generator object advances between calls; identical seeds reproduce instead.
+    first = emulate_dtof(depth, albedo, generator=make_generator(15), **kwargs)
+    second = emulate_dtof(depth, albedo, generator=make_generator(15), **kwargs)
+    assert np.array_equal(first, second)
+
+
+def test_emulate_dtof_forward_sync_matches_analytic_counts():
+    depth, albedo = np.array([[2.5]]), np.array([[1.0]])
+    ewh = emulate_dtof(
+        depth, albedo, n_tbins=100, max_depth=10.0, signal_photons=0.5, ambient_photons=0.0, reference_depth=None,
+        n_pulses=1000, dead_time_bins=7, free_running=False, model="forward", pulse_width=0.0,
+    )  # fmt: skip
+    # Delta pulse: all signal in bin 25 with single-hit detection probability 1 - exp(-0.5);
+    # dead_time_bins is ignored in synchronous mode.
+    assert ewh.shape == (1, 1, 100)
+    assert ewh[0, 0, 25] == pytest.approx(1000 * (1 - math.exp(-0.5)), rel=1e-5)
+    assert ewh[0, 0, :25].sum() == 0 and ewh[0, 0, 26:].sum() == 0
+
+
+def test_emulate_dtof_forward_zero_dead_time_preserves_totals():
+    depth, albedo = np.array([[1.0, 2.0]]), np.full((1, 2), 0.5)
+    ewh = emulate_dtof(
+        depth, albedo, n_tbins=32, max_depth=10.0, signal_photons=0.6, ambient_photons=0.3, reference_depth=None,
+        n_pulses=100, n_bins=4, dead_time_bins=0, model="forward", pulse_width=0.0,
+    )  # fmt: skip
+    assert ewh.shape == (1, 2, 4)
+    # No dead time: every arrival is an expected detection.
+    assert ewh.sum() == pytest.approx(100 * 2 * (0.6 * 0.5 + 0.3), rel=1e-5)
+
+
+@pytest.mark.parametrize("free_running", [True, False], ids=["free-running", "sync"])
+def test_emulate_dtof_mc_matches_forward_at_low_flux(free_running):
+    depth, albedo = np.array([[2.0, 4.0]]), np.full((1, 2), 0.25)
+    kwargs = {
+        "n_tbins": 64, "max_depth": 10.0, "signal_photons": 0.1, "ambient_photons": 0.05,
+        "n_pulses": 50000, "dead_time_bins": 3, "free_running": free_running, "pulse_width": 0.0,
+    }  # fmt: skip
+    mc = emulate_dtof(depth, albedo, model="mc", generator=make_generator(14), **kwargs)
+    fwd = emulate_dtof(depth, albedo, model="forward", **kwargs)
+    assert mc.sum() == pytest.approx(fwd.sum(), rel=0.05)
+    assert np.allclose(mc / mc.sum(), fwd / fwd.sum(), atol=0.02)
+
+
+def test_emulate_dtof_validation():
+    depth, albedo = np.zeros((1, 1)), np.zeros((1, 1))
+    base = {"n_tbins": 64, "max_depth": 10.0}
+    with pytest.raises(ValueError, match="model must be one of"):
+        emulate_dtof(depth, albedo, model="coincident", **base)
+    with pytest.raises(ValueError, match="n_pulses must be > 0"):
+        emulate_dtof(depth, albedo, n_pulses=0, **base)
+    with pytest.raises(ValueError, match="exact multiple"):
+        emulate_dtof(depth, albedo, n_bins=10, **base)
+    with pytest.raises(ValueError, match="dead_time_bins must be a non-negative"):
+        emulate_dtof(depth, albedo, dead_time_bins=-2, **base)
+    with pytest.raises(ValueError, match="dead_time_bins must be a non-negative"):
+        emulate_dtof(depth, albedo, dead_time_bins=2.5, **base)
+    with pytest.raises(ValueError, match="pulse_width"):
+        emulate_dtof(depth, albedo, pulse_width=-1.0, **base)
+
+
+@pytest.mark.parametrize("model", MODELS)
+def test_emulate_dtof_period_derives_max_depth(model):
+    depth, albedo = np.array([[2.55]]), np.array([[1.0]])
+    kwargs = {"n_pulses": 100, "model": model, "dead_time_bins": 0, "pulse_width": 0.0}
+    by_range = emulate_dtof(depth, albedo, n_tbins=100, max_depth=10.0, generator=make_generator(16), **kwargs)
+    by_period = emulate_dtof(depth, albedo, n_tbins=100, period=PERIOD_10M, generator=make_generator(16), **kwargs)
+    assert np.allclose(by_period, by_range, rtol=1e-4, atol=1e-9)
+
+
+@pytest.mark.parametrize("model", MODELS)
+def test_emulate_dtof_output_keeps_spatial_shape(model):
+    depths = np.array([[1.0, 2.0], [3.0, 4.0]])
+    albedos = np.full((2, 2), 0.5)
+    kwargs = {"n_pulses": 50, "model": model, **SCENE}
+    ewh = emulate_dtof(depths, albedos, generator=make_generator(17), **kwargs)
+    ewh_1d = emulate_dtof(depths.reshape(-1), albedos.reshape(-1), generator=make_generator(17), **kwargs)
+    assert ewh.shape == (2, 2, 32)
+    assert ewh_1d.shape == (4, 32)
+    assert np.allclose(ewh.reshape(-1, 32), ewh_1d)

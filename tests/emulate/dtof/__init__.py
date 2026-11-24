@@ -2,8 +2,8 @@
 
 Monte-Carlo kernels are validated two ways: against closed-form properties of the
 sampling process (single-hit per cycle, dead-time spacing) and statistically
-against the single-pass forward models, which is the cross-check the two model
-families exist for.
+against the single-pixel analytical forward models, which is the cross-check the two
+model families exist for.
 """
 
 from __future__ import annotations
