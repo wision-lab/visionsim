@@ -1,7 +1,7 @@
 """Tests for dToF photon sampling, dead-time and histogramming kernels.
 
 Stage 2 covers the Monte-Carlo and histogram utilities; stage 3 checks the single-pixel analytical
-forward models against them (3a synchronous done, 3b free-running pending).
+forward models against them (3a synchronous, 3b free-running).
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ import torch
 from tests.emulate.dtof import N_TBINS, make_generator
 from visionsim.emulate.dtof.histogrammers import (
     _sample_occupied_cells,
+    forward_free_running,
     forward_sync,
     simulate_ewh,
     simulate_photon_timestamps,
@@ -221,4 +222,77 @@ def test_mc_sync_matches_forward_sync(shape):
     assert _chi_square_p(counts, forward_sync(phi).numpy(), N_PULSES) > P_MIN
 
 
-# ──────── Stage 3b: single-pixel free-running forward model (pending) ────────
+# ──────── Stage 3b: single-pixel free-running forward model ────────
+
+
+def _flat(phi: float) -> torch.Tensor:
+    return torch.full((N_TBINS,), phi, dtype=torch.float64)
+
+
+def test_free_running_forward_zero_dead_time_is_undistorted():
+    phi = torch.rand(N_TBINS, generator=make_generator(10))
+    np.testing.assert_allclose(forward_free_running(phi, 0).numpy(), phi.double().numpy())
+
+
+def test_free_running_forward_unit_dead_time_is_bernoulli_per_bin():
+    # With dead_time_bins == 1 the receiver is armed every bin: each occupied bin gives one detection.
+    phi = torch.rand(N_TBINS, generator=make_generator(11), dtype=torch.float64)
+    np.testing.assert_allclose(forward_free_running(phi, 1).numpy(), (1 - torch.exp(-phi)).numpy(), rtol=1e-10)
+
+
+@pytest.mark.parametrize("phi", [0.002, 0.05, 0.5, 5.0])
+@pytest.mark.parametrize("dead_time", [1, 5, 16, 63, 64, 100])  # 64 equals and 100 exceeds n_tbins
+def test_free_running_forward_flat_flux_matches_renewal_rate(phi, dead_time):
+    # Flat flux is a renewal process: every gap is dead_time + Geometric(p), so the rate per bin is
+    # 1 / (dead_time + (1 - p) / p), identical in every bin up to cycle-phase effects that average out.
+    p = 1 - math.exp(-phi)
+    out = forward_free_running(_flat(phi), dead_time)
+    assert out.sum().item() == pytest.approx(N_TBINS / (dead_time + (1 - p) / p), rel=1e-9)
+    assert (out >= 0).all()
+
+
+def test_free_running_forward_saturating_flux_is_one_detection_per_dead_time():
+    out = forward_free_running(_flat(50.0), 10)
+    assert out.sum().item() == pytest.approx(N_TBINS / 10, rel=1e-9)
+
+
+def test_free_running_forward_suppresses_rate_and_handles_edges():
+    phi = _flat(0.5)
+    assert forward_free_running(phi, N_TBINS // 2).sum() < 0.5 * forward_free_running(phi, 0).sum()
+    assert forward_free_running(torch.zeros(N_TBINS), 7).sum() == 0
+    with pytest.raises(ValueError, match="1-D"):
+        forward_free_running(phi[None], 4)
+    with pytest.raises(ValueError, match="dead_time_bins"):
+        forward_free_running(phi, -1)
+    with pytest.raises(ValueError, match="dead_time_bins"):
+        forward_free_running(phi, 2.5)
+
+
+def _mc_free_running_counts(phi, dead_time, n_replicas=30, n_pulses=3000, warmup=10):
+    """Per-bin detection counts of independent MC replicas, skipping the armed start-up transient."""
+    rows = []
+    for seed in range(n_replicas):
+        ts = simulate_photon_timestamps(
+            phi.float(), n_pulses, dead_time_bins=dead_time, generator=make_generator(100 + seed)
+        )
+        ts = ts[ts[:, 0] >= warmup]
+        rows.append(np.bincount(ts[:, 1].numpy(), minlength=N_TBINS))
+    return np.array(rows), n_pulses - warmup
+
+
+@pytest.mark.parametrize(
+    ("shape", "dead_time"),
+    [("flat", 5), ("flat", 100), ("spike", 12), ("spike", 64), ("bright", 20)],
+)
+def test_mc_free_running_matches_forward_free_running(shape, dead_time):
+    phi = _flat({"flat": 0.05, "spike": 0.05, "bright": 0.5}[shape])
+    if shape == "spike":
+        phi[20] += 0.5
+    counts, n_cycles = _mc_free_running_counts(phi, dead_time)
+    expected = n_cycles * forward_free_running(phi, dead_time).numpy()
+    # Detections within a replica are correlated, so use the spread across independent replicas.
+    sem = counts.std(axis=0, ddof=1) / math.sqrt(len(counts))
+    z = (counts.mean(axis=0) - expected) / np.maximum(sem, 1e-9)
+    assert np.abs(z).max() < 4.5  # 64 bins tested at once
+    total_sem = counts.sum(axis=1).std(ddof=1) / math.sqrt(len(counts))
+    assert abs(counts.sum(axis=1).mean() - expected.sum()) / total_sem < Z_MAX

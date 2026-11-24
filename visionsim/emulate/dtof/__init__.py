@@ -1,6 +1,7 @@
 """dToF (direct time-of-flight) sensor emulation."""
 
 from .histogrammers import (  # noqa: F401
+    forward_free_running,
     forward_sync,
     simulate_ewh,
     simulate_photon_timestamps,

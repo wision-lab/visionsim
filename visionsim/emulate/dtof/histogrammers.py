@@ -200,6 +200,74 @@ def forward_sync(phi_bar: Tensor) -> Tensor:
     return torch.exp(-before) * -torch.expm1(-phi)
 
 
+def forward_free_running(phi_bar: Tensor, dead_time_bins: int) -> Tensor:
+    """Analytical single-pixel forward model for free-running operation with non-paralyzable dead time.
+
+    Models the same bin-discretized process as the Monte-Carlo: a bin is occupied with probability
+    ``p_k = 1 - exp(-phi_k)``, and a detection in bin ``g`` re-arms the receiver at ``g + dead_time_bins``
+    (dead time carries across cycle boundaries). The receiver state is the number of bins left until
+    re-arm, a Markov chain on ``dead_time_bins`` states. The chain's one-cycle transition matrix is
+    built exactly, its stationary distribution is solved for, and the detection probability of every
+    bin follows from propagating that distribution through one cycle. The result is the exact
+    steady-state expectation of the Monte-Carlo; it ignores the initial (armed) start-up transient.
+    Cost is ``O(n_tbins * dead_time_bins**2)``.
+
+    With ``dead_time_bins == 0`` every photon is detected, so the result is ``phi_bar`` itself.
+
+    Args:
+        phi_bar (torch.Tensor): 1-D mean photon arrival rate per time bin of a single pixel.
+        dead_time_bins (int): Non-paralyzable dead time in time bins; may exceed ``n_tbins``.
+
+    Returns:
+        Expected detections per bin per laser cycle, float64, shape ``(n_tbins,)``.
+
+    Raises:
+        ValueError: If ``phi_bar`` is not 1-D or ``dead_time_bins`` is not a non-negative integer.
+    """
+    if phi_bar.ndim != 1:
+        raise ValueError(f"phi_bar must be 1-D (single pixel), got shape {tuple(phi_bar.shape)}")
+    if int(dead_time_bins) != dead_time_bins or dead_time_bins < 0:
+        raise ValueError(f"dead_time_bins must be a non-negative integer, got {dead_time_bins!r}")
+    d = int(dead_time_bins)
+
+    phi = torch.clamp(phi_bar.to(torch.float64), min=0.0)
+    if d == 0:
+        return phi
+    if float(phi.sum()) == 0.0:
+        return torch.zeros_like(phi)
+
+    p = (-torch.expm1(-phi)).numpy()
+    n_tbins = p.shape[0]
+
+    def step(v: npt.NDArray[np.float64], p_k: float) -> npt.NDArray[np.float64]:
+        # v[..., r]: probability of r bins left until re-arm. Dead states count down; the armed
+        # state either detects (-> d - 1 bins left after this one) or stays armed.
+        out = np.zeros_like(v)
+        out[..., :-1] = v[..., 1:]
+        out[..., d - 1] += v[..., 0] * p_k
+        out[..., 0] += v[..., 0] * (1.0 - p_k)
+        return out
+
+    # One-cycle transition matrix: row i is the state distribution after a cycle that starts in state i.
+    transition = np.eye(d)
+    for k in range(n_tbins):
+        transition = step(transition, float(p[k]))
+
+    # Stationary distribution: pi @ T = pi with sum(pi) = 1.
+    a = np.vstack([transition.T - np.eye(d), np.ones((1, d))])
+    b = np.zeros(d + 1)
+    b[-1] = 1.0
+    pi = np.linalg.lstsq(a, b, rcond=None)[0]
+    pi = np.clip(pi, 0.0, None)
+    pi /= pi.sum()
+
+    detections = np.empty(n_tbins)
+    for k in range(n_tbins):
+        detections[k] = pi[0] * p[k]
+        pi = step(pi, float(p[k]))
+    return torch.from_numpy(detections)
+
+
 def simulate_ewh(
     phi_bar: Tensor,
     *,
