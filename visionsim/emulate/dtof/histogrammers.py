@@ -8,40 +8,26 @@ import torch
 from torch import Tensor
 
 
-def _sample_photon_arrivals(
-    phi_bar: Tensor,
-    n_pulses: int,
-    generator: torch.Generator | None = None,
-) -> Tensor:
-    """Draw per-bin photon arrival counts for ``n_pulses`` laser cycles of a single pixel.
-
-    Args:
-        phi_bar (torch.Tensor): 1-D mean photon arrival rate per time bin of a single pixel.
-        n_pulses (int): Number of laser cycles to sample.
-        generator (torch.Generator, optional): Seeded CPU generator. Defaults to none (fresh entropy).
-
-    Returns:
-        Integer arrival counts of shape ``(n_pulses, n_tbins)``.
-
-    Raises:
-        ValueError: If ``phi_bar`` is not 1-D or ``n_pulses`` is not positive.
-    """
-    if phi_bar.ndim != 1:
-        raise ValueError(f"phi_bar must be 1-D (single pixel), got shape {tuple(phi_bar.shape)}")
-    if n_pulses <= 0:
-        raise ValueError(f"n_pulses must be > 0, got {n_pulses}")
-
-    rates = torch.clamp(phi_bar.to(torch.float32), min=0.0)
-    counts = torch.poisson(rates.expand(n_pulses, -1), generator=generator)
-    return counts.to(torch.int64)
-
-
 def _sample_occupied_cells(
     rates: Tensor,
     n_pulses: int,
     generator: torch.Generator | None = None,
 ) -> tuple[Tensor, Tensor]:
-    """Sparse equivalent of ``_sample_photon_arrivals``, returning occupied (cycle, bin) cells."""
+    """Draw photon arrivals of a single pixel over ``n_pulses`` laser cycles as occupied cells.
+
+    Samples the total photon count, then each photon's bin and cycle, instead of a dense
+    ``(n_pulses, n_tbins)`` Poisson table: the cost and memory scale with the number of photons,
+    which suits the low flux (well under one photon per bin) of realistic dToF scenes.
+
+    Args:
+        rates (torch.Tensor): 1-D non-negative mean photon arrival rate per time bin.
+        n_pulses (int): Number of laser cycles to sample.
+        generator (torch.Generator, optional): Seeded CPU generator. Defaults to none (fresh entropy).
+
+    Returns:
+        Tuple of the sorted flat indices ``cycle * n_tbins + bin`` of occupied cells and the
+        photon count of each occupied cell.
+    """
     empty = torch.zeros(0, dtype=torch.int64)
     total_rate = float(rates.sum())
     if total_rate <= 0.0:
@@ -53,7 +39,6 @@ def _sample_occupied_cells(
         return empty, empty
 
     n_tbins = int(rates.shape[0])
-    # shortcut: sampling only the occupied cells beats a dense (n_pulses, n_tbins) draw for dim flux
     bins = torch.multinomial(rates.to(torch.float64), n_photons, replacement=True, generator=generator)
     cycles = torch.randint(0, n_pulses, (n_photons,), generator=generator, dtype=torch.int64)
 
@@ -106,6 +91,12 @@ def simulate_photon_timestamps(
     operation keeps the receiver armed across cycles and applies a non-paralyzable dead time
     of ``dead_time_bins`` bins after every detection.
 
+    Dead-time convention: a detection in bin ``g`` re-arms the receiver at bin ``g + dead_time_bins``,
+    so consecutive detections are at least ``dead_time_bins`` bins apart (``dead_time_bins - 1`` bins
+    are blocked). Dead time carries across cycle boundaries, so values above ``n_tbins`` are supported.
+    With ``dead_time_bins == 0`` every photon is detected, so a bin holding several photons yields
+    several detections; with ``dead_time_bins >= 1`` a bin yields at most one detection.
+
     Args:
         phi_bar (torch.Tensor): 1-D mean photon arrival rate per time bin of a single pixel.
         n_pulses (int): Number of laser cycles to simulate.
@@ -133,13 +124,8 @@ def simulate_photon_timestamps(
     rates = torch.clamp(phi_bar.to(torch.float32), min=0.0)
     n_tbins = int(rates.shape[-1])
 
-    # Sparse sampling wins once the mean occupancy per bin drops below ~0.25 photons.
-    if float(rates.sum()) < 0.25 * n_tbins:
-        occupied, occ_counts = _sample_occupied_cells(rates, n_pulses, generator=generator)
-        occupied_np, occ_counts_np = occupied.numpy(), occ_counts.numpy()
-    else:
-        flat = _sample_photon_arrivals(rates, n_pulses, generator=generator).reshape(-1).numpy()
-        occupied_np, occ_counts_np = np.nonzero(flat)[0], flat[flat > 0]
+    occupied, occ_counts = _sample_occupied_cells(rates, n_pulses, generator=generator)
+    occupied_np, occ_counts_np = occupied.numpy(), occ_counts.numpy()
 
     if not free_running:
         # Synchronous single-hit: keep only the first occupied bin of every cycle.
