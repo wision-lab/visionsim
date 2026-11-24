@@ -1,4 +1,4 @@
-"""Per-pixel photon sampling, dead-time and histogramming kernels for dToF emulation."""
+"""Single-pixel dToF kernels: Monte-Carlo photon sampling with dead time, analytical forward models and histogramming."""
 
 from __future__ import annotations
 
@@ -173,6 +173,31 @@ def timestamps_to_histogram(timestamps: Tensor, n_tbins: int, n_hist_bins: int |
 
     idx = timestamps[:, 1] * n_hist_bins // n_tbins
     return torch.bincount(idx, minlength=n_hist_bins).to(torch.float32)
+
+
+def forward_sync(phi_bar: Tensor) -> Tensor:
+    """Analytical single-pixel forward model (Coates) for synchronous operation.
+
+    The receiver records only the first photon of each cycle, so bin ``k`` is detected with
+    probability ``exp(-sum_{j<k} phi_j) * (1 - exp(-phi_k))``: no photon arrived before ``k`` and
+    at least one arrives in ``k``. This is the exact expectation of the synchronous Monte-Carlo.
+
+    Args:
+        phi_bar (torch.Tensor): 1-D mean photon arrival rate per time bin of a single pixel.
+
+    Returns:
+        Detection probability per bin per laser cycle, float64, shape ``(n_tbins,)``. It sums to
+        the single-hit probability ``1 - exp(-sum(phi_bar))``.
+
+    Raises:
+        ValueError: If ``phi_bar`` is not 1-D.
+    """
+    if phi_bar.ndim != 1:
+        raise ValueError(f"phi_bar must be 1-D (single pixel), got shape {tuple(phi_bar.shape)}")
+    phi = torch.clamp(phi_bar.to(torch.float64), min=0.0)
+    # Flux accumulated strictly before each bin; exp/expm1 keep precision at low flux.
+    before = torch.cumsum(phi, dim=0) - phi
+    return torch.exp(-before) * -torch.expm1(-phi)
 
 
 def simulate_ewh(

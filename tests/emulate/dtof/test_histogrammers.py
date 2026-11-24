@@ -1,7 +1,7 @@
 """Tests for dToF photon sampling, dead-time and histogramming kernels.
 
-Stage 2 (Monte-Carlo and histogram utilities) is active; stage 3 (forward models and MC agreement)
-is commented out until that stage is reviewed.
+Stage 2 covers the Monte-Carlo and histogram utilities; stage 3 checks the single-pixel analytical
+forward models against them (3a synchronous done, 3b free-running pending).
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ import torch
 from tests.emulate.dtof import N_TBINS, make_generator
 from visionsim.emulate.dtof.histogrammers import (
     _sample_occupied_cells,
+    forward_sync,
     simulate_ewh,
     simulate_photon_timestamps,
     timestamps_to_histogram,
@@ -130,18 +131,6 @@ def _chi_square_p(observed: np.ndarray, probs: np.ndarray, n: int) -> float:
     return float(scipy.stats.chi2.sf(((o - e) ** 2 / e).sum(), len(o) - 1))
 
 
-@pytest.mark.parametrize("shape", ["flat-low", "flat-high", "spike"])
-def test_mc_sync_matches_coates(shape):
-    phi = {"flat-low": torch.full((N_TBINS,), 0.003), "flat-high": torch.full((N_TBINS,), 0.3)}.get(
-        shape, torch.full((N_TBINS,), 0.02)
-    )
-    if shape == "spike":
-        phi[20] = 1.5
-    ts = simulate_photon_timestamps(phi, N_PULSES, free_running=False, generator=make_generator(0))
-    counts = np.bincount(ts[:, 1].numpy(), minlength=N_TBINS)
-    assert _chi_square_p(counts, _coates(phi.numpy()), N_PULSES) > P_MIN
-
-
 @pytest.mark.parametrize("phi", [0.002, 0.5], ids=["low-flux", "bright"])
 @pytest.mark.parametrize("dead_time", [1, 5, 16, 100])  # 100 exceeds n_tbins
 def test_mc_free_running_matches_renewal_rate(phi, dead_time):
@@ -182,3 +171,54 @@ def test_dead_time_convention_exact_spacing(dead_time):
         torch.full((N_TBINS,), 0.4), 300, dead_time_bins=dead_time, generator=make_generator(4)
     )
     assert (dim[:, 0] * N_TBINS + dim[:, 1]).diff().min() >= dead_time
+
+
+# ──────── Stage 3a: single-pixel synchronous forward model ────────
+
+
+def test_sync_forward_impulse_detection_probability():
+    phi = torch.zeros(N_TBINS, dtype=torch.float64)  # float64 so 0.7 is exact
+    phi[5] = 0.7
+    out = forward_sync(phi)
+    assert out[5].item() == pytest.approx(1 - math.exp(-0.7), abs=1e-12)
+    assert out[:5].sum() == 0 and out[6:].sum() == 0
+
+
+def test_sync_forward_flat_geometric_detection():
+    c = 0.05
+    out = forward_sync(torch.full((N_TBINS,), c, dtype=torch.float64))
+    expected = (1 - math.exp(-c)) * np.exp(-c * np.arange(N_TBINS))
+    np.testing.assert_allclose(out.numpy(), expected, rtol=1e-12)
+
+
+def test_sync_forward_sums_to_single_hit_probability():
+    phi = torch.rand(N_TBINS, generator=make_generator(9)) * 0.3
+    assert forward_sync(phi).sum().item() == pytest.approx(1 - math.exp(-phi.double().sum().item()), rel=1e-12)
+
+
+def test_sync_forward_low_flux_is_the_transient():
+    phi = torch.rand(N_TBINS, generator=make_generator(5)) * 1e-6
+    np.testing.assert_allclose(forward_sync(phi).numpy(), phi.double().numpy(), rtol=1e-4)
+
+
+def test_sync_forward_matches_independent_coates_and_validates():
+    phi = torch.rand(N_TBINS, generator=make_generator(6))
+    np.testing.assert_allclose(forward_sync(phi).numpy(), _coates(phi.double().numpy()), rtol=1e-10)
+    assert forward_sync(torch.zeros(N_TBINS)).sum() == 0
+    with pytest.raises(ValueError, match="1-D"):
+        forward_sync(phi[None])
+
+
+@pytest.mark.parametrize("shape", ["flat-low", "flat-high", "spike"])
+def test_mc_sync_matches_forward_sync(shape):
+    phi = {"flat-low": torch.full((N_TBINS,), 0.003), "flat-high": torch.full((N_TBINS,), 0.3)}.get(
+        shape, torch.full((N_TBINS,), 0.02)
+    )
+    if shape == "spike":
+        phi[20] = 1.5
+    ts = simulate_photon_timestamps(phi, N_PULSES, free_running=False, generator=make_generator(11))
+    counts = np.bincount(ts[:, 1].numpy(), minlength=N_TBINS)
+    assert _chi_square_p(counts, forward_sync(phi).numpy(), N_PULSES) > P_MIN
+
+
+# ──────── Stage 3b: single-pixel free-running forward model (pending) ────────
